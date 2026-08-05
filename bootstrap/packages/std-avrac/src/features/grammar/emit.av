@@ -1491,6 +1491,15 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         mut outl = "${ind}let ${item.label} = if ${cond} { CapVal.Tok(${adv}) } else {\n"
         outl = outl + "${ind}    st.report(\"${msg}\")\n"
         if sync != "" { outl = outl + "${ind}    st.synchronize(\"${sync}\")\n" }
+        // A CAPTURED `@require` aborts too — the unlabeled sibling below has always
+        // emitted this, and omitting it here is why the two engines consumed different
+        // amounts of input after the SAME failure (t-47hc.5). `@require b:IDENT` in
+        // `if_expr` reported and then PARSED ON, swallowing `= x { 1 }`, while the
+        // interpreter's `@require` set env.abort and stopped — so recovery started from
+        // two different cursors and the statement-list loops could not converge. The
+        // label is still bound on the non-aborting path, so downstream `capval_tok_text`
+        // stays safe exactly as before.
+        outl = outl + abort_line
         outl = outl + "${ind}    CapVal.Tok(st.cur())\n"
         outl = outl + "${ind}}\n"
         return outl

@@ -968,6 +968,7 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
         let _ = st.advance()
         let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
             st.report("expected field name after `.`")
+            return CapVal.Node(st.error_node_silent())
             CapVal.Tok(st.cur())
         }
         return CapVal.Node(mk_field_access(st, n))
@@ -1343,6 +1344,7 @@ fn parse_if_expr(st: PState) -> CapVal {
         }
         let b = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
             st.report("expected a binding name after `if let`")
+            return CapVal.Node(st.error_node_silent())
             CapVal.Tok(st.cur())
         }
         if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
