@@ -31,6 +31,84 @@ fn errcodes(env: string, source: string) -> string {
     avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1 | grep -oE 'F[0-9]{4}' | tr '\\n' ' '")
 }
 
+/// The EXPLICIT env prefix for a parser mode — every routing variable set, none inherited.
+///
+/// `parser_new` reads `decl_flip` and `decl_static` as `… != "0"` (ON by default) and
+/// `no_static_fallback` as `== "1"` (OFF by default), so a prefix that sets only the ONE
+/// variable distinguishing its mode is silently ambient-dependent: run the suite under
+/// `AVRA_PARSER_DECL_FLIP=0` and the "emit" and production calls BOTH collapse to the
+/// hand, and a three-path assertion passes having measured one implementation twice.
+///
+/// `rtree_at` already sets every field explicitly for exactly this reason, and says so —
+/// "the vacuity class this file exists to police". This is its shell-invocation twin, and
+/// the reasoning applies identically to the F-code oracles (`agree_all`) and the
+/// message-level one (`msgs_agree_bad`); both route through here so the mapping lives in
+/// ONE place. Under a run with none of the three set, every prefix below re-states the
+/// existing default, so this is behaviour-preserving — it removes the ambient dependence,
+/// not the meaning.
+fn mode_env(mode: string) -> string {
+    // EXPRESSION routing is pinned too, not just declaration routing. `expr_static` is
+    // `!= "0"` (ON by default) and `expr_flip` is `== "1"`, both read independently of
+    // the decl flags — so a prefix that sets only `AVRA_PARSER_DECL_FLIP=0` leaves the
+    // hand oracle running the GENERATED expression parser. Before `table_lit` went
+    // native that was harmless (no native table rule existed, so the expression path
+    // fell through to `@hand(primary_base)` -> `parse_table_literal` anyway); once the
+    // rule landed it would mean the table assertions compare native against native.
+    if mode == "hand" { return "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
+    if mode == "emit" { return "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
+    // production — the static parser, then the INTERPRETER re-parse on `had_error`
+    // (t-zrn3): the path users actually run, and the one the other two are blind to.
+    "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+}
+
+/// The full diagnostic MESSAGES, not merely their F-codes (t-myz7, the `table` slice).
+///
+/// Everywhere else in this file the F-code signature discriminates, so `errcodes` is
+/// enough. For the table literal it is NOT, and that is worth stating because the
+/// difference is invisible until measured: `parse_table_literal`'s three semantic
+/// aborts — duplicate column, row-too-short, row-too-long — ALL report under F0001 and
+/// ALL cascade into the same F0013 `unexpected \`}\``. Their signatures are therefore
+/// byte-identical (`F0001 F0013`), so an `agree_all` over codes stays green even if a
+/// native rule fires the WRONG ONE of the three, or reports a generic alternation
+/// failure carrying neither message. That is precisely the vacuity raised in review on
+/// the F0040 case (#1157): an equal-and-nonzero signature is not evidence of the right
+/// diagnostic.
+///
+/// ANSI is stripped before matching (`.\[…m`) because the renderer colourises every
+/// diagnostic; the trailing `parse error at L:C:` summary is deliberately NOT used as
+/// the source — the hand path prints it and the two native paths do not, which is a
+/// difference in the final summary line, not in the diagnostics themselves.
+fn errmsgs(env: string, source: string) -> string {
+    let path = "/tmp/avra_errmsg.av"
+    write_fixture(path, source)
+    avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1 | sed 's/.\\[[0-9;]*m//g' | grep -oE 'error\\[F[0-9]+\\]: .*' | tr '\\n' '|'")
+}
+
+/// Do all THREE paths report the same diagnostic MESSAGES, and at least one of them?
+/// The message-level sibling of `agree_all`. The nonempty check is the anti-vacuity
+/// half — without it a fixture that stopped reporting entirely would "agree".
+fn msgs_agree_bad(source: string) -> bool {
+    let hand = errmsgs(mode_env("hand"), source)
+    let emit = errmsgs(mode_env("emit"), source)
+    let prod = errmsgs(mode_env("prod"), source)
+    if hand == "" || emit != hand || prod != hand {
+        // WHICH path diverged, and whether the capture came back EMPTY. `errmsgs` returns
+        // filtered pipeline output and so cannot carry `bs2 check`'s exit status, which
+        // leaves "the compiler died / the filter matched nothing" and "the messages really
+        // differ" looking alike from the return value alone. They need different fixes, so
+        // the printout separates them — the same idiom `tree_agrees_everywhere` and
+        // `agree_tree` already use. No assertion can PASS on a lost status: an empty
+        // capture fails the nonempty bar below, and `"".contains(…)` is false at the
+        // three call sites that pin an exact message.
+        println("three-path MESSAGE mismatch")
+        println(source)
+        println("hand=" + hand)
+        println("emit=" + emit)
+        println("prod=" + prod)
+    }
+    hand != "" && emit == hand && prod == hand
+}
+
 /// Does an F-code signature contain a PARSE-phase failure? Raised in review on the
 /// `primary_base` corpus: `tree_agrees_everywhere` renders the tree AFTER
 /// `parse_file_program()` has recovered, so all three paths can report and still agree,
@@ -56,8 +134,8 @@ fn sig_has_parse_code(sig: string) -> bool {
     false
 }
 
-fn static_raw(source: string) -> string { errcodes("AVRA_NO_STATIC_FALLBACK=1", source) }
-fn hand_oracle(source: string) -> string { errcodes("AVRA_PARSER_DECL_FLIP=0", source) }
+fn static_raw(source: string) -> string { errcodes(mode_env("emit"), source) }
+fn hand_oracle(source: string) -> string { errcodes(mode_env("hand"), source) }
 // t-zrn3 — the THIRD path, and the one users actually run. `static_raw` and the TREE
 // oracle below both disable the interpreter re-parse fallback, so between them they
 // measure the EMIT-generated parser and nothing else. The DEFAULT path is static →
@@ -66,7 +144,7 @@ fn hand_oracle(source: string) -> string { errcodes("AVRA_PARSER_DECL_FLIP=0", s
 // both oracles. It was real: exec_node FIRST-guarded a single-branch rule where emit
 // runs it unconditionally, so every stray top-level token reported the alternation's
 // generic F0001 instead of the hand parser's F0040, while both oracles stayed green.
-fn default_path(source: string) -> string { errcodes("", source) }
+fn default_path(source: string) -> string { errcodes(mode_env("prod"), source) }
 fn agree(source: string) -> bool {
     let sr = static_raw(source)
     let hand = hand_oracle(source)
@@ -555,20 +633,61 @@ fn rtree_at(mode: string, source: string) -> string {
     // `tree_agrees_everywhere` passes comparing the hand against itself, twice. That is
     // the vacuity class this file exists to police — asserting three implementations
     // agree while running one is worse than not asserting it.
-    if mode == "hand" {
-        p.decl_flip = false
-    } else if mode == "emit" {
-        p.decl_flip = true
-        p.decl_static = true
-        p.no_static_fallback = true
-    } else {
-        p.decl_flip = true
-        p.decl_static = false
-    }
+    let f = mode_flags(mode)
+    p.decl_flip = f.decl_flip
+    p.decl_static = f.decl_static
+    p.no_static_fallback = f.no_static_fallback
+    p.expr_flip = f.expr_flip
+    p.expr_static = f.expr_static
     let r = p.parse_file_program()
     if r.ids == null { return "<null>" }
     render_stmt_ids(r.store, r.ids!)
 }
+
+/// The IN-PROCESS twin of `mode_env` — EVERY routing field for the named mode, so a
+/// helper cannot inherit one from `parser_new`'s defaults.
+///
+/// The expression pair is the half that was missing, and it is not optional: the gate
+/// in `parse_expression` is `if self.expr_flip || self.expr_static`, an OR, and
+/// `expr_static` reads `!= "0"` — ON by default. So setting only `decl_flip = false`
+/// leaves the "hand" oracle running the GENERATED expression parser, and the table
+/// assertions compare native against native instead of against `parse_table_literal`.
+/// Harmless before `table_lit` went native (no native table rule existed, so the
+/// expression path fell through to `@hand(primary_base)` -> the hand's own parser);
+/// a live vacuity once the rule landed.
+///
+///   hand — both off, so the gate is false and `parse_expression_hand` runs
+///   emit — expr_static on: the generated static parser
+///   exec — expr_flip on + expr_static off: the Grammar-tree interpreter
+/// The IN-PROCESS twin of `mode_env` — EVERY routing field for the named mode, so a
+/// helper cannot inherit one from `parser_new`'s defaults. Returned as VALUES rather
+/// than applied here because a plain fn's `p` is immutable; the decision is what needs
+/// centralizing, and each caller assigns onto its own `mut p`.
+///
+/// The expression pair is the half that was missing, and it is not optional: the gate in
+/// `parse_expression` is `if self.expr_flip || self.expr_static`, an OR, and
+/// `expr_static` reads `!= "0"` — ON by default. So setting only `decl_flip = false`
+/// leaves the "hand" oracle running the GENERATED expression parser, and the table
+/// assertions compare native against native instead of against `parse_table_literal`.
+/// Harmless before `table_lit` went native (no native table rule existed, so the
+/// expression path fell through to `@hand(primary_base)` -> the hand's own parser); a
+/// live vacuity once the rule landed.
+///
+///   hand — both off, so the gate is false and `parse_expression_hand` runs
+///   emit — expr_static on: the generated static parser
+///   exec — expr_flip on + expr_static off: the Grammar-tree interpreter
+type RouteFlags = { decl_flip: bool, decl_static: bool, no_static_fallback: bool, expr_flip: bool, expr_static: bool }
+
+fn mode_flags(mode: string) -> RouteFlags {
+    if mode == "hand" {
+        return RouteFlags { decl_flip: false, decl_static: true, no_static_fallback: false, expr_flip: false, expr_static: false }
+    }
+    if mode == "emit" {
+        return RouteFlags { decl_flip: true, decl_static: true, no_static_fallback: true, expr_flip: false, expr_static: true }
+    }
+    RouteFlags { decl_flip: true, decl_static: false, no_static_fallback: false, expr_flip: true, expr_static: false }
+}
+
 
 fn rtree(static_raw: bool, source: string) -> string {
     // static-raw: the static generated parser with the interpreter re-parse
@@ -642,7 +761,12 @@ fn agree_tree(source: string) -> bool {
 // sequence, so the two lists diverge in length and content.
 fn poslist(static_raw: bool, source: string) -> string {
     mut p = parser_new(source)
-    if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
+    let f = mode_flags(if static_raw { "emit" } else { "hand" })
+    p.decl_flip = f.decl_flip
+    p.decl_static = f.decl_static
+    p.no_static_fallback = f.no_static_fallback
+    p.expr_flip = f.expr_flip
+    p.expr_static = f.expr_static
     let r = p.parse_file_program()
     if r.ids == null { return "<null>" }
     mut out = ""
@@ -657,7 +781,12 @@ fn poslist(static_raw: bool, source: string) -> string {
 
 fn rdiags(static_raw: bool, source: string) -> int {
     mut p = parser_new(source)
-    if static_raw { p.no_static_fallback = true } else { p.decl_flip = false }
+    let f = mode_flags(if static_raw { "emit" } else { "hand" })
+    p.decl_flip = f.decl_flip
+    p.decl_static = f.decl_static
+    p.no_static_fallback = f.no_static_fallback
+    p.expr_flip = f.expr_flip
+    p.expr_static = f.expr_static
     let r = p.parse_file_program()
     r.bag.diagnostics.length
 }
@@ -857,9 +986,16 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_tree("component C inst { key trueish }\nfn f() -> int { 1 }")
     }
 
-    // The forms the native rule deliberately DECLINES (nested blocks, method
-    // shorthand, nested `component`), which @try must hand back to the hand
-    // verbatim rather than parsing as loose expression statements.
+    // These four were ONCE declined by the native rule and handed back to the hand.
+    // They are ROUTED now — `comp_block_item` carries all four arms (raw-named,
+    // raw-bare, nested-named, nested-bare, method shorthand) with `declaration` as the
+    // honest unguarded tail. Measured: the four forms compile with BOTH production
+    // leaves refused (`AVRA_REFUSE_HAND_LEAF='*' AVRA_NO_STATIC_FALLBACK=1`), 0 refusals.
+    //
+    // The assertions stay exactly as they are. They were written as a
+    // declined-vs-hand parity check and they now serve as the routed-vs-hand parity
+    // check — the same claim either way, and the one that would go red if a future
+    // change to those arms drifted from `parse_comp_block_body`.
     then "PROBE: a native instantiation BODY survives (statements not dropped)" {
         agree_tree("component C inst { key \"v\"\n  let z = 1\n  foo()\n}\nfn f() -> int { 1 }")
     }
@@ -1433,32 +1569,41 @@ spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
         tree_agrees_everywhere("fn f(x: int??) -> int {\n let a = x!!\n return 0\n}") &&
         tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}")
     }
-    // `x!` + a NEXT-LINE `?` is DELIBERATELY absent, and it is the one case the retired
-    // claim got wrong. It genuinely DIVERGES, measured on this exact corpus:
-    //
-    //     hand = (let a (call __avra_force_unwrap (x)))  (error)  (return 0)
-    //     emit = (let a (? (call __avra_force_unwrap (x))))       (return 0)
-    //     exec = (? …) — same as emit
-    //
-    // The hand REJECTS the cross-line `?`; the production parser FOLDS it into a Try.
-    // Mechanism, traced rather than inferred: the hand's `postfix_step` (parse/mod.av)
-    // consumes a run of `!` in a `while` loop and then falls through to
-    // `if self.check(Tk.Question)` with NO re-test of the entry guard's
-    // `allow_dot_postfix && current_line == prev_line`. The pure-hand driver never
-    // reaches that fallthrough — it consumes the `!` in its own step, so the NEXT step's
-    // entry guard rejects the `?` — while the production path arrives mid-chain and does
-    // reach it (traced firing at cur=3 prev=2, folding anyway).
-    //
-    // Its siblings do NOT diverge, which is why this is one bug and not a class: `[`
-    // and `(` reach the same unguarded fallthrough but land in a fresh step on every
-    // path, and `.` is legal cross-line by design (above).
-    //
-    // Filed as its own gap rather than asserted here, so this spec does not fail for
-    // something it is not about — the same treatment `a?.` gets above. Adding
-    // `tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}")`
-    // is the failing-first witness when someone fixes it. NOTE the fix is a STRICTNESS
-    // change to the hand oracle (it makes the parser reject what it accepts today), so
-    // it lands on the `intended-strictness-change` path, not as a silent correction.
+    then "a next-line `?` after a `!` run does NOT fold — the fallthrough re-guards" {
+        // t-47hc.33.2 — this case used to DIVERGE and was carried as a comment rather
+        // than an assertion. Measured then:
+        //
+        //     hand  error[F0040]: expected expression
+        //     emit  <clean>   — folded to (let a (? (call __avra_force_unwrap (x))))
+        //     exec  <clean>   — same as emit
+        //     prod  <clean>
+        //
+        // Mechanism: `postfix_step` (parse/mod.av) consumes a run of `!` in a `while`
+        // loop and then re-dispatched on `if self.check(Tk.Question)` with NO re-test of
+        // the entry guard's `allow_dot_postfix && current_line == prev_line`, so a `?` on
+        // the FOLLOWING line folded into a Try that the entry guard would have rejected.
+        // The fallthrough now re-tests those conjuncts: a guard belongs on every dispatch
+        // of a form, not only the first. All four paths report F0040 together.
+        //
+        // This is a STRICTNESS change — the parser now rejects what it accepted — so it
+        // ships under `intended-strictness-change`, not as a silent correction.
+        //
+        // Its siblings never diverged, which is why this was one bug and not a class:
+        // `[` and `(` reach the same fallthrough but land in a fresh step on every path,
+        // and `.` is legal cross-line by design (above).
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}") &&
+            agree_all("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}") &&
+            // The exact diagnostic, not merely agreement — an equal-and-nonzero
+            // signature is not evidence of the RIGHT rejection.
+            hand_oracle("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}").contains("F0040")
+    }
+    then "the SAME-LINE `!` compounds still fold — the guard did not over-reject" {
+        // The control for the strictness change above: `x!?` on ONE line must stay
+        // clean on every path. A re-guard that also killed this would be a regression,
+        // and nothing else in this spec would have caught it.
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") &&
+            hand_oracle("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") == ""
+    }
 }
 
 fn agree_pos(source: string) -> bool {
@@ -1704,6 +1849,124 @@ spec "t-myz7: `primary_base`'s residue — the feature-form seam and the F0040 p
         tree_agrees_everywhere("fn f() -> int { 1 }") &&
             agree_all("fn f() -> int { 1 }") &&
             hand_oracle("fn f() -> int { 1 }") == ""
+    }
+}
+
+// ── the `table { … }` literal — the corpus, landed BEFORE the routing (t-myz7) ──
+//
+// The LAST valid input in the compiler that reaches a production `@hand` leaf. With
+// `grammar { … }` native (#1159), refusing BOTH leaves attributes 17 refusals to exactly
+// one file — `test_runner/mod.av` — and all of them are its two `table<…> { … }`
+// literals. Nothing else in 249 non-test sources needs either leaf.
+//
+// Corpus-first, per the routing discipline: these pass TODAY because the hand owns them.
+// The demonstration that counts comes at the flip — each must go RED if `table_lit` is
+// routed without reproducing what `parse_table_literal` provides.
+//
+// ONE CASE PER ABORT PATH of parse_table_literal (parse/mod.av:1284), because the three
+// SEMANTIC aborts are the part a native rule is most likely to get subtly wrong — they
+// are checks over collected lists, not parse structure:
+//
+//   header runs to EOF                  the `{`-unterminated path
+//   row narrower than the header        "table row has N cell(s) but the header declares M"
+//   row wider than the header           the same message, other direction
+//   duplicate column name               "duplicate table column `a`"
+//   typed `table<Row> { … }`            the `<` WORD `>` `{` entry, valid
+//   nested table in a cell              exercises cell_mode SAVE/RESTORE
+//
+// WHY `msgs_agree_bad` AND NOT `agree_bad` HERE. Measured before writing the spec: all
+// three malformed shapes produce the IDENTICAL F-code signature `F0001 F0013` — the
+// semantic message rides on F0001 and the recovery cascade adds F0013 every time. So a
+// code-level oracle cannot distinguish "reported the duplicate-column error" from
+// "reported the wrong one of the three" from "reported a generic alternation failure".
+// Only the message discriminates, which is why this block asserts on messages and the
+// helper exists at all.
+spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" {
+    then "a header that runs to EOF reports identically on all three paths" {
+        // EOF while the HEADER IS STILL OPEN. The earlier form of this fixture ended
+        // `…table { a\n 0\n}` — that lone `}` CLOSES THE TABLE and leaves the `fn` body
+        // unclosed, so it measured fn-body EOF recovery and never reached
+        // `parse_table_literal`'s unterminated exit at all. Measured, the difference is
+        // the whole point of the case:
+        //
+        //   …table { a\n 0\n}   error[F0001]: expected `}` after function body
+        //   …table { a          error[F0001]: expected `}` to close table   ← this path
+        //                       error[F0001]: expected `}` after function body
+        //
+        // Both agree on all three paths, which is exactly why the wrong one stayed green.
+        let src = "fn t() -> int {\n let x = table { a"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src)
+    }
+
+    then "a row NARROWER than the header names both widths" {
+        let src = "fn t() -> int {\n let x = table { a | b\n  1\n }\n 0\n}"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src) &&
+            // The exact message, not merely "some equal set" — this is the assertion the
+            // F-code signature cannot make.
+            errmsgs(mode_env("hand"), src).contains("table row has 1 cell(s) but the header declares 2 column(s)")
+    }
+
+    then "a row WIDER than the header names both widths" {
+        let src = "fn t() -> int {\n let x = table { a\n  1 | 2\n }\n 0\n}"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src) &&
+            errmsgs(mode_env("hand"), src).contains("table row has 2 cell(s) but the header declares 1 column(s)")
+    }
+
+    then "a duplicate column name is rejected, naming the column" {
+        let src = "fn t() -> int {\n let x = table { a | a\n  1 | 2\n }\n 0\n}"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src) &&
+            errmsgs(mode_env("hand"), src).contains("duplicate table column `a`")
+    }
+
+    // The two VALID shapes. They belong in this corpus because the flip's risk is not
+    // only "fails to report" — it is equally "reports where the hand accepts", and a
+    // rule gated on the wrong entry test would reject exactly these.
+    then "a TYPED `table<Row> { … }` parses clean on all three paths" {
+        let src = "fn t() -> int {\n let x = table<Row> { a\n  1\n }\n 0\n}"
+        tree_agrees_everywhere(src) &&
+            agree_all(src) &&
+            hand_oracle(src) == ""
+    }
+
+    // cell_mode is SAVED and RESTORED around the row loop precisely so a table inside a
+    // cell leaves the outer table's mode intact. Nothing asserted it before.
+    //
+    // BOTH tables carry a row type deliberately. The first draft used bare `table { … }`
+    // and failed the diagnostic-free bar — measured, the cause is TYPECK, not parsing:
+    // an untyped table with columns is `F1042 table literal has no row type`, once per
+    // table. The fixture parsed perfectly. Ascribing the row types keeps the assertion
+    // at the strict `== ""` bar instead of weakening it to `!sig_has_parse_code`, so a
+    // future parse-phase regression here cannot hide behind a tolerated diagnostic.
+    then "a row's LAST cell does not swallow the next row's leading sign" {
+        // `@on(cell_mode)` is a PER-ITEM marker, so the repeated cell needs its own —
+        // the hand sets `self.cell_mode = true` around the WHOLE row loop. With it on
+        // only the first cell, cells 2..N parse with cell_mode OFF, and
+        // `parse_binary_pratt_g_id` refuses a cross-line `+`/`-` ONLY while cell_mode is
+        // set, so `2` at the end of a row could take the next row's `-3` as a binary
+        // operand and silently merge two rows into one.
+        //
+        // HONEST NOTE: this case passes both before and after that fix — I could not
+        // construct an input where the missing marker actually diverged. It is pinned
+        // because the hand's contract is unambiguous (cell_mode covers every cell) and a
+        // future pratt/line-guard change could make the gap observable; it is NOT a
+        // fail-before/pass-after witness, and should not be read as one.
+        let src = "type R2 = { a: int, b: int }\nfn t() -> int {\n let x = table<R2> { a | b\n  1 | 2\n  -3 | 4\n }\n 0\n}"
+        agree_all(src) && hand_oracle(src) == ""
+    }
+
+    then "a table NESTED in a cell leaves the outer table's cell_mode intact" {
+        let src = "fn t() -> int {\n let x = table<Row> { a | b\n  1 | table<Inner> { c\n   2\n  }\n }\n 0\n}"
+        tree_agrees_everywhere(src) &&
+            agree_all(src) &&
+            hand_oracle(src) == ""
     }
 }
 

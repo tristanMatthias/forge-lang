@@ -442,29 +442,41 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     //   * deleting ONE leaf   — by-name zero is the right evidence, and it is green
     //   * deleting BOTH       — needs the feature-form seam built first
     //
-    // HALF THE SEAM IS NOW CLOSED (t-myz7). `grammar { … }` is native — the
-    // `grammar_expr` rule, `@rawbrace`'s canonical consumer — so it no longer needs
-    // EITHER leaf and its `refuse=*` row is 0. This spec red-lit the moment that
-    // landed, which is the evidence it was never vacuous: it pinned a dependency, the
-    // dependency was removed, and the assertion inverted rather than quietly staying
-    // green. `table { … }` still needs the seam (its parser is line-sensitive, not a
-    // raw-brace capture), so it keeps the `refuse=*` assertion and is now the ONLY
-    // valid input in the whole compiler that reaches a production leaf.
-    then "the feature-form literals need a leaf, but not a PARTICULAR leaf" {
+    // THE SEAM IS NOW FULLY CLOSED (t-myz7). Both feature forms are native:
+    // `grammar { … }` via `grammar_expr` (`@rawbrace`'s canonical consumer), and
+    // `table { … }` via `table_lit` / `table_head` / `table_row` — a real rule rather
+    // than a capture, because `parse_table_literal` is line-sensitive.
+    //
+    // This spec red-lit TWICE, once per form, each time the routing landed — which is
+    // the evidence it was never vacuous. It pinned a dependency, the dependency was
+    // removed, and the assertion inverted rather than quietly staying green. The
+    // `table` half is the second of those inversions.
+    //
+    // CONSEQUENCE, and the reason this matters beyond the two forms: NO valid input in
+    // the tree reaches a production leaf any more. The whole compiler compiles under
+    // `AVRA_REFUSE_HAND_LEAF='*'` (exit 0), and test_runner/mod.av — the last holdout,
+    // 17 refusals, every one a `table<…> { … }` literal — is at 0. Both leaves now
+    // survive ONLY as the error-recovery tail, which is what t-47hc.5 has left to do.
+    then "the feature-form literals need NEITHER leaf — the seam is closed" {
         // Neither leaf alone is required...
         native_without_delegate("feat_grammar_dh",
             "fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
         native_without_delegate("feat_table_dh",
             "fn t() -> int {\n let x = table { }\n 0\n}") &&
-        // `grammar { … }` needs NEITHER now — native, so even `*` leaves it untouched.
+        // ...and now NEITHER form needs either leaf, so even `*` leaves both untouched.
         !refused_here("*", "feat_grammar_all",
             "fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
-        // ...but the table literal still needs one of them — the anti-vacuity half of
-        // this assertion, and the fact the by-name sweep hides.
-        refused_here("*", "feat_table_all",
+        !refused_here("*", "feat_table_all",
             "fn t() -> int {\n let x = table { }\n 0\n}") &&
         // ...and a plain fn needs neither, which pins the discriminator to the feature
         // form rather than to "any program reaches a leaf under `*`".
+        //
+        // ANTI-VACUITY: every assertion in this `then` is now NEGATIVE, so on its own it
+        // would also pass if `refused_here` had simply stopped detecting refusals. The
+        // POSITIVE evidence lives one spec up — "the probe DISCRIMINATES — a malformed
+        // declaration still needs the delegate" — which asserts a refusal that must FIRE.
+        // Both leaves remain reachable for error recovery, so that probe stays live and
+        // keeps this one honest. If it is ever deleted, these negatives go vacuous.
         !refused_here("*", "feat_control_all", "fn f() -> int { 1 }")
     }
 }

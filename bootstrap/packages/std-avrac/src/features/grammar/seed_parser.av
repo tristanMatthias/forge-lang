@@ -368,7 +368,14 @@ fn parse_seq(p: GP) -> GSeq {
     if ff_pred_after {
         p.fail("`@when`/`@peek` must be a leading branch gate (before any consuming item)")
     }
-    if ff_consuming == 0 {
+    // EXEMPT `@fallback` (t-47hc.5). The rule below is about FIRST-set dispatch: a
+    // predicate-only branch contributes no FIRST token, so a DISPATCHED branch built
+    // only from `@when`/`@peek` could never be selected. A `@fallback` branch is not
+    // dispatched by FIRST at all — it is the UNCONDITIONAL tail, run precisely when no
+    // earlier branch matched — so "never matches" is false for it, and a zero-width
+    // tail is the only way an all-native alternation can own the "this token starts
+    // nothing" position that `@hand(primary_base)` used to hold.
+    if ff_consuming == 0 && !fallback {
         p.fail("`@when`/`@peek` must gate a branch that consumes input (a predicate-only branch never matches)")
     }
     mut build = GBuild.None
@@ -542,7 +549,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `body` followed by `:` (t-47hc slice A). `kw_let`: the current token is the
     // `let` keyword — comp_field's declared-dispatch gate over `declaration`'s
     // routed let_decl. See executor.lookahead_ok for both.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_lbrace_feature" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "comma_not_rbracket" || cond == "comma_not_rbrace" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let" || cond == "cfg_pair_value" || cond == "cfg_pair_eq" || cond == "comp_inst_shape" || cond == "comp_nested_named" || cond == "comp_nested_bare" || cond == "comp_nested_raw_named" || cond == "comp_nested_raw_bare" || cond == "comp_method" || cond == "bare_comp_inst" || cond == "bare_comp_inst_raw"
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_lbrace_feature" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "comma_not_rbracket" || cond == "comma_not_rbrace" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let" || cond == "cfg_pair_value" || cond == "cfg_pair_eq" || cond == "comp_inst_shape" || cond == "comp_nested_named" || cond == "comp_nested_bare" || cond == "comp_nested_raw_named" || cond == "comp_nested_raw_bare" || cond == "comp_method" || cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" || cond == "always"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -1553,7 +1560,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, tilde_ident_lbrace, ident_lbrace_plain, ident_lbrace_feature, ident_template, ident_plain, qdot_plain_field, qdot_method_call, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen, comma_not_rbracket, comma_not_rbrace, quote_arm, quote_type, body_marker, kw_let, cfg_pair_value, cfg_pair_eq, comp_inst_shape, comp_nested_named, comp_nested_bare, comp_nested_raw_named, comp_nested_raw_bare, comp_method, bare_comp_inst, bare_comp_inst_raw)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, tilde_ident_lbrace, ident_lbrace_plain, ident_lbrace_feature, ident_template, ident_plain, qdot_plain_field, qdot_method_call, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen, comma_not_rbracket, comma_not_rbrace, quote_arm, quote_type, body_marker, kw_let, cfg_pair_value, cfg_pair_eq, comp_inst_shape, comp_nested_named, comp_nested_bare, comp_nested_raw_named, comp_nested_raw_bare, comp_method, bare_comp_inst, bare_comp_inst_raw, always)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")

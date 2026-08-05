@@ -132,10 +132,10 @@ fn avra_expr_core() -> Grammar {
              | base:paren_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | base:template_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_lbrace_feature) base:grammar_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @try @peek(ident_lbrace_feature) base:table_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
   // t-myz7 — the `grammar { … }` feature block, native. This is `@rawbrace`'s canonical
   // consumer (ast.av:322 gives this exact rule as the marker's example): the body is NOT
   // Avra syntax, so it is captured verbatim and handed to the runtime engine as a string.
@@ -152,6 +152,37 @@ fn avra_expr_core() -> Grammar {
   // it with the leading `"grammar"` literal is what keeps the sibling feature form
   // (`table { … }`, which the same cond also admits) out of this branch.
   grammar_expr = "grammar" "{" body:@rawbrace(grammar) "}" -> MkGrammarBlock(body)
+  // t-myz7 — the `table [<Row>] { … }` literal, the LAST valid input in the compiler
+  // that reached a production `@hand` leaf. Unlike `grammar { … }` this is not a raw
+  // capture: the hand's `parse_table_literal` (parse/mod.av:1284) parses a header row
+  // then data rows, and is LINE-SENSITIVE, so it needs a real rule.
+  //
+  // Split into three rules because the ROW build needs the header's column names, and a
+  // build only fires when its rule completes: `table_head` finishes (and pushes the
+  // TableCtx) before the first row is parsed.
+  //
+  // `^` is the line bound. `sameline_ok` compares the previous token's line to the
+  // current one, which is the executor mirror of the hand's `current_line == row_line`;
+  // a `^`-gated item inside `( … )*` fails on the next line's first token and so ENDS
+  // the repetition there. The FIRST header ident is deliberately NOT `^`-gated: the hand
+  // sets `header_line` from the token AFTER `{`, so a header on the line below the brace
+  // is legal. The `|` separators are ungated for the same reason — the hand consumes a
+  // pipe unconditionally, checking the line only before each IDENT.
+  //
+  // `bitxor` IS the hand's `parse_binary_pratt(12)`: emit lowers the ladder with
+  // `lbp = 10 + 2*index` and `bitor = 10`, so entering at bitxor stops before `|` and
+  // the column separator is never eaten as a bitwise-or operand.
+  table_lit  = "table" table_head ( rows:table_row )* "}"
+               @expect("}", "expected `}` to close table") -> MkTableLit(rows)
+  table_head = ( "<" rt:IDENT ">" )? "{" ( h:IDENT ( "|" )? ( ^h:IDENT ( "|" )? )* )?
+               @expect(">", "expected `>` after table row type")
+               @expect("{", "expected `{` to open table") -> MkTableHeader(rt, h)
+  // `@on(cell_mode)` is a PER-ITEM marker, so it must be repeated on the loop's cell:
+  // the hand sets `self.cell_mode = true` around the WHOLE row loop, and without this
+  // cells 2..N parse with cell_mode OFF. `parse_binary_pratt_g_id` only refuses a
+  // cross-line `+`/`-` while cell_mode is set, so the last cell of a multi-column row
+  // could otherwise take the NEXT row's leading sign as a binary operand.
+  table_row  = @on(cell_mode) v:bitxor ( ^"|" ^@on(cell_mode) v:bitxor )* -> MkTableRow(v)
   struct_lit_expr = n:IDENT "{" ( f:field_init )* "}" -> MkStructLit(n, f)
   tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
   qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" s:IDENT )+
