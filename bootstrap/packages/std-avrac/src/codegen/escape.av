@@ -714,9 +714,31 @@ fn collect_bound_names(store: NodeStore, ids: List<StmtId>, set: List<string>) -
     mut out = set
     for id in ids {
         match stmt_unwrap(store, store.stmts.get(id)) {
-            .Let(n, _, _) -> { out = releasable_add(out, n) }
-            .Mut(n, _, _) -> { out = releasable_add(out, n) }
-            .Const(n, _, _) -> { out = releasable_add(out, n) }
+            .Let(n, _, init) -> {
+                out = releasable_add(out, n)
+                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+            }
+            .Mut(n, _, init) -> {
+                out = releasable_add(out, n)
+                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+            }
+            .Const(n, _, init) -> {
+                out = releasable_add(out, n)
+                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+            }
+            // `let (a, b) = ...` binds EVERY name in the pattern.
+            .LetDestructure(names, init) -> {
+                for pe in names { out = releasable_add(out, pe.name) }
+                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+            }
+            // Match arms are expressions and can bind/shadow inside.
+            .Match(_, arms) -> {
+                for arm in arms {
+                    out = collect_bound_in_expr(store, store.exprs.get(arm.body_id), out)
+                }
+            }
+            .Expr(e) -> { out = collect_bound_in_expr(store, store.exprs.get(e), out) }
+            .Return(e) -> { out = collect_bound_in_expr(store, store.exprs.get(e), out) }
             .Function(_, _, params, _, fbody) -> {
                 for p in params { out = releasable_add(out, p.name) }
                 out = collect_bound_names(store, fbody, out)
@@ -738,6 +760,30 @@ fn collect_bound_names(store: NodeStore, ids: List<StmtId>, set: List<string>) -
             }
             _ -> {}
         }
+    }
+    out
+}
+
+/// Names bound inside an EXPRESSION — lambda parameters, and locals
+/// declared in value-position blocks / if-expressions / match arms. A
+/// shadowing binder anywhere must drop the function name, because at a
+/// call site `mk()` may resolve to the local rather than the function.
+fn collect_bound_in_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
+    mut out = set
+    match expr {
+        .Lambda(params, body) -> {
+            for p in params { out = releasable_add(out, p.name) }
+            out = collect_bound_in_expr(store, store.exprs.get(body), out)
+        }
+        .Block(stmts) -> { out = collect_bound_names(store, stmts, out) }
+        .IfExpr(_, a, b) -> {
+            out = collect_bound_in_expr(store, store.exprs.get(a), out)
+            out = collect_bound_in_expr(store, store.exprs.get(b), out)
+        }
+        .MatchExpr(_, arms) -> {
+            for arm in arms { out = collect_bound_in_expr(store, store.exprs.get(arm.body_id), out) }
+        }
+        _ -> {}
     }
     out
 }
@@ -805,10 +851,46 @@ fn collect_return_exprs(store: NodeStore, ids: List<StmtId>) -> List<ExprId> {
             .While(_, wb) -> { for e in collect_return_exprs(store, [wb]) { out = list_push_copy(out, e) } }
             .For(_, _, _, fb) -> { for e in collect_return_exprs(store, [fb]) { out = list_push_copy(out, e) } }
             .ForIn(_, _, fib) -> { for e in collect_return_exprs(store, [fib]) { out = list_push_copy(out, e) } }
+            // A `return` inside a match ARM is a return path too. Without
+            // this the arm was never examined, so `fn f(a) { match c {
+            // true -> { return a } ... } }` was judged fresh — an
+            // over-release. Arm bodies are expressions, so a `return`
+            // inside one appears as a Block statement within it.
+            .Match(_, arms) -> {
+                for arm in arms {
+                    for e in collect_return_exprs_in_expr(store, store.exprs.get(arm.body_id)) {
+                        out = list_push_copy(out, e)
+                    }
+                }
+            }
             // A nested function's returns belong to IT, not to us.
             .Function(_, _, _, _, _) -> {}
             _ -> {}
         }
+    }
+    out
+}
+
+/// `return` expressions reachable from inside an EXPRESSION — match arm
+/// bodies and value-position blocks hold statements, and a `return` in
+/// one belongs to the enclosing function.
+fn collect_return_exprs_in_expr(store: NodeStore, expr: Expr) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    match expr {
+        .Block(stmts) -> { for e in collect_return_exprs(store, stmts) { out = list_push_copy(out, e) } }
+        .IfExpr(_, a, b) -> {
+            for e in collect_return_exprs_in_expr(store, store.exprs.get(a)) { out = list_push_copy(out, e) }
+            for e in collect_return_exprs_in_expr(store, store.exprs.get(b)) { out = list_push_copy(out, e) }
+        }
+        .MatchExpr(_, arms) -> {
+            for arm in arms {
+                for e in collect_return_exprs_in_expr(store, store.exprs.get(arm.body_id)) {
+                    out = list_push_copy(out, e)
+                }
+            }
+        }
+        // A lambda's returns belong to the LAMBDA, not to us.
+        _ -> {}
     }
     out
 }
