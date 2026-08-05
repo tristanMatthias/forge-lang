@@ -275,7 +275,10 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
     mut body_cg = ctx.with_fn(fn_val, name)
     body_cg.current_fn_params = param_names_of(params)
     body_cg.cov_fn_entry()
-    body_cg.rc_releasable = analyze_releasable(ctx.nodes, body_ids, ctx.rc_fresh_fns)
+    // A non-void fn's TAIL expression is its result, so a call there escapes
+    // its arguments exactly as `return f(x.g)` does. A void fn discards it.
+    let tail_yields = match ctx.fn_ret(name) { .Void -> false, _ -> true }
+    body_cg.rc_releasable = analyze_releasable(ctx.nodes, body_ids, ctx.rc_fresh_fns, tail_yields)
 
     // Structured concurrency (spec Axis 18.7): if the function body
     // contains spawn expressions, create a task group so all spawned

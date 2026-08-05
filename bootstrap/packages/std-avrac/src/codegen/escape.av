@@ -41,10 +41,16 @@ fn releasable_remove(set: List<string>, name: string) -> List<string> {
 /// order, so the algorithm walks the list once — a `let` adds the
 /// name; later uses only ever remove. Forward references therefore
 /// work without a second pass.
-export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr) -> List<string> {
+/// `tail_yields` says whether the body's TAIL EXPRESSION is the frame's
+/// result — i.e. whether this fn declares a non-void return. It cannot be
+/// read off the statements: `println(x.f)` and `pass_db_new(…, p.store, …)`
+/// are the same `.Expr` shape as the last statement, and only the declared
+/// return type says whether the value escapes or is discarded. Callers with
+/// no enclosing fn (program-level statements) pass false.
+export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr, tail_yields: bool) -> List<string> {
     let empty: List<string> = []
     let swept = single_pass_escape_ids(store, body, empty, fresh)
-    remove_returned_field_roots(store, body, swept)
+    remove_returned_field_roots(store, body, swept, tail_yields)
 }
 
 /// Apply the "not returned" half of the rule above to FIELD READS.
@@ -68,20 +74,24 @@ export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr) -
 /// as a post-filter rather than a flag threaded through
 /// `single_pass_stmt`'s 40 arms — both passes only ever REMOVE, so the
 /// order between them cannot matter.
-fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<string>) -> List<string> {
+fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<string>, tail_yields: bool) -> List<string> {
     mut cur = set
     // A `return f(x.g)` yields the CALL'S RESULT, so its arguments escape.
-    // A TAIL statement does not necessarily: `collect_tail_exprs` returns the
-    // last STATEMENT, whose value is often discarded — `println(string(p2.y))`
-    // ending a void fn is not an escape of `p2`, and treating it as one leaks
-    // every such local (caught by difftest_corpus/collections.av). Distinguishing
-    // the two needs the fn's declared return type, which this analysis does not
-    // yet receive; until it does, only explicit returns descend into calls.
+    // A TAIL statement escapes only when its value is the frame's result:
+    // `collect_tail_exprs` returns the last STATEMENT either way, and
+    // `println(string(p2.y))` ending a VOID fn discards it — treating that as
+    // an escape leaks every such local (difftest_corpus/collections.av). The
+    // declared return type is the only thing that separates the two, so it is
+    // threaded in as `tail_yields` rather than guessed from the shape.
     for e in collect_return_exprs(store, body) {
         cur = remove_field_root_calls(store, store.exprs.get(e), cur)
     }
     for e in collect_tail_exprs(store, body) {
-        cur = remove_field_root(store, store.exprs.get(e), cur)
+        if tail_yields {
+            cur = remove_field_root_calls(store, store.exprs.get(e), cur)
+        } else {
+            cur = remove_field_root(store, store.exprs.get(e), cur)
+        }
     }
     cur
 }
@@ -231,7 +241,11 @@ fn collect_tail_exprs(store: NodeStore, ids: List<StmtId>) -> List<ExprId> {
 /// inner `List<StmtId>`.
 export fn analyze_releasable_expr(store: NodeStore, body: Expr, fresh: ptr) -> List<string> {
     match body {
-        .Block(stmts) -> analyze_releasable(store, stmts, fresh)
+        // A lambda's block TAIL is its value — `(x) -> { … }` yields the last
+        // expression — so tails escape here. True is also the safe direction
+        // if a particular lambda is used for effect only: over-removing costs
+        // a leak, under-removing is a use-after-free.
+        .Block(stmts) -> analyze_releasable(store, stmts, fresh, true)
         _ -> {
             let empty: List<string> = []
             empty
