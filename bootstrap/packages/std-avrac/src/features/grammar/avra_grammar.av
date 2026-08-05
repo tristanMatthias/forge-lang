@@ -878,7 +878,30 @@ fn avra_stmt_common_grammar() -> Grammar {
   defer_stmt    = "defer" e:expression -> MkDefer(e)
   errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
   return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
-  iflet_stmt    = ile:expression -> ExprStmt(ile)
+  // STATEMENT-position `if let` — the hand's `parse_if_let_statement`, not its
+  // expression twin. Routing this to `expression` (which reaches `if_expr`) parsed the
+  // form correctly but lowered it to the WRONG SHAPE: an `ExprStmt(Block-expr)` holding
+  // an `if-expr`, where the hand builds a `Stmt.Block` holding a `Stmt.If`. Both run,
+  // which is why every diagnostic oracle in error_recovery_differential_test stayed
+  // green — a VALID program has no diagnostics to compare, so only the TREE sees it.
+  // The two shapes are not interchangeable: with no `else`, the expression form has to
+  // SYNTHESISE an empty else block (an if-expr needs a value) while the hand leaves
+  // `else_opt` absent, so `if let v = x { … }` grew an else arm the source never wrote.
+  //
+  // `build_if_let_stmt` (core/arena.av) is the shared core the hand already calls —
+  // its header says the native rule lowers to exactly these rows — so the desugar
+  // lives in ONE place for both engines, the same discipline `MkIfLet` follows for
+  // the expression form.
+  //
+  // Shape mirrors the `if_expr` if-let branch with STATEMENT bodies (`block` /
+  // `statement`, as `if_stmt` uses). The three `@require`s stay the hand's three
+  // `return .Err` points, and `tmp:@gensym(iflet)` keeps its position between `"if"`
+  // and `"let"` so a nested `if let` still numbers after its parent.
+  iflet_stmt    = "if" tmp:@gensym(iflet) "let" @require b:IDENT @require "="
+                 @off(allow_struct_lit) s:expression @require t:block ( "else" e:statement )?
+                 @expect("IDENT", "expected a binding name after `if let`")
+                 @expect("=", "expected `=` after the `if let` binding")
+                 @expect("{", "expected `{` after the `if let` binding") -> MkIfLetStmt(tmp, b, s, t, e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     grammar_checked(gp)
