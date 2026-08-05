@@ -48,7 +48,8 @@ export fn avra_modules_grammar() -> Grammar {
   use_decl    = "use" ut:use_tail -> ut
   use_tail    = "@" upkg:IDENT "." useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUsePkg(upkg, useg, unames)
               | useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUseBare(useg, unames)
-  mod_decl    = "mod" mdname:IDENT -> MkModule(mdname)
+  mod_decl    = @try "mod" @cut @require mdname:IDENT
+                @expect("IDENT", "expected module name after `mod`") -> MkModule(mdname)
     }
     grammar_checked(gp)
 }

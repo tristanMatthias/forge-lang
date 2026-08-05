@@ -360,7 +360,24 @@ fn rule_has_postfix_step_build_e(g: Grammar, r: Rule) -> bool {
 fn emit_rule_body(g: Grammar, node: GNode) -> string {
     match node {
         .Alt(branches) -> {
-            if branches.length == 1 {
+            // A LONE `@try` branch must still go through emit_dispatch (t-myz7).
+            // emit_single_branch lowers the body straight into the rule fn with no
+            // surrounding dispatch loop — so a speculative lone branch emitted the
+            // caller's bookkeeping (`s_diags` / `s_err` / `s_cut`, plus `break`) with
+            // nothing declaring it, and the generated parser failed to compile
+            // (`undefined variable s_diags`). Silent until now only because no rule
+            // had the shape: `@try` was written on alternatives, never on a rule's
+            // only branch. It is the shape a fragment rule needs to own its own
+            // recovery — `mod_decl = @try "mod" @cut @require …` referenced BARE, so
+            // the `@try` and its `@cut` share a branch (the `@cut` commit flag is
+            // per-rule-invocation and cannot reach a caller's `@try`).
+            //
+            // Dispatch is already correct for it: one speculative branch with no tail
+            // tracks `tried_spec` and returns CapVal.Nil on no-match, i.e. the rule
+            // rolls back and the CALLER's alternation moves on — exactly `@try`'s
+            // contract. Dormant for every existing grammar (no lone-`@try` rule
+            // exists, since one could not have compiled), hence byte-identical.
+            if branches.length == 1 && !branches[0].speculative {
                 emit_single_branch(g, branches[0])
             } else {
                 emit_dispatch(g, branches)

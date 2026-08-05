@@ -479,4 +479,33 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // keeps this one honest. If it is ever deleted, these negatives go vacuous.
         !refused_here("*", "feat_control_all", "fn f() -> int { 1 }")
     }
+
+    // t-myz7 — the FIRST MALFORMED form to stop needing the leaf.
+    //
+    // Valid input already needs neither leaf (the spec above). RECOVERY is the part
+    // still outstanding: every routed decl keyword delegates its aborts to
+    // `@hand(decl_hand)`, because a native rule that reports rolls back under `@try`
+    // and the hand re-parses. `mod_decl` is the first to OWN its abort, via
+    // `@try … @cut @require` inside the fragment rule — referenced BARE from
+    // `declaration` so the `@try` and its `@cut` share a branch. They have to: a
+    // `@cut`'s commit flag is per-RULE-INVOCATION (executor.av CapEnv) and cannot
+    // reach a caller's `@try`, so a cut written in a rule invoked as `@try mod_decl`
+    // is rejected outright.
+    //
+    // That shape required the emit fix landing in this same change: a LONE `@try`
+    // branch was lowered by emit_single_branch, straight into the rule fn with no
+    // dispatch loop, so it emitted the caller's bookkeeping (`s_diags` / `s_err` /
+    // `s_cut`, plus a `break`) with nothing declaring it — the generated parser did
+    // not compile. Silent until now only because no rule had the shape.
+    then "malformed `mod` owns its recovery — the first form off the leaf" {
+        // All three of the hand's abort paths for `mod` are native now.
+        !refused_here("decl_hand", "mod_bare", "mod\nfn f() -> int { 1 }") &&
+        !refused_here("decl_hand", "mod_num", "mod 5\nfn f() -> int { 1 }") &&
+        !refused_here("decl_hand", "mod_brace", "mod {\nfn f() -> int { 1 }") &&
+        // ANTI-VACUITY: three negatives would also pass if `refused_here` simply
+        // stopped detecting refusals. A SIBLING keyword's malformed form must still
+        // refuse — `use` is next in line and has not been converted, so this fires
+        // today and will need re-pointing (not deleting) when it is.
+        refused_here("decl_hand", "use_still_needs_leaf", "use @std.{}\nfn f() -> int { 1 }")
+    }
 }
