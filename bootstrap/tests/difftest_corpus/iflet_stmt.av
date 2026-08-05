@@ -1,0 +1,48 @@
+// WHY: diff-test corpus — STATEMENT-position `if let`, which nothing else here
+// reaches. The selfhost pass cannot cover it: the compiler's own source mentions
+// `if let` only in COMMENTS, so before this file both diff-test legs were blind to
+// the form and a PASS said nothing about it (checked by grep, not assumed — the
+// same vacuity the recovery oracles police, arriving via a different door).
+//
+// The form has two lowerings that both run: an `ExprStmt` holding a block-EXPRESSION
+// holding an `if-expr`, versus the hand's `Stmt.Block` holding a `Stmt.If`. Statement
+// position discards the value, so the expression lowering allocates an `%ife_result`
+// slot and stores/loads through it for nothing — and with no `else` it must invent an
+// empty else arm to have a value at all. Only the tree and the IR can see either fact.
+//
+// `no_else` is the sharpest case and the reason it is first: that is where the
+// synthesized else arm appears. `nested` puts an EXPRESSION-position if-let (a `let`
+// initializer) around a STATEMENT-position one, so a single function pins that each
+// picks its lowering independently — and pins the `@gensym(iflet)` mint ORDER, since
+// the outer must number before the inner. No @std, no spec/given/then.
+fn no_else(x: int?) -> int {
+    mut t = 0
+    if let v = x { t = v }
+    t
+}
+
+fn with_else(x: int?) -> int {
+    mut t = 0
+    if let v = x { t = v } else { t = 0 - 1 }
+    t
+}
+
+fn early_return(x: int?) -> int {
+    if let v = x { return v } else { return 0 }
+}
+
+fn nested(a: int?, b: int?) -> int {
+    let r = if let p = a { if let q = b { q } else { p } } else { 0 }
+    r
+}
+
+fn main() {
+    println(string(no_else(7)))
+    println(string(no_else(none)))
+    println(string(with_else(3)))
+    println(string(with_else(none)))
+    println(string(early_return(5)))
+    println(string(nested(1, 2)))
+    println(string(nested(1, none)))
+    println(string(nested(none, 2)))
+}

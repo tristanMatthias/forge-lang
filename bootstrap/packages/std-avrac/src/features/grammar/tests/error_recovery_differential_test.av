@@ -1532,6 +1532,50 @@ fn tree_agrees_everywhere(source: string) -> bool {
     e == h && x == h
 }
 
+// ── t-47hc.26: STATEMENT-position `if let`, which every other oracle is blind to ──
+//
+// These are VALID programs, and that is exactly why the divergence survived: the whole
+// `agree_*` family compares DIAGNOSTICS, a valid program has none, so all four of these
+// passed VACUOUSLY here for as long as the corpus has held them. `agree_all` on the
+// nested case (the spec at the top of this file) was green throughout. Only the TREE
+// distinguishes the two lowerings, and nothing rendered these trees.
+//
+// What it was hiding: `iflet_stmt` routed statement-position `if let` to `expression`,
+// so it lowered through `build_if_let_EXPR` — an `ExprStmt` holding a block-EXPRESSION
+// holding an `if-expr` — where the hand's `parse_if_let_statement` builds a `Stmt.Block`
+// holding a `Stmt.If`. Both run, which is why the compiler worked; they are not the same
+// tree. The sharpest case is the third, with no `else`: an if-EXPRESSION must have a
+// value, so the expression lowering SYNTHESISES an empty else block, and
+// `if let v = x { t = v }` acquired an else arm the source never wrote.
+//
+// Note these diverged on emit AND exec in lockstep — a NATIVE-vs-hand gap, not the
+// executor-only class of t-zrn3. Both native engines share one grammar rule, so both
+// inherited one wrong lowering, and a two-path comparison (emit vs exec) would have
+// called it agreement. The hand is the oracle precisely for this.
+//
+// Fixed by giving `iflet_stmt` its own rule lowering through the SHARED
+// `build_if_let_stmt` (core/arena.av) that the hand already calls.
+spec "t-47hc.26: statement-position `if let` lowers to the hand's STATEMENT tree" {
+    then "a statement-position `if let` is a Stmt.Block + Stmt.If, not an ExprStmt" {
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n mut t = 0\n if let v = x { t = v } else { return 0 - 1 }\n t\n}") &&
+        tree_agrees_everywhere("fn g(x: int?) -> int {\n if let v = x { return v } else { return 0 }\n}")
+    }
+    then "with NO else, the else stays ABSENT — no synthesized empty block" {
+        // The regression that motivated the shared-core routing. An if-EXPRESSION needs
+        // a value and so must invent an else; `Stmt.If` takes `none`, and the hand
+        // passes `none`. Asserting the tree is the only way to see the difference.
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n mut t = 0\n if let v = x { t = v }\n t\n}")
+    }
+    then "a nested if-let picks its position independently, and mints in hand order" {
+        // The outer is EXPRESSION position (a `let` initializer) and the inner is
+        // STATEMENT position inside the then-block, so one source line exercises both
+        // lowerings at once. Also pins the `@gensym(iflet)` order: the outer must be
+        // `$iflet$1` and the inner `$iflet$2`, which is why the mint sits between `"if"`
+        // and `"let"` in BOTH rules rather than at build time.
+        tree_agrees_everywhere("fn f(a: int?, b: int?) -> int {\n let r = if let p = a { if let q = b { q } else { p } } else { 0 }\n r\n}")
+    }
+}
+
 // ── t-47hc.33.2: the `!` compounds, asserted instead of asserted-about ──────────
 //
 // Deleting `@hand(postfix_suffix)` rested on a claim that was MEASURED and then written

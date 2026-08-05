@@ -2004,6 +2004,11 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkMatchExpr" -> "mk_match_expr(st, sp_start, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         "MkIfExpr" -> "mk_if_expr(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
         "MkIfLet" -> "mk_if_let(st, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]})"
+        // No `sp_start`: `build_if_let_stmt` uses `add_stmt_leaf` (unstamped), matching
+        // the hand's `parse_if_let_statement`. Stamping here would record a row the
+        // other two paths do not — the SrcPos divergence the While/If note above
+        // describes, which `agree_pos` would then catch.
+        "MkIfLetStmt" -> "mk_if_let_stmt(st, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]})"
         "MkWhenStmt" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(${args[0]}_list))))))"
         "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
         // Contextual enum ctor `.Variant`/`.Variant(args)` (Phase 3a-7 slice 4): `v` is
