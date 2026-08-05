@@ -1,0 +1,81 @@
+// t-0ks0: the leak instrument must itself be guarded.
+//
+// `avra_rc_live_count()` reads `rc_set`, and `rc_set_add` is reached from ONE
+// place — avra_rc_alloc's FALLBACK path (strict mode / oversized / region
+// exhausted). Ordinary small objects come from the bump region and are never
+// added, so outside AVRA_RC_STRICT=1 the counter cannot observe them leak and
+// any delta assertion written against it passes vacuously. t-c6y7 closed three
+// sub-cases that way, on "delta == 0" readings that could not have been
+// anything else.
+//
+// Two defences, and this file is the second:
+//   1. runtime.c now REFUSES to answer outside strict mode (a sentinel would
+//      not help — any constant still gives a zero delta between two reads).
+//   2. this spec pins that the counter has real SIGNAL where it is allowed to
+//      run: N deliberately stranded objects must move it by exactly N.
+//
+// Without (2), (1) only proves the counter is reachable, not that it measures
+// anything — the same mistake one layer up.
+
+extern fn avra_rc_live_count() -> int
+extern fn avra_rc_strict_enabled() -> int
+
+type Strandable = { items: List<int>, label: string }
+
+fn make_strandable() -> Strandable {
+    Strandable { items: [1, 2, 3], label: "stranded" }
+}
+
+/// Returns its allocations so the caller can hold them alive across the read —
+/// a genuine strand, not a value the scope is free to reclaim.
+fn strand(n: int) -> List<Strandable> {
+    mut kept: List<Strandable> = []
+    mut i = 0
+    while i < n {
+        kept.push(make_strandable())
+        i = i + 1
+    }
+    kept
+}
+
+spec "the leak counter has signal where it is permitted to run (t-0ks0)" {
+    given "strict mode armed, so allocations take the counted malloc path" {
+        then "N stranded objects move the live count by exactly N" {
+            if avra_rc_strict_enabled() == 0 {
+                // Not strict: `avra_rc_live_count()` would hard-error by design
+                // (see runtime.c), so there is nothing to measure here. The
+                // rc-strict CI job runs this same spec with the gate open, so
+                // the claim IS enforced on every PR — just not in this process.
+                true
+            } else {
+                // Warm first: one-off allocations on the first pass would
+                // otherwise read as strandings.
+                let warm = strand(10)
+
+                let before = avra_rc_live_count()
+                let held = strand(100)
+                let after = avra_rc_live_count()
+
+                // `held` is still live at the read, so these 100 are genuinely
+                // outstanding. Exact equality is the point: a counter that
+                // moved by "some" amount could still be missing whole
+                // allocation classes, which is the defect this guards.
+                warm.length == 10 && held.length == 100 && after - before == 100
+            }
+        }
+    }
+    // A NEGATIVE control belongs here too — a counter that only ever increased
+    // would satisfy the positive control above while being useless for
+    // detecting a leak. It is deliberately absent, because writing it surfaced
+    // a real and separate defect: under strict mode a non-stranding scope does
+    // NOT return to its starting count. 100 loop-local temporaries and 100
+    // discarded-expression temporaries each leave delta=100 — exactly one
+    // object per construction, reproducibly.
+    //
+    // That is either a genuine per-allocation leak (invisible in default mode,
+    // since the counter cannot see region objects at all) or a strict-mode
+    // accounting artifact. Either way it is not this file's claim to make, and
+    // asserting the observed delta==100 here would pin a suspected bug as
+    // correct. Tracked as t-0ks0 item 4; the negative control lands with the
+    // explanation, not before it.
+}
