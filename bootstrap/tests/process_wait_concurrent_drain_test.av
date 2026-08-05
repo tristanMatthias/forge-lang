@@ -1,0 +1,120 @@
+// t-flai — `avra_process_wait` must drain stdout and stderr CONCURRENTLY.
+//
+// The bug: the runtime read the two pipes SEQUENTIALLY —
+// `read_fd_all(stdout)` and only then `read_fd_all(stderr)`. A pipe holds
+// 64KB, so a child that writes more than that to stderr blocks in write();
+// it therefore never exits, never closes stdout, and the first read waits
+// forever for an EOF that could only follow the second read. Deadlock,
+// gated purely on output volume.
+//
+// This was not theoretical: a `bs2 test` @std prebuild hung 2h+ at static
+// RSS with the child parked in `anon_pipe_write` after 2.19MB of warnings
+// on stderr, while the parent sat in read() on stdout. `bs2 build --lib`
+// reaches it through `run_silent` (std-cli/src/ui/spinner.av) on every
+// NON-TTY run — CI, scripts, agent sessions — because the TTY branch polls
+// a progress file instead.
+//
+// WHY THE PROBE IS A SUBPROCESS: the defect is a hang, and the runtime
+// under test is linked into this very test binary. Calling
+// avra_process_wait directly here would hang the whole suite on a
+// regression instead of reporting one. So the probe is compiled and run
+// under `timeout`, which turns the hang back into an ordinary failing
+// exit code.
+//
+// @@fixture-stateful@@ — shells out to ./build/bs2 and /tmp scratch
+// (state outside the fixture-cache key); opt out of failure caching so a
+// repaired runtime re-probes instead of replaying a stale `: FAIL`.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+use @std.avrac.test_runner.{write_fixture}
+
+/// Each stream gets 40000 x 41 bytes = ~1.6MB, twenty-five times the 64KB
+/// pipe buffer. stderr is written FIRST and in full: that is the strongest
+/// form of the bug, because the child is already wedged on stderr before
+/// it writes a single byte to the stream the old code read first.
+///
+/// No quote characters anywhere — `write_fixture` routes the content
+/// through a shell, and a `'` comes out the far side as a literal `'\''`
+/// that breaks the script. The payload words are bare on purpose.
+const NOISY_SH: string =
+    "#!/bin/sh\n" +
+    "yes eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee | head -n 40000 >&2\n" +
+    "yes oooooooooooooooooooooooooooooooooooooooo | head -n 40000\n" +
+    "echo OUT_DONE\n" +
+    "echo ERR_DONE >&2\n" +
+    "exit 7\n"
+
+/// Spawn that child through the real spawn_bg/wait pair and check the
+/// captured JSON. Both sentinels are the LAST thing written to their
+/// stream, so finding them proves each pipe was drained to EOF rather
+/// than merely up to the point where the child wedged.
+///
+/// The probe reports with `+` concatenation, never `${}`: this file is
+/// itself Avra, so an interpolation written here is evaluated HERE and
+/// never reaches the probe (it fails as an undefined variable at the
+/// outer file's resolve).
+const PROBE_AV: string =
+    "extern fn avra_process_spawn_bg(cmd: string, args_json: string, opts_json: string) -> int\n" +
+    "extern fn avra_process_wait(handle: int) -> string\n" +
+    "fn main() {\n" +
+    "    let h = avra_process_spawn_bg(\"/bin/sh\", \"[\\\"/tmp/avra_flai_noisy.sh\\\"]\", \"\")\n" +
+    "    if h < 0 {\n" +
+    "        println(\"SPAWN_FAILED\")\n" +
+    "        exit(2)\n" +
+    "    }\n" +
+    "    let json = avra_process_wait(h)\n" +
+    "    let got_out = json.contains(\"OUT_DONE\")\n" +
+    "    let got_err = json.contains(\"ERR_DONE\")\n" +
+    "    let got_code = json.contains(\"\\\"code\\\":7\")\n" +
+    "    if got_out { println(\"OUT_OK\") }\n" +
+    "    if got_err { println(\"ERR_OK\") }\n" +
+    "    if got_code { println(\"CODE_OK\") }\n" +
+    "    println(\"len=\" + string(json.length))\n" +
+    "    if got_out && got_err && got_code { exit(0) } else { exit(1) }\n" +
+    "}\n"
+
+const OUT_LOG: string = "/tmp/avra_flai_probe_out.txt"
+
+/// Compile+run the probe under a wall-clock cap and return its exit code.
+/// 90s is far more than the ~seconds this needs; it exists solely so the
+/// pre-fix deadlock reports as 124 instead of never returning.
+fn run_probe() -> int {
+    write_fixture("/tmp/avra_flai_noisy.sh", NOISY_SH)
+    avra_shell_exec("chmod +x /tmp/avra_flai_noisy.sh")
+    write_fixture("/tmp/avra_flai_probe.av", PROBE_AV)
+    avra_shell_exec_status("timeout 90 ./build/bs2 run /tmp/avra_flai_probe.av > '${OUT_LOG}' 2>&1")
+}
+
+spec "t-flai: a child that floods BOTH pipes still completes" {
+    given "a child writing ~1.6MB to stderr and ~1.6MB to stdout" {
+        then "spawn_bg + wait returns, with both streams captured whole" {
+            // Pre-fix this is exit 124 (timeout killed a deadlocked
+            // parent). The probe's own exit 1 would mean it returned but
+            // lost data — a different bug, and one this still catches.
+            let rc = run_probe()
+            if rc == 0 {
+                true
+            } else {
+                // Surface the probe's own diagnosis in the failure output.
+                // An empty log means the timeout fired on a deadlock;
+                // OUT_OK/ERR_OK present but rc!=0 means truncation instead.
+                println("t-flai probe rc=${rc}: " + avra_shell_exec("tail -c 400 '${OUT_LOG}' 2>&1"))
+                false
+            }
+        }
+        then "the captured JSON really did carry both multi-MB streams" {
+            // Guards the guard: a probe that passed on empty output would
+            // prove nothing. ~3.3MB of payload, so the JSON must be large.
+            let line = avra_shell_exec("grep -o 'len=[0-9]*' '${OUT_LOG}' 2>/dev/null | head -1 | tr -d '\\n'")
+            let n = if line.length > 4 { int(line.substring(4, line.length)) } else { 0 }
+            n > 3000000
+        }
+        then "the child's real exit status survives the drain" {
+            // The drain rewrite sits directly above the waitpid, so a
+            // botched retirement could plausibly lose the status.
+            avra_shell_exec("cat '${OUT_LOG}' 2>&1").contains("CODE_OK")
+        }
+    }
+}

@@ -4364,19 +4364,51 @@ static const char* make_result_json(const char* stdout_str, const char* stderr_s
     return buf;
 }
 
-// Read all data from a file descriptor into a malloc'd string
-static char* read_fd_all(int fd) {
-    size_t cap = 4096;
-    char* buf = (char*)malloc(cap);
-    size_t total = 0;
-    while (1) {
-        ssize_t n = read(fd, buf + total, cap - total - 1);
-        if (n <= 0) break;
-        total += n;
-        if (total >= cap - 1) { cap *= 2; buf = (char*)realloc(buf, cap); }
+// Drain BOTH of a child's pipes CONCURRENTLY into malloc'd strings.
+//
+// WHY this is not two sequential `read_fd_all` calls (t-flai): a pipe holds
+// 64KB. Read stdout to EOF first and a child that fills stderr BLOCKS in
+// write() — so it never exits, never closes stdout, and the first read waits
+// for an EOF that can only arrive after the second read that it precedes.
+// A guaranteed deadlock, gated purely on output volume. Observed live: a
+// `bs2 test` @std prebuild hung 2h+ at static RSS with the child parked in
+// `anon_pipe_write` after emitting 2.19MB of warnings to stderr, while the
+// parent sat in read() on stdout.
+//
+// poll() both, drain whichever is ready, retire each on EOF. Neither stream
+// can starve the other, so the ordering dependency is gone rather than
+// merely made less likely. (`avra_process_run`'s timeout path already had
+// this shape — the bug was only ever in the paths that skipped it.)
+static void drain_two_fds(int out_fd, int err_fd, char** out_str, char** err_str) {
+    struct pollfd fds[2] = {{out_fd, POLLIN, 0}, {err_fd, POLLIN, 0}};
+    char* bufs[2] = {(char*)malloc(8192), (char*)malloc(8192)};
+    size_t caps[2] = {8192, 8192};
+    size_t lens[2] = {0, 0};
+    int open_fds = 2;
+    while (open_fds > 0) {
+        int ret = poll(fds, 2, -1);
+        if (ret < 0) {
+            if (errno == EINTR) continue;
+            break;  // unrecoverable — hand back what was captured
+        }
+        for (int i = 0; i < 2; i++) {
+            if (fds[i].fd < 0 || fds[i].revents == 0) continue;
+            // Keep a full pipe-buffer of headroom so MB-scale streams are
+            // read in big chunks, not in the shrinking tail of a full buffer.
+            if (caps[i] - lens[i] < 4096) {
+                caps[i] *= 2;
+                bufs[i] = (char*)realloc(bufs[i], caps[i]);
+            }
+            ssize_t n = read(fds[i].fd, bufs[i] + lens[i], caps[i] - lens[i] - 1);
+            if (n < 0 && (errno == EINTR || errno == EAGAIN)) continue;
+            if (n <= 0) { fds[i].fd = -1; open_fds--; continue; }
+            lens[i] += (size_t)n;
+        }
     }
-    buf[total] = '\0';
-    return buf;
+    bufs[0][lens[0]] = '\0';
+    bufs[1][lens[1]] = '\0';
+    *out_str = bufs[0];
+    *err_str = bufs[1];
 }
 
 // Parse a simple JSON string array: ["arg1","arg2"] → NULL-terminated argv
@@ -4702,9 +4734,9 @@ const char* avra_process_run(const char* cmd, const char* args_json, const char*
         return result;
     }
 
-    // No timeout: read all then wait
-    char* out_str = read_fd_all(stdout_fd);
-    char* err_str = read_fd_all(stderr_fd);
+    // No timeout: drain both concurrently, then wait
+    char *out_str, *err_str;
+    drain_two_fds(stdout_fd, stderr_fd, &out_str, &err_str);
     close(stdout_fd); close(stderr_fd);
     int status;
     waitpid(pid, &status, 0);
@@ -4750,8 +4782,8 @@ int64_t avra_process_kill(int64_t handle) {
 const char* avra_process_wait(int64_t handle) {
     ProcessEntry e;
     if (!registry_snapshot(handle, &e)) return make_result_json("", "process not found", -1);
-    char* out_str = read_fd_all(e.stdout_fd);
-    char* err_str = read_fd_all(e.stderr_fd);
+    char *out_str, *err_str;
+    drain_two_fds(e.stdout_fd, e.stderr_fd, &out_str, &err_str);
     close(e.stdout_fd);
     close(e.stderr_fd);
     int code;
@@ -4877,8 +4909,8 @@ const char* avra_process_pipe(const char* input, const char* cmd, const char* ar
     }
     close(stdin_fd);
 
-    char* out_str = read_fd_all(stdout_fd);
-    char* err_str = read_fd_all(stderr_fd);
+    char *out_str, *err_str;
+    drain_two_fds(stdout_fd, stderr_fd, &out_str, &err_str);
     close(stdout_fd); close(stderr_fd);
     int status;
     waitpid(pid, &status, 0);
