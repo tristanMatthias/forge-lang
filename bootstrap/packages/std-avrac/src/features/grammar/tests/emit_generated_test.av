@@ -181,7 +181,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
-    then "the procedural leaf `unary` owns ! - not ~ + NUMBER/STRING/BOOL/null/none/.Variant literals + the postfix chain + `with`, delegating other leaves to @hand" {
+    then "the procedural leaf `unary` owns ! - not ~ + NUMBER/STRING/BOOL/null/none/.Variant literals + the postfix chain + `with` — and NO @hand tail (t-47hc.5)" {
         // Phase 3a (Option B): the `unary` rule OWNS the `!` `-` `not` prefix ops
         // directly (unary_expr build). Phase 3a-4 gives the grammar the POSTFIX CHAIN
         // + the `with` postfix: the non-prefix branch is
@@ -226,10 +226,13 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_variant_ctor(st: PState) -> CapVal {") &&
         src.contains("let base = parse_variant_ctor(st)") &&
         src.contains("CapVal.Node(mk_enum_ctor_expr(st, sp_start, v, CapVal.Nodes(a_list)))") &&
-        // The non-prefix branch is the unguarded fallthrough tail (leading @hand
-        // primary_base owns error recovery, so NO FIRST-guard on the branch). The
-        // postfix loop's FIRST-set is Tk-dispatched with a no-progress break.
-        src.contains("let base = CapVal.Node(run_hand_expr(\"primary_base\", st))") &&
+        // t-47hc.5 — `@hand(primary_base)` is RETIRED, so the generated parser no longer
+        // calls it and there is no leading-@hand tail on this alternation at all. What
+        // owns "this token starts nothing" now is the alternation's own no-match, emitted
+        // with the hand parser's exact message AND code so all three paths agree:
+        // `parse_leaf_common` reports F0040 `expected expression`, and an uncoded arm
+        // surfaced as F0001 — the single divergence that kept the leaf alive.
+        !src.contains("run_hand_expr(\"primary_base\"") &&
         // t-47hc.33: the loop guard is the UNION of `postfix_suffix`'s branch FIRSTs, so
         // it GROWS as forms go native — the `?` form contributes its full entry guard
         // (mode + token + same-line) and `catch` its keyword, both ordered before the
@@ -296,15 +299,21 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("st.report(\"expected field name\")") &&
         src.contains("s_list.push(capval_to_expr(st, parse_with_suffix(st)))") &&
         src.contains("CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))") &&
-        // ORDERING: the literal branches MUST be emitted before the @hand(primary_base)
-        // fallback, else the guarded branches would be unreachable (the fallback tail
-        // matches anything). gen_expr_parser_regen pins the exact file, but assert the
-        // order here too so a generator-order regression fails loudly at this layer.
-        // Check the first (BOOL), and the last two guarded branches (null/none, then the
-        // .Variant enum-ctor) all precede the tail.
-        src.index_of("if (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) {") < src.index_of("run_hand_expr(\"primary_base\", st)") &&
-        src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") < src.index_of("run_hand_expr(\"primary_base\", st)") &&
-        src.index_of("let base = parse_variant_ctor(st)") < src.index_of("run_hand_expr(\"primary_base\", st)")
+        // ORDERING. This used to pin each guarded branch as preceding the
+        // `@hand(primary_base)` fallback, because that tail matched ANYTHING and would
+        // have made a later-emitted branch unreachable. t-47hc.5 retired the tail, and
+        // with it that failure mode: the catch-all is now the alternation's own no-match,
+        // appended by the very code path that CLOSES the fn, so no branch can be emitted
+        // after it — "guarded branches precede the tail" became structural rather than
+        // something a generator change could break.
+        //
+        // What CAN still regress is the order of the guarded branches among themselves,
+        // which is what the emitted FIRST-set dispatch depends on, so pin that directly:
+        // BOOL, then null/none, then the `.Variant` enum-ctor. (The tail's absence is
+        // asserted above; behavioural coverage of the no-match itself lives in
+        // error_recovery_differential_test, which compares all three paths.)
+        src.index_of("if (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) {") < src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") &&
+        src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") < src.index_of("let base = parse_variant_ctor(st)")
     }
 
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {

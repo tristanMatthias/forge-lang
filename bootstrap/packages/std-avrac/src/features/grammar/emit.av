@@ -728,7 +728,7 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             // below. The branch itself owns the diagnostic for "nothing matched", which
             // is what lets a rule whose alternatives are ALL native reproduce a hand
             // parser's own message (`index_tail`'s two closing-`]` wordings) instead of
-            // the alternation's generic "expected an expression".
+            // the alternation's generic "expected expression".
             let fb_pre = if seq_build_uses_sp_start(b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
             tail = fb_pre + emit_seq_stmts_from(g, b, "    ", 1) + "    ${emit_seq_result(g, b)}\n"
         } else if is_leading_hand(b) && i == last {
@@ -774,9 +774,9 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
         // restored) — yield Nil and let the caller decide, rather than synthesising a
         // spurious parse error. Mirrors executor.exec_node's speculative arm.
         out = out + "    if tried_spec { return CapVal.Nil }\n"
-        out = out + "    CapVal.Node(st.error_node(\"expected an expression\"))\n"
+        out = out + "    CapVal.Node(st.error_node_coded(\"F0040\", \"expected expression\"))\n"
     } else {
-        out = out + "    CapVal.Node(st.error_node(\"expected an expression\"))\n"
+        out = out + "    CapVal.Node(st.error_node_coded(\"F0040\", \"expected expression\"))\n"
     }
     out
 }

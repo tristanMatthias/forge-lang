@@ -1094,8 +1094,19 @@ impl Parser {
             // carry its own diagnostics. (The span is this parser's current position
             // rather than the exact mismatch byte; the F-code and message match the
             // hand parser, which is what the recovery oracle compares.)
+            // The CODE comes from the rule that reported (t-47hc.5), not from a single
+            // default for every grammar diagnostic. `SyntaxError` is right for the
+            // declaration keywords' own messages, but the expression alternation's
+            // no-match is the hand parser's F0040 `expected expression` — surfacing THAT
+            // as F0001 was the single divergence keeping `@hand(primary_base)` alive.
+            // An uncoded diagnostic keeps the previous default, so every rule that has
+            // not opted in behaves exactly as before.
             if d.bag.diagnostics.length == 0 && dsl.diag != "" {
-                self.set_error(dsl.diag)
+                if dsl.diag_code == "F0040" {
+                    self.report(DiagCode.ExpectedExpression, dsl.diag)
+                } else {
+                    self.set_error(dsl.diag)
+                }
             }
             self.bag = bag_merge(self.bag, d.bag)
             self.had_error = true

@@ -136,7 +136,6 @@ fn avra_expr_core() -> Grammar {
              | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
   // t-myz7 — the `grammar { … }` feature block, native. This is `@rawbrace`'s canonical
   // consumer (ast.av:322 gives this exact rule as the marker's example): the body is NOT
   // Avra syntax, so it is captured verbatim and handed to the runtime engine as a string.
