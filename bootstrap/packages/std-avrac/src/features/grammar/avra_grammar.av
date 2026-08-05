@@ -789,16 +789,17 @@ export fn avra_stmt_grammar() -> Grammar {
 /// statement rule in one fragment so their native/hand frontier cannot drift.
 fn avra_stmt_common_grammar() -> Grammar {
     let gp = grammar {
-  // `@peek(if_let) expr_stmt` comes BEFORE `if_stmt` deliberately. `if let` is an
-  // EXPRESSION form — build_if_let_expr desugars it to a temp binding plus a null
-  // test and returns an ExprId, and `expression` already reaches `if_expr`, which
-  // parses it. But `if_stmt`'s FIRST is a bare `"if"`, so it matched first, failed
-  // parsing `let v = x` as a condition expression, and dropped the whole statement
-  // to `@hand(decl_hand)`. That single shadowing accounted for 73 of the delegate's
-  // remaining dependents (t-myz7). Routing to `expr_stmt` reuses the rule that
-  // already handles the form instead of duplicating the desugar here; a direct
-  // `if_expr` reference cannot be used because it lives in the expression view and
-  // the emitter has no FIRST set for it across views.
+  // `@peek(if_let) iflet_stmt` comes BEFORE `if_stmt` deliberately, and the ORDER is
+  // the load-bearing part: `if_stmt`'s FIRST is a bare `"if"`, so without the gate it
+  // matches first, fails parsing `let v = x` as a condition expression, and drops the
+  // whole statement to `@hand(decl_hand)`. That single shadowing accounted for 73 of
+  // the delegate's remaining dependents (t-myz7).
+  //
+  // `iflet_stmt` is a rule of its OWN rather than a reference to the expression-view
+  // `if_expr`: that rule lives in the expression view and the emitter has no FIRST set
+  // for it across views. It previously routed to `expression` for exactly that reason,
+  // which parsed the form correctly but lowered it to the EXPRESSION shape — see the
+  // WHY on `iflet_stmt` itself for why statement position needs its own lowering.
   statement     = break_stmt | continue_stmt | @peek(if_let) iflet_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | @peek(stmt_block) stmt_block | expr_stmt
   // The CONTROL-FLOW body (`while`/`for`/`if`). `declaration*`, not `statement*`,
   // because that is what the hand does: every one of those parsers ends at
