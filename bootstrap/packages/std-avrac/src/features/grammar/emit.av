@@ -2508,6 +2508,13 @@ fn seq_first_guard(g: Grammar, seq: GSeq, visited: List<string>) -> string {
             // disagree, one engine dispatches to a branch the other does not.
             .Gensym(_) -> {}
             _ -> {
+                // t-myz7 GATE: a `@gate`d item's FIRST is NOT part of the dispatch
+                // condition — the preceding `@peek` cond REPLACES it. Returning the
+                // preds alone is what lets a loop enter on a token the element's FIRST
+                // rejects (EOF for `fn f(`), which is the whole point: the hand's
+                // `while !check(CLOSER)` enters there and reports about the ELEMENT.
+                // Checked BEFORE parts.push so the FIRST never joins the guard.
+                if item.gate { return and_join(preds) }
                 // `^` is part of the DISPATCH condition, not just of the item's own
                 // match (t-47hc.33). A branch led by a same-line item cannot start on a
                 // token that sits on the next line, so folding the gate in here is what

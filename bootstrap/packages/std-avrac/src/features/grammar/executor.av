@@ -1101,6 +1101,12 @@ fn tok_starts_seq(g: Grammar, seq: GSeq, st: PState, visited: List<string>) -> b
         // instead of being entered and then failing mid-sequence. Emit's twin is the
         // same_line_wrap in seq_first_guard; keeping the two in lockstep is what stops
         // the interpreter and the generated parser picking different branches.
+        // t-myz7 GATE: the emit twin of seq_first_guard's `item.gate` early return.
+        // A gated item contributes NO FIRST — its preceding `@peek` cond is the whole
+        // dispatch condition, and branch_pred_ok has already evaluated that. Answering
+        // true here hands the decision to the cond alone, which is what makes the loop
+        // enter where the element's FIRST would have refused (EOF).
+        if item.gate { return true }
         if tok_starts_prim(g, item.prim, st, visited) && sameline_ok(st, item) { return true }
         // A One/Plus item is non-nullable — FIRST stops here.
         match item.rep {
@@ -1630,6 +1636,8 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // `@hand(decl_hand)` and was silently absorbed, which is exactly the class the leaf
     // frontier probe (t-myz7) exists to surface.
     if cond == "comma_not_rparen" { return comma_not_closer(st, Tk.RightParen) }
+    if cond == "not_rparen" { return not_closer(st, Tk.RightParen) }
+    if cond == "not_rbrace" { return not_closer(st, Tk.RightBrace) }
     if cond == "comma_not_rbracket" { return comma_not_closer(st, Tk.RightBracket) }
     if cond == "comma_not_rbrace" { return comma_not_closer(st, Tk.RightBrace) }
     // `.0` tuple index — a second-token guard, same reason every `.`-led branch needs one.
@@ -3017,6 +3025,16 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// ANOTHER element rather than by `closer`? Used by `comma_not_rparen` /
 /// `comma_not_rbracket` / `comma_not_rbrace` so the three differ only in their closer
 /// and cannot drift apart.
+/// "the loop is NOT at its closer" — the token twin of the hand's
+/// `while !self.check(CLOSER)` element loops. EOF is deliberately NOT excluded:
+/// the hand enters at EOF too, which is how an unterminated construct reports
+/// about its ELEMENT rather than about the closer. Only useful under `@gate`,
+/// since as a plain `@peek` it would be ANDed with the element's FIRST and could
+/// never widen entry.
+fn not_closer(st: PState, closer: Tk) -> bool {
+    st.cur().tk != closer
+}
+
 fn comma_not_closer(st: PState, closer: Tk) -> bool {
     if st.cur().tk != Tk.Comma { return false }
     if st.pos + 1 >= st.toks.length { return false }

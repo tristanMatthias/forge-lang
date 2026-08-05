@@ -250,6 +250,15 @@ export type GItem = {
     // variants means no exhaustiveness churn across executor/emit/render. Legal only
     // on `*`/`+` (rejected at grammar-parse time otherwise), and the named capture
     // must be bound EARLIER in the same branch (validate_bounds).
+    // t-myz7 GATE marker (`@gate(cond)`): a `@peek` whose cond REPLACES the branch's
+    // FIRST guard instead of being ANDed onto it. A plain `@peek` can only NARROW a
+    // branch's entry — `lookahead_ok(c, st) && (FIRST)` — so it can never make a loop
+    // enter on a token the element's FIRST rejects. That is exactly what the hand's
+    // `while !self.check(CLOSER)` element loops need: at EOF the hand ENTERS and
+    // reports about the ELEMENT ("expected parameter name" for `fn f(`), while a
+    // grammar `( x )*` exits and the enclosing `@require CLOSER` answers instead.
+    // With `gate` set, the FIRST conjunct is dropped and the cond alone decides.
+    gate: bool,
     bound: string,
 }
 
@@ -363,7 +372,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, bound: "" }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, gate: false, bound: "" }
 }
 
 /// True when a sequence has no explicit build — the executor then

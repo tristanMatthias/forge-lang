@@ -383,7 +383,8 @@ fn avra_expr_core() -> Grammar {
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
                | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
   lambda_body  = block_expr | expression
-  param        = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
+  param        = pname:IDENT ( ":" pt:type_expr )?
+                 @expect("IDENT", "expected parameter name") -> MkParam(pname, pt)
   // t-47hc.29 — a match-table CELL: exactly hand `parse_primary` (parse/mod.av:2528), in
   // its own dispatch order, and deliberately NOT `@hand(primary_base)`. That leaf resolves
   // to `parse_leaf_common(false)`, which handles a quote SPLICE and the PREFIX operators
