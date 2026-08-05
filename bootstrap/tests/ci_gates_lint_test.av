@@ -90,6 +90,36 @@ spec "t-xkcw checkless-PR lint" {
         lint(d) != 0
     }
 
+    then "catches the `on: pull_request` shorthand — unfiltered, fires on every base" {
+        // The shorthand carries no branches filter, so its scope is every base.
+        // The parser used to read only the nested `pull_request:` event key and
+        // skipped this file entirely — not even counting it as unfiltered — so
+        // an unbounded trigger was invisible to the coverage proof.
+        let d = fresh("shorthand")
+        write_wf(d, "u.yml", "name: u\\non: pull_request\\njobs:\\n  a:\\n    runs-on: x\\n")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) != 0
+    }
+
+    then "catches the `on: [push, pull_request]` flow-list shorthand too" {
+        let d = fresh("shorthandlist")
+        write_wf(d, "u.yml", "name: u\\non: [push, pull_request]\\njobs:\\n  a:\\n    runs-on: x\\n")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) != 0
+    }
+
+    then "does NOT mistake pull_request_target for pull_request — token-exact" {
+        // A prefix match here would report a bogus unfiltered violation and
+        // make the lint unpassable on any repo using pull_request_target.
+        let d = fresh("prtarget")
+        write_wf(d, "t.yml", "name: t\\non: pull_request_target\\njobs:\\n  a:\\n    runs-on: x\\n")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) == 0
+    }
+
     then "catches two guards — the complement is ambiguous, coverage unprovable" {
         let d = fresh("twoguards")
         gate(d, "gate.yml", INTEGRATION)

@@ -3826,7 +3826,25 @@ mode_check_ci_gates() {
       i = ind(line)
       if (i == 0) {
         inon = (line ~ /^("on"|on):/)
-        if (inon) { evind = -1; ev = ""; key = ""; keyind = -1 }
+        if (inon) {
+          evind = -1; ev = ""; key = ""; keyind = -1
+          # Shorthand spellings: `on: pull_request` and `on: [push, pull_request]`.
+          # Neither form can carry a branches filter, so a match here is an
+          # UNFILTERED pull_request trigger — it fires on EVERY base. Emitting
+          # bare `PR` (no ALLOW/IGNORE) drops it into the unfiltered violation
+          # below, instead of the file being skipped as if it had no trigger.
+          # Token-exact so `pull_request_target` does not match.
+          rest = line; sub(/^[^:]*:[[:space:]]*/, "", rest)
+          sub(/[[:space:]]+#.*$/, "", rest)
+          gsub(/^\[|\]$/, "", rest)
+          n = split(rest, parts, /,/)
+          for (j = 1; j <= n; j++) {
+            v = parts[j]
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+            gsub(/^["\047]|["\047]$/, "", v)
+            if (v == "pull_request") print "PR"
+          }
+        }
         next
       }
       if (!inon) next
