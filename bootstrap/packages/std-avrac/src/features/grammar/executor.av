@@ -779,6 +779,22 @@ impl PState {
         self.pos = pos
         self.diags = list_take(self.diags, diags_len)
         self.had_error = err
+        // `diag_code` is FIRST-WRITER-WINS (report_coded), so a rolled-back
+        // speculation used to leave its code behind permanently: the branch that
+        // actually reported then rendered under an ABANDONED branch's F-code. Caught
+        // on `let` (t-myz7) — once `letdes_decl` was ordered ahead of `let_decl`, a
+        // plain `let` reported the right message under `letdes`'s F0040 instead of
+        // the hand's F0001, with nothing in either rule to explain it.
+        //
+        // Recomputing from the diagnostics that SURVIVE is only expressible because
+        // #1173 put the code ON each diagnostic; against the old one-code-wide
+        // channel there was nothing to recompute from. This is that widening's first
+        // consumer.
+        mut dc = ""
+        for d in self.diags {
+            if dc == "" && d.code != "" { dc = d.code }
+        }
+        self.diag_code = dc
     }
 
     /// Undo EVERY journalled token edit — called at EVERY shared-runner exit,

@@ -466,7 +466,12 @@ fn avra_expr_core() -> Grammar {
 /// definition adjacent to its only reference avoids that entirely.
 fn avra_decl_edge_grammar() -> Grammar {
     let gp = grammar {
-  declaration = use_decl | mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
+  // t-myz7: a CONVERTED keyword is referenced BARE — its `@try` lives inside the
+  // fragment, sharing a branch with the `@cut` that lets it own its own recovery.
+  // `letdes_decl` MUST precede `let_decl`: both lead with `let`, and once `let_decl`
+  // cuts, the destructuring form would be unreachable. The more specific `let (` form
+  // goes first and still `@try`s, so it declines the plain binding harmlessly.
+  declaration = use_decl | mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -564,7 +569,9 @@ fn avra_decl_edge_grammar() -> Grammar {
   //     alternation) parses it.
   let_decl   = "let" ( m:"mut" )? n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkLetBinding(m, n, ty, init, e, tmp)
   mut_decl   = "mut" n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkMutBinding(n, ty, init, e, tmp)
-  const_decl = "const" n:IDENT ( ":" ty:type_expr )? "=" init:expression -> MkConstBinding(n, ty, init)
+  const_decl = @try "const" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" init:expression
+               @expect("IDENT", "expected constant name")
+               @expect("=", "expected `=` after constant name") -> MkConstBinding(n, ty, init)
   // `let (a, b, …) = init` — the destructure binding, completing the binding
   // family's exit from `@hand(decl_hand)`. The list shape is `for_binding`'s,
   // verbatim: `@peek(comma_ident)` gates each repeat iteration so a trailing
