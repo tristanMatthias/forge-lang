@@ -86,8 +86,38 @@ fn remove_field_root(store: NodeStore, expr: Expr, set: List<string>) -> List<st
     match expr {
         .FieldAccess(obj, _) -> remove_field_root(store, store.exprs.get(obj), set)
         .Ident(name) -> releasable_remove(set, name)
+        // A returned COMPOSITE carries its parts out of the frame too, so
+        // the rule has to reach inside it — `TypeStructureFps { fps: st.done }`
+        // hands back a field of `st` just as surely as a bare `st.done` does,
+        // and releasing `st` frees what the caller was handed. Walking only
+        // the top-level chain missed exactly this (t-k6lm: the `st` release
+        // in `core::type_structure_fingerprints`).
+        .StructLit(_, inits) -> remove_field_roots_inits(store, inits, set)
+        .With(_, inits) -> remove_field_roots_inits(store, inits, set)
+        .EnumCtor(_, _, args) -> remove_field_roots_args(store, args, set)
+        .Tuple(elems) -> remove_field_roots_args(store, elems, set)
         _ -> set
     }
+}
+
+fn remove_field_roots_inits(store: NodeStore, inits: List<FieldInit>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < inits.length {
+        acc = remove_field_root(store, store.exprs.get(inits[i].value_id), acc)
+        i = i + 1
+    }
+    acc
+}
+
+fn remove_field_roots_args(store: NodeStore, args: List<ExprId>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < args.length {
+        acc = remove_field_root(store, store.exprs.get(args[i]), acc)
+        i = i + 1
+    }
+    acc
 }
 
 /// The implicit-return expressions of a body — the mirror of
@@ -309,7 +339,20 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>, fresh: p
                 _ -> remove_escaped_expr(store, obj_expr, s1, fresh)
             }
         }
-        .Assign(_, val) -> remove_escaped_expr(store, store.exprs.get(val), set, fresh)
+        // REASSIGNMENT retargets the scope-exit release. A local admitted
+        // on its initializer (`mut site = RqRef { … }`) can be reassigned to
+        // a value this frame does NOT own (`site = found`, straight out of a
+        // memo Db), and the release then frees the other owner's object.
+        // Sweeping only the RHS leaves the name in the set under a value its
+        // initializer never described. Assigning another OWNED allocation is
+        // still fine, so candidacy drops only when the new value isn't one.
+        // `.FieldAssign` needs no such arm — it already sweeps its object,
+        // which removes the base.
+        .Assign(name, val) -> {
+            let v = store.exprs.get(val)
+            let swept = remove_escaped_expr(store, v, set, fresh)
+            if is_owning_init(store, v, fresh) { swept } else { releasable_remove(swept, name) }
+        }
         .FieldAssign(obj, _, val) -> remove_escaped_expr(store, store.exprs.get(val), remove_escaped_expr(store, store.exprs.get(obj), set, fresh), fresh)
         .StructLit(_, inits) -> remove_escaped_field_inits(store, inits, set, fresh)
         .ListLit(elems) -> remove_escaped_arg_ids(store, elems, set, fresh)
