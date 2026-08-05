@@ -70,8 +70,15 @@ export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr) -
 /// order between them cannot matter.
 fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<string>) -> List<string> {
     mut cur = set
+    // A `return f(x.g)` yields the CALL'S RESULT, so its arguments escape.
+    // A TAIL statement does not necessarily: `collect_tail_exprs` returns the
+    // last STATEMENT, whose value is often discarded — `println(string(p2.y))`
+    // ending a void fn is not an escape of `p2`, and treating it as one leaks
+    // every such local (caught by difftest_corpus/collections.av). Distinguishing
+    // the two needs the fn's declared return type, which this analysis does not
+    // yet receive; until it does, only explicit returns descend into calls.
     for e in collect_return_exprs(store, body) {
-        cur = remove_field_root(store, store.exprs.get(e), cur)
+        cur = remove_field_root_calls(store, store.exprs.get(e), cur)
     }
     for e in collect_tail_exprs(store, body) {
         cur = remove_field_root(store, store.exprs.get(e), cur)
@@ -96,26 +103,35 @@ fn remove_field_root(store: NodeStore, expr: Expr, set: List<string>) -> List<st
         .With(_, inits) -> remove_field_roots_inits(store, inits, set)
         .EnumCtor(_, _, args) -> remove_field_roots_args(store, args, set)
         .Tuple(elems) -> remove_field_roots_args(store, elems, set)
-        // A CALL ARGUMENT escapes too, and this is the route the composite
-        // arms above do NOT cover: the callee may RETAIN what it is handed,
-        // and when its result is what we return, the retained part outlives
-        // this frame. `pass_db_new(parsed.ids ?? [], parsed.store, …)` stores
-        // `parsed.store` inside the returned `Db`, so releasing `parsed` at
-        // scope exit frees a store the caller still reads through.
-        // We cannot see into the callee, so passing a field of a local out is
-        // treated as an escape unconditionally — the conservative direction
-        // (keep the tick) is a leak at worst, the other is a use-after-free.
-        // (t-k6lm: the `parsed` release in `query_passes_test::db_for`.)
+        _ -> set
+    }
+}
+
+/// As `remove_field_root`, and ALSO descends through CALLS.
+///
+/// A callee may RETAIN what it is handed, so when its result is what we
+/// return, the retained part outlives this frame:
+/// `pass_db_new(parsed.ids ?? [], parsed.store, …)` stores `parsed.store`
+/// inside the returned `Db`, and releasing `parsed` at scope exit frees a
+/// store the caller still reads through (t-k6lm: `query_passes_test::db_for`).
+///
+/// We cannot see into a callee, so a field passed out is an escape
+/// unconditionally — the conservative direction is a leak at worst, the other
+/// is a use-after-free. That conservatism is why this is reserved for explicit
+/// `return`s: applied to a discarded tail statement it leaks on every
+/// `println(x.f)`, which is what difftest_corpus/collections.av caught.
+fn remove_field_root_calls(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
+    match expr {
         // The CALLEE matters too when it is a field access: a returned
         // `p.method(…)` may hand back a field of `p`, exactly as `p.f` does.
         // Only field-access callees descend — a bare `.Ident` callee is a FN
         // NAME, and removing that would drop an unrelated same-named local.
-        .Call(callee, args) -> remove_field_roots_args(store, args, remove_callee_root(store, callee, set))
-        .GenericCall(_, _, args) -> remove_field_roots_args(store, args, set)
-        .OptionalMethodCall(obj, _, args) -> remove_field_roots_args(store, args, remove_field_root(store, store.exprs.get(obj), set))
+        .Call(callee, args) -> remove_field_roots_args_calls(store, args, remove_callee_root(store, callee, set))
+        .GenericCall(_, _, args) -> remove_field_roots_args_calls(store, args, set)
+        .OptionalMethodCall(obj, _, args) -> remove_field_roots_args_calls(store, args, remove_field_root_calls(store, store.exprs.get(obj), set))
         // `x.f ?? default` hands back `x.f` on the non-null path.
-        .NullCoalesce(l, r) -> remove_field_root(store, store.exprs.get(r), remove_field_root(store, store.exprs.get(l), set))
-        _ -> set
+        .NullCoalesce(l, r) -> remove_field_root_calls(store, store.exprs.get(r), remove_field_root_calls(store, store.exprs.get(l), set))
+        _ -> remove_field_root(store, expr, set)
     }
 }
 
@@ -135,6 +151,19 @@ fn remove_field_roots_inits(store: NodeStore, inits: List<FieldInit>, set: List<
     mut i = 0
     while i < inits.length {
         acc = remove_field_root(store, store.exprs.get(inits[i].value_id), acc)
+        i = i + 1
+    }
+    acc
+}
+
+/// `remove_field_roots_args` for arguments of a RETURNED call — every
+/// argument is already in escape position, so nested calls and `??` inside
+/// one escape too (`keep(p.inner ?? Inner { n: 0 })`).
+fn remove_field_roots_args_calls(store: NodeStore, args: List<ExprId>, set: List<string>) -> List<string> {
+    mut acc = set
+    mut i = 0
+    while i < args.length {
+        acc = remove_field_root_calls(store, store.exprs.get(args[i]), acc)
         i = i + 1
     }
     acc

@@ -231,16 +231,24 @@ spec "t-k6lm releasable set: a CALL ARGUMENT carries a local's parts out of the 
             // `parsed` at scope exit frees a store the caller still reads
             // through. The composite arms miss this because the escape route
             // is a CALL, not a literal.
-            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db(h: Holder) -> Holder { let p = Holder { inner: Inner { n: 1 } }\n keep(p.inner) }\n", "db", "p")
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db(h: Holder) -> Holder { let p = Holder { inner: Inner { n: 1 } }\n return keep(p.inner) }\n", "db", "p")
         }
         then "a field behind `??` escapes too" {
             // `parsed.ids ?? []` hands back `parsed.ids` on the non-null path.
-            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db(x: Inner?) -> Holder { let p = Holder { inner: Inner { n: 1 } }\n keep(p.inner ?? Inner { n: 0 }) }\n", "db", "p")
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db(x: Inner?) -> Holder { let p = Holder { inner: Inner { n: 1 } }\n return keep(p.inner ?? Inner { n: 0 }) }\n", "db", "p")
         }
         then "a returned METHOD CALL on a local escapes its receiver" {
             // `p.m()` may hand back a field of `p`, exactly as `p.f` does, so
             // the CALLEE half of a call is an escape route too.
-            not_releasable(PRELUDE + "fn db() -> Inner { let p = Holder { inner: Inner { n: 1 } }\n p.get() }\ntype H2 = { x: int }\n", "db", "p")
+            not_releasable(PRELUDE + "fn db() -> Inner { let p = Holder { inner: Inner { n: 1 } }\n return p.get() }\ntype H2 = { x: int }\n", "db", "p")
+        }
+        then "a DISCARDED tail call does NOT cost the local its candidacy" {
+            // The boundary of the rule above, and the reason it is limited to
+            // explicit returns: `collect_tail_exprs` yields the last STATEMENT,
+            // whose value is usually discarded. `println(string(p.inner.n))`
+            // ending a void fn retains nothing, so treating it as an escape
+            // leaks `p` — difftest_corpus/collections.av caught exactly that.
+            is_releasable(PRELUDE + "fn db() { let p = Holder { inner: Inner { n: 1 } }\n println(string(p.inner.n)) }\n", "db", "p")
         }
         then "a local passed NOWHERE keeps its candidacy" {
             // Positive control: proves the rule is targeted, not a blanket
