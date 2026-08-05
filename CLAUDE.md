@@ -809,6 +809,31 @@ slices onto one branch/PR. Each slice is its OWN branch and its OWN PR,
 - Each slice still: build-quick + emit-gen-check + diff-test PREBUILT=1 + a
   targeted test; keep CI green; never merge past a red/canceled check.
 
+**A STACKED PR HAS NO CI, AND "no checks" IS NOT "checks passed" (t-xkcw).**
+Every gate — bootstrap-window, diff-test, rc-strict, seed-train-verify — is
+filtered `on: pull_request: branches: [feat/crafting-intepreters]`, so a PR
+based on another `claude/*` branch matches none of them and
+`get_check_runs` returns `total_count: 0`. CodeRabbit skips it too ("auto
+reviews are disabled on base/target branches other than the default branch").
+Both merge signals are therefore ABSENT, not red — and an empty checks list
+reads as "nothing failed" to the standing merge authorization above. **That
+authorization applies only once the PR is re-targeted to the integration
+branch**, which is where the rebase step already puts it: gates fire,
+CodeRabbit reviews, then merge. Observed live on #1164 (stacked on #1163):
+zero checks and no review, both by construction. So a stacked PR is never
+checkless-and-silent, `.github/workflows/stacked-pr.yml` is the complement of
+those filters — it fires on exactly the bases they ignore and FAILS, so the
+absence shows up as a red check named `gates deferred — no gate ran on this
+base`. Nothing in the branch needs fixing when it goes red; re-target the base.
+`diagnose.sh --check-ci-gates` (spec: `tests/ci_gates_lint_test.av`) asserts the
+gates' allowlists and the guard's ignore-list stay exact complements, so a new
+gate, a retargeted one, or a deleted guard can't silently restore the hole.
+Widening the gates to `claude/**` was considered and NOT done — diff-test's OLD
+oracle is "the integration branch", and on a stacked base it would either span
+the whole stack (attributing lower slices' divergences, including
+already-labelled `intended-ir-change` ones, to the top PR) or become unmerged
+unvalidated code; revisit only by defining the OLD side first.
+
 ## Session Completion
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.

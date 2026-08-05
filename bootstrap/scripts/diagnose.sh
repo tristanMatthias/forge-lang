@@ -536,6 +536,15 @@ SEED MANAGEMENT
                          and it BYPASSES the runtime ICE, so only this source lint
                          catches a reintroduction. [dir] defaults to the codegen
                          tree; the guard test passes a temp dir.
+  --check-ci-gates [dir]
+                         t-xkcw checkless-PR lint. Every gate is filtered to PRs
+                         based on the integration branch, so a STACKED PR runs no
+                         check at all — and an empty checks list reads as green.
+                         stacked-pr.yml is the complement that fails loudly.
+                         Asserts the union of the gates' `branches:` allowlists
+                         equals the guard's `branches-ignore:` list, so every PR
+                         base is covered exactly once. [dir] defaults to
+                         .github/workflows; the guard test passes a temp dir.
   --seed-merge [--base ours|theirs|<ref>]
                          One-command seed-merge staging. For a merge where
                          the seed pin conflicted (seed.lock, or seed.ll on
@@ -3771,6 +3780,127 @@ mode_check_layout_boundary() {
   ok "check-layout-boundary: no silent .Unknown→layout fallback in $cg (resolve_layout is the sole under-determined-type gate)"
 }
 
+# ── t-xkcw checkless-PR lint ──
+# Every gate (bootstrap-window, diff-test, rc-strict, seed-train-verify) is
+# filtered to PRs based on the integration branch, so a STACKED PR — which the
+# PR-slice workflow mandates — matches none of them and runs no check at all.
+# An empty checks list is not "nothing failed", it is "nothing ran", and the
+# standing merge authorization ("CI green AND CodeRabbit approved") reads the
+# two the same way. stacked-pr.yml is the complement that turns that silence
+# into a red check.
+#
+# The invariant: EVERY possible PR base is covered by at least one workflow.
+# That holds iff the union of the gates' `branches:` allowlists is exactly the
+# guard's `branches-ignore:` list — subset one way means a base the guard skips
+# and no gate claims (checkless again), subset the other means a base that
+# trips the guard while its real gates are also running. So the lint asserts
+# set EQUALITY, which fails if the guard is deleted, if its ignore-list is
+# narrowed, or if a gate is added/retargeted without updating it.
+#
+# $1 (optional) = workflows dir to scan (defaults to the real one; the guard
+# test points it at temp dirs holding planted violations).
+mode_check_ci_gates() {
+  local wf="${1:-$REPO_DIR/.github/workflows}"
+  [ -d "$wf" ] || die "check-ci-gates: dir not found: $wf"
+
+  # Emits, per file: `PR` if a pull_request trigger exists, then `ALLOW <b>` /
+  # `IGNORE <b>` per base branch in its branches / branches-ignore filter.
+  # Indentation-relative (not hardcoded 2/4 spaces) so a reformat can't turn
+  # the lint into a check that silently passes, and it reads both the inline
+  # flow list (`[a, b]`) and the block list (`- a`) YAML spellings.
+  local extract='
+    function emit(k, v) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
+      # \047 (octal) not \x27: POSIX defines the octal escape, hex is a
+      # gawk/mawk extension — the lint must not depend on which awk is installed.
+      gsub(/^["\047]|["\047]$/, "", v)
+      if (v == "") return
+      if (k == "branches")        print "ALLOW " v
+      else if (k == "branches-ignore") print "IGNORE " v
+    }
+    function ind(s,   i) { i = match(s, /[^ ]/); return (i == 0 ? -1 : i - 1) }
+    BEGIN { inon = 0; evind = -1; ev = ""; key = ""; keyind = -1 }
+    {
+      line = $0; sub(/\r$/, "", line)
+      if (line ~ /^[[:space:]]*#/ || line ~ /^[[:space:]]*$/) next
+      i = ind(line)
+      if (i == 0) {
+        inon = (line ~ /^("on"|on):/)
+        if (inon) { evind = -1; ev = ""; key = ""; keyind = -1 }
+        next
+      }
+      if (!inon) next
+      if (evind < 0) evind = i
+      if (i == evind) {
+        ev = line; sub(/^[ ]*/, "", ev); sub(/:.*$/, "", ev)
+        key = ""; keyind = -1
+        if (ev == "pull_request") print "PR"
+        next
+      }
+      if (ev != "pull_request") next
+      if (keyind >= 0 && i > keyind) {
+        if (line ~ /^[[:space:]]*-/) { v = line; sub(/^[[:space:]]*-[[:space:]]*/, "", v); emit(key, v) }
+        next
+      }
+      key = line; sub(/^[ ]*/, "", key); sub(/:.*$/, "", key); keyind = i
+      rest = line; sub(/^[^:]*:[[:space:]]*/, "", rest); sub(/[[:space:]]+#.*$/, "", rest)
+      if (rest != "") {
+        sub(/^\[/, "", rest); sub(/\]$/, "", rest)
+        n = split(rest, parts, /,/)
+        for (j = 1; j <= n; j++) emit(key, parts[j])
+      }
+    }'
+
+  local allows="" ignores="" guards=0 guard_files="" unfiltered="" f out a g
+  for f in "$wf"/*.yml "$wf"/*.yaml; do
+    [ -e "$f" ] || continue
+    out=$(awk "$extract" "$f")
+    printf '%s\n' "$out" | grep -qx 'PR' || continue
+    a=$(printf '%s\n' "$out" | sed -n 's/^ALLOW //p')
+    g=$(printf '%s\n' "$out" | sed -n 's/^IGNORE //p')
+    if [ -z "$a" ] && [ -z "$g" ]; then
+      unfiltered="$unfiltered  $(basename "$f")"$'\n'
+      continue
+    fi
+    [ -n "$a" ] && allows="$allows$a"$'\n'
+    if [ -n "$g" ]; then
+      guards=$((guards + 1))
+      guard_files="$guard_files  $(basename "$f")"$'\n'
+      ignores="$ignores$g"$'\n'
+    fi
+  done
+
+  if [ -n "$unfiltered" ]; then
+    err "check-ci-gates: pull_request workflow with no base-branch filter — its scope is implicit, so the guard's complement can't be verified (t-xkcw):"
+    printf '%s' "$unfiltered" >&2
+    exit 1
+  fi
+  if [ "$guards" -eq 0 ]; then
+    err "check-ci-gates: no checkless-PR guard — every gate filters to a base allowlist, so a PR based anywhere else (a stacked slice) runs NO check and its empty checks list reads as green (t-xkcw). Restore .github/workflows/stacked-pr.yml (pull_request + branches-ignore)."
+    exit 1
+  fi
+  if [ "$guards" -gt 1 ]; then
+    err "check-ci-gates: $guards workflows use branches-ignore — the complement is ambiguous, so coverage can't be proven. Keep exactly one guard:"
+    printf '%s' "$guard_files" >&2
+    exit 1
+  fi
+
+  local allow_set ignore_set
+  allow_set=$(printf '%s' "$allows" | sort -u)
+  ignore_set=$(printf '%s' "$ignores" | sort -u)
+  if [ "$allow_set" != "$ignore_set" ]; then
+    err "check-ci-gates: the guard's branches-ignore is not the exact complement of the gates' branches allowlists, so some PR base is either checkless or double-covered (t-xkcw)."
+    printf 'gates allow:\n%s\nguard ignores:\n%s\n' "$allow_set" "$ignore_set" >&2
+    exit 1
+  fi
+  if ! printf '%s\n' "$allow_set" | grep -qx -- "$INTEGRATION_BRANCH"; then
+    err "check-ci-gates: no gate covers the integration branch ($INTEGRATION_BRANCH) — a PR into it would be checked only by the stacked-PR guard, which always fails."
+    exit 1
+  fi
+
+  ok "check-ci-gates: every PR base is covered — gates allowlist [$(printf '%s' "$allow_set" | tr '\n' ' ')], guard covers the rest"
+}
+
 main() {
   if [ $# -eq 0 ]; then print_help; exit 0; fi
   local mode="$1"; shift
@@ -3828,6 +3958,7 @@ main() {
     --seed-self-contained) seed_is_self_contained "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     --check-layout-boundary) mode_check_layout_boundary "$@" ;;
+    --check-ci-gates)     mode_check_ci_gates "$@" ;;
     --check-typeck-collect-boundary) mode_check_typeck_collect_boundary "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;

@@ -1,0 +1,118 @@
+// WHY: guards the t-xkcw coverage invariant — no PR can have zero checks.
+// Every gate (bootstrap-window, diff-test, rc-strict, seed-train-verify) is
+// filtered to PRs based on the integration branch, so a STACKED PR — which the
+// PR-slice workflow mandates — matches none of them and runs no check at all.
+// The danger is not the missing run, it is how it READS: an empty checks list
+// looks like "nothing failed" to a merge rule that says "merge when CI is
+// green", so an unvalidated slice merges under a rule that assumed validation.
+// stacked-pr.yml is the complement that turns that silence into a red check,
+// and `diagnose.sh --check-ci-gates` proves the two stay exact complements —
+// the union of the gates' allowlists must equal the guard's ignore-list, or
+// some base is checkless again.
+//
+// The first `then` pins the lint green on the REAL .github/workflows (it fails
+// if someone deletes the guard or retargets a gate); the rest are the mutation
+// check — they plant each way the pair can drift and fail if the lint stops
+// catching it. The two positive controls matter as much as the negatives: they
+// prove a passing verdict is reachable, so the red arms mean "violation
+// detected", not "any temp dir errors".
+//
+// @@fixture-stateful@@ — shells out to the SHARED scripts/diagnose.sh (external
+// state not in the fixture-cache key); opt out of failure caching so a repaired
+// lint re-probes instead of replaying a stale `: FAIL`.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+const INTEGRATION: string = "feat/crafting-intepreters"
+
+/// Scratch under build/cache/ so `make clean` reclaims it.
+fn case_dir(name: string) -> string {
+    "build/cache/_ci_gates_${name}"
+}
+
+fn fresh(name: string) -> string {
+    let d = case_dir(name)
+    avra_shell_exec("rm -rf '${d}' && mkdir -p '${d}'")
+    d
+}
+
+fn write_wf(dir: string, file: string, body: string) -> string {
+    avra_shell_exec("printf '%b' '${body}' > '${dir}/${file}'")
+}
+
+/// A gate: fires only on PRs into `br`.
+fn gate(dir: string, file: string, br: string) -> string {
+    write_wf(dir, file,
+        "name: g\\non:\\n  pull_request:\\n    branches: [${br}]\\njobs:\\n  a:\\n    runs-on: x\\n")
+}
+
+/// The checkless-PR guard: fires on every base EXCEPT `br`.
+fn guard(dir: string, file: string, br: string) -> string {
+    write_wf(dir, file,
+        "name: s\\non:\\n  pull_request:\\n    branches-ignore: [${br}]\\njobs:\\n  a:\\n    runs-on: x\\n")
+}
+
+fn lint(dir: string) -> int {
+    avra_shell_exec_status("bash scripts/diagnose.sh --check-ci-gates '${dir}' > /dev/null 2>&1")
+}
+
+spec "t-xkcw checkless-PR lint" {
+    then "passes on the real .github/workflows — every PR base is covered" {
+        avra_shell_exec_status("bash scripts/diagnose.sh --check-ci-gates > /dev/null 2>&1") == 0
+    }
+
+    then "catches a deleted guard — gates only, so any other base is checkless" {
+        let d = fresh("noguard")
+        gate(d, "gate.yml", INTEGRATION)
+        lint(d) != 0
+    }
+
+    then "catches a narrowed guard whose ignore-list misses the gated base" {
+        let d = fresh("narrow")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", "some/other")
+        lint(d) != 0
+    }
+
+    then "catches a new gate base the guard was never told about" {
+        let d = fresh("newbase")
+        gate(d, "gate.yml", INTEGRATION)
+        gate(d, "gate2.yml", "release/v1")
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) != 0
+    }
+
+    then "catches a pull_request workflow with no base filter — scope is implicit" {
+        let d = fresh("unfiltered")
+        write_wf(d, "u.yml", "name: u\\non:\\n  pull_request:\\njobs:\\n  a:\\n    runs-on: x\\n")
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) != 0
+    }
+
+    then "catches two guards — the complement is ambiguous, coverage unprovable" {
+        let d = fresh("twoguards")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "s1.yml", INTEGRATION)
+        guard(d, "s2.yml", INTEGRATION)
+        lint(d) != 0
+    }
+
+    then "passes on a matched gate/guard pair — a green verdict is reachable" {
+        let d = fresh("ok")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) == 0
+    }
+
+    then "reads block-list YAML too, and ignores push-only workflows" {
+        let d = fresh("blocklist")
+        write_wf(d, "gate.yml",
+            "name: g\\non:\\n  push:\\n    branches: [main]\\n  pull_request:\\n    branches:\\n      - ${INTEGRATION}\\n    types: [opened]\\njobs:\\n  a:\\n    runs-on: x\\n")
+        write_wf(d, "stacked.yml",
+            "name: s\\non:\\n  pull_request:\\n    branches-ignore:\\n      - ${INTEGRATION}\\njobs:\\n  a:\\n    runs-on: x\\n")
+        write_wf(d, "pushonly.yml",
+            "name: p\\non:\\n  push:\\n    branches: [${INTEGRATION}]\\njobs:\\n  a:\\n    runs-on: x\\n")
+        lint(d) == 0
+    }
+}
