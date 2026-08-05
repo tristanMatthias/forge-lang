@@ -1724,10 +1724,18 @@ fn gated_abort_unwind(g: Grammar, inner: GNode, ind: string) -> string {
 fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
     let gr = gated_ref_of(inner)
     if !gr.found { return "" }
-    let msg = rule_first_expect_msg(g, gr.rule)
-    if msg == "" { return "" }
     let fg = rule_first_guard(g, gr.rule, [])
     if fg == "" || fg == "false" { return "" }
+    // The guard is emitted whenever the rule HAS a usable FIRST — never made
+    // conditional on the message existing. Returning "" for a missing `@expect`
+    // would reopen the exact silent-ACCEPT this check exists to close: the callee
+    // consumes its leading token unconditionally, so with no guard a gated call
+    // binds whatever is there (`enum E { 5 }` took `5` as a variant name and
+    // compiled clean). A rule with no `@expect` gets a generic message — worse
+    // wording, still a rejection. Only an unusable FIRST declines, and that is the
+    // case where there is genuinely nothing to test.
+    let em = rule_first_expect_msg(g, gr.rule)
+    let msg = if em == "" { "expected ${gr.rule}" } else { em }
     "${ind}if !(${fg}) {\n" +
     "${ind}    st.report(\"${msg}\")\n" +
     "${ind}    st.set_abort_prop(true)\n" +
