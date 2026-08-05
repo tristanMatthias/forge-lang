@@ -1,0 +1,142 @@
+// t-k6lm slice 1 — the RETURN-OWNERSHIP analysis, tested in isolation
+// BEFORE it is wired to anything.
+//
+// WHY this is its own slice: `let x = make_thing()` leaks when the
+// callee returns a struct or enum, because `is_allocating_expr`
+// whitelists only the literal forms so a `.Call` initializer never
+// enters the releasable set. The fix is to admit a call whose CALLEE is
+// known to return a fresh allocation — and the whole risk of the fix
+// lives in that predicate. Admitting one callee too many is not a
+// leak, it is an over-release DOUBLE FREE (the t-c6y7 / #911 class),
+// because a callee may hand back a field of its receiver, one of its
+// params, or a global.
+//
+// So the predicate is landed and proven first, as dead code. Nothing
+// calls `analyze_return_ownership` yet, so this slice cannot change
+// emitted IR; the wiring (and its `intended-ir-change` label) is the
+// next one. That ordering means a mistake here shows up as a red spec
+// rather than as memory corruption in the wiring slice.
+//
+// The arms that matter most are the NEGATIVE ones. A predicate that
+// says "fresh" too often is the dangerous direction, so most of these
+// specs assert a function is NOT in the set.
+
+use @std.avrac.parse.{parse_program_source}
+use @std.avrac.codegen.{analyze_return_ownership}
+
+/// Parse `src` and return the set of functions whose every return path
+/// yields a freshly allocated value.
+fn fresh_set(src: string) -> List<string> {
+    let p = parse_program_source(src)
+    let ids = p.ids
+    if ids == null { return [] }
+    analyze_return_ownership(p.store, ids!)
+}
+
+fn has(set: List<string>, name: string) -> bool {
+    for n in set { if n == name { return true } }
+    false
+}
+
+const PRELUDE: string = "type T = { v: int }\ntype Inner = { n: int }\ntype Holder = { inner: Inner }\n"
+
+spec "t-k6lm return-ownership: fresh producers" {
+    given "functions that allocate their own result" {
+        then "a struct literal return is fresh" {
+            has(fresh_set(PRELUDE + "fn mk() -> T { T { v: 1 } }\n"), "mk")
+        }
+        then "an explicit `return` of a struct literal is fresh" {
+            has(fresh_set(PRELUDE + "fn mk() -> T { return T { v: 1 } }\n"), "mk")
+        }
+        then "a `with` result is fresh" {
+            has(fresh_set(PRELUDE + "fn upd(t: T) -> T { t with { v: 2 } }\n"), "upd")
+        }
+        then "a tuple is fresh" {
+            has(fresh_set("fn pair() -> (int, int) { (1, 2) }\n"), "pair")
+        }
+        then "a call to another fresh fn is fresh — the property composes" {
+            let s = fresh_set(PRELUDE + "fn mk() -> T { T { v: 1 } }\nfn wrap() -> T { mk() }\n")
+            has(s, "mk") && has(s, "wrap")
+        }
+    }
+}
+
+spec "t-k6lm return-ownership: the dangerous negatives" {
+    given "functions that hand back something they do not own" {
+        then "returning a PARAM is not fresh — the caller still owns it" {
+            !has(fresh_set(PRELUDE + "fn pick(a: T) -> T { a }\n"), "pick")
+        }
+        then "returning a FIELD of a param is not fresh — the receiver owns it" {
+            !has(fresh_set(PRELUDE + "fn get(h: Holder) -> Inner { h.inner }\n"), "get")
+        }
+        then "returning a LOCAL is not fresh — it is an alias, not a new value" {
+            // The local's own allocation is already tracked by the
+            // existing releasable path; handing it out makes it escape.
+            !has(fresh_set(PRELUDE + "fn esc() -> T { let t = T { v: 1 }\n t }\n"), "esc")
+        }
+        then "ONE non-fresh path poisons the whole function" {
+            // The `if` returns a param on one side. A predicate that
+            // looked only at the tail, or only at the first `return`,
+            // would wrongly call this fresh.
+            !has(fresh_set(PRELUDE + "fn maybe(a: T, c: bool) -> T { if c { return a }\n T { v: 0 } }\n"), "maybe")
+        }
+        then "a call to a NON-fresh fn is not fresh — non-freshness propagates" {
+            let s = fresh_set(PRELUDE + "fn pick(a: T) -> T { a }\nfn wrap(a: T) -> T { pick(a) }\n")
+            !has(s, "pick") && !has(s, "wrap")
+        }
+        then "an unknown/undeclared callee is not fresh — the catch-all denies" {
+            !has(fresh_set(PRELUDE + "fn wrap() -> T { mystery() }\n"), "wrap")
+        }
+        then "a method call is not fresh — the receiver may own the result" {
+            !has(fresh_set(PRELUDE + "fn wrap(h: Holder) -> Inner { h.get_inner() }\n"), "wrap")
+        }
+    }
+}
+
+spec "t-k6lm return-ownership: branch and recursion shapes" {
+    given "control flow in return position" {
+        then "an if-EXPRESSION is fresh only when BOTH arms are" {
+            let both = fresh_set(PRELUDE + "fn f(c: bool) -> T { if c { T { v: 1 } } else { T { v: 2 } } }\n")
+            let one = fresh_set(PRELUDE + "fn g(c: bool, a: T) -> T { if c { T { v: 1 } } else { a } }\n")
+            has(both, "f") && !has(one, "g")
+        }
+        then "a match expression is fresh only when EVERY arm is" {
+            let all = fresh_set(PRELUDE + "fn f(c: bool) -> T { match c { true -> T { v: 1 }\n false -> T { v: 2 } } }\n")
+            let mixed = fresh_set(PRELUDE + "fn g(c: bool, a: T) -> T { match c { true -> T { v: 1 }\n false -> a } }\n")
+            has(all, "f") && !has(mixed, "g")
+        }
+        then "self-recursion keeps candidacy when the base case is fresh" {
+            // Every value this can actually return IS a fresh T, so
+            // optimistic seeding gives the right answer here.
+            has(fresh_set(PRELUDE + "fn f(c: bool) -> T { if c { return f(false) }\n T { v: 1 } }\n"), "f")
+        }
+        then "self-recursion loses it when the base case is a param" {
+            !has(fresh_set(PRELUDE + "fn f(a: T, c: bool) -> T { if c { return f(a, false) }\n a }\n"), "f")
+        }
+        then "mutual recursion through a non-fresh fn is rejected" {
+            // f -> g -> param. The fixpoint must carry g's drop back to
+            // f; a single pass in the wrong order would keep f.
+            let s = fresh_set(PRELUDE + "fn f(a: T) -> T { g(a) }\nfn g(a: T) -> T { a }\n")
+            !has(s, "f") && !has(s, "g")
+        }
+    }
+}
+
+spec "t-k6lm return-ownership: shadowing is conservatively denied" {
+    given "a function name also used as a local or parameter" {
+        then "a fn shadowed by a local loses candidacy" {
+            // `let mk = ...` then `mk()` calls the LOCAL (legal since
+            // zo1a, and the binding wins lexically). The callee `.Ident`
+            // cannot distinguish the two, so the fn name is dropped —
+            // costing a leak left unfixed rather than an over-release.
+            let s = fresh_set(PRELUDE + "fn mk() -> T { T { v: 1 } }\nfn other() -> int { let mk = 3\n mk }\n")
+            !has(s, "mk")
+        }
+        then "an unshadowed sibling in the same program keeps its candidacy" {
+            // Positive control for the arm above: proves the shadowing
+            // rule is targeted, not a blanket denial of everything.
+            let s = fresh_set(PRELUDE + "fn mk() -> T { T { v: 1 } }\nfn other() -> int { let z = 3\n z }\n")
+            has(s, "mk")
+        }
+    }
+}
