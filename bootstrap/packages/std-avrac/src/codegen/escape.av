@@ -6,7 +6,7 @@
 //
 // Conservative: if in doubt, mark as escaped (don't release).
 
-use core.{Expr, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, StmtId, NodeStore, stmt_unwrap}
+use core.{Expr, ExprId, FieldEntry, FieldInit, MatchArm, WhenArm, Variant, ValueType, Stmt, StmtId, NodeStore, stmt_unwrap}
 use codegen.{releasable_has, StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, copy_set_has}
 use list_ops.{list_push_copy}
 
@@ -638,4 +638,331 @@ fn copy_set_subset(a: List<string>, b: List<string>) -> bool {
         if !copy_set_has(b, name) { return false }
     }
     true
+}
+
+// ── t-k6lm: per-function RETURN OWNERSHIP ─────────────────────────────
+//
+// WHY: `let x = make_thing()` — the most ordinary idiom in the language
+// — leaks its allocation when the callee returns a struct or enum.
+// `is_allocating_expr` whitelists only the literal forms, so a `.Call`
+// initializer never enters the releasable set and `Ctx.bind` never
+// reaches `register_rc_cleanup`. Measured under AVRA_RC_STRICT=1 with a
+// positive control: 200 leaked objects per 200 construct/drop rounds.
+//
+// The naive fix — admitting every `.Call` — would be an over-release
+// CRASH (the t-c6y7 / #911 class), because a callee may hand back
+// something it does NOT own: a field of its receiver, one of its own
+// params, or a module global. Releasing the caller's local then frees
+// memory another holder still references. Note which side is safe:
+// NOT releasing leaks, releasing wrongly corrupts. Every "don't know"
+// in here must therefore answer NOT-fresh.
+//
+// So a call is releasable only when the CALLEE is known to return a
+// freshly allocated value. That is a per-function property, derived the
+// way `analyze_copy_types` above derives Copy-ness: seed every function
+// as a candidate, then shrink to a fixpoint. Optimistic seeding is
+// sound here, and recursion is the case to check:
+//
+//   fn f() -> T { if c { f() } else { T{} } }   stays fresh — correct,
+//        every actual return does produce a fresh T.
+//   fn f(x: T) -> T { if c { f(x) } else { x } } drops on pass 1 — the
+//        else-branch returns a param.
+//   fn f() -> T { g() } / fn g() -> T { f() }   both stay candidates,
+//        but neither can ever return, so nothing is emitted on it.
+//
+// The shrink is monotone (a name only ever leaves), so it terminates in
+// at most one pass per function, exactly as `fixpoint_copy` argues.
+//
+// NOT VISIBLE, therefore NOT fresh: extern fns, trait/`dyn` dispatch,
+// calls through fn-typed values or closures, method calls, and
+// cross-module calls — the resolver rewrites those to `.QualifiedIdent`,
+// so they never match the `.Ident` callee form this analysis keys on.
+
+/// Names of functions whose every return path yields a freshly
+/// allocated value the CALLER may own. Seeded optimistically from the
+/// declared functions, then shrunk to a fixpoint.
+export fn analyze_return_ownership(store: NodeStore, body: List<StmtId>) -> List<string> {
+    let empty: List<string> = []
+    let seeded = seed_fn_candidates(store, body, empty)
+    // A local binding or parameter can SHADOW a function name (legal
+    // since zo1a, and the binding wins lexically), so `make()` at a use
+    // site may be calling a closure rather than the function this
+    // analysis measured. We cannot tell the two apart from the callee
+    // `.Ident` alone, so any name that is ever bound as a local or a
+    // parameter anywhere loses its candidacy. Crude, and deliberately
+    // so: the cost is a leak left unfixed, never an over-release.
+    let bound = collect_bound_names(store, body, empty)
+    let base = drop_bound_names(seeded, bound)
+    fixpoint_return_fresh(store, body, base)
+}
+
+/// Seed every declared function name as a candidate.
+fn seed_fn_candidates(store: NodeStore, ids: List<StmtId>, set: List<string>) -> List<string> {
+    mut out = set
+    for id in ids {
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Function(name, _, _, _, _) -> { out = releasable_add(out, name) }
+            .Block(inner) -> { out = seed_fn_candidates(store, inner, out) }
+            _ -> {}
+        }
+    }
+    out
+}
+
+/// Every name bound as a local or a parameter anywhere in the program.
+fn collect_bound_names(store: NodeStore, ids: List<StmtId>, set: List<string>) -> List<string> {
+    mut out = set
+    for id in ids {
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Let(n, _, init) -> {
+                out = releasable_add(out, n)
+                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+            }
+            .Mut(n, _, init) -> {
+                out = releasable_add(out, n)
+                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+            }
+            .Const(n, _, init) -> {
+                out = releasable_add(out, n)
+                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+            }
+            // `let (a, b) = ...` binds EVERY name in the pattern.
+            .LetDestructure(names, init) -> {
+                for pe in names { out = releasable_add(out, pe.name) }
+                out = collect_bound_in_expr(store, store.exprs.get(init), out)
+            }
+            // Match arms are expressions and can bind/shadow inside.
+            .Match(_, arms) -> {
+                for arm in arms {
+                    out = collect_bound_in_expr(store, store.exprs.get(arm.body_id), out)
+                }
+            }
+            .Expr(e) -> { out = collect_bound_in_expr(store, store.exprs.get(e), out) }
+            .Return(e) -> { out = collect_bound_in_expr(store, store.exprs.get(e), out) }
+            .Function(_, _, params, _, fbody) -> {
+                for p in params { out = releasable_add(out, p.name) }
+                out = collect_bound_names(store, fbody, out)
+            }
+            .Block(inner) -> { out = collect_bound_names(store, inner, out) }
+            .If(_, tb, eb) -> {
+                out = collect_bound_names(store, [tb], out)
+                // else_branch is StmtId? — an `if` with no `else` has none.
+                if eb != null { out = collect_bound_names(store, [eb!], out) }
+            }
+            .While(_, wb) -> { out = collect_bound_names(store, [wb], out) }
+            .For(v, _, _, fb) -> {
+                out = releasable_add(out, v)
+                out = collect_bound_names(store, [fb], out)
+            }
+            .ForIn(v, _, fib) -> {
+                out = releasable_add(out, v)
+                out = collect_bound_names(store, [fib], out)
+            }
+            _ -> {}
+        }
+    }
+    out
+}
+
+/// Names bound inside an EXPRESSION — lambda parameters, and locals
+/// declared in value-position blocks / if-expressions / match arms. A
+/// shadowing binder anywhere must drop the function name, because at a
+/// call site `mk()` may resolve to the local rather than the function.
+fn collect_bound_in_expr(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
+    mut out = set
+    match expr {
+        .Lambda(params, body) -> {
+            for p in params { out = releasable_add(out, p.name) }
+            out = collect_bound_in_expr(store, store.exprs.get(body), out)
+        }
+        .Block(stmts) -> { out = collect_bound_names(store, stmts, out) }
+        .IfExpr(_, a, b) -> {
+            out = collect_bound_in_expr(store, store.exprs.get(a), out)
+            out = collect_bound_in_expr(store, store.exprs.get(b), out)
+        }
+        .MatchExpr(_, arms) -> {
+            for arm in arms { out = collect_bound_in_expr(store, store.exprs.get(arm.body_id), out) }
+        }
+        _ -> {}
+    }
+    out
+}
+
+/// Remove every shadowed name from the candidate set.
+fn drop_bound_names(cands: List<string>, bound: List<string>) -> List<string> {
+    mut out: List<string> = []
+    for n in cands {
+        if !copy_set_has(bound, n) { out = list_push_copy(out, n) }
+    }
+    out
+}
+
+/// Iterate `refine_return_fresh` until the candidate set is stable.
+/// Every pass only shrinks it, so this terminates.
+fn fixpoint_return_fresh(store: NodeStore, body: List<StmtId>, cands: List<string>) -> List<string> {
+    let refined = refine_return_fresh(store, body, cands)
+    if copy_set_eq(refined, cands) { refined }
+    else { fixpoint_return_fresh(store, body, refined) }
+}
+
+/// One shrink pass: drop any candidate with a return path that does
+/// not yield a fresh allocation.
+fn refine_return_fresh(store: NodeStore, ids: List<StmtId>, cands: List<string>) -> List<string> {
+    mut out = cands
+    for id in ids {
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Function(name, _, _, _, fbody) -> {
+                if copy_set_has(out, name) && !fn_returns_fresh(store, fbody, out) {
+                    out = releasable_remove(out, name)
+                }
+            }
+            .Block(inner) -> { out = refine_return_fresh(store, inner, out) }
+            _ -> {}
+        }
+    }
+    out
+}
+
+/// True when EVERY return path of this body yields a fresh allocation:
+/// each explicit `return` anywhere inside it, plus the body's tail
+/// expression (Avra returns the last expression implicitly).
+fn fn_returns_fresh(store: NodeStore, body: List<StmtId>, cands: List<string>) -> bool {
+    for e in collect_return_exprs(store, body) {
+        if !expr_is_fresh(store, store.exprs.get(e), cands) { return false }
+    }
+    tail_is_fresh(store, body, cands)
+}
+
+/// Every explicitly-returned expression, recursing through control flow.
+/// A bare `return` (ReturnEmpty) yields nothing to own, so it is not
+/// collected — a unit return can never be a releasable binding.
+fn collect_return_exprs(store: NodeStore, ids: List<StmtId>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for id in ids {
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Return(v) -> { out = list_push_copy(out, v) }
+            .Block(inner) -> { for e in collect_return_exprs(store, inner) { out = list_push_copy(out, e) } }
+            .If(_, tb, eb) -> {
+                for e in collect_return_exprs(store, [tb]) { out = list_push_copy(out, e) }
+                if eb != null {
+                    for e in collect_return_exprs(store, [eb!]) { out = list_push_copy(out, e) }
+                }
+            }
+            .While(_, wb) -> { for e in collect_return_exprs(store, [wb]) { out = list_push_copy(out, e) } }
+            .For(_, _, _, fb) -> { for e in collect_return_exprs(store, [fb]) { out = list_push_copy(out, e) } }
+            .ForIn(_, _, fib) -> { for e in collect_return_exprs(store, [fib]) { out = list_push_copy(out, e) } }
+            // A `return` inside a match ARM is a return path too. Without
+            // this the arm was never examined, so `fn f(a) { match c {
+            // true -> { return a } ... } }` was judged fresh — an
+            // over-release. Arm bodies are expressions, so a `return`
+            // inside one appears as a Block statement within it.
+            .Match(_, arms) -> {
+                for arm in arms {
+                    for e in collect_return_exprs_in_expr(store, store.exprs.get(arm.body_id)) {
+                        out = list_push_copy(out, e)
+                    }
+                }
+            }
+            // A nested function's returns belong to IT, not to us.
+            .Function(_, _, _, _, _) -> {}
+            _ -> {}
+        }
+    }
+    out
+}
+
+/// `return` expressions reachable from inside an EXPRESSION — match arm
+/// bodies and value-position blocks hold statements, and a `return` in
+/// one belongs to the enclosing function.
+fn collect_return_exprs_in_expr(store: NodeStore, expr: Expr) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    match expr {
+        .Block(stmts) -> { for e in collect_return_exprs(store, stmts) { out = list_push_copy(out, e) } }
+        .IfExpr(_, a, b) -> {
+            for e in collect_return_exprs_in_expr(store, store.exprs.get(a)) { out = list_push_copy(out, e) }
+            for e in collect_return_exprs_in_expr(store, store.exprs.get(b)) { out = list_push_copy(out, e) }
+        }
+        .MatchExpr(_, arms) -> {
+            for arm in arms {
+                for e in collect_return_exprs_in_expr(store, store.exprs.get(arm.body_id)) {
+                    out = list_push_copy(out, e)
+                }
+            }
+        }
+        // A lambda's returns belong to the LAMBDA, not to us.
+        _ -> {}
+    }
+    out
+}
+
+/// The implicit return: a body whose last statement is an expression
+/// hands that expression back. A body ending in anything else (a
+/// `return` already collected above, a decl, a loop) has no tail value,
+/// which is vacuously fine.
+fn tail_is_fresh(store: NodeStore, body: List<StmtId>, cands: List<string>) -> bool {
+    if body.length == 0 { return true }
+    match stmt_unwrap(store, store.stmts.get(body.get(body.length - 1))) {
+        .Expr(e) -> expr_is_fresh(store, store.exprs.get(e), cands)
+        .Block(inner) -> tail_is_fresh(store, inner, cands)
+        // An `if` or `match` in TAIL position is the implicit return,
+        // and it arrives as a STATEMENT — `Stmt.If` / `Stmt.Match`, not
+        // `Expr.IfExpr` / `Expr.MatchExpr`. Missing these was a real
+        // over-release: they fell to the catch-all below, which answers
+        // "no non-fresh path found", so a function whose else-branch
+        // returned a PARAM was marked fresh. Caught by the branch specs
+        // in codegen/tests/return_ownership_test.av. Every branch is a
+        // return path, so every branch must be fresh.
+        .If(_, tb, eb) -> {
+            // No `else` means one path yields no value at all; deny
+            // rather than reason about it.
+            if eb == null { return false }
+            tail_is_fresh(store, [tb], cands) && tail_is_fresh(store, [eb!], cands)
+        }
+        .Match(_, arms) -> {
+            for arm in arms {
+                if !expr_is_fresh(store, store.exprs.get(arm.body_id), cands) { return false }
+            }
+            true
+        }
+        // Anything else in tail position produces no value — a decl, a
+        // loop, a `return` already collected above — so the function
+        // yields unit and there is no ownership claim to get wrong.
+        // (`Ctx.bind` gates on `vtype_is_ptr_type` anyway.)
+        _ -> true
+    }
+}
+
+/// Does this expression produce a value the caller may own?
+///
+/// The catch-all answers FALSE, and that is the load-bearing line in
+/// this file: params, field reads, globals, method calls, indexing,
+/// `dyn` dispatch and `.QualifiedIdent` cross-module calls all land
+/// there. Adding a `true` arm here without proving the callee allocates
+/// is how this becomes a double-free.
+fn expr_is_fresh(store: NodeStore, expr: Expr, cands: List<string>) -> bool {
+    match expr {
+        .StructLit(_, _) -> true
+        .EnumCtor(_, _, _) -> true
+        .Tuple(_) -> true
+        .With(_, _) -> true
+        // Only a DIRECT call to a known-fresh function in this module.
+        .Call(callee, _) -> {
+            match store.exprs.get(callee) {
+                .Ident(n) -> copy_set_has(cands, n)
+                _ -> false
+            }
+        }
+        // A value-position block/if/match hands back its own tails, so
+        // every arm must be fresh for the whole to be.
+        .Block(stmts) -> tail_is_fresh(store, stmts, cands)
+        .IfExpr(_, a, b) -> expr_is_fresh(store, store.exprs.get(a), cands)
+                         && expr_is_fresh(store, store.exprs.get(b), cands)
+        .MatchExpr(_, arms) -> {
+            for arm in arms {
+                if !expr_is_fresh(store, store.exprs.get(arm.body_id), cands) { return false }
+            }
+            true
+        }
+        _ -> false
+    }
 }
