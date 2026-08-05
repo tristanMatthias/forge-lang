@@ -1101,12 +1101,66 @@ fn tail_is_fresh(store: NodeStore, body: List<StmtId>, cands: ptr) -> bool {
 /// `dyn` dispatch and `.QualifiedIdent` cross-module calls all land
 /// there. Adding a `true` arm here without proving the callee allocates
 /// is how this becomes a double-free.
+/// True when `e` may be stored in a returned composite WITHOUT the caller
+/// later over-releasing it.
+///
+/// The distinction this draws is the one `expr_is_fresh` used to miss.
+/// `__release_<T>` is RECURSIVE: releasing a returned struct also releases
+/// its fields. A field initialized from a param / capture / global / field
+/// read is a BORROWED alias, and the callee does NOT retain it — the retain
+/// at struct_decl/codegen.av:153 is gated on `ctx.alias_retain_scope`, which
+/// is set only for a releasable BINDING's initializer (let_stmt/codegen.av:52)
+/// and is false for a RETURNED literal, exactly as the comment there states.
+///
+/// So `fn gitem(prim: GPrim) -> GItem { GItem { …, prim, … } }` returns a
+/// fresh BOX holding a borrowed FIELD. Admitting it means the caller's
+/// `let it = gitem(p)` recursively releases `p`, dropping a tick that was
+/// never added. That is the grammar-tree corruption (t-k6lm).
+///
+/// Scalar literals are owned outright. Anything else must be fresh in its
+/// own right. A bare `.Ident` is denied even when it names a fresh local:
+/// this analysis has no per-name ownership state, and the safe direction is
+/// a leak.
+fn init_is_owned(store: NodeStore, e: Expr, cands: ptr) -> bool {
+    match e {
+        .Number(_) -> true
+        .FloatLit(_) -> true
+        .String(_) -> true
+        .Bool(_) -> true
+        .None -> true
+        _ -> expr_is_fresh(store, e, cands)
+    }
+}
+
+fn field_inits_all_owned(store: NodeStore, inits: List<FieldInit>, cands: ptr) -> bool {
+    mut i = 0
+    while i < inits.length {
+        if !init_is_owned(store, store.exprs.get(inits[i].value_id), cands) { return false }
+        i = i + 1
+    }
+    true
+}
+
+fn arg_ids_all_owned(store: NodeStore, args: List<ExprId>, cands: ptr) -> bool {
+    mut i = 0
+    while i < args.length {
+        if !init_is_owned(store, store.exprs.get(args[i]), cands) { return false }
+        i = i + 1
+    }
+    true
+}
+
 fn expr_is_fresh(store: NodeStore, expr: Expr, cands: ptr) -> bool {
     match expr {
-        .StructLit(_, _) -> true
-        .EnumCtor(_, _, _) -> true
-        .Tuple(_) -> true
-        .With(_, _) -> true
+        // The BOX is fresh, but a release reaches its FIELDS — see
+        // `init_is_owned`. An unconditional `true` here was the over-release.
+        .StructLit(_, inits) -> field_inits_all_owned(store, inits, cands)
+        .EnumCtor(_, _, args) -> arg_ids_all_owned(store, args, cands)
+        .Tuple(elems) -> arg_ids_all_owned(store, elems, cands)
+        // `with` RETAINS the base's ptr fields unconditionally (see
+        // with_expr/codegen.av), so the base may alias; the OVERRIDES go
+        // through the same gated retain as struct fields, so they may not.
+        .With(_, inits) -> field_inits_all_owned(store, inits, cands)
         // Only a DIRECT call to a known-fresh function in this module.
         .Call(callee, _) -> {
             match store.exprs.get(callee) {
