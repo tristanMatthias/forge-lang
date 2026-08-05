@@ -41,6 +41,7 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 // The local wrappers below delegate to it so the two engines cannot drift.
 use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, seq_is_leading_hand, rule_owns_recovery}
 use features.grammar.{is_hand_stmt_leaf, is_hand_expr_leaf}
+use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule, hand_kind}
 
 // ── Pratt collapse of the uniform binary-operator ladder (ps3t.6.7 Step G, slice 1) ──
 //
@@ -1198,11 +1199,6 @@ fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: s
     out
 }
 
-/// True iff the primary is a zero-width predicate (emit side) — `@when(flag)` mode read
-/// OR `@peek(cond)` token lookahead. Both emit no per-item body (the guard is folded).
-fn prim_is_pred_e(prim: GPrim) -> bool {
-    match prim { .Pred(_) -> true  .Peek(_) -> true  _ -> false }
-}
 
 /// One item. `idx == 0` is the branch's guard token (already matched by the
 /// enclosing `if`/`while`), so it is consumed unconditionally; a later
@@ -2749,181 +2745,10 @@ fn hand_name(prim: GPrim) -> string {
 fn rule_self_validates(g: Grammar, name: string, visited: List<string>) -> bool { rule_owns_recovery(g, name, visited) }
 
 
-fn rep_is_one(rep: GRep) -> bool { match rep { .One -> true  _ -> false } }
-fn rep_is_star(rep: GRep) -> bool { match rep { .Star -> true  _ -> false } }
-fn rep_is_plus(rep: GRep) -> bool { match rep { .Plus -> true  _ -> false } }
-fn rep_is_opt(rep: GRep) -> bool { match rep { .Opt -> true  _ -> false } }
 
-fn build_is_none(build: GBuild) -> bool { match build { .None -> true  _ -> false } }
-fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -> false } }
 
-// ── Node-kind of a rule's result (its Nystrom target) — drives the coercion,
-// the CapVal wrapper, and the list element type PER referenced rule, so the
-// emitter works across Expr / Stmt / Pattern / Type node kinds. Determined
-// from the rule's build (apply_build's target), crossing pass-throughs. ──
 
-fn build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkIfLet" || bn == "MkQuote" || bn == "MkQuoteType" || bn == "MkQuoteArm" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkSpliceStruct" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkGrammarBlock" || bn == "MkTaggedTemplate" || bn == "MkTableHeader" || bn == "MkTableRow" || bn == "MkTableLit" || bn == "MkPrimaryFail" { return "expr" }
-    if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" { return "stmt" }
-    if bn == "MkArmReturn" { return "expr" }
-    if bn == "MkArm" { return "arm" }
-    if bn == "MkFieldInit" { return "finit" }
-    if bn == "MkWhenArm" || bn == "MkWhenDefault" { return "warm" }
-    if bn == "MkSelectArm" { return "sarm" }
-    if bn == "MkCompConfig" { return "ccfg" }
-    if bn == "MkCompConfigPair" { return "cpair" }
-    if bn == "MkChildrenSlot" { return "cslot" }
-    // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
-    // except the component CapVals (MkParam → PEntry, MkField → Field,
-    // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentBlock" || bn == "MkRawComponentBlock" || bn == "MkMethodShorthand" || bn == "MkCompField" { return "stmt" }
-    if bn == "MkAnn" { return "ann" }
-    if bn == "MkParam" { return "pentry" }
-    if bn == "MkTypeParam" { return "tparam" }
-    if bn == "MkField" { return "field" }
-    if bn == "MkEVariant" { return "variant" }
-    if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" || bn == "OptPresent" || bn == "OptAbsent" { return "pat" }
-    if bn == "TyUnion" || bn == "MkFn" || bn == "TyDyn" || bn == "TyList" || bn == "TyParen" || bn == "MkNamed" || bn == "MkQualified" { return "type" }
-    "expr"
-}
 
-/// The CapVal kind an `@hand` leaf yields — derived from the shared hand-leaf
-/// table (hand_leaves.av), the same seam the emitted dispatch and the executor's
-/// dispatch read, so a leaf cannot be a statement to the dispatcher and an
-/// expression to the emitter.
-///
-/// It was the LAST of the six parallel leaf-name tables the seam collapsed
-/// (t-47hc slice 7), left behind because it is not a faithful copy: it omitted
-/// `stmt_hand`, so `hand_kind("stmt_hand")` said "expr" while
-/// `is_hand_stmt_leaf("stmt_hand")` said true. That was dormant — this is
-/// consulted only where a leaf is captured as a LIST element (a `( s:@hand(f) )*`
-/// repetition), and no grammar captures `stmt_hand` that way — but it is exactly
-/// the kind of drift that surfaces later as a StmtId coerced through the
-/// expression element type, far from its cause (t-sjf9).
-export fn hand_kind(hf: string) -> string {
-    if is_hand_stmt_leaf(hf) { return "stmt" }
-    "expr"
-}
-
-fn rule_result_kind(g: Grammar, name: string) -> string {
-    rule_kind_v(g, name, [])
-}
-
-fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string {
-    if str_in(visited, name) { return "expr" }
-    let r = emit_lookup_rule(g, name)
-    // Dispatch-only family grammars intentionally leave cross-family refs
-    // external so generated files call one another instead of re-emitting
-    // duplicate rules. Preserve the external rule's typed capture when it is
-    // repeated (expression block -> statement*) rather than defaulting its
-    // accumulator to ExprId.
-    if r.name == "" {
-        if name == "statement" || name == "declaration" { return "stmt" }
-        // The shared match-ARM fragment, external in the expression view (t-47hc.25).
-        // Without these the accumulator defaults to ExprId and the generated parser
-        // coerces arms with capval_to_expr — which does not even compile
-        // (`CapVal.WArms` wants List<WhenArm>), but a kind mismatch that DID compile
-        // would be a silent tree corruption, so declare them beside their FIRSTs.
-        if name == "match_arm" { return "arm" }
-        if name == "match_when_arm" { return "warm" }
-        // The PATTERN family, external in every dispatch view (t-47hc.29). The match-table
-        // flip is the first rule to REPEAT a pattern capture (`( p:pattern … )*`), and
-        // without this its accumulator declares `List<ExprId>` and coerces each row's
-        // pattern through `capval_to_expr` — the exact failure this block was written for.
-        // A scalar `p:pattern_or` (match_arm) never noticed because the builder coerces at
-        // the use-site; both are declared here so the next repeat cannot re-open the trap.
-        if name == "pattern" || name == "pattern_or" { return "pat" }
-        // The GENERIC type parameter, external in the declaration view (t-47hc slice
-        // 10.9). Without this a repeated `tparams:tparam` capture declares
-        // `List<ExprId>` and coerces each entry through `capval_to_expr` — caught the
-        // moment `declaration` first named a native decl rule, and the same trap the
-        // `pattern` and `match_arm` entries above were written for.
-        if name == "tparam" { return "tparam" }
-        // The TYPE family, external in the expression view. `f<T, U>(args)` (t-47hc.33
-        // form 8) is the first rule to REPEAT a type capture (`( ta:type_expr … )*`), and
-        // without this its accumulator declares `List<ExprId>` and coerces each type
-        // argument through `capval_to_expr` — the identical trap the `pattern`, `tparam`
-        // and `match_arm` entries above were written for. The scalar `elem:type_expr`
-        // (channel_expr) never noticed, for the same reason the scalar `p:pattern_or`
-        // did not: its builder coerces at the use-site, via capval_to_texpr.
-        if name == "type_expr" { return "type" }
-        // The PARAMETER, external in the declaration view (t-47hc slice 10.13 — routing
-        // `fn` / `extern` / `trait` / `impl`). `param` is defined in the EXPRESSION view
-        // (paren_expr's typed lambda) and shared rather than duplicated, so the four
-        // parameter lists cross the boundary. Without this the accumulator declares
-        // `List<ExprId>` and coerces each entry through `capval_to_expr`, which the
-        // builders reject as a layout conflict — the same trap as `tparam` above, one
-        // rule over. Declared BESIDE its FIRST in rule_first_guard; a cross-view
-        // reference always needs both.
-        if name == "param" { return "pentry" }
-        return "expr"
-    }
-    mut v2: List<string> = []
-    for x in visited { v2.push(x) }
-    v2.push(name)
-    node_kind(g, r.body, v2)
-}
-
-fn node_kind(g: Grammar, node: GNode, visited: List<string>) -> string {
-    match node {
-        .Alt(branches) -> {
-            for b in branches {
-                let k = seq_kind(g, b, visited)
-                if k != "" { return k }
-            }
-            "expr"
-        }
-    }
-}
-
-fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
-    match seq.build {
-        .Call(bn, _) -> build_kind(bn)
-        // A PASSTHROUGH build (`-> n`) has the kind of whatever `n` captured. Left
-        // unresolved this defaults the rule to "expr", and the mistyping CASCADES:
-        // `use_decl = "use" ut:use_tail -> ut` made `declaration` non-statement, which
-        // turned `stmts:declaration*` in `stmt_block` into the emit bailout
-        // `labeled bare-ref over a non-statement rule is unsupported`. Resolving only
-        // the case that is decidable here — the label names a rule REF or a @hand leaf
-        // — leaves every existing Var build (whose captures are terminal alternations,
-        // e.g. `null_cell`) returning "" exactly as before, so no emitted output moves.
-        .Var(vn) -> {
-            mut k = ""
-            for it in seq.items {
-                if it.label == vn && k == "" {
-                    match it.prim {
-                        .Ref(rn) -> k = rule_kind_v(g, rn, visited)
-                        .Hand(hf) -> k = hand_kind(hf)
-                        _ -> {}
-                    }
-                }
-            }
-            k
-        }
-        .None -> {
-            // Zero-width PREDICATES (`@peek` / `@when`) carry no capture and cannot
-            // change what a rule yields, so they are skipped when looking for the
-            // single significant item. Counting them made a gated passthrough like
-            // the then-shape of `comp_block_item` (`@peek(cond) declaration`) fall
-            // through to "expr", which then turned `body:comp_block_item*` into the
-            // `labeled bare-ref over a non-statement rule is unsupported` bailout —
-            // the same mistyping CASCADE the `.Var` arm above documents, reached by
-            // a different route. `is_passthrough` needed the SAME skip for the same
-            // shape and did not get it until t-47hc.5.1 B2b; see its WHY.
-            mut sig: List<GItem> = []
-            for gi in seq.items {
-                if !prim_is_pred_e(gi.prim) { sig.push(gi) }
-            }
-            if sig.length == 1 && rep_is_one(sig[0].rep) {
-                match sig[0].prim {
-                    .Ref(rn) -> rule_kind_v(g, rn, visited)
-                    .Hand(hf) -> hand_kind(hf)
-                    _ -> "expr"
-                }
-            } else { "" }
-        }
-    }
-}
 
 /// The capture-coercion fn for a node kind (`capval_to_expr` / `_pat` / …).
 fn kind_coerce(kind: string) -> string {
@@ -3066,11 +2891,6 @@ fn node_opt_scalars(node: GNode, in_opt: bool, list_labels: List<string>) -> Lis
     }
 }
 
-fn str_in(xs: List<string>, s: string) -> bool {
-    if s == "" { return false }
-    for x in xs { if x == s { return true } }
-    false
-}
 
 fn join_commas(xs: List<string>) -> string {
     mut out = ""
@@ -3083,12 +2903,6 @@ fn join_commas(xs: List<string>) -> string {
     out
 }
 
-fn emit_lookup_rule(g: Grammar, name: string) -> Rule {
-    for r in g.rules {
-        if r.name == name { return r }
-    }
-    Rule { name: "", body: GNode.Alt([]) }
-}
 
 // ── @expect / @recover lookup ──
 
