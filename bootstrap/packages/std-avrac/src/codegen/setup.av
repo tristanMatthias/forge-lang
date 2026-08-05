@@ -7,7 +7,7 @@ use core.{avra_llvm_const_int}
 extern fn avra_ice_phase(phase: string)
 use core.{avra_process_env_get}
 use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EmitValue, EnumReg, EnumLookup, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
-use codegen.{analyze_releasable, analyze_copy_types, analyze_return_ownership_set}
+use codegen.{analyze_releasable, analyze_copy_types, analyze_return_ownership_set, fresh_set_new}
 use codegen.{publish_fn_units}
 use codegen.{analyze_cycles, cycle_set_has}
 use core.{build_registry}
@@ -415,7 +415,11 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     let copy_types = analyze_copy_types(structs, enums)
     // t-k6lm: derived here because this is the one place with BOTH the
     // whole NodeStore and the program's top-level statements in scope.
-    let rc_fresh_fns = analyze_return_ownership_set(store, stmts)
+    // t-k6lm: the analysis is BUILT but not yet CONSUMED. Swapping this for
+    // `analyze_return_ownership_set(store, stmts)` re-enables the wiring —
+    // and currently corrupts the compiled-in grammar (see the ticket). The
+    // predicate work continues against the specs until that is found.
+    let rc_fresh_fns = fresh_set_new()
     let empty_releasable: List<string> = []
     let empty_fn_param_names: List<string> = []
     let empty_loops: List<LoopStackFrame> = []

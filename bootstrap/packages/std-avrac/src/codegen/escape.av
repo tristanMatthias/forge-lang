@@ -834,15 +834,30 @@ fn seed_fn_candidates(store: NodeStore, ids: List<StmtId>, set: ptr, mod_path: s
 /// direction.
 fn add_fn_keys(set: ptr, mod_path: string, name: string) {
     fresh_set_add(set, name)
-    let q = type_qualified_name(mod_path, name)
+    let q = canonical_fn_key(mod_path, name)
     if q != name { fresh_set_add(set, q) }
 }
 
 /// Remove both lookup keys for one function.
 fn drop_fn_keys(set: ptr, mod_path: string, name: string) {
     fresh_set_remove(set, name)
-    let q = type_qualified_name(mod_path, name)
+    let q = canonical_fn_key(mod_path, name)
     if q != name { fresh_set_remove(set, q) }
+}
+
+/// The canonical key for a declared function.
+///
+/// A `.Function` name is ALREADY fully qualified once the resolver has run,
+/// and this analysis runs on the resolved tree in the compile path. Blindly
+/// prefixing the enclosing module then produced doubled garbage —
+/// `@std::avrac::parse::@std::avrac::parse::parse_match_stmt` — a key no call
+/// site can ever match, observed directly in a dump of the real @std::avrac
+/// set. Only qualify a name that is not already qualified. (The unresolved
+/// tree the specs feed in still needs the prefix, which is why this is not
+/// simply dropped.)
+fn canonical_fn_key(mod_path: string, name: string) -> string {
+    if name.contains("::") { return name }
+    type_qualified_name(mod_path, name)
 }
 
 /// Every name bound as a local or a parameter anywhere in the program.
