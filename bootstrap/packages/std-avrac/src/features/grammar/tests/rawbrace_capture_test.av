@@ -44,7 +44,7 @@ fn first_diag(grammar_src: string, input: string) -> string {
     if g.error != "" { return "GRAMMAR ERROR: ${g.error}" }
     let out = run_grammar_expr(g.grammar, input)
     if out.diags.length == 0 { return "" }
-    out.diags[0]
+    out.diags[0].msg
 }
 
 fn grammar_error(grammar_src: string) -> string {
