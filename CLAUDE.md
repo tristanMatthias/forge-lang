@@ -805,7 +805,14 @@ slices onto one branch/PR. Each slice is its OWN branch and its OWN PR,
   PRs merge bottom-up as each goes green.
 - **Rebase** — when a lower PR merges (the merged-PR webhook fires reliably),
   rebase the rest of the stack onto the new integration tip, re-target the next
-  PR's base to integration, and re-fetch the pinned seed.
+  PR's base to integration, and re-fetch the pinned seed. **Do BOTH — the rebase
+  is what actually starts the gates, not the re-target (t-ghmn).** The gates use
+  the default `pull_request` activity types `[opened, synchronize, reopened]`; a
+  base change fires `edited`, which is not among them, so re-targeting alone
+  triggers nothing. The rebase's push (`synchronize`) is the trigger. Re-target
+  without pushing and the guard below does not re-run either, leaving its earlier
+  red pinned to the head SHA while the gates sit un-run — fail-closed, but the red
+  is then describing a condition that no longer holds.
 - Each slice still: build-quick + emit-gen-check + diff-test PREBUILT=1 + a
   targeted test; keep CI green; never merge past a red/canceled check.
 
@@ -824,7 +831,10 @@ zero checks and no review, both by construction. So a stacked PR is never
 checkless-and-silent, `.github/workflows/stacked-pr.yml` is the complement of
 those filters — it fires on exactly the bases they ignore and FAILS, so the
 absence shows up as a red check named `gates deferred — no gate ran on this
-base`. Nothing in the branch needs fixing when it goes red; re-target the base.
+base`. Nothing in the branch needs fixing when it goes red; rebase and re-target
+the base (both — see the rebase bullet above). If you ever see that check red on a
+PR whose base ALREADY is the integration branch, you re-targeted without pushing:
+push, don't debug the branch.
 `diagnose.sh --check-ci-gates` (spec: `tests/ci_gates_lint_test.av`) asserts the
 gates' allowlists and the guard's ignore-list stay exact complements, so a new
 gate, a retargeted one, or a deleted guard can't silently restore the hole.

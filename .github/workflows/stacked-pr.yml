@@ -33,6 +33,25 @@
 # branch, at which point the four real gates fire and this one stops
 # running. There is nothing to fix in the branch's code.
 #
+# The REBASE is load-bearing there, not incidental (t-ghmn). The gates
+# declare a bare `pull_request:`, so they inherit the default activity
+# types [opened, synchronize, reopened]. Changing a base fires `edited`,
+# which is NOT in that set — so a re-target BY ITSELF does not start
+# them. What starts them is the rebase's push (`synchronize`). Re-target
+# without pushing and you get the worst reading available: this guard no
+# longer matches `branches-ignore` so it does not re-run, but its earlier
+# FAILING check run stays pinned to the head SHA — a red "no gate ran on
+# this base" sitting on a PR whose base is now correct and whose gates
+# still have not run. It fails closed (that red blocks the merge), but it
+# is describing a condition that no longer holds.
+#
+# So: always rebase-and-re-target, never re-target alone. t-ghmn tracks
+# making that a guarantee in config rather than a convention — the
+# candidate fix (`types: [..., edited]` plus a base-changed `if:`) is
+# deliberately NOT applied here, because an `if:` that mis-evaluates
+# makes a gate SKIP SILENTLY, which is this file's own failure mode
+# reintroduced by its own fix. It needs proving on a real PR first.
+#
 # A stacked slice is the common case but not the only one this catches
 # — a PR into any other long-lived branch (`main`, say) is equally
 # ungated today, so the message states the FACT first and offers the
@@ -97,9 +116,19 @@ jobs:
             echo
             echo "**If this is a stacked slice** (the common case), nothing in the"
             echo "branch needs fixing. Do not merge it while stacked: when the lower"
-            echo "slice merges, rebase and re-target this PR's base to"
+            echo "slice merges, **rebase AND re-target** this PR's base to"
             echo "\`feat/crafting-intepreters\`. The four gates then run for real and"
             echo "this check stops running."
+            echo
+            echo "The rebase is required, not optional (t-ghmn). The gates use the"
+            echo "default \`pull_request\` activity types, and a base change fires"
+            echo "\`edited\`, which is not among them — so re-targeting ALONE starts"
+            echo "nothing. The rebase's push (\`synchronize\`) is what starts them. If"
+            echo "you re-target without pushing, this check does not re-run either,"
+            echo "and its existing red stays pinned to the head SHA while the gates"
+            echo "sit un-run. If you ever see this check red on a PR already based on"
+            echo "\`feat/crafting-intepreters\`, that is the state you are in — push"
+            echo "(or re-run the gates) rather than reading the red as a code problem."
             echo
             echo "**If this PR deliberately targets another long-lived branch**, no"
             echo "gate covers that base at all — decide that deliberately rather than"
