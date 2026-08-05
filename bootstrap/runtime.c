@@ -2148,6 +2148,7 @@ void avra_map_set_cstr(void* map, const char* key, int64_t value) {
 }
 
 int64_t avra_map_get_cstr(void* map, const char* key) {
+    if (!map) return 0;  // a null map reads as EMPTY, never a fault
     AvraHashMap* m = (AvraHashMap*)map;
     uint64_t idx = avra_hash_str(key) % m->cap;
     while (m->keys[idx]) {
@@ -2160,6 +2161,7 @@ int64_t avra_map_get_cstr(void* map, const char* key) {
 }
 
 int64_t avra_map_has_cstr(void* map, const char* key) {
+    if (!map) return 0;  // a null map reads as EMPTY, never a fault
     AvraHashMap* m = (AvraHashMap*)map;
     uint64_t idx = avra_hash_str(key) % m->cap;
     while (m->keys[idx]) {
@@ -2176,6 +2178,7 @@ int64_t avra_map_len_cstr(void* map) {
 
 // Return an array of all keys.
 void* avra_map_keys_cstr(void* map) {
+    if (!map) return avra_array_new();
     AvraHashMap* m = (AvraHashMap*)map;
     void* arr = avra_array_new();
     for (int64_t i = 0; i < m->cap; i++) {
@@ -2199,22 +2202,57 @@ void* avra_map_values_cstr(void* map) {
 }
 
 // Remove a key from the map. Returns 1 if found, 0 if not.
+// Remove a key. Two bugs lived here, both silent:
+//
+// 1. It hashed with djb2 while set/get/has hash with avra_hash_str
+//    (FNV-1a). Remove therefore probed a different chain from the one
+//    the key was stored on, hit an empty slot, and returned 0 having
+//    deleted NOTHING. `map.remove(k)` (features/map_lit) was a no-op
+//    for every Avra program, and internally it turned a shrink-to-
+//    fixpoint loop into an infinite one.
+// 2. Clearing the slot to NULL breaks LINEAR PROBING: any key that
+//    collided and landed further along the chain becomes unreachable,
+//    because the lookup stops at the hole. Deleting one key silently
+//    deleted others, whenever the table had a collision.
+//
+// Fixed by hashing the same way as every other operation, and by
+// backward-shift deletion — after clearing a slot, pull forward any
+// following entry whose home position is at or before the hole, so
+// no chain is ever left with a gap in the middle. That keeps the
+// invariant avra_map_grow relies on (it re-inserts by walking slots).
 int64_t avra_map_remove_cstr(void* map, const char* key) {
     if (!map || !key) return 0;
     AvraHashMap* m = (AvraHashMap*)map;
-    uint64_t h = 5381;
-    for (const char* p = key; *p; p++) h = h * 33 + (unsigned char)*p;
-    int64_t idx = (int64_t)(h % (uint64_t)m->cap);
+    int64_t idx = (int64_t)(avra_hash_str(key) % (uint64_t)m->cap);
     for (int64_t i = 0; i < m->cap; i++) {
-        int64_t probe = (idx + i) % m->cap;
-        if (!m->keys[probe]) return 0;
-        if (strcmp(m->keys[probe], key) == 0) {
-            free(m->keys[probe]);
-            m->keys[probe] = NULL;
-            m->values[probe] = 0;
-            m->count--;
-            return 1;
+        int64_t hole = (idx + i) % m->cap;
+        if (!m->keys[hole]) return 0;
+        if (strcmp(m->keys[hole], key) != 0) continue;
+
+        free(m->keys[hole]);
+        m->keys[hole] = NULL;
+        m->values[hole] = 0;
+        m->count--;
+
+        // Backward-shift: walk forward, relocating any entry that would
+        // otherwise be cut off from its home slot by the hole.
+        int64_t j = hole;
+        while (1) {
+            j = (j + 1) % m->cap;
+            if (!m->keys[j]) break;
+            int64_t home = (int64_t)(avra_hash_str(m->keys[j]) % (uint64_t)m->cap);
+            // Does `home` lie cyclically within (hole, j]? If so this entry
+            // is already reachable past the hole and must stay put.
+            int stays = (hole <= j) ? (home > hole && home <= j)
+                                    : (home > hole || home <= j);
+            if (stays) continue;
+            m->keys[hole] = m->keys[j];
+            m->values[hole] = m->values[j];
+            m->keys[j] = NULL;
+            m->values[j] = 0;
+            hole = j;
         }
+        return 1;
     }
     return 0;
 }
