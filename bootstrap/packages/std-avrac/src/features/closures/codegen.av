@@ -619,7 +619,7 @@ export fn emit_lambda_typed(ctx: Ctx, env: List<VarBinding>, raw_params: List<Pa
     body_ctx.current_fn_params = lambda_foreign_names_of(params, captures)
     body_ctx.cov_fn_entry()
     // with_fn resets defers/rc_cleanup/rc_releasable to .End, so lambda body starts fresh.
-    body_ctx.rc_releasable = analyze_releasable_expr(ctx.nodes, body)
+    body_ctx.rc_releasable = analyze_releasable_expr(ctx.nodes, body, ctx.rc_fresh_fns)
     mut result = EmitValue { value: ctx.i64(0), ty: .Int }
     match emit_lambda_body_with_ret(body_ctx, body_env, body, ret_fn_ty) {
         .Ok(v) -> { result = v }

@@ -5,7 +5,7 @@
 use core.{Expr, ValueType, VarBinding, vtype_is_unknown, vtype_trait_name, vtype_struct_name, vtype_list_elem, vtype_is_list, vtype_is_optional, vtype_struct, variant_is_optional_ctor}
 use features.closures.{emit_expected}
 use core.{type_registry_id_for, method_mangled_name}
-use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has}
+use codegen.{Ctx, ok_stmt, vtype_is_copy, releasable_has, is_allocating_expr}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use features.list_lit.{emit_list_lit_expected}
@@ -38,7 +38,17 @@ export fn emit_var_decl(ctx: Ctx, env: List<VarBinding>, name: string, ty_vt: Va
     // from pinning sources compiler-wide. (A nested literal in a CALL
     // argument inside this initializer over-retains harmlessly — bounded,
     // rare, and safe-direction.)
-    if releasable_has(ctx.rc_releasable, name) {
+    // t-k6lm slice 2: the `is_allocating_expr` conjunct PINS today's
+    // behaviour. Until now, membership in `rc_releasable` implied the
+    // initializer was one of the allocating LITERAL forms, so the two
+    // conditions were equivalent and this reads as a no-op. Slice 2 widens
+    // the set to include calls to known-fresh callees, and without this
+    // guard that widening would ALSO flip alias-init emission to retain
+    // inside call initializers — a shape it has never applied to, and
+    // exactly the "pinning sources compiler-wide" the scoping above exists
+    // to bound. One change at a time: this PR adds the scope-exit release
+    // and nothing else. Revisit deliberately if call inits should retain.
+    if releasable_has(ctx.rc_releasable, name) && is_allocating_expr(initializer) {
         emit_ctx = emit_ctx with { alias_retain_scope: true }
     }
     // The resolved declared type (or Unknown when unannotated) — the
