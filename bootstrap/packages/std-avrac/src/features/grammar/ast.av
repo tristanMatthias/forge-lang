@@ -155,6 +155,9 @@ export enum GNode {
 /// different closing-`]` diagnostics the hand parser emits, and `@expect` keys on the
 /// token so each needs its own sequence. Must be the LAST branch (a guarded branch after
 /// it would be dead) and at most one; both enforced at grammar-parse time.
+/// A gated rule reference found inside a node — see emit.gated_ref_of.
+export type GatedRef = { found: bool, rule: string }
+
 export type GSeq = {
     items: List<GItem>,
     build: GBuild,

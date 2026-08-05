@@ -1550,7 +1550,12 @@ fn same_line_wrap(item: GItem, guard: string) -> string {
 fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, spec_ctx: int) -> string {
     match item.prim {
         .Group(inner) -> {
+            // A GATED optional needs the same FIRST re-check a gated repetition does —
+            // `@gate` replaced the group's FIRST with a cond, so the callee's
+            // "my caller proved FIRST" promise is broken here too. Without it
+            // `enum E { 5 }` bound `5` as a variant name and compiled clean.
             "${ind}if ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                gated_first_check(g, inner, ind + "    ") +
                 emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                 "${ind}}\n"
         }
@@ -1672,6 +1677,103 @@ fn rule_has_hand_alt(g: Grammar, name: string) -> bool {
         .Alt(branches) -> {
             for b in branches {
                 if b.items.length == 1 && prim_is_hand(b.items[0].prim) { return true }
+            }
+            false
+        }
+    }
+}
+
+/// Does this node carry a `@gate`d item? Drives the mandatory no-progress break on
+/// a gated repetition — see emit_repeat_group. Structural and shallow on purpose: a
+/// gate inside a NESTED group is that group's own loop's problem, and its loop gets
+/// the same treatment when it is emitted.
+/// The gated item in this node, if any — the rule REFERENCE name and the message its
+/// own rule would use when its FIRST token is missing.
+///
+/// SOUNDNESS (t-myz7). A generated `parse_X` consumes its leading terminal
+/// UNCONDITIONALLY (`let n = CapVal.Tok(st.advance())`) because emit's convention is
+/// that the CALLER proved FIRST(X). `@gate` deliberately replaces that FIRST with a
+/// cond, so under a gate the convention no longer holds and the callee swallows
+/// whatever token is there: `enum E { 5 }` bound `5` as a variant name and COMPILED
+/// CLEAN, where the hand rejects it. A gated call therefore has to re-establish what
+/// the gate removed — check the rule's FIRST at the call site and report with the
+/// RULE's own `@expect`, not the enclosing sequence's (enum_decl's IDENT expect says
+/// "expected enum name"; the message owed here is variant's "expected variant name").
+/// Re-establish, at a GATED call site, the FIRST check the gate removed.
+///
+/// `parse_X` consumes its leading terminal unconditionally on the promise that its
+/// caller proved FIRST(X). `@gate` replaces that FIRST with a cond, so the promise is
+/// broken and the callee swallows whatever token is present — `enum E { 5 }` bound
+/// `5` as a variant name and compiled CLEAN. Emitting the check here restores the
+/// invariant without giving up what the gate bought (entry on a token the FIRST
+/// rejects, e.g. EOF), and reports with the CALLED rule's own message.
+fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
+    let gr = gated_ref_of(inner)
+    if !gr.found { return "" }
+    let msg = rule_first_expect_msg(g, gr.rule)
+    if msg == "" { return "" }
+    let fg = rule_first_guard(g, gr.rule, [])
+    if fg == "" || fg == "false" { return "" }
+    "${ind}if !(${fg}) {\n" +
+    "${ind}    st.report(\"${msg}\")\n" +
+    "${ind}    return CapVal.Node(st.error_node_silent())\n" +
+    "${ind}}\n"
+}
+
+fn gated_ref_of(node: GNode) -> GatedRef {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.gate {
+                        match it.prim {
+                            .Ref(nm) -> return GatedRef { found: true, rule: nm }
+                            _ -> {}
+                        }
+                    }
+                }
+            }
+            GatedRef { found: false, rule: "" }
+        }
+    }
+}
+
+/// The message a rule uses when its own FIRST token is absent — its first branch's
+/// `@expect` for that token's kind. Empty when the rule declares none.
+fn rule_first_expect_msg(g: Grammar, name: string) -> string {
+    let r = emit_lookup_rule(g, name)
+    if r.name == "" { return "" }
+    match r.body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return "" }
+            let b = branches[0]
+            for it in b.items {
+                match it.prim {
+                    .Named(tok) -> {
+                        let e = expect_for(b.annots, tok)
+                        if e.found { return e.msg }
+                        return ""
+                    }
+                    .Lit(text) -> {
+                        let e = expect_for(b.annots, text)
+                        if e.found { return e.msg }
+                        return ""
+                    }
+                    _ -> {}
+                }
+            }
+            ""
+        }
+    }
+}
+
+fn node_has_gate(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.gate { return true }
+                }
             }
             false
         }
@@ -1871,6 +1973,23 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                         bnd.step +
                         "${ind}}\n"
                 }
+            } else if node_has_gate(inner) {
+                // t-myz7: a GATED repetition MUST carry the no-progress break. `@gate`
+                // drops the element's FIRST from the loop condition, and that FIRST was
+                // also what terminated the loop — so `while lookahead_ok(cond, st)` over
+                // an element that consumes nothing spins forever. Measured: `enum E {`
+                // with a gated variant loop HUNG (exit 124), it did not merely report the
+                // wrong message. The break is the same one group_is_single_hand emits for
+                // the hand-delegate shape, required here for the same reason: the loop
+                // condition no longer implies progress.
+                req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                    bnd.guard +
+                    "${ind}    let __rep_before = st.pos\n" +
+                    gated_first_check(g, inner, ind + "    ") +
+                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
+                    "${ind}    if st.pos == __rep_before { break }\n" +
+                    bnd.step +
+                    "${ind}}\n"
             } else {
                 req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     bnd.guard +

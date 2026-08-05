@@ -2208,7 +2208,7 @@ fn parse_tparam(st: PState) -> CapVal {
     if st.cur().tk == Tk.Colon {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { tpb = CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report("expected type parameter name")
         }
     }
     mk_type_param(capval_tok_text(tpn), tpb, capval_present(tpb))
