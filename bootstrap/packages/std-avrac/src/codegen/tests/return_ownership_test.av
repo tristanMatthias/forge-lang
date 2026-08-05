@@ -269,6 +269,17 @@ spec "t-k6lm releasable set: a CALL ARGUMENT carries a local's parts out of the 
             // declared return type, which is why it has to be threaded in.
             not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db() -> Holder { let p = Holder { inner: Inner { n: 1 } }\n keep(p.inner) }\n", "db", "p")
         }
+        then "a BLOCK-BODIED tail match arm escapes (CodeRabbit #1176)" {
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db(c: bool) -> Holder { let p = Holder { inner: Inner { n: 1 } }\n match c { true -> { keep(p.inner) }\n _ -> { Holder { inner: Inner { n: 2 } } } } }\n", "db", "p")
+        }
+        then "a RETURNED match arm's field read escapes (wider than reported)" {
+            // Neither walker handled .MatchExpr at all, so this plain field
+            // read — no call involved — was missed too.
+            not_releasable(PRELUDE + "fn db(c: bool) -> Inner { let p = Holder { inner: Inner { n: 1 } }\n return match c { true -> p.inner\n _ -> Inner { n: 2 } } }\n", "db", "p")
+        }
+        then "a RETURNED if-expression branch's field read escapes" {
+            not_releasable(PRELUDE + "fn db(c: bool) -> Inner { let p = Holder { inner: Inner { n: 1 } }\n return if c { p.inner } else { Inner { n: 2 } } }\n", "db", "p")
+        }
         then "a DISCARDED tail call does NOT cost the local its candidacy" {
             // The boundary of the rule above, and the reason it is limited to
             // explicit returns: `collect_tail_exprs` yields the last STATEMENT,
