@@ -1,0 +1,133 @@
+// `map.remove(key)` — the operation, and the probe chain it leaves behind.
+//
+// Two bugs lived in `avra_map_remove_cstr`, and both were SILENT:
+//
+//  1. It hashed with djb2 while `set`/`get`/`has` hash with FNV-1a
+//     (`avra_hash_str`). Remove therefore walked a different probe chain
+//     from the one the key was stored on, found an empty slot, and
+//     returned having deleted NOTHING. `map.remove(k)` was a no-op for
+//     every Avra program that called it.
+//
+//  2. It cleared the slot to NULL. With linear probing that severs the
+//     chain: any key that collided and landed further along becomes
+//     unreachable, because lookup stops at the hole. Removing one key
+//     silently removed OTHERS — whenever the table had a collision.
+//
+// Bug 2 is why the collision spec below matters more than the obvious
+// one. A single insert/remove/has round trip passes on a table with no
+// collisions and proves nothing about the chain, so these specs push
+// well past the 32-slot initial capacity and its 0.75 load factor,
+// forcing rehashes and collisions, then assert every SURVIVING key is
+// still reachable after each removal.
+
+/// Keys chosen only to be many and distinct; the point is volume
+/// (collisions and at least two grows), not any particular key.
+fn key_at(i: int) -> string { "k${i}_${i * 7}" }
+
+fn build(n: int) -> Map<string, int> {
+    mut m: Map<string, int> = {}
+    mut i = 0
+    while i < n {
+        m.set(key_at(i), i * 3 + 1)
+        i = i + 1
+    }
+    m
+}
+
+spec "map.remove actually removes" {
+    then "a removed key is gone and the rest survive" {
+        mut m: Map<string, int> = {}
+        m.set("alpha", 1)
+        m.set("beta", 2)
+        m.set("gamma", 3)
+        m.remove("beta")
+        // Pre-fix `has` still answered true here: remove hashed the key
+        // onto a chain it was never stored on and deleted nothing.
+        !m.has("beta") && m.has("alpha") && m.has("gamma")
+    }
+
+    then "len drops by exactly one" {
+        mut m: Map<string, int> = {}
+        m.set("a", 1)
+        m.set("b", 2)
+        let before = m.len()
+        m.remove("a")
+        before == 2 && m.len() == 1
+    }
+
+    then "removing an absent key changes nothing" {
+        mut m: Map<string, int> = {}
+        m.set("a", 1)
+        m.remove("nope")
+        m.len() == 1 && m.has("a")
+    }
+
+    then "a removed key can be re-added and read back" {
+        // Backward-shift deletion moves entries; a re-insert afterwards
+        // must still land somewhere the lookup will find.
+        mut m: Map<string, int> = {}
+        m.set("a", 1)
+        m.set("b", 2)
+        m.remove("a")
+        m.set("a", 42)
+        let got = m.get("a")
+        m.has("a") && got != null && got! == 42
+    }
+}
+
+spec "map.remove preserves every other key's probe chain" {
+    given "a table well past its initial capacity, so chains collide" {
+        then "after removing the even keys, every odd key is still reachable" {
+            // 200 keys against a 32-slot initial capacity forces several
+            // grows and many collisions. This is the arm that catches the
+            // NULL-out: severing one chain orphans unrelated keys, and with
+            // this many entries at least one such chain is certain.
+            let n = 200
+            mut m = build(n)
+            mut i = 0
+            while i < n {
+                m.remove(key_at(i))
+                i = i + 2
+            }
+            mut survivors = 0
+            mut j = 1
+            while j < n {
+                let v = m.get(key_at(j))
+                if m.has(key_at(j)) && v != null && v! == j * 3 + 1 { survivors = survivors + 1 }
+                j = j + 2
+            }
+            survivors == 100
+        }
+
+        then "and the removed half is genuinely gone" {
+            // The complement of the arm above: it would pass vacuously if
+            // `has` answered true for everything.
+            let n = 200
+            mut m = build(n)
+            mut i = 0
+            while i < n {
+                m.remove(key_at(i))
+                i = i + 2
+            }
+            mut ghosts = 0
+            mut j = 0
+            while j < n {
+                if m.has(key_at(j)) { ghosts = ghosts + 1 }
+                j = j + 2
+            }
+            ghosts == 0 && m.len() == 100
+        }
+
+        then "keys() reflects the removals, not the original insertions" {
+            let n = 60
+            mut m = build(n)
+            mut i = 0
+            while i < n {
+                m.remove(key_at(i))
+                i = i + 3
+            }
+            // 60 keys, every third removed → 20 gone, 40 left.
+            m.keys().length == 40
+        }
+    }
+}
