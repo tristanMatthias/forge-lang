@@ -2609,6 +2609,18 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
                     // annotations and would word this differently in the two engines.
                     let sm = rule_first_expect_msg(g, sname)
                     st.report(if sm == "" { "expected ${sname}" } else { sm })
+                    // BIND the label, do not merely return Nil. Skipping the call cannot
+                    // mean skipping the binding — emit's twin renders
+                    // `let <label> = if !(guard) { report; CapVal.Nil } else { … }`, so
+                    // the generated parser WRITES Nil here. For a FRESH label the two
+                    // agree by accident (CapEnv.get defaults to Nil for an absent
+                    // capture); for a REUSED one — the same name bound by an earlier
+                    // `.One` item, the documented last-wins scalar shape — they diverge:
+                    // emit's fresh `let` shadows the earlier value with Nil while an
+                    // unbound executor path leaves the EARLIER value readable. Returning
+                    // early from exec_item skips exec_item_marked → exec_item_body →
+                    // bind, which is the only place that write would otherwise happen.
+                    bind(env, item.label, CapVal.Nil, multi)
                     return CapVal.Nil
                 }
                 return exec_item_marked(g, item, st, env, multi, annots)

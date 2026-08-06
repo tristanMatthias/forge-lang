@@ -21,6 +21,12 @@
 // answer, and picking one would put a wrong token in a user-facing diagnostic — so it is
 // a grammar-parse error instead.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_parser_source}
+use @std.avrac.core.{render_expr_id}
+
+fn run_render(grammar_src: string, input: string) -> string {
+    let r = run_grammar_expr(parse_grammar(grammar_src).grammar, input)
+    render_expr_id(r.store, r.root)
+}
 
 fn perr(src: string) -> string { parse_grammar(src).error }
 
@@ -174,5 +180,73 @@ spec "t-myz7: @soft SKIPS the call — it does not report-then-call" {
         let req_src = emitted(g_req())
         req_src.contains("return CapVal.Node(st.error_node_silent())") &&
             !soft_src.contains("return CapVal.Node(st.error_node_silent())")
+    }
+}
+
+// ── t-myz7: `@soft`'s SHAPE is validated, because the illegal shapes DIVERGE ───────
+//
+// Found in review of #1184. `@soft` was accepted on any item, and two of the shapes it
+// accepted are not no-ops — they make the two engines disagree on VALID input, which is
+// the one class no recovery oracle can witness.
+//
+// The asymmetry is structural: the executor's soft check sits in `exec_item`, which runs
+// BEFORE `exec_item_marked`/`exec_item_body` dispatch on `item.rep`, while emit reads
+// `item.soft` only inside `emit_one` — and `emit_item_body` routes `.Opt`/`.Star`/`.Plus`
+// to `emit_opt`/`emit_repeat_group`, which never consult it. So on `@soft blk?` the
+// INTERPRETER reports a legitimately absent optional and the GENERATED parser says
+// nothing.
+//
+// Rejecting at grammar-parse time is the fix rather than teaching both engines to agree,
+// because there is no behaviour to agree ON: an absent optional is not a mismatch.
+spec "t-myz7: @soft is restricted to a `.One` rule reference" {
+    then "a repetition is rejected — only the interpreter would report it" {
+        let e = perr("r = \"+\" @soft blk? \"!\"\nblk = \"{\" \"}\"")
+        e.contains("cannot carry a repetition")
+    }
+    then "so are `*` and `+`, for the same reason" {
+        perr("r = \"+\" @soft blk* \"!\"\nblk = \"{\" \"}\"").contains("cannot carry a repetition") &&
+            perr("r = \"+\" @soft blk+ \"!\"\nblk = \"{\" \"}\"").contains("cannot carry a repetition")
+    }
+    then "a TERMINAL is rejected — neither engine reads the marker there" {
+        // `emit_one` reads item.soft only in its `.Ref` arm and `exec_item` matches only
+        // `.Ref`, so `@soft "x"` would be silently inert. A marker that does nothing is
+        // worse than one that errors: it reads as intent that was never honoured.
+        perr("r = \"+\" @soft \"x\" \"!\"").contains("only applies to a rule reference")
+    }
+    then "`@require` and `@soft` on one item are rejected as opposite policies" {
+        // Both engines let @soft win (its check runs first in each), so this does not
+        // diverge — it silently discards the @require. Same reason @off/@on/@bump reject
+        // each other rather than picking a winner.
+        let e = perr("r = \"+\" @require @soft blk \"!\"\nblk = \"{\" \"}\"")
+        e.contains("opposite failure policies")
+    }
+    then "the legal shape still parses" {
+        perr(g_soft()) == ""
+    }
+}
+
+spec "t-myz7: a @soft skip BINDS its label, matching the emitted parser" {
+    then "a reused label is overwritten with Nil, not left at the earlier value" {
+        // Observed on the BUILT TREE, not the diagnostic count. The first version of
+        // this spec asserted `diags(...) == 1` and passed with the fix disabled — the
+        // bind changes a captured VALUE, and a diagnostic count cannot see it. A guard
+        // that cannot fail is worth nothing, so it is the render that is asserted.
+        //
+        // `v` is bound twice: by a PRESENT paren, then by an ABSENT one under @soft.
+        // Last-wins means the build must read the SECOND (Nil) binding, so the outer
+        // Grouping wraps nothing. Without the bind the executor never writes on the skip
+        // path and `env.get("v")` still returns the FIRST paren — the outer Grouping
+        // then wraps it, and the rendered trees differ.
+        let src = "r = \"+\" v:paren \"|\" @soft v:paren \"!\" -> Grouping(v)\n" +
+            "paren = \"(\" e:NUMBER \")\" @expect(\"(\", \"expected a paren\") -> Grouping(e)"
+        perr(src) == "" && !run_render(src, "+ ( 1 ) | !").contains("1")
+    }
+    then "the same grammar with the ref PRESENT keeps the second value" {
+        // The control: when @soft's guard passes, the second paren binds normally and
+        // the build sees IT (2, not 1). Without this, the assertion above would also be
+        // satisfied by a @soft that broke the capture entirely.
+        let src = "r = \"+\" v:paren \"|\" @soft v:paren \"!\" -> Grouping(v)\n" +
+            "paren = \"(\" e:NUMBER \")\" @expect(\"(\", \"expected a paren\") -> Grouping(e)"
+        run_render(src, "+ ( 1 ) | ( 2 ) !").contains("2")
     }
 }

@@ -1236,6 +1236,44 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                             return "`@require` cannot sit on a sequence's leading item (rule `${rule}`) — that position is the FIRST-set guard; mark the item that must follow it"
                         }
                     }
+                    // t-myz7: `@soft` needs the SHAPE guarantees `@require` gets above,
+                    // and for a sharper reason than symmetry — the two illegal shapes are
+                    // an ENGINE DIVERGENCE, not a no-op.
+                    //
+                    // The executor's soft check lives in `exec_item`, which runs BEFORE
+                    // `exec_item_marked`/`exec_item_body` dispatch on `item.rep`; emit
+                    // reads `item.soft` only inside `emit_one`, and `emit_item_body`
+                    // routes `.Opt`/`.Star`/`.Plus` to `emit_opt`/`emit_repeat_group`,
+                    // which never consult it. So `@soft blk?` makes the INTERPRETER
+                    // report on a legitimately absent optional while the GENERATED parser
+                    // stays silent — a divergence on VALID input, the one class no
+                    // recovery oracle can see. Rejecting the shape at grammar-parse time
+                    // makes it unreachable, which is stronger than teaching two engines to
+                    // agree about a marker that has no meaning there.
+                    if item.soft {
+                        match item.prim {
+                            .Ref(_) -> {}
+                            _ -> {
+                                return "`@soft` only applies to a rule reference (rule `${rule}`) — on a terminal both engines ignore it, so it would be a silent no-op"
+                            }
+                        }
+                        if !rep_is_one_sp(item.rep) {
+                            return "`@soft` cannot carry a repetition (rule `${rule}`) — an absent optional/repeated item is not a mismatch, and only the interpreter would report it"
+                        }
+                        // Opposite failure policies on one item. Both engines happen to
+                        // let `@soft` win (its check runs first in each), so this does not
+                        // diverge — it silently discards the author's `@require`. Rejected
+                        // for the same reason `@off`/`@on`/`@bump` reject each other.
+                        if item.require {
+                            return "`@require` and `@soft` cannot both apply to one item (rule `${rule}`) — they are opposite failure policies"
+                        }
+                        // Same fold hazard `@cut` and `@require` carry: emit_fold bypasses
+                        // emit_item, so the skip would vanish from the generated parser
+                        // while the executor honoured it.
+                        if this_fold {
+                            return "`@soft` cannot appear on an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the skip"
+                        }
+                    }
                     match item.prim {
                         .Group(inner) -> {
                             let e = check_cut_node_ctx(g, inner, rule, this_try, this_fold)
