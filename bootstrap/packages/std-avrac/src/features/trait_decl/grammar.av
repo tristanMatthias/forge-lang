@@ -8,7 +8,15 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// The `trait` declaration and its member rules.
 export fn avra_trait_decl_grammar() -> Grammar {
     let gp = grammar {
-  trait_decl  = @try "trait" @cut @require trname:IDENT ( "<" tparam ( "," tparam )* ">" )? @require "{" ( @peek(not_rbrace) @gate tmembers:trait_member )* @require "}"
+  // The type-parameter list is OPTIONAL INSIDE the brackets as well as outside
+  // (t-myz7). The hand does not parse it at all — `parse_trait_declaration` calls
+  // `skip_angle_brackets`, which counts depth and discards, and `Stmt.TraitDecl`
+  // carries no type parameters — so `trait T<> { }` is ACCEPTED there and the native
+  // rule's mandatory first `tparam` rejected it with `expected \`IDENT\``. A routed
+  // keyword must leave the acceptance frontier exactly where the hand had it, and this
+  // one had moved. `( tparam ( "," tparam )* )?` is the same language for every valid
+  // list and adds back only the empty one.
+  trait_decl  = @try "trait" @cut @require trname:IDENT ( "<" ( tparam ( "," tparam )* )? ">" )? @require "{" ( @peek(not_rbrace) @gate tmembers:trait_member )* @require "}"
                 @expect("IDENT", "expected trait name")
                 @expect("{", "expected `{` after trait name")
                 @expect("}", "expected `}` after trait body") -> MkTraitDecl(trname, tmembers)

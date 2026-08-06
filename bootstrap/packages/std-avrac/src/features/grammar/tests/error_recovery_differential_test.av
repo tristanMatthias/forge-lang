@@ -538,6 +538,32 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("impl Foo {\nfn f() -> int { 1 }") &&
         agree("impl Foo { fn m( }\nfn f() -> int { 1 }")
     }
+    then "a malformed TYPE-PARAMETER list on each routed keyword agrees" {
+        // The corpus had malformed BODIES for every routed keyword and malformed
+        // type-parameter lists for none of `trait` / `shape` / `type` / `impl` — so the
+        // one construct every one of them shares was measured on exactly one of them
+        // (`fn a<T(`, above). Sweeping it across the family is what found `trait T<`,
+        // which reported TWO diagnostics natively (`expected \`IDENT\`` then
+        // `expected \`>\``) where the hand reports one, because the native rule parses
+        // the list the hand blindly skips.
+        //
+        // `agree_all`, not `agree`: the executor answers the default path on invalid
+        // input, and the emit-vs-hand comparison is blind to it (t-zrn3).
+        agree_error("trait T< { }\nfn zz() -> int { 1 }") &&
+            agree_all("trait T< { }\nfn zz() -> int { 1 }") &&
+            agree_error("trait T<X { }\nfn zz() -> int { 1 }") &&
+            agree_all("trait T<X { }\nfn zz() -> int { 1 }") &&
+            agree_error("enum E< { A }\nfn zz() -> int { 1 }") &&
+            agree_all("enum E< { A }\nfn zz() -> int { 1 }") &&
+            agree_error("enum E<,T> { A }\nfn zz() -> int { 1 }") &&
+            agree_all("enum E<,T> { A }\nfn zz() -> int { 1 }") &&
+            agree_error("shape S< = { x: int }\nfn zz() -> int { 1 }") &&
+            agree_all("shape S< = { x: int }\nfn zz() -> int { 1 }") &&
+            agree_error("type T< = { x: int }\nfn zz() -> int { 1 }") &&
+            agree_all("type T< = { x: int }\nfn zz() -> int { 1 }") &&
+            agree_error("impl F< { }\nfn zz() -> int { 1 }") &&
+            agree_all("impl F< { }\nfn zz() -> int { 1 }")
+    }
     then "malformed bindings and control-flow statements" {
         agree("fn f() -> int {\n let x = \n return 1\n}") &&
         agree("fn f() -> int {\n let = 5\n return 1\n}") &&

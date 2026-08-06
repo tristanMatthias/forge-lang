@@ -80,6 +80,30 @@ spec "t-47hc slice 10.7: `impl` accepts type params AND type arguments" {
     }
 }
 
+spec "t-myz7: an EMPTY `<>` is accepted, as the blind skip always accepted it" {
+    then "`trait T<> { … }` parses on both engines" {
+        // A NARROWING that was neither measured nor pinned, unlike the token-soup one
+        // below. `skip_angle_brackets` counts depth and discards, so `<>` is a
+        // zero-token skip the hand accepts silently — while the native rule's list
+        // began with a MANDATORY `tparam` and answered `expected \`IDENT\``. Routing a
+        // keyword must leave the acceptance frontier exactly where the hand had it,
+        // and this one had moved: the native rule rejected a program the hand compiles.
+        //
+        // Invisible to the invalid corpus by construction. This is VALID input to the
+        // hand, so it belongs to no malformed-form spec, and the F-code oracles compare
+        // an EMPTY hand signature against a non-empty native one only if someone
+        // thought to write the case down. It surfaced from sweeping every routed
+        // keyword's type-parameter list, which is the coverage gap it also closes.
+        agrees("trait T<> {\n    fn m() -> int\n}\n") &&
+            agrees("impl<> Show for Point {\n    fn show() -> string {\n        return x\n    }\n}\n")
+    }
+
+    then "the non-empty and absent lists are unchanged — the control" {
+        agrees("trait T<A> {\n    fn m() -> A\n}\n") &&
+            agrees("trait T {\n    fn m() -> int\n}\n")
+    }
+}
+
 spec "t-47hc slice 10.7: the blind-skip NARROWING, pinned" {
     then "token soup between angles: the hand tolerates it, the DSL does not" {
         // Measured, not assumed. Asserted so that if a future capability closes it, this

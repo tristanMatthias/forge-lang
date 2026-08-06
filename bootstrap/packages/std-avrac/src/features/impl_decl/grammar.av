@@ -24,7 +24,13 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// The `impl` declaration and its method rule.
 export fn avra_impl_decl_grammar() -> Grammar {
     let gp = grammar {
-  impl_decl   = "impl" ( "<" tparam ( "," tparam )* ">" )? itn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? ( "for" ifortn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? )? "{" ( imethods:impl_member )* "}" -> MkImpl(itn, ifortn, imethods)
+  // Every angle-bracket group is OPTIONAL INSIDE the brackets too (t-myz7). The hand
+  // calls `skip_angle_brackets` at all three positions and throws the tokens away, so
+  // an EMPTY `<>` is a zero-token skip it accepts silently — while a mandatory first
+  // element rejected it, so the native rule refused a program the hand compiles. Same
+  // language for every valid list; only the empty one is added back, restoring the
+  // frontier to where the hand had it. Sibling of the identical fix in trait_decl.
+  impl_decl   = "impl" ( "<" ( tparam ( "," tparam )* )? ">" )? itn:IDENT ( "<" ( type_expr ( "," type_expr )* )? ">" )? ( "for" ifortn:IDENT ( "<" ( type_expr ( "," type_expr )* )? ">" )? )? "{" ( imethods:impl_member )* "}" -> MkImpl(itn, ifortn, imethods)
   impl_member = d:DOC ( d:DOC )* im:impl_method -> MkDocAnnotated(d, im)
               | impl_method
   impl_method   = "fn" imname:IDENT "(" ( imparams:param ( @peek(comma_not_rparen) "," imparams:param )* ( "," )? )? ")" ( "->" imret:type_expr )? "{" imbody:body_item* "}" -> MkMethod(imname, imparams, imret, imbody)
