@@ -1457,11 +1457,11 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 let bbody = if !abortable { "" }
                     else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${bret}${ind}    }\n" }
                     else { bret }
-                return "${ind}let __bdiags = st.diags.length\n" +
-                    emit_ref_capture(g, item, name, ind, list_labels, opts) +
-                    "${ind}if st.diags.length != __bdiags {\n" +
+                return "${ind}let __bres = parse_${name}(st)\n" +
+                    "${ind}if capval_is_error_expr(st, __bres) {\n" +
                     bbody +
-                    "${ind}}\n"
+                    "${ind}}\n" +
+                    emit_ref_capture_of(g, item, name, "__bres", ind, list_labels, opts)
             }
             // A GATED element's result is inspected BEFORE it is captured, because
             // capturing it is itself a report: every `capval_to_*` answers a

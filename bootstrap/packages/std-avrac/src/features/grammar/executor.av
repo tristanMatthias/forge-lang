@@ -2659,14 +2659,20 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
         }
     }
     // t-myz7 `@onfail(bail)`: the CALLEE owns the message, the caller owns the control
-    // flow — abort if the sub-parse REPORTED. Deliberately not `@require`'s FIRST check,
-    // which reports for the callee and so replaces its message; here the sub-rule's own
-    // diagnostic is the one the hand produces (`select { x <- }` is the expression view's
-    // F0040 and nothing more, because `parse_select_arm` returns on a failed channel).
+    // flow. Deliberately not `@require`'s FIRST check, which reports for the callee and so
+    // replaces its message; here the sub-rule's own diagnostic is the one the hand shows
+    // (`select { x <- }` is the expression view's F0040 and nothing more, because
+    // `parse_select_arm` returns on a failed channel).
+    //
+    // The signal is the sub-parse FAILING — coming back as an error node — and NOT "did it
+    // report", because those are different questions and the hand asks the first: `?`
+    // propagates an `Err`, and an expression that reported and still produced a value is
+    // `Ok`. `let a = (1) ->` is the case that separates them: the expression view reports
+    // about the missing lambda body and hands back `(group 1)`, which the hand KEEPS —
+    // aborting on the report erased the whole binding.
     if item.onfail == "bail" {
-        let bbefore = st.diags.length
         let br = exec_item_marked(g, item, st, env, multi, annots)
-        if st.diags.length != bbefore { env.set_abort(true) }
+        if capval_is_error_expr(st, br) { env.set_abort(true) }
         return br
     }
     // t-myz7 `@onfail(discard, <label>)`: report the missing closer (exec_primary's
