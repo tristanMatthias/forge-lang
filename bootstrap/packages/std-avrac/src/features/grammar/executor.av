@@ -4528,6 +4528,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // Args shift by one for the type-param list (args[1]); the rest match the
         // 4-arg form. Shares mk_fn_decl_g with the emitted parser.
         "MkFnDecl" if args.length == 5 -> mk_fn_decl_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_pentry_list(env.get(args[2])), env.get(args[3]), capval_present(env.get(args[3])), capval_to_stmt_list(env.get(args[4])))
+        "MkFnDecl" if args.length == 6 -> mk_fn_decl_where_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_pentry_list(env.get(args[2])), env.get(args[3]), capval_present(env.get(args[3])), capval_to_stmt_list(env.get(args[4])), capval_to_tparam_list(env.get(args[5])))
+        "MkWhereParam" -> mk_where_param(capval_tok_text(env.get(args[0])), capval_tok_list(env.get(args[1])))
         "MkField" if args.length == 2 -> mk_field(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
         "MkTypeDecl" if args.length == 2 -> mk_type_decl(st, capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
         // Generic struct: `type Name < tparams > = { field* }` — the type-param
@@ -5536,6 +5538,61 @@ export fn mk_type_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, fi
 /// `enum Name < tparam* > { variant* }` (the 3-arg `MkEnumDecl` build's core).
 export fn mk_enum_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, vars: List<Variant>) -> CapVal {
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.EnumDecl(name, tps, vars)))
+}
+
+/// ONE `where` entry — `T: Trait1 + Trait2` (the `MkWhereParam` build's core).
+///
+/// Distinct from `mk_type_param` because the two positions differ in exactly one way:
+/// an angle-bracket parameter carries at most ONE bound (parse_type_param_entries), a
+/// where entry carries a `+`-joined list (parse_where_bounds). The joiner is the hand's
+/// literal `" + "`, and the entry it yields is the same `TypeParamEntry` shape, so
+/// `mk_fn_decl_where_g` can merge the two lists without knowing which is which.
+export fn mk_where_param(name: string, bounds: List<Token>) -> CapVal {
+    mut acc = ""
+    mut i = 0
+    for t in bounds {
+        if i > 0 { acc = acc + " + " + t.text } else { acc = t.text }
+        i = i + 1
+    }
+    CapVal.TParam(TypeParamEntry { name: name, bounds: acc })
+}
+
+/// `fn name < tp > ( params ) -> ret where wp { body }` — the `MkFnDecl` build with a
+/// WHERE CLAUSE (t-47hc.5).
+///
+/// The clause is not sugar for more angle-bracket parameters: it MERGES into them, and
+/// a name it mentions that the angle brackets did not declare is APPENDED as a fresh
+/// entry — `parse_where_clause` folding `merge_type_param_bound` over its entries, which
+/// is the behaviour reproduced here rather than re-derived. Merging on the grammar side
+/// is what lets the routed `fn_decl` own a form it previously had to hand back: nothing
+/// in the DSL can express "amend an earlier capture", so the fold has to live in a build.
+export fn mk_fn_decl_where_g(st: PState, name: string, tps: List<TypeParamEntry>, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>, wheres: List<TypeParamEntry>) -> CapVal {
+    mut merged = tps
+    for w in wheres {
+        merged = grammar_merge_type_param_bound(merged, w.name, w.bounds)
+    }
+    mk_fn_decl_g(st, name, merged, params, ret_cv, has_ret, body)
+}
+
+/// The hand's `merge_type_param_bound` (features/fn_decl/parser.av), duplicated for the
+/// same reason `base_pred` duplicates `is_callable`: `parse_grammar` is reachable from
+/// comptime macro expansion, and a cross-module non-`@comptime` callee there resolves to
+/// a type_marker (F4005). Behaviour is pinned to the hand's by the routing parity spec,
+/// not by the call graph.
+fn grammar_merge_type_param_bound(params: List<TypeParamEntry>, name: string, bounds: string) -> List<TypeParamEntry> {
+    mut out: List<TypeParamEntry> = []
+    mut found = false
+    for e in params {
+        if e.name == name {
+            let m = if e.bounds == "" { bounds } else { e.bounds + " + " + bounds }
+            out.push(TypeParamEntry { name: e.name, bounds: m })
+            found = true
+        } else {
+            out.push(e)
+        }
+    }
+    if !found { out.push(TypeParamEntry { name: name, bounds: bounds }) }
+    out
 }
 
 /// `name ( ":" bound )?` — ONE generic type parameter (the `MkTypeParam` build's core).

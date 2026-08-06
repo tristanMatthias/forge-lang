@@ -23,7 +23,25 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// after the flat merge (features/grammar/compose.av `compose_fragments`).
 export fn avra_fn_decl_grammar() -> Grammar {
     let gp = grammar {
-  fn_decl     = "fn" name:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "(" ( params:param ( @peek(comma_not_rparen) "," params:param )* ( "," )? )? ")" ( "->" ret:type_expr )? "{" body:body_item* "}" @expect("}", "expected `}` after function body") -> MkFnDecl(name, tparams, params, ret, body)
+  // t-47hc.5: the WHERE CLAUSE is part of the rule now. It was the one VALID `fn` form
+  // the grammar could not express, and a form the routed rule cannot express is a form
+  // that must fall back — so it blocked committing `fn_decl` outright, not merely its
+  // recovery. `parse_where_clause` runs AFTER the return type and BEFORE the body brace,
+  // and folds `merge_type_param_bound` over its entries: a name the angle brackets
+  // already declared gains a ` + `-joined bound, a name they did not is APPENDED. The
+  // fold lives in `mk_fn_decl_where_g` because nothing in the DSL can express "amend an
+  // earlier capture" — the clause is not sugar for more angle-bracket parameters.
+  // NO `@cut` here, deliberately, until the rule is dispatched BARE. `@try X` where `X`
+  // commits internally is INERT — the caller's snapshot rolls back the instant the rule
+  // reports, discarding the very point the `@cut` marks — and `decl_flip_dispatch_test`
+  // fails the build on that combination precisely so it cannot be shipped by accident.
+  // The commit markers arrive with the routing, in one step, not before it.
+  fn_decl     = "fn" name:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "(" ( params:param ( @peek(comma_not_rparen) "," params:param )* ( "," )? )? ")" ( "->" ret:type_expr )? ( "where" wp:where_param ( "," wp:where_param )* )? "{" body:body_item* "}" @expect("}", "expected `}` after function body") -> MkFnDecl(name, tparams, params, ret, body, wp)
+  // `T: Trait1 + Trait2` — the where entry. Every position the hand `set_error`s on is
+  // `@require`d, with the hand's own wording (parse_where_entries / parse_where_bounds).
+  where_param = wn:IDENT @require ":" wb:IDENT ( "+" @require wb:IDENT )*
+                @expect(":", "expected `:` after type parameter in where clause")
+                @expect("IDENT", "expected trait name in where clause") -> MkWhereParam(wn, wb)
   // t-myz7: `extern` owns its recovery. Every position the hand `consume`s with a message
   // is `@require`d here, and the parameter list is GATED so an unclosed `(` reports about
   // the PARAMETER — `extern fn f(` is "expected parameter name" on the hand.

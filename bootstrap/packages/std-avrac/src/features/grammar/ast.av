@@ -767,7 +767,10 @@ export fn build_kind(bn: string) -> string {
     if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkAssocTypeDef" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentBlock" || bn == "MkRawComponentBlock" || bn == "MkMethodShorthand" || bn == "MkCompField" { return "stmt" }
     if bn == "MkAnn" { return "ann" }
     if bn == "MkParam" { return "pentry" }
-    if bn == "MkTypeParam" { return "tparam" }
+    // `MkWhereParam` yields the SAME TypeParamEntry a `tparam` does — a where entry is
+    // a type parameter that names its bounds after the parameter list instead of inside
+    // it — so it must classify identically or the accumulator's element coercion drifts.
+    if bn == "MkTypeParam" || bn == "MkWhereParam" { return "tparam" }
     if bn == "MkField" { return "field" }
     if bn == "MkEVariant" { return "variant" }
     if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" || bn == "OptPresent" || bn == "OptAbsent" { return "pat" }
