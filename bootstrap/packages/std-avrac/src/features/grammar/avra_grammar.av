@@ -1141,7 +1141,8 @@ export fn avra_program_grammar() -> Grammar {
   // is what a fn body needs and what the hand parser does. The two views never compose
   // each other, so each owns its own definition and the shared fragments stay body-agnostic.
   body_item   = statement
-  param       = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
+  param       = pname:IDENT ( ":" pt:type_expr )?
+                 @expect("IDENT", "expected parameter name") -> MkParam(pname, pt)
   statement   = return_stmt | @hand(let_stmt) | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
   return_stmt = "return" ^( rv:expression )? -> MkReturn(rv)
   defer_stmt  = "defer" de:expression -> MkDefer(de)
