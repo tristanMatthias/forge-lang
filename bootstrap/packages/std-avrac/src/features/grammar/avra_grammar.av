@@ -596,14 +596,22 @@ fn avra_decl_edge_grammar() -> Grammar {
   // wrapper). `select` mirrors parse_select_arm_list: arms are
   // `binding <- channel -> { body }`, ZERO arms is valid (`select { }`), and
   // the arm list folds into the walker-opaque Stmt.Select leaf. The binding is
-  // Tk.Identifier only — keyword-words stop the arm repetition, fail the `"}"`,
-  // and the `@try` hands the whole statement back to the hand parser, whose
-  // missing-`<-` diagnostic (select_stmt/parser.av) then owns recovery.
+  // Tk.Identifier only.
+  //
+  // `select` OWNS its recovery now (t-myz7): `@cut` sits directly after the keyword,
+  // so a malformed arm COMMITS and reports through `select_arm`'s own `@expect`s
+  // instead of rolling back to select_stmt/parser.av. `@gate` on the arm repetition
+  // is what lets the loop be entered on a token the arm's own FIRST would refuse —
+  // without it a non-IDENT arm head silently ended the list — and the gated FIRST
+  // re-check emit inserts is what reports for it. `@expect("IDENT", …)` on
+  // `select_arm` supplies that check's message; with no declared message it would
+  // fall back to a generic "expected select_arm", naming a grammar rule at the user.
   parallel_decl = "parallel" "{" body:declaration* "}" -> MkParallel(body)
   select_decl   = @try "select" @cut @require "{" ( @peek(not_rbrace) @gate arms:select_arm )* @require "}"
                   @expect("{", "expected `{` after select")
                   @expect("}", "expected `}` to close select") -> MkSelect(arms)
   select_arm    = b:IDENT @require "<-" ch:expression @require "->" @require "{" body:declaration* @require "}"
+                  @expect("IDENT", "expected select arm binding name")
                   @expect("<-", "expected `<-` after select arm binding")
                   @expect("->", "expected `->` after channel in select arm")
                   @expect("{", "expected `{` for select arm body")
@@ -613,17 +621,29 @@ fn avra_decl_edge_grammar() -> Grammar {
   // levels stamp per-item positions via the shared stmt-repetition loop (the
   // hand stamps record_pos per spec item too). A `then` body is a plain
   // statement list whose rows fold into a walker-opaque Expr.Block cond (the
-  // hand's parse_block_expression shape); all three nodes are LEAF rows. The
-  // missing-name diagnostics belong to the HAND (spec_test/parser.av — the
-  // silent-drop fix): a native STRING miss reports, the `@try` rolls back, and
-  // the hand's specific message owns the output.
+  // hand's parse_block_expression shape); all three nodes are LEAF rows.
+  //
+  // All three missing-name diagnostics are OWNED NATIVELY (t-myz7). `@cut` sits
+  // directly after each keyword, so a missing STRING COMMITS the branch and reports
+  // through its own `@expect` rather than rolling back to spec_test/parser.av. The
+  // `given`/`then` messages are the hand's, verbatim, because a nested block is
+  // exactly where rolling back was never enough: `parse_spec_body` swallows the Err
+  // and returns the partial item list, so `spec "s" { given }` closed cleanly with
+  // the malformed `given` SILENTLY DROPPED. A rule with no `@expect` at all reported
+  // the generic "expected `STRING`", which named neither the construct nor the fix.
   spec_decl  = @try "spec" @cut @require n:STRING @require "{" body:spec_item* @require "}"
                @expect("STRING", "expected spec name string after `spec`")
                @expect("{", "expected `{` after spec name")
                @expect("}", "expected `}` to close spec block") -> MkSpecBlock(n, body)
   spec_item  = given_blk | then_blk | declaration
-  given_blk  = "given" n:STRING "{" body:spec_item* "}" -> MkGivenBlock(n, body)
-  then_blk   = "then" n:STRING "{" body:declaration* "}" -> MkThenBlock(n, body)
+  given_blk  = @try "given" @cut @require n:STRING @require "{" body:spec_item* @require "}"
+               @expect("STRING", "expected given name string after `given`")
+               @expect("{", "expected `{` after given name")
+               @expect("}", "expected `}` to close given block") -> MkGivenBlock(n, body)
+  then_blk   = @try "then" @cut @require n:STRING @require "{" body:declaration* @require "}"
+               @expect("STRING", "expected then name string after `then`")
+               @expect("{", "expected `{` after then name")
+               @expect("}", "expected `}` to close then block") -> MkThenBlock(n, body)
   // The COMPONENT definition, MODERN form only (t-47hc Phase 4 slice A):
   // `component name [implements A, B] { config? children? body:TokenStream? … }`.
   // The legacy paren form (`component C(params) {`), the keyword-prefixed

@@ -31,6 +31,24 @@ fn clean_all_paths(name: string, src: string) -> bool {
         clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
 }
 
+/// True iff the emitted rule fn identified by `head` carries the `@try` scaffolding:
+/// a commit flag, a node-store truncate, and a cursor/diagnostic rollback.
+///
+/// Scoped to that ONE rule's body. `index_of` finds the first match in the whole
+/// file, and every other speculative branch emits byte-identical rollback lines, so
+/// a file-wide `contains` would pass regardless of what this rule lowered to.
+fn rule_speculates(head: string) -> bool {
+    let src = decl_src()
+    let at = src.index_of(head)
+    if at < 0 { return false }
+    let body = src.substring(at, src.length)
+    let end = body.index_of("\n}\n")
+    let rule = if end > 0 { body.substring(0, end) } else { body }
+    rule.contains("mut s_cut = false") &&
+        rule.contains("st.store.truncate_to_mark(s_mark)") &&
+        rule.contains("st.restore_to(s_pos, s_diags, s_err)")
+}
+
 spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
     then "all four parse fns exist in the production declaration parser" {
         let src = decl_src()
@@ -44,8 +62,26 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
         let src = decl_src()
         let spec_at = src.index_of("parse_spec_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        src.contains("s_last = parse_spec_decl(st)") &&
+        // The dispatcher reaches `spec_decl` by a DIRECT predictive call now, not the
+        // speculative `s_last = …` bookkeeping it used to emit: `spec_decl`'s `@try`
+        // moved INSIDE the rule, because a `@cut`'s commit flag is per-rule-invocation
+        // and cannot reach a caller's `@try`. The routing invariant is unchanged and
+        // still asserted (dispatch precedes the hand gate, else the rule is dead
+        // code); the speculation half moved to its own assertion below, so committing
+        // a keyword can no longer silently retire the check.
+        src.contains("return parse_spec_decl(st)") &&
             spec_at >= 0 && hand_at >= 0 && spec_at < hand_at
+    }
+
+    then "`spec` is routed as `@try`, never bare — the rule owns the rollback" {
+        // A direct `return parse_spec_decl(st)` is only safe when the rule itself
+        // speculates: snapshot, and on a pre-`@cut` failure restore the cursor, node
+        // store and diagnostics so the `@hand` gate below still sees untouched input.
+        // Scoped to the rule's OWN body — `index_of` finds the FIRST match in the
+        // file, and the dispatcher's other speculative branches emit the identical
+        // rollback lines, so a whole-file `contains` here would pass no matter what
+        // `spec_decl` lowered to.
+        rule_speculates("fn parse_spec_decl(st: PState)")
     }
 
     then "the spec-item accumulators are typed List<StmtId> via capval_to_stmt" {

@@ -176,8 +176,24 @@ fn BARE_IDENT_COMP_INST() -> string {
 /// will not need replacing next slice the way its four predecessors did. It closes
 /// when the native rules own recovery — the `@recover(sync_to:)` work this ticket's
 /// design field anticipates — which is the actual gate on deleting the leaf.
+///
+/// t-myz7 UPDATE — the "cannot be closed by routing one more form" claim was WRONG,
+/// and the anchor did graduate. Owning recovery per keyword is exactly what this
+/// slice does, so the table above is now split rather than uniform. Measured under
+/// `AVRA_REFUSE_HAND_LEAF=decl_hand`:
+///
+///   fn foo(       enum E {       trait T {       shape S = {     GRADUATED (native)
+///   type Foo = {  impl Foo {     component C {                   still REFUSES
+///
+/// So the anchor moves to `impl`, and the assertions below split in two: the
+/// still-refusing keywords keep the anti-vacuity role, and each graduated form moves
+/// into `recovery_without_delegate` in the recovery spec — coverage GROWS as the
+/// frontier advances instead of quietly thinning. When `impl` lands, re-point this at
+/// whatever still refuses (`type` or `component` today) and move `impl`'s malformed
+/// forms across; when NOTHING refuses, this file's frontier specs are what say the
+/// leaf can be deleted.
 fn MALFORMED_DECL() -> string {
-    "fn foo(\n"
+    "impl Foo {\n"
 }
 
 fn fixture_path(name: string) -> string {
@@ -353,10 +369,14 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // property of the `@try` gate itself and not of any single rule: if it were one
         // rule's gap, closing that rule would silently make this assertion vacuous
         // again, which is the exact trap the previous anchor fell into.
-        !native_without_delegate("malformed_fn", MALFORMED_DECL()) &&
+        //
+        // The set is the STILL-REFUSING keywords, re-pointed this slice: `fn` and
+        // `enum` graduated (their malformed forms now report natively and are asserted
+        // as such in the recovery spec below), so keeping them here would have been a
+        // guard that cannot fail — the precise vacuity this half exists to prevent.
+        !native_without_delegate("malformed_impl", MALFORMED_DECL()) &&
         !native_without_delegate("malformed_type", "type Foo = {\n") &&
-        !native_without_delegate("malformed_enum", "enum E {\n") &&
-        !native_without_delegate("malformed_impl", "impl Foo {\n") &&
+        !native_without_delegate("malformed_component", "component C {\n") &&
         // ...and the VALID counterpart of the same keyword does NOT report, which is
         // what pins the discriminator to malformed-ness rather than to the keyword.
         native_without_delegate("wellformed_fn", "fn foo() -> int { 1 }")
@@ -523,10 +543,23 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         recovery_without_delegate("use_no_brace", "use foo\nfn f() -> int { 1 }") &&
         recovery_without_delegate("use_pkg_noname", "use @std.{}\nfn f() -> int { 1 }") &&
         recovery_without_delegate("use_pkg_dotdot", "use @std..{x}\nfn f() -> int { 1 }") &&
+        // The keywords that GRADUATED this slice. Each was previously an anti-vacuity
+        // anchor in the spec above (asserted to still need the leaf); moving them here
+        // rather than deleting them is what keeps the frontier's coverage monotone —
+        // the claim changes from "still needs the leaf" to "reports WITHOUT it", and
+        // both directions stay under test the whole way across.
+        recovery_without_delegate("fn_open_paren", "fn foo(\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("fn_noname", "fn (\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("enum_open", "enum E {\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("enum_noname", "enum {\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("trait_open", "trait T {\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("trait_noname", "trait {\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("shape_open", "shape S = {\nfn f() -> int { 1 }") &&
         // ANTI-VACUITY: negatives alone would also pass if `refused_here` simply
         // stopped detecting refusals. A SIBLING keyword's malformed form must still
-        // refuse. `enum` has not been converted, so this fires today — RE-POINT it at
-        // the next unconverted keyword when `enum` lands, never delete it.
-        refused_here("decl_hand", "enum_still_needs_leaf", "enum\nfn f() -> int { 1 }")
+        // refuse. `enum` held this role until this slice converted it; `impl` has not
+        // been converted, so this fires today — RE-POINT it at the next unconverted
+        // keyword when `impl` lands, never delete it.
+        refused_here("decl_hand", "impl_still_needs_leaf", "impl\nfn f() -> int { 1 }")
     }
 }
