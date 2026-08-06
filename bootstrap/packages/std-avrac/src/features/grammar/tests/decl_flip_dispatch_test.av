@@ -182,8 +182,9 @@ fn BARE_IDENT_COMP_INST() -> string {
 /// slice does, so the table above is now split rather than uniform. Measured under
 /// `AVRA_REFUSE_HAND_LEAF=decl_hand`:
 ///
-///   enum E {   trait T {   shape S = {   (+ mod use const select spec)  GRADUATED
-///   fn foo(    type Foo = {   impl Foo {   component C {                still REFUSES
+///   trait T {   shape S = {   (+ mod use const)               GRADUATED
+///   fn foo(   enum E {   select { x }   spec "s" { given }
+///   type Foo = {   impl Foo {   component C {                    still REFUSES
 ///
 /// So the anchor moves to `impl`, and the assertions below split in two: the
 /// still-refusing keywords keep the anti-vacuity role, and each graduated form moves
@@ -443,6 +444,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         !native_without_delegate("malformed_type", "type Foo = {\n") &&
         !native_without_delegate("malformed_component", "component C {\n") &&
         !native_without_delegate("malformed_fn", "fn foo(\n") &&
+        !native_without_delegate("malformed_enum", "enum E {\n") &&
         // ...and the VALID counterpart of the same keyword does NOT report, which is
         // what pins the discriminator to malformed-ness rather than to the keyword.
         native_without_delegate("wellformed_fn", "fn foo() -> int { 1 }")
@@ -614,8 +616,6 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // rather than deleting them is what keeps the frontier's coverage monotone —
         // the claim changes from "still needs the leaf" to "reports WITHOUT it", and
         // both directions stay under test the whole way across.
-        recovery_without_delegate("enum_open", "enum E {\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("enum_noname", "enum {\nfn f() -> int { 1 }") &&
         recovery_without_delegate("trait_open", "trait T {\nfn f() -> int { 1 }") &&
         recovery_without_delegate("trait_noname", "trait {\nfn f() -> int { 1 }") &&
         recovery_without_delegate("shape_open", "shape S = {\nfn f() -> int { 1 }") &&

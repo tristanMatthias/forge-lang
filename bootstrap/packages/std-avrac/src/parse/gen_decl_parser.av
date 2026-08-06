@@ -20,7 +20,23 @@ export fn parse_declaration(st: PState) -> CapVal {
         return parse_shape_decl(st)
     }
     if st.cur().text == "enum" {
-        return parse_enum_decl(st)
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_enum_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "type" {
         let s_pos = st.pos
@@ -222,7 +238,23 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "select" {
-        return parse_select_decl(st)
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_select_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "parallel" {
         let s_pos = st.pos
@@ -244,7 +276,23 @@ export fn parse_declaration(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "spec" {
-        return parse_spec_decl(st)
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_spec_decl(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "component" {
         let s_pos = st.pos
@@ -1233,63 +1281,29 @@ fn parse_parallel_decl(st: PState) -> CapVal {
 }
 
 fn parse_select_decl(st: PState) -> CapVal {
-    mut tried_spec = false
-    if st.cur().text == "select" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        mut s_cut = false
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        while true {
-            mut arms_list: List<SelectArm> = []
-            let _ = st.advance()
-            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
-            if !s_cut { break }
-            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-                st.report("expected `{` after select")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            while lookahead_ok("not_rbrace", st) {
-                let __rep_before = st.pos
-                st.set_abort_prop(false)
-                if !(st.cur().tk == Tk.Identifier) {
-                    st.report("expected select arm binding name")
-                    st.set_abort_prop(true)
-                    return CapVal.Node(st.error_node_silent())
-                }
-                arms_list.push(capval_to_select_arm(st, parse_select_arm(st)))
-                if st.abort_prop {
-                    return CapVal.Node(st.error_node_silent())
-                }
-                if st.pos == __rep_before { break }
-            }
-            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-                st.report("expected `}` to close select")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-                return mk_select_g(st, CapVal.SArms(arms_list))
-            }
-            break
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+    mut arms_list: List<SelectArm> = []
+    let _ = st.advance()
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after select")
     }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    while lookahead_ok("not_rbrace", st) {
+        let __rep_before = st.pos
+        st.set_abort_prop(false)
+        if !(st.cur().tk == Tk.Identifier) {
+            st.report("expected select arm binding name")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        arms_list.push(capval_to_select_arm(st, parse_select_arm(st)))
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
+        if st.pos == __rep_before { break }
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` to close select")
+    }
+    mk_select_g(st, CapVal.SArms(arms_list))
 }
 
 fn parse_select_arm(st: PState) -> CapVal {
@@ -1297,19 +1311,13 @@ fn parse_select_arm(st: PState) -> CapVal {
     let b = CapVal.Tok(st.advance())
     if st.cur().tk == Tk.LeftArrow { let _ = st.advance() } else {
         st.report("expected `<-` after select arm binding")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
     }
     let ch = parse_expression(st)
     if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
         st.report("expected `->` after channel in select arm")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected `{` for select arm body")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
     }
     let __pre_err = st.had_error
     mut __any_err = __pre_err
@@ -1343,94 +1351,54 @@ fn parse_select_arm(st: PState) -> CapVal {
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}` to close select arm")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
     }
     mk_select_arm_g(st, capval_tok_text(b), ch, body_list)
 }
 
 fn parse_spec_decl(st: PState) -> CapVal {
-    mut tried_spec = false
-    if st.cur().text == "spec" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        mut s_cut = false
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        while true {
-            mut body_list: List<StmtId> = []
-            let _ = st.advance()
-            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
-            if !s_cut { break }
-            let n = if st.cur().tk == Tk.String { CapVal.Tok(st.advance()) } else {
-                st.report("expected spec name string after `spec`")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-                CapVal.Tok(st.cur())
-            }
-            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-                st.report("expected `{` after spec name")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            let __pre_err = st.had_error
-            mut __any_err = __pre_err
-            while true {
-                if st.at_end() || st.cur().text == "}" { break }
-                let __sp = st.cur().pos
-                let __before_i = st.pos
-                st.clear_error()
-                let __cv = parse_spec_item(st)
-                if st.had_error {
-                    __any_err = true
-                    st.synchronize_stmt()
-                    mut __ob = st.brace_delta(__before_i, st.pos)
-                    while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
-                        let _ = st.advance()
-                        __ob = __ob - 1
-                    }
-                    if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-                    let __elc = st.store.lines.to_linecol(__sp)
-                    let __e = st.store.stmts.add_leaf(Stmt.Error)
-                    st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-                    body_list.push(__e)
-                    st.clear_error()
-                    continue
-                }
-                let __sid = capval_to_stmt(st, __cv)
-                let __lc = st.store.lines.to_linecol(__sp)
-                st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
-                body_list.push(__sid)
-            }
-            if __any_err { st.note_had_error() }
-            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-                st.report("expected `}` to close spec block")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-                return mk_spec_block_g(st, capval_tok_text(n), body_list)
-            }
-            break
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+    mut body_list: List<StmtId> = []
+    let _ = st.advance()
+    let n = if st.cur().tk == Tk.String { CapVal.Tok(st.advance()) } else {
+        st.report("expected spec name string after `spec`")
+        CapVal.Tok(st.cur())
     }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after spec name")
+    }
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        let __before_i = st.pos
+        st.clear_error()
+        let __cv = parse_spec_item(st)
+        if st.had_error {
+            __any_err = true
+            st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = st.store.stmts.add_leaf(Stmt.Error)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            body_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        body_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` to close spec block")
+    }
+    mk_spec_block_g(st, capval_tok_text(n), body_list)
 }
 
 fn parse_spec_item(st: PState) -> CapVal {
@@ -1444,171 +1412,95 @@ fn parse_spec_item(st: PState) -> CapVal {
 }
 
 fn parse_given_blk(st: PState) -> CapVal {
-    mut tried_spec = false
-    if st.cur().text == "given" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        mut s_cut = false
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        while true {
-            mut body_list: List<StmtId> = []
-            let _ = st.advance()
-            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
-            if !s_cut { break }
-            let n = if st.cur().tk == Tk.String { CapVal.Tok(st.advance()) } else {
-                st.report("expected given name string after `given`")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-                CapVal.Tok(st.cur())
-            }
-            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-                st.report("expected `{` after given name")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            let __pre_err = st.had_error
-            mut __any_err = __pre_err
-            while true {
-                if st.at_end() || st.cur().text == "}" { break }
-                let __sp = st.cur().pos
-                let __before_i = st.pos
-                st.clear_error()
-                let __cv = parse_spec_item(st)
-                if st.had_error {
-                    __any_err = true
-                    st.synchronize_stmt()
-                    mut __ob = st.brace_delta(__before_i, st.pos)
-                    while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
-                        let _ = st.advance()
-                        __ob = __ob - 1
-                    }
-                    if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-                    let __elc = st.store.lines.to_linecol(__sp)
-                    let __e = st.store.stmts.add_leaf(Stmt.Error)
-                    st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-                    body_list.push(__e)
-                    st.clear_error()
-                    continue
-                }
-                let __sid = capval_to_stmt(st, __cv)
-                let __lc = st.store.lines.to_linecol(__sp)
-                st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
-                body_list.push(__sid)
-            }
-            if __any_err { st.note_had_error() }
-            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-                st.report("expected `}` to close given block")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-                return mk_given_block_g(st, capval_tok_text(n), body_list)
-            }
-            break
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+    mut body_list: List<StmtId> = []
+    let _ = st.advance()
+    let n = if st.cur().tk == Tk.String { CapVal.Tok(st.advance()) } else {
+        st.report("expected given name string after `given`")
+        CapVal.Tok(st.cur())
     }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after given name")
+    }
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        let __before_i = st.pos
+        st.clear_error()
+        let __cv = parse_spec_item(st)
+        if st.had_error {
+            __any_err = true
+            st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = st.store.stmts.add_leaf(Stmt.Error)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            body_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        body_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` to close given block")
+    }
+    mk_given_block_g(st, capval_tok_text(n), body_list)
 }
 
 fn parse_then_blk(st: PState) -> CapVal {
-    mut tried_spec = false
-    if st.cur().text == "then" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        mut s_cut = false
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        while true {
-            mut body_list: List<StmtId> = []
-            let _ = st.advance()
-            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
-            if !s_cut { break }
-            let n = if st.cur().tk == Tk.String { CapVal.Tok(st.advance()) } else {
-                st.report("expected then name string after `then`")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-                CapVal.Tok(st.cur())
-            }
-            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-                st.report("expected `{` after then name")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            let __pre_err = st.had_error
-            mut __any_err = __pre_err
-            while true {
-                if st.at_end() || st.cur().text == "}" { break }
-                let __sp = st.cur().pos
-                let __before_i = st.pos
-                st.clear_error()
-                let __cv = parse_declaration(st)
-                if st.had_error {
-                    __any_err = true
-                    st.synchronize_stmt()
-                    mut __ob = st.brace_delta(__before_i, st.pos)
-                    while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
-                        let _ = st.advance()
-                        __ob = __ob - 1
-                    }
-                    if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-                    let __elc = st.store.lines.to_linecol(__sp)
-                    let __e = st.store.stmts.add_leaf(Stmt.Error)
-                    st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-                    body_list.push(__e)
-                    st.clear_error()
-                    continue
-                }
-                let __sid = capval_to_stmt(st, __cv)
-                let __lc = st.store.lines.to_linecol(__sp)
-                st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
-                body_list.push(__sid)
-            }
-            if __any_err { st.note_had_error() }
-            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-                st.report("expected `}` to close then block")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-                return mk_then_block_g(st, capval_tok_text(n), body_list)
-            }
-            break
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+    mut body_list: List<StmtId> = []
+    let _ = st.advance()
+    let n = if st.cur().tk == Tk.String { CapVal.Tok(st.advance()) } else {
+        st.report("expected then name string after `then`")
+        CapVal.Tok(st.cur())
     }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after then name")
+    }
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        let __before_i = st.pos
+        st.clear_error()
+        let __cv = parse_declaration(st)
+        if st.had_error {
+            __any_err = true
+            st.synchronize_stmt()
+            mut __ob = st.brace_delta(__before_i, st.pos)
+            while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                let _ = st.advance()
+                __ob = __ob - 1
+            }
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = st.store.stmts.add_leaf(Stmt.Error)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            body_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        body_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` to close then block")
+    }
+    mk_then_block_g(st, capval_tok_text(n), body_list)
 }
 
 fn parse_component_decl(st: PState) -> CapVal {
@@ -2392,106 +2284,68 @@ fn parse_tparam(st: PState) -> CapVal {
 }
 
 fn parse_enum_decl(st: PState) -> CapVal {
-    mut tried_spec = false
-    if st.cur().text == "enum" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        mut s_cut = false
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        while true {
-            mut tparams_list: List<TypeParamEntry> = []
-            mut vars_list: List<Variant> = []
+    mut tparams_list: List<TypeParamEntry> = []
+    mut vars_list: List<Variant> = []
+    let _ = st.advance()
+    let ename = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report_ident("expected enum name")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.Less {
+        let _ = st.advance()
+        tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+        while st.cur().tk == Tk.Comma {
             let _ = st.advance()
-            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
-            if !s_cut { break }
-            let ename = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-                st.report_ident("expected enum name")
-                if s_cut {
-                    st.set_abort_prop(true)
+            tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+        }
+        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
+            st.report("expected `>` after type parameters")
+        }
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after enum name")
+    }
+    while st.cur().tk == Tk.DocComment {
+        let _ = st.advance()
+    }
+    if lookahead_ok("not_rbrace", st) {
+        st.set_abort_prop(false)
+        if !(st.cur().tk == Tk.Identifier) {
+            st.report("expected variant name")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        vars_list.push(capval_to_variant(st, parse_variant(st)))
+        if st.cur().tk == Tk.Comma { let _ = st.advance() }
+        while st.cur().tk == Tk.DocComment {
+            let _ = st.advance()
+        }
+        while lookahead_ok("not_rbrace", st) {
+            let __rep_before = st.pos
+            st.set_abort_prop(false)
+            if !(st.cur().tk == Tk.Identifier) {
+                st.report("expected variant name")
+                st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
-                }
-                CapVal.Tok(st.cur())
             }
-            if st.cur().tk == Tk.Less {
-                let _ = st.advance()
-                tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
-                while st.cur().tk == Tk.Comma {
-                    let _ = st.advance()
-                    tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
-                }
-                if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
-                    st.report("expected `>` after type parameters")
-                }
-            }
-            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-                st.report("expected `{` after enum name")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
+            vars_list.push(capval_to_variant(st, parse_variant(st)))
+            if st.cur().tk == Tk.Comma { let _ = st.advance() }
             while st.cur().tk == Tk.DocComment {
                 let _ = st.advance()
             }
-            if lookahead_ok("not_rbrace", st) {
-                st.set_abort_prop(false)
-                if !(st.cur().tk == Tk.Identifier) {
-                    st.report("expected variant name")
-                    st.set_abort_prop(true)
-                    return CapVal.Node(st.error_node_silent())
-                }
-                vars_list.push(capval_to_variant(st, parse_variant(st)))
-                if st.cur().tk == Tk.Comma { let _ = st.advance() }
-                while st.cur().tk == Tk.DocComment {
-                    let _ = st.advance()
-                }
-                while lookahead_ok("not_rbrace", st) {
-                    let __rep_before = st.pos
-                    st.set_abort_prop(false)
-                    if !(st.cur().tk == Tk.Identifier) {
-                        st.report("expected variant name")
-                        st.set_abort_prop(true)
-                        return CapVal.Node(st.error_node_silent())
-                    }
-                    vars_list.push(capval_to_variant(st, parse_variant(st)))
-                    if st.cur().tk == Tk.Comma { let _ = st.advance() }
-                    while st.cur().tk == Tk.DocComment {
-                        let _ = st.advance()
-                    }
-                    if st.abort_prop {
-                        return CapVal.Node(st.error_node_silent())
-                    }
-                    if st.pos == __rep_before { break }
-                }
-                if st.abort_prop {
-                    return CapVal.Node(st.error_node_silent())
-                }
-            }
-            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-                st.report("expected `}` after variants")
-                if s_cut {
-                    st.set_abort_prop(true)
+            if st.abort_prop {
                 return CapVal.Node(st.error_node_silent())
-                }
             }
-            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-                return mk_enum_decl_g(st, capval_tok_text(ename), tparams_list, vars_list)
-            }
-            break
+            if st.pos == __rep_before { break }
         }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
     }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` after variants")
+    }
+    mk_enum_decl_g(st, capval_tok_text(ename), tparams_list, vars_list)
 }
 
 fn parse_variant(st: PState) -> CapVal {
@@ -2516,8 +2370,6 @@ fn parse_variant(st: PState) -> CapVal {
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
             st.report("expected `)` after variant fields")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
         }
     }
     mk_evariant(capval_tok_text(vname), vfields_list)

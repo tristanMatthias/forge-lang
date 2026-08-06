@@ -475,7 +475,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `letdes_decl` UNREACHABLE — at that point the two must swap, with the more
   // specific `let (` form first. Recorded because the breakage would be silent:
   // destructuring would simply stop parsing, with no diagnostic naming the cause.
-  declaration = use_decl | mod_decl | shape_decl | enum_decl | @try type_decl | @try extern_decl | @try fn_decl | trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | mut_decl | const_decl | @try letdes_decl | select_decl | @try parallel_decl | spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = use_decl | mod_decl | shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | mut_decl | const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -607,10 +607,15 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `select_arm` supplies that check's message; with no declared message it would
   // fall back to a generic "expected select_arm", naming a grammar rule at the user.
   parallel_decl = "parallel" "{" body:declaration* "}" -> MkParallel(body)
-  select_decl   = @try "select" @cut @require "{" ( @peek(not_rbrace) @gate arms:select_arm )* @require "}"
+  // NOT committed, for the reason recorded on `enum_decl`: `select { x }` must report
+  // the missing `<-` and still build `(select ())`, while a committed rule ABORTS to
+  // `(error)` and additionally leaves the `}` unconsumed so the caller adds a spurious
+  // F0013. A gated element's failure needs to SKIP the element and let the rule close,
+  // which is a non-aborting mode the DSL does not have.
+  select_decl   = "select" "{" ( @peek(not_rbrace) @gate arms:select_arm )* "}"
                   @expect("{", "expected `{` after select")
                   @expect("}", "expected `}` to close select") -> MkSelect(arms)
-  select_arm    = b:IDENT @require "<-" ch:expression @require "->" @require "{" body:declaration* @require "}"
+  select_arm    = b:IDENT "<-" ch:expression "->" "{" body:declaration* "}"
                   @expect("IDENT", "expected select arm binding name")
                   @expect("<-", "expected `<-` after select arm binding")
                   @expect("->", "expected `->` after channel in select arm")
@@ -631,16 +636,19 @@ fn avra_decl_edge_grammar() -> Grammar {
   // and returns the partial item list, so `spec "s" { given }` closed cleanly with
   // the malformed `given` SILENTLY DROPPED. A rule with no `@expect` at all reported
   // the generic "expected `STRING`", which named neither the construct nor the fix.
-  spec_decl  = @try "spec" @cut @require n:STRING @require "{" body:spec_item* @require "}"
+  // NOT committed, same reason: `spec "s" { given }` must DROP the malformed item and
+  // build `(spec "s" )`, where the committed rule keeps `(spec "s" (error))`. Item-drop
+  // is a third recovery shape the DSL cannot yet express.
+  spec_decl  = "spec" n:STRING "{" body:spec_item* "}"
                @expect("STRING", "expected spec name string after `spec`")
                @expect("{", "expected `{` after spec name")
                @expect("}", "expected `}` to close spec block") -> MkSpecBlock(n, body)
   spec_item  = given_blk | then_blk | declaration
-  given_blk  = @try "given" @cut @require n:STRING @require "{" body:spec_item* @require "}"
+  given_blk  = "given" n:STRING "{" body:spec_item* "}"
                @expect("STRING", "expected given name string after `given`")
                @expect("{", "expected `{` after given name")
                @expect("}", "expected `}` to close given block") -> MkGivenBlock(n, body)
-  then_blk   = @try "then" @cut @require n:STRING @require "{" body:declaration* @require "}"
+  then_blk   = "then" n:STRING "{" body:declaration* "}"
                @expect("STRING", "expected then name string after `then`")
                @expect("{", "expected `{` after then name")
                @expect("}", "expected `}` to close then block") -> MkThenBlock(n, body)

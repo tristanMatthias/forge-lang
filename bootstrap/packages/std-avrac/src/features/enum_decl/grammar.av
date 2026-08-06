@@ -11,13 +11,26 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// The `enum` declaration and its variant rule (bare or payload-carrying).
 export fn avra_enum_decl_grammar() -> Grammar {
     let gp = grammar {
-  enum_decl   = @try "enum" @cut @require ename:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? @require "{" ( DOC )*
-                ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* )* )? @require "}"
+  // NOT committed. `enum` was routed with `@try … @cut` and had to be un-routed: a
+  // committed rule never rolls back, so its own recovery must match the hand's, and
+  // `enum E< { A }` does not. The hand reports "expected type parameter name" and
+  // "expected `>` after type parameters" and still builds `(enum E (A()))`; the native
+  // rule silently BINDS the `{` as a type-parameter name (a non-leading rule ref is
+  // called without its FIRST being proven — `parse_tparam` consumes on the promise the
+  // caller made no one), then fails at `>` and aborts, leaving a stray `}` the caller
+  // reports as F0013. Closing that needs a NON-ABORTING failure mode for a rule
+  // reference — report, skip the item, continue — which the DSL does not have: `@require`
+  // and `@gate` both abort. Same exposure `fn` has, for the same reason.
+  //
+  // The `@gate`s stay: they are what make `enum E { 5 }` REPORT instead of binding `5`
+  // as a variant name, and they are correct independently of the commit.
+  enum_decl   = "enum" ename:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "{" ( DOC )*
+                ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* )* )? "}"
                 @expect("IDENT", "expected enum name")
                 @expect("{", "expected `{` after enum name")
                 @expect("}", "expected `}` after variants")
                 @expect(">", "expected `>` after type parameters") -> MkEnumDecl(ename, tparams, vars)
-  variant     = vname:IDENT ( "(" ( @peek(not_rparen) @gate vfields:field ","? )* @require ")" )?
+  variant     = vname:IDENT ( "(" ( @peek(not_rparen) @gate vfields:field ","? )* ")" )?
                 @expect("IDENT", "expected variant name")
                 @expect(")", "expected `)` after variant fields") -> MkEVariant(vname, vfields)
     }
