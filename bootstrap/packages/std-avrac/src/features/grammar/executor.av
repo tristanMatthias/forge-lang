@@ -23,7 +23,7 @@ use features.grammar.{dispatch_has_tail}
 // t-myz7: the gated-call FIRST message, SHARED with emit (see ast.av) — the
 // executor's gate check must say exactly what the generated parser's says.
 use features.grammar.{rule_first_expect_msg, gated_ref_of, GatedRef}
-use features.grammar.{grammar_has_gate}
+use features.grammar.{grammar_has_gate, rule_first_is_ident, rule_first_literal}
 use features.grammar.{rule_result_kind, gprim_ref_name}
 use features.grammar.{rule_first_expect_msg}
 // The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
@@ -1435,6 +1435,13 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     // results already carry a node id and pass through unchanged. This is
     // exactly the old boundary coercion, minus the Tok→literal step being
     // the ONLY coercion (so SNode survives for the statement family).
+    // ...EXCEPT for a rule that DECLARES a token result (t-47hc.5). `name_or_splice`
+    // yields the name slot's text — a `Tok` is its answer, not an unlowered leftover — and
+    // coercing it to a literal Expr here made `capval_tok_text` read "" at the caller, so
+    // every `type` declaration in a file registered under the EMPTY name and the second
+    // one reported `duplicate type declaration ``. Emit performs no such coercion, so this
+    // was also a straight engine divergence: identical grammar, different result kind.
+    if rule_result_kind(g, name) == "tok" { return v }
     match v {
         .Tok(t) -> CapVal.Node(literal_node(st, t))
         _ -> v
@@ -2165,6 +2172,24 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if word_excluded_as_instance_name(st.toks[st.pos + 1].text) { return false }
         return st.toks[st.pos + 2].tk == Tk.LeftBrace
     }
+    // `return_value` — does a RETURN VALUE follow the `return` keyword? The hand's whole
+    // guard, as one cond: `current_kind in [RightBrace, Eof] || current_line != prev_line`,
+    // negated (features/return_stmt/parser.av).
+    //
+    // It has to be a `@gate` cond rather than the optional group's own FIRST, because the
+    // two answer different questions. The FIRST asks "can an expression START here", and
+    // on `return * 3` it says no — so the group declines, the rule builds a bare
+    // `ReturnEmpty`, and `* 3` becomes a second statement. The hand asks "is there
+    // anything on this line at all", CALLS `parse_expression`, and lets its `?` propagate:
+    // one `(error)` row covering the whole statement, not `(return)` plus a second row.
+    // Folded into ONE predicate for the same reason `dot_postfix_ok` is — the hand's test
+    // is a decision tree over three conjuncts, not a conjunction the markers can spell.
+    if cond == "return_value" {
+        if st.at_end() || st.cur().tk == Tk.RightBrace { return false }
+        if st.pos == 0 { return true }
+        return st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line ==
+               st.store.lines.to_linecol(st.cur().pos).line
+    }
     // `decl_table_kw` — the current token is a keyword the feature REGISTRY has a
     // declaration parser for. Not a keyword list: it asks `lookup_decl_parser` the
     // question the hand's `export` branch asks, off the same registry, so the two
@@ -2705,7 +2730,10 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     //   the capture guard — an aborted sub-parse yields a silent error node, and BINDING
     //     it means a `capval_to_*` reports over it at build time ("expected a select
     //     arm"), a second diagnostic for one failure.
-    if item.gate && item.onfail != "skip" {
+    // `bail` opts OUT of the gated FIRST pre-check for the same reason `skip` does, and
+    // the emit twin says why in full (`gated_first_check`): the pre-check reports the
+    // CALLER's wording for a token the callee would have reported about itself.
+    if item.gate && item.onfail != "skip" && item.onfail != "bail" {
         match item.prim {
             .Ref(gname) -> {
                 let gseen: List<string> = []
@@ -2717,7 +2745,14 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
                     // nothing is bound.
                     if item.onfail == "close" { return CapVal.Nil }
                     let gm = rule_first_expect_msg(g, gname)
-                    st.report(if gm != "" { gm } else { "expected ${gname}" })
+                    let gmsg = if gm != "" { gm } else { "expected ${gname}" }
+                    // An IDENT-led callee keeps the hand's RESERVED-KEYWORD diagnostic
+                    // (so07.2) — the emit twin in `gated_first_check` says why.
+                    if rule_first_literal(g, gname) == "" && rule_first_is_ident(g, gname) {
+                        st.report_ident(gmsg)
+                    } else {
+                        st.report(gmsg)
+                    }
                     st.set_abort_prop(true)
                     env.set_abort(true)
                     return CapVal.Node(st.error_node_silent())
@@ -2975,6 +3010,28 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
 /// aborted without reporting still yields a node, and the statement-list loop must treat
 /// it as a failed child rather than a parsed one.
 
+/// The `Stmt.Error` row a failed child ALREADY produced, or a fresh one when it produced
+/// something else. The statement-list loops' recovery row (t-47hc.5).
+///
+/// Allocating unconditionally leaves an ORPHAN: a committed rule's coercion (`@hand`'s
+/// failure through `capval_to_stmt`) has already minted an unstamped `Stmt.Error`, and the
+/// loop then minted a second, stamped one beside it. Nothing referenced the first, so the
+/// TREE was right and only a store scan could see it — which is exactly what
+/// `error_recovery_test`'s `total_error_nodes` is. It went unnoticed while every such
+/// item rolled back to the hand and `truncate_to_mark` reclaimed the row with it; once
+/// `fn` committed, the orphan survived.
+export fn error_stmt_of(st: PState, v: CapVal) -> StmtId {
+    match v {
+        .SNode(id) -> {
+            match st.store.stmts.get(id) {
+                .Error -> id
+                _ -> st.store.stmts.add_leaf(Stmt.Error)
+            }
+        }
+        _ -> st.store.stmts.add_leaf(Stmt.Error)
+    }
+}
+
 export fn capval_is_error_stmt(st: PState, v: CapVal) -> bool {
     match v {
         .SNode(id) -> {
@@ -3011,8 +3068,12 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
         // that reported and then RECOVERED is kept, exactly as `parse_spec_body` keeps a
         // block whose body merely lost an item. `abort_prop` rather than `env.abort`
         // because the child is a separate RULE, whose env never reaches this one.
+        // See the emit twin: reporting and FAILING are different questions. `any_err`
+        // answers the first (it is what carries had_error out to the caller), the recovery
+        // arm below answers the second.
+        if st.had_error { any_err = true }
         let child_failed = if item.onfail == "drop" { st.abort_prop }
-            else { st.had_error || env.abort || capval_is_error_stmt(st, v) }
+            else { st.abort_prop || env.abort || capval_is_error_expr(st, v) || capval_is_error_stmt(st, v) }
         if child_failed {
             env.set_abort(false)
             any_err = true
@@ -3023,12 +3084,6 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
             // The loop then saw `}`, ended the body, and every statement after the bad
             // one landed OUTSIDE the function. Count the net braces the child left open
             // and step past exactly that many, so the scan resumes inside this block.
-            mut open_braces = st.brace_delta(before, st.pos)
-            while open_braces > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
-                let _ = st.advance()
-                open_braces = open_braces - 1
-                st.synchronize_stmt()
-            }
             if st.pos == before && !st.at_end() { let _ = st.advance() }
             // t-myz7 `@onfail(drop)`: OMIT the failed child rather than standing an
             // `(error)` row in its place — the interpreter twin of emit_stmt_list_loop's
@@ -3036,13 +3091,18 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
             // partial item list, so `spec "s" { given }` is `(spec "s" )` on the hand.
             // Only the row differs: the error is still reported and `any_err` still
             // carries it to the caller.
+            // The abort is CLEARED on EVERY recovered child, not just a dropped one — the
+            // emit twin says why in full: this loop HANDLED the failure, so leaving the
+            // flag raised makes the ENCLOSING rule abort on a failure already accounted
+            // for, standing a second `(error)` row beside a well-formed construct.
+            st.set_abort_prop(false)
             if item.onfail == "drop" {
                 // The failure is HANDLED here, so the abort stops here too — the twin of
                 // emit_stmt_list_loop's clear. Without it a nested block inherits its
                 // child's raised flag and is dropped by ITS parent in turn.
                 st.set_abort_prop(false)
             } else {
-                bind(env, item.label, CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)), true)
+                bind(env, item.label, CapVal.SNode(error_stmt_of(st, v)), true)
             }
             taken = taken + 1
             st.clear_error()
@@ -3146,7 +3206,7 @@ fn gated_first_ok(g: Grammar, inner: GNode, st: PState, env: CapEnv, annots: Lis
         mut hm = ""
         for a in annots {
             match a {
-                .Expect(tok, m) -> { if tok == hkey && hm == "" { hm = m } }
+                .Expect(tok, m, _) -> { if tok == hkey && hm == "" { hm = m } }
                 _ -> {}
             }
         }
@@ -3157,7 +3217,16 @@ fn gated_first_ok(g: Grammar, inner: GNode, st: PState, env: CapEnv, annots: Lis
         return false
     }
     let em = rule_first_expect_msg(g, gr.rule)
-    st.report(if em == "" { "expected ${gr.rule}" } else { em })
+    let emsg = if em == "" { "expected ${gr.rule}" } else { em }
+    // An IDENT-led callee keeps the hand's RESERVED-KEYWORD diagnostic (so07.2) — the
+    // emit twin in `gated_first_check` says why. This is the SECOND gated-FIRST reporter
+    // in the interpreter (the other is exec_item's `.Ref` gate arm); they report the same
+    // message for the same reason, so they take the same decision here.
+    if rule_first_literal(g, gr.rule) == "" && rule_first_is_ident(g, gr.rule) {
+        st.report_ident(emsg)
+    } else {
+        st.report(emsg)
+    }
     env.set_abort(true)
     false
 }
@@ -3231,6 +3300,28 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
 
 /// The synthetic token a `@gensym(tag)` binds. Shared by both engines — emit renders a
 /// call to this same function, so the minted name and its token shape cannot drift.
+/// `~name` in a NAME slot, inside a quote body — the `MkSpliceName` build's core
+/// (t-47hc.5). The hand's `consume_name_or_splice` encodes the splice by PREFIXING the
+/// name with `~` and carrying it in the ordinary name string; the lowerer
+/// (features/quote_expr/lower.av) reads that prefix back out. So the native rule has to
+/// produce the same STRING, not a new node kind — a name slot downstream is a string
+/// either way, and inventing a second encoding would leave the lowerer blind to it.
+export fn mk_splice_name(st: PState, name: string) -> CapVal {
+    CapVal.Tok(Token { kind: "IDENT", text: "~" + name, pos: st.cur().pos, tk: Tk.Identifier })
+}
+
+/// The PLAIN half of `name_or_splice` — the name exactly as written.
+///
+/// Spelled as a build rather than left as a bare `| pn:IDENT` with no build, because a
+/// build-less branch does not reliably carry its item's value out as the RULE's result:
+/// the name arrived EMPTY at `mk_type_decl_any`, and an empty type name registers as a
+/// duplicate of the previous one (`duplicate type declaration ``` on every second type in
+/// a file). An explicit identity build states what the branch yields instead of relying
+/// on a fallthrough that differs between the two engines.
+export fn mk_plain_name(st: PState, name: string) -> CapVal {
+    CapVal.Tok(Token { kind: "IDENT", text: name, pos: st.cur().pos, tk: Tk.Identifier })
+}
+
 export fn gensym_token(st: PState, tag: string) -> Token {
     Token { kind: "IDENT", text: fresh_name(st, tag), pos: st.cur().pos, tk: Tk.Identifier }
 }
@@ -4085,16 +4176,22 @@ export fn run_hand(name: string, st: PState) -> ExprId {
 /// (or a default), then panic-mode synchronize to the @recover target.
 fn handle_missing(st: PState, expected: string, annots: List<GAnnot>) {
     mut msg = "expected `${expected}`"
+    // The F-CODE travels with the message (t-47hc.5) — same annotation, same lookup, so
+    // a position cannot end up with one rule's wording under another's code.
+    mut code = ""
     for a in annots {
         match a {
-            .Expect(tok, m) -> {
-                if tok == expected { msg = m }
+            .Expect(tok, m, c) -> {
+                if tok == expected { msg = m
+                                     code = c }
             }
             _ -> {}
         }
     }
     // so07.2: an IDENT position keeps the hand's reserved-keyword diagnostic.
-    if expected == "IDENT" { st.report_ident(msg) } else { st.report(msg) }
+    if expected == "IDENT" { st.report_ident(msg) }
+    else if code != "" { st.report_coded(code, msg) }
+    else { st.report(msg) }
     for a in annots {
         match a {
             .Recover(sync_to) -> st.synchronize(sync_to)
@@ -4172,10 +4269,25 @@ export fn capval_to_expr(st: PState, v: CapVal) -> ExprId {
         .Node(id) -> id
         .Tok(t) -> literal_node(st, t)
         _ -> {
-            report_coercion(st, "expected expression")
+            // F0040, not the uncoded default (t-47hc.5). This coercion says exactly what
+            // the expression alternation's no-match says — "an expression was required
+            // here and none was produced" — and that is `ExpectedExpression` everywhere
+            // else: the hand's `parse_leaf_common`, `exec_node`'s no-match arm, and emit's.
+            // Leaving it uncoded made the SAME sentence arrive as F0001 or F0040 depending
+            // on which of the two produced it, which is how a match-table cell (`-1`, no
+            // branch matches, the row loop coerces the Nil) reported F0001 on the default
+            // path and F0040 under `--no-static-fallback`.
+            report_coercion_coded(st, "F0040", "expected expression")
             st.store.exprs.add_leaf(Expr.Error)
         }
     }
+}
+
+/// `report_coercion` carrying an F-code. Same first-error-wins guard: a coercion is a
+/// CONSEQUENCE of an earlier failure as often as a cause, so it never speaks over one.
+fn report_coercion_coded(st: PState, code: string, msg: string) {
+    if st.had_error { return }
+    st.report_coded(code, msg)
 }
 
 export fn literal_node(st: PState, t: Token) -> ExprId {
@@ -4300,6 +4412,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkForceUnwrap" if args.length == 0 -> CapVal.Node(mk_force_unwrap(st))
         "MkCallArg" if args.length == 1 -> CapVal.Node(mk_call_arg(st, env.get(args[0])))
         "MkCallSuffix" if args.length == 1 -> CapVal.Node(mk_call_suffix(st, env.get(args[0])))
+        "MkSpliceName" -> mk_splice_name(st, capval_tok_text(env.get(args[0])))
+        "MkPlainName" -> mk_plain_name(st, capval_tok_text(env.get(args[0])))
         "MkGenericCallSuffix" if args.length == 2 -> CapVal.Node(mk_generic_call_suffix(st, capval_to_texpr_list(env.get(args[0])), env.get(args[1])))
         "MkTupleIndex" if args.length == 1 -> CapVal.Node(mk_tuple_index(st, env.get(args[0])))
         "MkIndexSuffix" if args.length == 2 -> CapVal.Node(mk_index_suffix(st, env.get(args[0]), env.get(args[1])))
@@ -4695,7 +4809,14 @@ export fn pat_str_node(st: PState, raw: string) -> PatId {
 export fn ident_pat_bare(st: PState, nm: string) -> PatId {
     if nm == "_" { return st.store.pats.add_leaf(Pattern.Wildcard) }
     if nm == "rest" { return st.store.pats.add_leaf(Pattern.Rest) }
-    st.report("`${nm}` is not a valid pattern (bare identifiers cannot bind at pattern top level)")
+    // The HAND's wording, verbatim (t-47hc.5). Its `parse_pattern` accepts only `_` and
+    // `rest` bare; every other bare identifier falls through to
+    // `consume(Tk.Dot, "expected `.`, `_`, literal, or type pattern to start pattern")`,
+    // so that is the message a rejected bare identifier gets — `Status_Gen.Ready` (a
+    // qualified enum prefix, which is not pattern syntax) is the shape that shows it.
+    // The rule reported its own sentence here, which only became visible when `fn` routed
+    // and match arms inside a function body stopped falling back to the hand.
+    st.report("expected `.`, `_`, literal, or type pattern to start pattern")
     st.store.pats.add_leaf(Pattern.Wildcard)
 }
 
@@ -6137,7 +6258,11 @@ fn build_table_arms(st: PState, cols_cv: CapVal, pats_cv: CapVal, vals_cv: CapVa
     // the VALUE columns (the header's leading IDENT — the pattern column — is matched
     // unlabelled), so a well-formed table has exactly one cell per row per value column.
     if vals.length != pats.length * cols.length {
-        st.report("expected expression")
+        // CODED, because the hand rejects this as F0040 and an uncoded report reaches the
+        // flip seam as the F0001 default — the same sentence under two codes depending on
+        // which engine produced it. The note above is exactly right that this became
+        // reachable when fn bodies routed; the code was the half still missing.
+        st.report_coded("F0040", "expected expression")
         return out
     }
     mut r = 0
@@ -7301,6 +7426,14 @@ export fn capval_tok_text(v: CapVal) -> string {
 /// fold rules (bitor→…→factor) into one precedence-climbing loop instead of a
 /// 7-frame descent, without importing `BinOp`/`Expr` into the generated module.
 export fn mk_binary(st: PState, sp_start: int, lhs: ExprId, op_text: string, rhs: ExprId) -> ExprId {
+    // A FAILED OPERAND makes the whole binary a failure (t-47hc.5). The hand's
+    // `parse_binary_pratt` reads `self.parse_unary()?` and PROPAGATES, so `return * 3` is
+    // one `(error)` there; the native ladder reported the missing operand, built an error
+    // node for it, and then folded anyway — `(return (* (error) 3))`, a tree that claims a
+    // multiplication happened. Collapsing here rather than in each ladder rule keeps it in
+    // the one place both engines already share, and is a no-op on every VALID program
+    // (they contain no error nodes), so emitted IR is untouched.
+    if expr_id_is_error(st, lhs) || expr_id_is_error(st, rhs) { return st.error_node_silent() }
     // Stamp the SAME [start, next-token) byte span the hand `parse_binary_pratt`
     // stamps via `alloc_at` (mod.av:1674) — `sp_start` is the byte the Pratt loop
     // captured at ITS entry (leftmost operand's first token, reused for every
@@ -7309,6 +7442,15 @@ export fn mk_binary(st: PState, sp_start: int, lhs: ExprId, op_text: string, rhs
     // half, for the DSL binary ladder. add_expr(node, sp, []) mirrors alloc_at's
     // empty-edges spanned alloc.
     st.store.add_expr(Expr.Binary(lhs, binop_of(op_text), rhs), byte_span(sp_start, st.cur().pos), [])
+}
+
+/// Is this arena row a parse-error placeholder? The `ExprId` twin of
+/// `capval_is_error_expr`, for the builds that see raw ids rather than CapVals.
+export fn expr_id_is_error(st: PState, id: ExprId) -> bool {
+    match st.store.exprs.get(id) {
+        .Error -> true
+        _ -> false
+    }
 }
 
 fn binop_of(sym: string) -> BinOp {

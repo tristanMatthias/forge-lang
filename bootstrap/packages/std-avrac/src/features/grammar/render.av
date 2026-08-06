@@ -109,7 +109,7 @@ fn render_args(args: List<string>) -> string {
 
 fn render_annot(a: GAnnot) -> string {
     match a {
-        .Expect(tok, msg) -> "@expect(\"${tok}\", \"${msg}\")"
+        .Expect(tok, msg, code) -> (if code == "" { "@expect(\"${tok}\", \"${msg}\")" } else { "@expect(\"${tok}\", \"${msg}\", ${code})" })
         .Recover(sync_to) -> "@recover(sync_to: \"${sync_to}\")"
     }
 }

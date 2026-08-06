@@ -439,6 +439,47 @@ directions.** emit had a tail-role bug fixed alone in #1061; the executor had th
 mirror of the same rule. Shared predicates live in `ast.av` — reachable from
 executor.av (production) where emit.av deliberately is not.
 
+### A `@try` WRAPPER HIDES the rules under it — routing one keyword unmasks dozens of gaps (t-47hc.5)
+
+`@try X` in the dispatcher rolls the WHOLE item back to `@hand(decl_hand)` on any
+diagnostic. That is not just a fallback — it is a **blindfold over everything X
+contains**, and it is why the invalid corpus was much weaker than its size
+suggested. Every corpus fixture wraps its malformed statement in `fn f() -> int {
+… }`; while `fn` was `@try`, ~23 of those specs compared **the hand against
+itself** and passed vacuously (the t-6u9b shape, at scale). Routing `fn` dropped
+the corpus 117 → 94, and not one of the 23 was a bug in `fn`: they were `if {`,
+`while`, unclosed `(` at EOF, map literals, template interpolation, qualified
+struct literals, `let … else`. All pre-existing, all invisible.
+
+So: **expect routing a keyword to cost far more than the keyword.** Budget for the
+constructs it stops hiding, and re-read any spec that "already passed" through it.
+
+Three defect SHAPES recur; check for each when a routed rule diverges:
+
+1. **A rule that reports but does not FAIL.** The hand propagates `Result` (`?`),
+   so a sub-parse that reported is over. A native rule keeps going and reports
+   again — one diagnostic becomes three. Signals available: `abort_prop` (same
+   grammar only), the error NODE (crosses views), and `@onfail(bail)` for "the
+   callee owns the message". `mk_binary` needed the node check: `return * 3` built
+   `(* (error) 3)`, a tree claiming a multiplication happened.
+2. **"Did it report" used where "did it fail" is meant.** The statement-list loops
+   keyed recovery on `had_error`, so `let v = o else { 1 }` — which reports F1203
+   and still builds a full desugared binding — collapsed to one `(error)`. They
+   are separate questions and the loop needs BOTH: the failure test drives
+   recovery, `had_error` drives `note_had_error` (fold them and the item comes
+   back CLEAN and the diagnostic never reaches the seam).
+3. **A form the routed rule cannot EXPRESS.** Not a recovery gap — it fails on
+   VALID input, so it blocks committing at all. `fn`'s `where` clause and
+   `type ~name` inside a quote were both this. Find them before routing: grep the
+   hand parser for what the rule's slots accept.
+
+**And the E2E fixtures can pass on the diagnostic itself.** `out.contains("is_ready")`
+was satisfied by the rendered ERROR, because the snippet quotes the offending source
+line — `println("is_ready")`. That fixture had never compiled on any front end. It
+only came apart when the span moved. **A fixture assertion must include
+`!out.contains("error[")`**, or "the program printed X" and "the compiler quoted the
+line containing X" are the same test.
+
 ## CRITICAL RULE: Test cycle hygiene
 
 The full `make test` is ~60s warm (19s suite + selfhost check; cold

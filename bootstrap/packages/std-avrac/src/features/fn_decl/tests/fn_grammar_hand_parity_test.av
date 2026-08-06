@@ -104,20 +104,22 @@ spec "t-47hc slice 10.13: `fn` and `extern` are routed onto the production path"
             fn_at >= 0 && ex_at >= 0 && hand_at >= 0 && fn_at < hand_at && ex_at < hand_at
     }
 
-    then "`fn` is SPECULATIVE in the dispatcher; `extern` is COMMITTED" {
-        // The split is the routing state, not an inconsistency. `extern_decl` owns its
-        // recovery (its `@try`/`@cut` live INSIDE the rule) so the dispatcher reaches it
-        // by a direct predictive return; `fn_decl` does not yet, so the dispatcher keeps
-        // the snapshot and any diagnostic rolls the whole branch back into the gate.
+    then "BOTH are COMMITTED — each rule owns its own recovery" {
+        // Both rules own their recovery now (t-47hc.5): each one's `@try`/`@cut` lives
+        // INSIDE the rule, so the dispatcher reaches it by a direct predictive return and
+        // a diagnostic past the cut no longer rolls the whole branch back into the gate.
         //
-        // Note what is NOT asserted: that `fn_decl` carries a `@cut`. `@try X` over an
-        // internally-committed X is INERT — the caller rolls back past the cut — and
-        // decl_flip_dispatch_test fails the build on exactly that pairing. The two
-        // markers move together with the routing.
+        // `@try X` over an internally-committed X is INERT — the caller rolls back past
+        // the cut — and decl_flip_dispatch_test fails the build on exactly that pairing,
+        // which is why the `@cut` and the bare dispatch had to land in ONE step.
         let src = decl_src()
-        src.contains("s_last = parse_fn_decl(st)") &&
+        !src.contains("s_last = parse_fn_decl(st)") &&
             !src.contains("s_last = parse_extern_decl(st)") &&
+            src.contains("return parse_fn_decl(st)") &&
             src.contains("return parse_extern_decl(st)") &&
+            // The rollback scaffold has not disappeared from the file — it moved INSIDE
+            // each rule, which is what makes "not my keyword" still roll back while a
+            // committed failure does not.
             src.contains("st.store.truncate_to_mark(s_mark)") &&
             src.contains("st.restore_hand_state(s_hand)")
     }

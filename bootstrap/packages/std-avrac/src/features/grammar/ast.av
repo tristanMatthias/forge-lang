@@ -457,7 +457,16 @@ export enum GBuild {
 /// next token or reports `msg`; `@recover(sync_to: tok)` marks a
 /// panic-mode synchronize target.
 export enum GAnnot {
-    Expect(tok: string, msg: string)
+    /// `@expect(tok, msg)` — the message a missing `tok` reports, and optionally the
+    /// F-CODE it reports under (`@expect(tok, msg, F0010)`).
+    ///
+    /// The code is on the ANNOTATION rather than the rule because that is the grain the
+    /// message already has: one rule's positions can want different codes (`if cond expr`
+    /// is F0010 `ExpectedBlock` while the same rule's other closers are plain F0001), and
+    /// a rule-wide code would have to pick one. Empty means UNCODED — every existing
+    /// `@expect` — which the seam already handles as `set_error`, so widening the variant
+    /// changes nothing that does not opt in.
+    Expect(tok: string, msg: string, code: string)
     Recover(sync_to: string)
 }
 
@@ -770,6 +779,10 @@ export fn build_kind(bn: string) -> string {
     // `MkWhereParam` yields the SAME TypeParamEntry a `tparam` does — a where entry is
     // a type parameter that names its bounds after the parameter list instead of inside
     // it — so it must classify identically or the accumulator's element coercion drifts.
+    // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
+    // name string with a `~` prefix, so it must classify as `tok` and flow through
+    // `capval_tok_text` exactly as a bare IDENT does.
+    if bn == "MkSpliceName" || bn == "MkPlainName" { return "tok" }
     if bn == "MkTypeParam" || bn == "MkWhereParam" { return "tparam" }
     if bn == "MkField" { return "field" }
     if bn == "MkEVariant" { return "variant" }
@@ -838,18 +851,68 @@ export fn emit_lookup_rule(g: Grammar, name: string) -> Rule {
 // and a gate-message drift is invisible on VALID input by construction — which is
 // the whole reason routing bugs in this area ship green.
 
-export type ExpectHit = { found: bool, msg: string }
+/// Is every branch of `name` led by the `IDENT` named terminal? The structural test
+/// behind "this position binds a NAME", which is what decides whether a missing token
+/// there keeps the hand's RESERVED-KEYWORD diagnostic (so07.2) instead of the rule's
+/// generic wording. Shared, because emit's gated FIRST check and the interpreter's twin
+/// must make the same call — a position that says "`move` is a reserved keyword" on one
+/// engine and "expected parameter name" on the other is a divergence no valid input can
+/// reveal.
+///
+/// Conservative by construction: a rule whose branches disagree, or that leads with
+/// anything else, answers false and keeps the plain report.
+export fn rule_first_is_ident(g: Grammar, name: string) -> bool {
+    let i = rule_index_of(g, name)
+    // A CROSS-VIEW rule is not in this grammar at all — `param` is defined in the
+    // expression view and called from the declaration view — so there is nothing to
+    // inspect and the declared answer is the only one available. Same shape as the
+    // declared FIRSTs `rule_first_guard` keeps for exactly these names, and kept HERE
+    // rather than beside them so both engines read one list: emit renders a guard
+    // string, the interpreter walks tokens, and neither can consult the other's table.
+    if i < 0 { return external_rule_first_is_ident(name) }
+    match g.rules[i].body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return false }
+            for b in branches {
+                if !seq_leads_with_ident(b) { return false }
+            }
+            true
+        }
+    }
+}
+
+/// The cross-view rules whose FIRST is the bare `IDENT` terminal. One entry today:
+/// `param = pname:IDENT ( ":" pt:type_expr )?`, reachable from the declaration view since
+/// `fn` / `extern` / `trait` / `impl` routed. Add a name here when a new external rule
+/// binds a NAME in its first position — the cost of missing one is only the generic
+/// message instead of the reserved-keyword one, never a wrong parse.
+fn external_rule_first_is_ident(name: string) -> bool {
+    name == "param"
+}
+
+fn seq_leads_with_ident(seq: GSeq) -> bool {
+    for item in seq.items {
+        if prim_is_zero_width(item.prim) { continue }
+        match item.prim {
+            .Named(tok) -> { return tok == "IDENT" }
+            _ -> { return false }
+        }
+    }
+    false
+}
+
+export type ExpectHit = { found: bool, msg: string, code: string }
 
 export fn expect_for(annots: List<GAnnot>, tok: string) -> ExpectHit {
     for a in annots {
         match a {
-            .Expect(t, m) -> {
-                if t == tok { return ExpectHit { found: true, msg: m } }
+            .Expect(t, m, c) -> {
+                if t == tok { return ExpectHit { found: true, msg: m, code: c } }
             }
             _ -> {}
         }
     }
-    ExpectHit { found: false, msg: "" }
+    ExpectHit { found: false, msg: "", code: "" }
 }
 
 

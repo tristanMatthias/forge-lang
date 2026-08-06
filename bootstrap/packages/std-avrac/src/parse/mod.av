@@ -29,7 +29,7 @@ use parse.static_type_entry.{run_static_type}
 // The GENERATED exact-match keyword recogniser (compiled from keyword_rules());
 // p_keyword_kind is now a thin string wrapper over it.
 use parse.{classify_keyword}
-use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, diag_with_help, span_new, span_at}
+use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, diag_with_help, span_new, span_at, syntax_diag_code}
 
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
 // symbol; sibling modules declare it identically — extern decls are per-file).
@@ -1111,19 +1111,46 @@ impl Parser {
             // preserved, which is exactly what a one-diagnostic boundary cannot serve.
             // `Parser.report` appends unconditionally ("show ALL parse errors, not just
             // the first"), so the loop lands N bag entries in report order.
-            if d.bag.diagnostics.length == 0 {
+            // BOTH sources, not "the DSL's only when the delegate is silent" (t-47hc.5).
+            // A committed native rule and a `@hand` leaf INSIDE it report into different
+            // places — the leaf into `d.bag`, the rule into `dsl.diags` — and they are
+            // disjoint, so the delegate having spoken is no reason to discard what the
+            // rule said. It was a safe simplification only while a rule whose body
+            // reached the hand rolled the WHOLE item back: `fn f() { let x = (1 + 2 * 3`
+            // is the hand's "expected `)` after expression" AND its "expected `}` after
+            // function body", and once `fn` routed the second one was generated correctly
+            // and then dropped here because the first came from the delegate.
+            //
+            // The DELEGATE's go FIRST. Order is observable — the oracle compares the
+            // ORDERED F-code signature — and a `@hand` leaf is always DEEPER than the
+            // native rule that reached it, so its diagnostic is the one the hand emits
+            // first. The enclosing rule's own `@require` closers report on the way back
+            // out, which is exactly the hand's inner-then-outer order for
+            // `fn f() { let x = (1 + 2 * 3`: the `)` from inside the expression, then the
+            // function's `}`. Merging afterwards inverted it.
+            self.bag = bag_merge(self.bag, d.bag)
+            if true {
                 mut gi = 0
                 while gi < dsl.diags.length {
                     let gd = dsl.diags[gi]
-                    if gd.code == "F0040" {
-                        self.report(DiagCode.ExpectedExpression, gd.msg)
+                    // EVERY syntax code the rule declared, not just F0040 (t-47hc.5).
+                    // The hard-coded single mapping was survivable only while the
+                    // statement bodies still fell back: `if cond expr` is the hand's
+                    // F0010 `ExpectedBlock`, and it came out F0001 the moment `fn`
+                    // routed and stopped handing its body to the hand. `syntax_diag_code`
+                    // is `error_def` read backwards over the F0001-F0999 range, so the
+                    // two cannot disagree about what a code means. An UNCODED diagnostic
+                    // (`report`, the common case) and a code outside that range both
+                    // answer null and keep the previous `set_error` default.
+                    let dc = syntax_diag_code(gd.code)
+                    if dc != null {
+                        self.report(dc!, gd.msg)
                     } else {
                         self.set_error(gd.msg)
                     }
                     gi = gi + 1
                 }
             }
-            self.bag = bag_merge(self.bag, d.bag)
             self.had_error = true
             // Distinguish a WHOLE-ITEM failure from an already-recovered BODY error.
             // A bare `Stmt.Error` means the delegate returned .Err on the item itself

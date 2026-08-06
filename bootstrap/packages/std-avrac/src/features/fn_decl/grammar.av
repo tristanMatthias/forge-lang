@@ -31,12 +31,25 @@ export fn avra_fn_decl_grammar() -> Grammar {
   // already declared gains a ` + `-joined bound, a name they did not is APPENDED. The
   // fold lives in `mk_fn_decl_where_g` because nothing in the DSL can express "amend an
   // earlier capture" — the clause is not sugar for more angle-bracket parameters.
-  // NO `@cut` here, deliberately, until the rule is dispatched BARE. `@try X` where `X`
-  // commits internally is INERT — the caller's snapshot rolls back the instant the rule
-  // reports, discarding the very point the `@cut` marks — and `decl_flip_dispatch_test`
-  // fails the build on that combination precisely so it cannot be shipped by accident.
-  // The commit markers arrive with the routing, in one step, not before it.
-  fn_decl     = "fn" name:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "(" ( params:param ( @peek(comma_not_rparen) "," params:param )* ( "," )? )? ")" ( "->" ret:type_expr )? ( "where" wp:where_param ( "," wp:where_param )* )? "{" body:body_item* "}" @expect("}", "expected `}` after function body") -> MkFnDecl(name, tparams, params, ret, body, wp)
+  // t-47hc.5: `fn` owns its recovery. Every position the hand `consume`s with a message
+  // is `@require`d here, with the hand's own wording; the `@try`/`@cut` pair lives INSIDE
+  // the rule so the dispatcher references it BARE (a caller's `@try` rolls back on any
+  // diagnostic, which is the opposite of owning recovery — the callee's `@cut` cannot
+  // reach it, and `decl_flip_dispatch_test` fails the build on that inert pairing).
+  // The type-parameter and parameter lists take the shapes `enum`/`type` and `extern`
+  // already proved: GATED, so an unclosed opener reports about the ELEMENT the hand
+  // reports about, `@onfail(halt)` so an empty `<>` does not manufacture a parameter out
+  // of the closer, and `@onfail(discard, tparams)` so a malformed list leaves NO type
+  // parameters rather than partial ones.
+  fn_decl     = @try "fn" @cut @require name:IDENT ( "<" ( @peek(not_gt) @gate @onfail(halt) tparams:tparam ( "," @onfail(skip) tparams:tparam )* )? @onfail(discard, tparams) ">" )? @require "(" ( @peek(not_rparen) @gate params:param ( @peek(comma_not_rparen) "," params:param )* ( "," )? )? @require ")" ( "->" @require ret:type_expr )? ( "where" wp:where_param ( "," wp:where_param )* )? @require "{" body:body_item* @require "}"
+                @expect("tparam", "expected type parameter name")
+                @expect(">", "expected `>` after type parameters")
+                @expect("IDENT", "expected function name")
+                @expect("(", "expected `(` after function name")
+                @expect(")", "expected `)` after parameters")
+                @expect("type_expr", "expected return type after `->`")
+                @expect("{", "expected `{` after function parameters")
+                @expect("}", "expected `}` after function body") -> MkFnDecl(name, tparams, params, ret, body, wp)
   // `T: Trait1 + Trait2` — the where entry. Every position the hand `set_error`s on is
   // `@require`d, with the hand's own wording (parse_where_entries / parse_where_bounds).
   where_param = wn:IDENT @require ":" wb:IDENT ( "+" @require wb:IDENT )*

@@ -576,7 +576,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `body` followed by `:` (t-47hc slice A). `kw_let`: the current token is the
     // `let` keyword — comp_field's declared-dispatch gate over `declaration`'s
     // routed let_decl. See executor.lookahead_ok for both.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "not_gt" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_lbrace_feature" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "not_rparen" || cond == "not_rbrace" || cond == "comma_not_rbracket" || cond == "comma_not_rbrace" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let" || cond == "cfg_pair_value" || cond == "cfg_pair_eq" || cond == "comp_inst_shape" || cond == "comp_nested_named" || cond == "comp_nested_bare" || cond == "comp_nested_raw_named" || cond == "comp_nested_raw_bare" || cond == "comp_method" || cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" || cond == "always" || cond == "decl_table_kw"
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "not_gt" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_lbrace_feature" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "not_rparen" || cond == "not_rbrace" || cond == "comma_not_rbracket" || cond == "comma_not_rbrace" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let" || cond == "cfg_pair_value" || cond == "cfg_pair_eq" || cond == "comp_inst_shape" || cond == "comp_nested_named" || cond == "comp_nested_bare" || cond == "comp_nested_raw_named" || cond == "comp_nested_raw_bare" || cond == "comp_method" || cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" || cond == "always" || cond == "decl_table_kw" || cond == "return_value"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -1204,7 +1204,7 @@ fn validate_cuts(g: Grammar) -> string {
 fn seq_expects_key(seq: GSeq, key: string) -> bool {
     for a in seq.annots {
         match a {
-            .Expect(tok, _) -> { if tok == key { return true } }
+            .Expect(tok, _, _) -> { if tok == key { return true } }
             _ -> {}
         }
     }
@@ -1239,7 +1239,7 @@ fn seq_expects_key_in(seq: GSeq, inherited: List<GAnnot>, key: string) -> bool {
     if seq_expects_key(seq, key) { return true }
     for a in inherited {
         match a {
-            .Expect(tok, _) -> { if tok == key { return true } }
+            .Expect(tok, _, _) -> { if tok == key { return true } }
             _ -> {}
         }
     }
@@ -1901,7 +1901,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, tilde_ident_lbrace, ident_lbrace_plain, ident_lbrace_feature, ident_template, ident_plain, qdot_plain_field, qdot_method_call, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen, comma_not_rbracket, comma_not_rbrace, quote_arm, quote_type, body_marker, kw_let, cfg_pair_value, cfg_pair_eq, comp_inst_shape, comp_nested_named, comp_nested_bare, comp_nested_raw_named, comp_nested_raw_bare, comp_method, bare_comp_inst, bare_comp_inst_raw, always, decl_table_kw)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, tilde_ident_lbrace, ident_lbrace_plain, ident_lbrace_feature, ident_template, ident_plain, qdot_plain_field, qdot_method_call, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen, comma_not_rbracket, comma_not_rbrace, quote_arm, quote_type, body_marker, kw_let, cfg_pair_value, cfg_pair_eq, comp_inst_shape, comp_nested_named, comp_nested_bare, comp_nested_raw_named, comp_nested_raw_bare, comp_method, bare_comp_inst, bare_comp_inst_raw, always, decl_table_kw, return_value)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")
@@ -1978,6 +1978,34 @@ fn parse_annot(p: GP) -> GAnnot {
     p.expect_punct(",", "expected `,` between @expect's token and message")
     mut msg = ""
     if p.peek().kind == "STRING" { msg = p.advance().text } else { p.fail("expected a message string in @expect") }
+    // @expect(tok, msg, F0010) — the OPTIONAL third operand is the F-CODE the missing
+    // token reports under (t-47hc.5). A bare NAME, not a string, because it names a
+    // DiagCode rather than carrying user-facing text, and because a typo must be a hard
+    // error: validated against `syntax_diag_code`'s range here rather than reaching the
+    // seam as an unmapped string that silently degrades to F0001 — which is exactly the
+    // failure this operand exists to fix, and would be invisible without the check.
+    mut code = ""
+    if p.peek().text == "," {
+        let _ = p.advance()
+        if p.peek().kind == "NAME" {
+            let c = p.advance().text
+            if expect_code_supported(c) { code = c }
+            else { p.fail("unknown `@expect` code `${c}` — must be a SYNTAX code the seam can map (F0001, F0002, F0003, F0006, F0010, F0011, F0012, F0013, F0014, F0030, F0031, F0040, F0041)") }
+        }
+        else { p.fail("expected an F-code name in `@expect(tok, msg, CODE)`") }
+    }
     p.expect_punct(")", "expected `)` to close @expect")
-    GAnnot.Expect(tok, msg)
+    GAnnot.Expect(tok, msg, code)
+}
+
+/// The F-codes `@expect`'s third operand accepts — exactly the range
+/// `diagnostics.syntax_diag_code` can map back to a `DiagCode`, duplicated for the same
+/// reason `name_in` is (see its note): the seed parser runs under comptime macro
+/// expansion, where a cross-module non-`@comptime` callee resolves to a type_marker
+/// (F4005). A code outside this set would reach the seam, answer `null` there, and
+/// degrade silently to F0001 — so it is rejected at grammar-parse time instead.
+fn expect_code_supported(c: string) -> bool {
+    c == "F0001" || c == "F0002" || c == "F0003" || c == "F0006" || c == "F0010" ||
+    c == "F0011" || c == "F0012" || c == "F0013" || c == "F0014" || c == "F0030" ||
+    c == "F0031" || c == "F0040" || c == "F0041"
 }

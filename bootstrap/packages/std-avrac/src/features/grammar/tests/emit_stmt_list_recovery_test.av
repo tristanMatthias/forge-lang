@@ -46,11 +46,18 @@ spec "t-47hc.13 STEP2: emit renders the statement-list-with-recovery loop for a 
 
     then "a failed child triggers panic-mode resync + a positioned Stmt.Error placeholder" {
         let src = emit_flip()
-        src.contains("if st.had_error {") &&
+        // The failure test is "did this child FAIL", not "did anything REPORT" — the hand
+        // asks the first (`parse_declaration()` returning `.Err`), so a child that
+        // reported and still produced a node is KEPT (t-47hc.5). `had_error` is still
+        // read, separately, to carry the diagnostic out.
+        src.contains("if st.had_error { __any_err = true }") &&
+        src.contains("if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {") &&
         src.contains("st.synchronize_stmt()") &&
         // forward-progress guard: a zero-width errored parse must still advance.
         src.contains("if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }") &&
-        src.contains("let __e = st.store.stmts.add_leaf(Stmt.Error)") &&
+        // The recovery row REUSES the error the child already produced when it produced
+        // one — allocating unconditionally left an orphan in the store (see error_stmt_of).
+        src.contains("let __e = error_stmt_of(st, __cv)") &&
         src.contains("st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })") &&
         src.contains("st.clear_error()")
     }
