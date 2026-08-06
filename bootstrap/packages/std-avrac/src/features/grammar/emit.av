@@ -1382,6 +1382,39 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                      else { rret })
                 "${ind}if !(${rule_first_guard(g, name, [])}) {\n${body}${ind}}\n"
             }
+            // `@soft <rule>` (t-myz7): `@require`'s complement. Same FIRST guard, but a
+            // mismatch REPORTS AND SKIPS instead of aborting — so the call is WRAPPED
+            // rather than prefixed. That is the whole difference: `req` is a prefix and
+            // then the call runs regardless, which is exactly the ungated behaviour that
+            // let `parse_tparam`'s unconditional `st.advance()` eat the `{` of
+            // `enum E< { A }`. The damage was the CONSUMPTION, so the fix must be to not
+            // call at all. Message comes from the referenced rule's own `@expect`, via
+            // the same `rule_first_expect_msg` the gated check uses — one wording, both
+            // engines, no second table.
+            if item.soft {
+                let sg = rule_first_guard(g, name, [])
+                let sem = rule_first_expect_msg(g, name)
+                let smsg = if sem == "" { "expected ${name}" } else { sem }
+                let miss = "${ind}    st.report(\"${smsg}\")\n"
+                if str_in(list_labels, item.label) {
+                    return "${ind}if !(${sg}) {\n${miss}${ind}} else {\n" +
+                        "${ind}    ${item.label}_list.push(${kind_coerce(rule_result_kind(g, name))}(st, parse_${name}(st)))\n" +
+                        "${ind}}\n"
+                }
+                if str_in(opts, item.label) {
+                    return "${ind}if !(${sg}) {\n${miss}${ind}} else {\n" +
+                        "${ind}    ${item.label} = parse_${name}(st)\n${ind}}\n"
+                }
+                if item.label == "" {
+                    return "${ind}if !(${sg}) {\n${miss}${ind}} else {\n" +
+                        "${ind}    let _ = parse_${name}(st)\n${ind}}\n"
+                }
+                // A plain labelled capture still has to BIND, or the build below it
+                // references an undefined name — skipping the call cannot mean skipping
+                // the binding. Nil is what an absent optional capture already carries.
+                return "${ind}let ${item.label} = if !(${sg}) {\n${miss}${ind}    CapVal.Nil\n" +
+                    "${ind}} else { parse_${name}(st) }\n"
+            }
             if str_in(list_labels, item.label) {
                 return req + "${ind}${item.label}_list.push(${kind_coerce(rule_result_kind(g, name))}(st, parse_${name}(st)))\n"
             }
