@@ -206,7 +206,12 @@ fn BARE_IDENT_COMP_INST() -> string {
 /// `fn f() -> int { … }`. So `fn` graduates only once native statement-body recovery
 /// is byte-equal to the hand's, which is what the recovery corpus measures.
 fn MALFORMED_DECL() -> string {
-    "impl Foo {\n"
+    // RE-POINTED as the frontier moves (t-myz7): this must name a form that STILL needs
+    // the leaf, or the control it anchors goes vacuous. Was `impl Foo {` until `impl`
+    // graduated; `fn` is deliberately still on the leaf — committing it changes the
+    // ENCLOSING recovery for every expression-view case wrapped in `fn f() -> int { … }`,
+    // so it graduates only once native statement-body recovery is byte-equal to the hand's.
+    "fn foo(\n"
 }
 
 fn fixture_path(name: string) -> string {
@@ -619,11 +624,15 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         recovery_without_delegate("trait_open", "trait T {\nfn f() -> int { 1 }") &&
         recovery_without_delegate("trait_noname", "trait {\nfn f() -> int { 1 }") &&
         recovery_without_delegate("shape_open", "shape S = {\nfn f() -> int { 1 }") &&
+        // `impl` GRADUATED (t-myz7) — its malformed forms move here rather than being
+        // deleted, so the frontier's coverage grows with it instead of thinning.
+        recovery_without_delegate("impl_open", "impl Foo {\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("impl_noname", "impl {\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("impl_badmember", "impl Foo { 5 }\nfn f() -> int { 1 }") &&
         // ANTI-VACUITY: negatives alone would also pass if `refused_here` simply
         // stopped detecting refusals. A SIBLING keyword's malformed form must still
-        // refuse. `enum` held this role until this slice converted it; `impl` has not
-        // been converted, so this fires today — RE-POINT it at the next unconverted
-        // keyword when `impl` lands, never delete it.
-        refused_here("decl_hand", "impl_still_needs_leaf", "impl\nfn f() -> int { 1 }")
+        // refuse. `enum` held this role, then `impl`; both have converted, so it now
+        // points at `component` — RE-POINT it again when that lands, never delete it.
+        refused_here("decl_hand", "component_still_needs_leaf", "component acct_sr { balance: int = 100 }\nfn f() -> int { 1 }")
     }
 }

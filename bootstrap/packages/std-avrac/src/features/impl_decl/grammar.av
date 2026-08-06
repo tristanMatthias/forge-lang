@@ -24,10 +24,45 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// The `impl` declaration and its method rule.
 export fn avra_impl_decl_grammar() -> Grammar {
     let gp = grammar {
-  impl_decl   = "impl" ( "<" tparam ( "," tparam )* ">" )? itn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? ( "for" ifortn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? )? "{" ( imethods:impl_member )* "}" -> MkImpl(itn, ifortn, imethods)
+  // t-myz7: `impl` OWNS its recovery — `@try` + `@cut` after the keyword, its own
+  // `@expect`s. `parse_impl_declaration` bails at each of them (`consume(…)?` /
+  // `return .Err`), so every one is `@require`d here.
+  //
+  // The `for` clause carries its OWN `@expect("IDENT", …)`: the hand words the two type
+  // positions differently ("after `impl`" vs "after `for`") and `@expect` keys on the
+  // token, so one shared annotation set could only ever carry one of them. A group
+  // branch's annotations now MERGE with the inherited ones rather than replacing them,
+  // which is what makes a second message expressible at all.
+  impl_decl   = @try "impl" @cut ( "<" tparam ( "," tparam )* ">" )? @require itn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? ( "for" @require ifortn:IDENT ( "<" type_expr ( "," type_expr )* ">" )? @expect("IDENT", "expected type name after `for`") )? @require "{" ( @peek(not_rbrace) @gate imethods:impl_member )* @require "}"
+                @expect("IDENT", "expected type name after `impl`")
+                @expect("{", "expected `{` after impl type name")
+                @expect("}", "expected `}` after impl block") -> MkImpl(itn, ifortn, imethods)
+  // The associated-type DEFINITION (`type Name = Concrete`) was missing entirely — the
+  // hand accepts it in an impl body and the fragment did not, so routing without it would
+  // have broken every impl that defines one. Committed after its keyword for the same
+  // reason `trait`'s members are: without it, `impl F { type }` binds the `}` AS THE NAME.
+  //
+  // `@expect("impl_member", …)` is the message the GATED call above reports with — an
+  // alternation-led rule has no leading terminal to key on, so without it the gate says
+  // "expected impl_member", a grammar rule name printed at a user.
   impl_member = d:DOC ( d:DOC )* im:impl_method -> MkDocAnnotated(d, im)
+              | impl_assoc
               | impl_method
-  impl_method   = "fn" imname:IDENT "(" ( imparams:param ( @peek(comma_not_rparen) "," imparams:param )* ( "," )? )? ")" ( "->" imret:type_expr )? "{" imbody:body_item* "}" -> MkMethod(imname, imparams, imret, imbody)
+                @expect("impl_member", "expected `fn` or `type` inside impl block")
+  impl_assoc  = @try "type" @cut @require aname:IDENT @require "=" @require aty:type_expr
+                @expect("IDENT", "expected associated type name")
+                @expect("=", "expected `=` after associated type name")
+                @expect("type_expr", "expected type after `=`") -> MkAssocTypeDef(aname, aty)
+  // The parameter list is GATED so a `(` that never closes reports about the PARAMETER,
+  // which is what the hand does: `impl F { fn m( }` is "expected parameter name", not
+  // "expected `)`". The gate is what lets the loop be entered on a token the parameter's
+  // own FIRST refuses (EOF, `}`), and the gated FIRST re-check is what reports for it.
+  impl_method   = @try "fn" @cut @require imname:IDENT @require "(" ( @peek(not_rparen) @gate imparams:param ( @peek(comma_not_rparen) "," imparams:param )* ( "," )? )? @require ")" ( "->" imret:type_expr )? @require "{" imbody:body_item* @require "}"
+                  @expect("IDENT", "expected method name")
+                  @expect("(", "expected `(` after method name")
+                  @expect(")", "expected `)` after method parameters")
+                  @expect("{", "expected `{` for method body")
+                  @expect("}", "expected `}` after method body") -> MkMethod(imname, imparams, imret, imbody)
     }
     grammar_checked(gp)
 }

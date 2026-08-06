@@ -2016,6 +2016,15 @@ export fn rule_first_expect_msg(g: Grammar, name: string) -> string {
     match r.body {
         .Alt(branches) -> {
             if branches.length == 0 { return "" }
+            // A rule-name-keyed message is about the RULE, so WHICH branch carries it is
+            // an accident of where the author wrote it — and annotations are TRAILING, so
+            // the natural place to write one is after the LAST branch, which is exactly
+            // where a branches[0]-only lookup cannot see it. `trait_member` and
+            // `impl_member` both read "expected <rule-name>" at the user for that reason.
+            for br in branches {
+                let named = expect_for(br.annots, name)
+                if named.found { return named.msg }
+            }
             let b = branches[0]
             // A message keyed on the RULE'S OWN NAME. The token-keyed lookups below can
             // only answer for a rule whose first branch LEADS with a terminal; an
@@ -2686,6 +2695,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkEVariant" -> "mk_evariant(capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkParam" -> "mk_param(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
         "MkAssocType" -> "mk_assoc_type(st, capval_tok_text(${args[0]}))"
+        "MkAssocTypeDef" -> "mk_assoc_type_def(st, capval_tok_text(${args[0]}), ${args[1]})"
         "MkTraitMethod" -> "mk_trait_method(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), capval_present(${args[3]}), ${args[4]}_list)"
         "MkMethod" -> "mk_method(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         _ -> "CapVal.Node(st.error_node(\"unknown build `${name}`\"))"

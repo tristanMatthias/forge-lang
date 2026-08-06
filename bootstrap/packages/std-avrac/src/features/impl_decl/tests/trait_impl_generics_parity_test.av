@@ -25,7 +25,7 @@
 // engines. Not a gap — `impl_method` has no type params in the hand either.
 
 use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, avra_decl_dispatch_grammar, emit_parser_source_ex}
-use @std.avrac.parse.{parse_program_source}
+use @std.avrac.parse.{parse_program_source, parser_new}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
 fn dsl_program(src: string) -> string {
@@ -80,12 +80,46 @@ spec "t-47hc slice 10.7: `impl` accepts type params AND type arguments" {
     }
 }
 
+/// The HAND oracle, with every routing field set explicitly (t-myz7).
+///
+/// `hand_program` above calls `parse_program_source`, which reads the routing flags from
+/// the environment — and `decl_flip`/`decl_static` default ON, so it is the PRODUCTION
+/// path, not the hand. That was indistinguishable while `impl` was a `@try` branch (any
+/// diagnostic rolled the declaration back into `@hand(decl_hand)`, so production WAS the
+/// hand on invalid input) and stopped being so the moment `impl` committed. A pinned
+/// hand-vs-native divergence has to measure the hand.
+fn hand_only_program(src: string) -> string {
+    mut p = parser_new(src)
+    p.decl_flip = false
+    p.decl_static = true
+    p.no_static_fallback = false
+    p.expr_flip = false
+    p.expr_static = false
+    let r = p.parse_file_program()
+    if r.had_error != 0 { return "<hand parse error>" }
+    if r.ids == null { return "<hand no ids>" }
+    render_stmt_ids(r.store, r.ids!)
+}
+
 spec "t-47hc slice 10.7: the blind-skip NARROWING, pinned" {
     then "token soup between angles: the hand tolerates it, the DSL does not" {
         // Measured, not assumed. Asserted so that if a future capability closes it, this
         // fails loudly and gets converted to parity — exactly how `type X =` was handled.
+        //
+        // `skip_angle_brackets` is a BLIND token skip: the hand walks to the matching `>`
+        // without parsing what is between, so `impl Foo<+>` is accepted. The native rule
+        // parses the type arguments, so `+` is a type position that reports.
         dsl_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error") &&
-            !hand_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error")
+            !hand_only_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error")
+    }
+
+    // t-myz7: the narrowing now reaches PRODUCTION. While `impl` was speculative the
+    // divergence was invisible there — any diagnostic rolled the declaration back into
+    // the hand gate — and committing the rule is precisely what makes the native answer
+    // final. Asserted so the reach of the narrowing is measured rather than assumed:
+    // production rejects what the hand tolerates, for this one input shape.
+    then "committed, the narrowing is what production does too" {
+        parse_program_source("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").had_error != 0
     }
 }
 
@@ -115,10 +149,38 @@ spec "t-47hc slice 10.13: `trait` and `impl` are routed onto the production path
             tr_at >= 0 && im_at >= 0 && hand_at >= 0 && tr_at < hand_at && im_at < hand_at
     }
 
-    then "both branches are SPECULATIVE — on any diagnostic they roll back into the gate" {
+    // t-myz7: BOTH are COMMITTED now — the dispatcher calls each directly and the `@try`
+    // moved inside the rule, paired with a `@cut` after the keyword (it has to go there:
+    // a `@cut`'s commit flag is per-rule-invocation and cannot reach a caller's `@try`).
+    // The rollback scaffold is still emitted, one frame in, covering only a failure
+    // BEFORE the cut.
+    //
+    // The negatives are the load-bearing half. A speculative `s_last = parse_X(st)` in
+    // the dispatcher would mean any diagnostic anywhere inside the declaration rolls it
+    // back and `decl_hand` owns the recovery again — silently un-routing the keyword
+    // while every parity spec above still passes.
+    then "both branches are COMMITTED — the dispatcher calls them directly" {
         let src = decl_src_routing()
-        src.contains("s_last = parse_trait_decl(st)") &&
-            src.contains("s_last = parse_impl_decl(st)") &&
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        // Bound to the `decl_hand` POSITION, not merely present anywhere in the file. The
+        // emitted source holds several dispatch views — `declaration` plus the `export` /
+        // doc / annotation WRAPPERS (exportable_inner, wrapped_inner) — and a keyword can
+        // legitimately be speculative in a wrapper while committed in `declaration`,
+        // which `trait_decl` is. Only the call that precedes the leaf answers the
+        // question this spec asks.
+        let tr_ret = src.index_of("return parse_trait_decl(st)")
+        let im_ret = src.index_of("return parse_impl_decl(st)")
+        let tr_spec = src.index_of("s_last = parse_trait_decl(st)")
+        let im_spec = src.index_of("s_last = parse_impl_decl(st)")
+        hand_at >= 0 && tr_ret >= 0 && im_ret >= 0 &&
+            tr_ret < hand_at && im_ret < hand_at &&
+            // ...and NO speculative call beats the committed one to the gate. A
+            // `s_last = parse_X(st)` before it would mean any diagnostic anywhere inside
+            // the declaration rolls it back and `decl_hand` owns the recovery again —
+            // silently un-routing the keyword while every parity spec above still passes.
+            (tr_spec < 0 || tr_spec > hand_at) &&
+            (im_spec < 0 || im_spec > hand_at) &&
+            src.contains("mut s_cut = false") &&
             src.contains("st.store.truncate_to_mark(s_mark)") &&
             src.contains("st.restore_hand_state(s_hand)")
     }

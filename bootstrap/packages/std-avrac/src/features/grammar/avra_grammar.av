@@ -475,7 +475,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `letdes_decl` UNREACHABLE — at that point the two must swap, with the more
   // specific `let (` form first. Recorded because the breakage would be silent:
   // destructuring would simply stop parsing, with no diagnostic naming the cause.
-  declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | @try extern_decl | @try fn_decl | trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | mut_decl | const_decl | @try letdes_decl | select_decl | @try parallel_decl | spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | @try extern_decl | @try fn_decl | trait_decl | impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | mut_decl | const_decl | @try letdes_decl | select_decl | @try parallel_decl | spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -509,7 +509,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // position is inherited rather than shifted.
   export_decl      = "export" ed:exportable_decl -> MkExport(ed)
   exportable_decl  = ei:exportable_inner -> MkStampAt(ei)
-  exportable_inner = @try fn_decl | type_decl | enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try use_decl | @try mod_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
+  exportable_inner = @try fn_decl | type_decl | enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | impl_decl | @try use_decl | @try mod_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
   // The remaining three prefix wrappers (t-47hc Phase 4), same shape as `export_decl`
   // with ONE deliberate difference: their inner IS recursive. The hand's doc and
   // annotation branches re-enter `parse_declaration` (unlike export's direct table
@@ -548,7 +548,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // native and `@expand` on a `fn` was fine. Its FIRST (`component`) collides with
   // nothing else here, and `wrapped_inner` is shared by both `annot_decl` and
   // `doc_decl`, so this covers the doc-comment form too.
-  wrapped_inner  = @try fn_decl | type_decl | enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try component_decl | @try use_decl | @try mod_decl | @try export_decl | @try doc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
+  wrapped_inner  = @try fn_decl | type_decl | enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | impl_decl | @try component_decl | @try use_decl | @try mod_decl | @try export_decl | @try doc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
   // The `let` / `mut` / `const` BINDINGS (t-47hc Phase 4) — the highest-traffic
   // residue of `@hand(decl_hand)`: every binding statement in every routed body
   // used to detour through the hand delegate. The rules mirror the hand parsers

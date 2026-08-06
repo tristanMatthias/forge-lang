@@ -4356,6 +4356,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkModule" if args.length == 1 -> mk_module(st, capval_tok_text(env.get(args[0])))
         // ── Trait declaration builds (target: Stmt, ps3t.6.5.7) ──
         "MkAssocType" if args.length == 1 -> mk_assoc_type(st, capval_tok_text(env.get(args[0])))
+        "MkAssocTypeDef" if args.length == 2 -> mk_assoc_type_def(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
         "MkTraitMethod" if args.length == 5 -> mk_trait_method(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), capval_present(env.get(args[3])), capval_to_stmt_list(env.get(args[4])))
         "MkTraitDecl" if args.length == 2 -> mk_trait_decl(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
         // ── Impl declaration builds (target: Stmt, ps3t.6.5.7) ──
@@ -5645,6 +5646,19 @@ export fn mk_param(st: PState, name: string, pt_cv: CapVal, has_pt: bool) -> Cap
 /// `type Name` — a trait associated-type member (the `MkAssocType` build's core).
 export fn mk_assoc_type(st: PState, name: string) -> CapVal {
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.AssocType(name, ValueType.Unknown)))
+}
+
+/// `type Name = Concrete` — the IMPL-side associated type (the `MkAssocTypeDef` build's
+/// core). Same `Stmt.AssocType` row as the trait-side member, with the type FILLED IN
+/// rather than left Unknown: a trait DECLARES the association and an impl DEFINES it, and
+/// `render_stmt` already tells the two apart on exactly that field.
+///
+/// A separate build NAME rather than a second arity of `MkAssocType`, because emit
+/// dispatches on the name alone — a 2-arg call rendered through the 1-arg arm would put
+/// the type where nothing reads it, silently, in the generated parser only (t-gnk7).
+export fn mk_assoc_type_def(st: PState, name: string, ty_cv: CapVal) -> CapVal {
+    let ty = type_expr_to_vtype(capval_to_texpr(st, ty_cv))
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.AssocType(name, ty)))
 }
 
 /// `fn name ( params? ) ( "->" ret )? ( "{" body "}" )?` — a trait method member
