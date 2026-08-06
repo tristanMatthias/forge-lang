@@ -47,10 +47,32 @@ fn releasable_remove(set: List<string>, name: string) -> List<string> {
 /// are the same `.Expr` shape as the last statement, and only the declared
 /// return type says whether the value escapes or is discarded. Callers with
 /// no enclosing fn (program-level statements) pass false.
-export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr, tail_yields: bool) -> List<string> {
+export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr, tail_yields: bool, result_aliases: bool) -> List<string> {
     let empty: List<string> = []
     let swept = single_pass_escape_ids(store, body, empty, fresh)
-    remove_returned_field_roots(store, body, swept, tail_yields)
+    remove_returned_field_roots(store, body, swept, tail_yields, result_aliases)
+}
+
+/// A chain of field READS rooted at a plain local — `h.a`, `h.a.b`. The
+/// point is what it EXCLUDES: no call anywhere in it, so nothing can retain
+/// the base, and no composite, so nothing carries a part of it out.
+///
+/// Requires at least one `.FieldAccess`; a bare `.Ident` tail keeps the
+/// existing treatment (it hands the local ITSELF back, which is a different
+/// question and not one this predicate should answer).
+fn is_field_chain_on_local(store: NodeStore, expr: Expr) -> bool {
+    match expr {
+        .FieldAccess(obj, _) -> chain_root_is_local(store, store.exprs.get(obj))
+        _ -> false
+    }
+}
+
+fn chain_root_is_local(store: NodeStore, expr: Expr) -> bool {
+    match expr {
+        .Ident(_) -> true
+        .FieldAccess(obj, _) -> chain_root_is_local(store, store.exprs.get(obj))
+        _ -> false
+    }
 }
 
 /// Apply the "not returned" half of the rule above to FIELD READS.
@@ -74,8 +96,23 @@ export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr, t
 /// as a post-filter rather than a flag threaded through
 /// `single_pass_stmt`'s 40 arms — both passes only ever REMOVE, so the
 /// order between them cannot matter.
-fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<string>, tail_yields: bool) -> List<string> {
+fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<string>, tail_yields: bool, result_aliases: bool) -> List<string> {
     mut cur = set
+    // t-0ks0: a field read only keeps its base alive when the value handed
+    // back can still REACH that base. `fn f() -> int { let h = H{…}  h.n }`
+    // yields an int — it cannot alias `h`, and a pure field chain contains no
+    // call that could have retained it — so `h` stays releasable. Without this
+    // the base was dropped from the set on every such tail, which is most uses
+    // of a struct: measured 150/150 locals leaked, against a positive control
+    // of 150 deliberately stranded (probe under AVRA_RC_STRICT=1).
+    //
+    // Deliberately narrow, because the other direction is a double free:
+    //   `h.s` returning `string`   — result ALIASES the base, still suppressed
+    //   `h.s.length()`             — a CALL may retain, still suppressed
+    // Only the two-part proof (scalar result AND no call in the chain) relaxes
+    // it. `result_aliases` is the DECLARED return type via `vtype_is_ptr_type`,
+    // threaded in from the emitter rather than inferred from the shape — the
+    // same discipline `tail_yields` already follows.
     // A `return f(x.g)` yields the CALL'S RESULT, so its arguments escape.
     // A TAIL statement escapes only when its value is the frame's result:
     // `collect_tail_exprs` returns the last STATEMENT either way, and
@@ -84,13 +121,19 @@ fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<s
     // declared return type is the only thing that separates the two, so it is
     // threaded in as `tail_yields` rather than guessed from the shape.
     for e in collect_return_exprs(store, body) {
-        cur = remove_field_root_calls(store, store.exprs.get(e), cur)
+        let rex = store.exprs.get(e)
+        if result_aliases || !is_field_chain_on_local(store, rex) {
+            cur = remove_field_root_calls(store, rex, cur)
+        }
     }
     for e in collect_tail_exprs(store, body) {
+        let tex = store.exprs.get(e)
         if tail_yields {
-            cur = remove_field_root_calls(store, store.exprs.get(e), cur)
+            if result_aliases || !is_field_chain_on_local(store, tex) {
+                cur = remove_field_root_calls(store, tex, cur)
+            }
         } else {
-            cur = remove_field_root(store, store.exprs.get(e), cur)
+            cur = remove_field_root(store, tex, cur)
         }
     }
     cur
@@ -262,7 +305,7 @@ export fn analyze_releasable_expr(store: NodeStore, body: Expr, fresh: ptr) -> L
         // expression — so tails escape here. True is also the safe direction
         // if a particular lambda is used for effect only: over-removing costs
         // a leak, under-removing is a use-after-free.
-        .Block(stmts) -> analyze_releasable(store, stmts, fresh, true)
+        .Block(stmts) -> analyze_releasable(store, stmts, fresh, true, true)
         _ -> {
             let empty: List<string> = []
             empty
