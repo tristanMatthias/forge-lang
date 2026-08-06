@@ -87,7 +87,7 @@ fn decl_src() -> string {
     emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
 }
 
-spec "t-47hc slice 10.12: `type` is routed onto the production path, speculatively" {
+spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" {
     then "parse_type_decl exists and dispatches BEFORE the decl_hand gate" {
         let src = decl_src()
         let type_at = src.index_of("parse_type_decl(st)")
@@ -96,9 +96,17 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, speculative
             type_at >= 0 && hand_at >= 0 && type_at < hand_at
     }
 
-    then "the branch is SPECULATIVE — on any diagnostic it rolls back into the hand gate" {
+    // t-myz7: `type` OWNS its recovery, so the dispatcher calls it DIRECTLY and the
+    // `@try` moved inside the rule, paired with the `@cut` after the keyword. The
+    // rollback scaffold is still emitted, one frame in, covering only a failure BEFORE
+    // the cut. Both halves are asserted: a speculative dispatch would silently un-route
+    // the keyword with every parity spec above still green, and a missing `s_cut` would
+    // leave the rule committing nowhere with its own `@expect` messages unreachable.
+    then "the branch is COMMITTED — the dispatcher calls it directly, the rule owns the rollback" {
         let src = decl_src()
-        src.contains("s_last = parse_type_decl(st)") &&
+        src.contains("return parse_type_decl(st)") &&
+            !src.contains("s_last = parse_type_decl(st)") &&
+            src.contains("mut s_cut = false") &&
             src.contains("st.store.truncate_to_mark(s_mark)") &&
             src.contains("st.restore_hand_state(s_hand)")
     }

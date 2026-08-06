@@ -1174,9 +1174,26 @@ fn seq_seeds_postfix_e(seq: GSeq) -> bool {
 /// A nested group carries no annotations of its own, so an `@expect` written on the
 /// OWNING sequence must still reach items inside its `( … )*`. Prefer the inner seq's
 /// own annots when it has them; otherwise inherit the outer sequence's.
+/// The annotations in scope for a sequence's items: its OWN first, then the inherited
+/// ones. A branch's `@expect` therefore wins for the token it names while every message
+/// declared on the enclosing rule stays reachable — which is what lets two branches of one
+/// group each own a DIFFERENT message for the SAME token. `type X = { … }` and
+/// `type X = Base without { … }` both close on `}` and the hand words them differently
+/// ("expected `}` after fields" / "after type operator fields"), and there is no other
+/// seam to say that in: `@expect` keys on the token, so one shared annotation set can
+/// only carry one of the two.
+///
+/// Previously inner REPLACED outer, which made a branch that declared anything lose every
+/// inherited message at once — so the only safe branch annotation was a complete one.
+/// `expect_for` / `handle_missing` both take the FIRST match, so ordering is the whole
+/// mechanism.
 fn annots_or(inner: List<GAnnot>, outer: List<GAnnot>) -> List<GAnnot> {
-    if inner.length > 0 { return inner }
-    outer
+    if inner.length == 0 { return outer }
+    if outer.length == 0 { return inner }
+    mut out: List<GAnnot> = []
+    for a in inner { out.push(a) }
+    for a in outer { out.push(a) }
+    out
 }
 
 fn emit_seq_items(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
@@ -1446,11 +1463,27 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                     bbody +
                     "${ind}}\n"
             }
-            if item.onfail == "close" {
+            // A GATED element's result is inspected BEFORE it is captured, because
+            // capturing it is itself a report: every `capval_to_*` answers a
+            // non-matching CapVal with one ("expected a variant", "expected a select
+            // arm"), and an aborted sub-parse returns exactly that — a silent error
+            // node. So the abort produced a SECOND diagnostic the hand never emits,
+            // on top of the one that caused it. The caller-side `gated_abort_unwind`
+            // could not prevent it: it runs after the push, which is where the
+            // coercion already happened.
+            //
+            // What the abort DOES is the policy's business — unwind the rule (the
+            // default, and what `enum`/`trait` need so the caller still sees the stray
+            // `}`) or end the repetition and let the rule close (`@onfail(close)`).
+            if item.gate {
+                let gact = if item.onfail == "close" {
+                    "${ind}    st.set_abort_prop(false)\n${ind}    break\n"
+                } else {
+                    "${ind}    return CapVal.Node(st.error_node_silent())\n"
+                }
                 return "${ind}let __gres = parse_${name}(st)\n" +
                     "${ind}if st.abort_prop {\n" +
-                    "${ind}    st.set_abort_prop(false)\n" +
-                    "${ind}    break\n" +
+                    gact +
                     "${ind}}\n" +
                     emit_ref_capture_of(g, item, name, "__gres", ind, list_labels, opts)
             }
@@ -1898,6 +1931,13 @@ fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
     // compiled clean). A rule with no `@expect` gets a generic message — worse
     // wording, still a rejection. Only an unusable FIRST declines, and that is the
     // case where there is genuinely nothing to test.
+    // t-myz7 `@onfail(close)`: an element that does not even START is a failing element,
+    // and this policy's answer to a failing element is to end the repetition and let the
+    // rule close — SILENTLY, because the rule's own closer is what reports. That is the
+    // hand, exactly: `parse_select_arm_list` answers a non-IDENT head with a bare
+    // `return out`, and `select { 5 }` is then "expected `}` to close select" and nothing
+    // else. Reporting here as well would name the element the hand never mentions.
+    if gr.onfail == "close" { return "${ind}if !(${fg}) { break }\n" }
     let em = rule_first_expect_msg(g, gr.rule)
     let msg = if em == "" { "expected ${gr.rule}" } else { em }
     "${ind}if !(${fg}) {\n" +
@@ -1958,7 +1998,7 @@ fn rule_first_expect_msg_leaf(g: Grammar, name: string) -> string {
     }
 }
 
-fn rule_first_expect_msg(g: Grammar, name: string) -> string {
+export fn rule_first_expect_msg(g: Grammar, name: string) -> string {
     let r = emit_lookup_rule(g, name)
     if r.name == "" {
         // CROSS-VIEW rules — the pair of rule_first_guard's declared-FIRST table just

@@ -21,6 +21,7 @@ use features.grammar.{Token, lex_real, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
 use features.grammar.{dispatch_has_tail}
 use features.grammar.{rule_result_kind, gprim_ref_name}
+use features.grammar.{rule_first_expect_msg}
 // The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
 use core.{tk_is_field_name}
 // The SHARED if-let desugar, also called by the hand's parse_if_let_expression — one
@@ -2261,9 +2262,16 @@ fn list_take<T>(xs: List<T>, n: int) -> List<T> {
 /// its own, so an `@expect` on the OWNING sequence must still reach items inside its
 /// `( … )*`. Keeping these two in lockstep is what stops the interpreter reporting a
 /// different diagnostic than the generated parser for the same grammar.
+/// The interpreter twin of emit's `annots_or` — its own first, then the inherited ones.
+/// Same order, because `handle_missing` and `expect_for` both take the FIRST match and the
+/// two engines must not disagree about which message a token gets.
 fn exec_annots_or(inner: List<GAnnot>, outer: List<GAnnot>) -> List<GAnnot> {
-    if inner.length > 0 { return inner }
-    outer
+    if inner.length == 0 { return outer }
+    if outer.length == 0 { return inner }
+    mut out: List<GAnnot> = []
+    for a in inner { out.push(a) }
+    for a in outer { out.push(a) }
+    out
 }
 
 /// A GROUP's alternation — never a rule body, so the no-match tail behaviours below stay
@@ -2607,6 +2615,48 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
             _ -> {}
         }
         return exec_item_marked(g, item, st, env, multi, annots)
+    }
+    // t-myz7 GATED ELEMENT — the interpreter twin of emit's `gated_first_check` +
+    // "inspect the result before capturing it". Both halves were emit-only, which is a
+    // lockstep gap the DEFAULT production path runs into: on invalid input it re-parses
+    // the item with THIS engine.
+    //
+    //   the FIRST re-check — `@gate` REPLACED the element's FIRST with a predicate, so
+    //     the callee's "my caller proved my FIRST" promise is broken and it would
+    //     otherwise consume whatever is there. `select { 5 }` entered `select_arm` on
+    //     `5`, reported its `@expect` for the binding, then reported the missing `<-`
+    //     too — two diagnostics into a hand that reports none there.
+    //   the capture guard — an aborted sub-parse yields a silent error node, and BINDING
+    //     it means a `capval_to_*` reports over it at build time ("expected a select
+    //     arm"), a second diagnostic for one failure.
+    if item.gate {
+        match item.prim {
+            .Ref(gname) -> {
+                let gseen: List<string> = []
+                if !tok_starts_rule(g, gname, st, gseen) {
+                    // `@onfail(close)` ends the repetition SILENTLY — the rule's own
+                    // closer is what reports, which is the hand (`parse_select_arm_list`
+                    // answers a non-IDENT head with a bare `return out`). The `Nil` is
+                    // what stops the loop: `exec_repeat` breaks on no progress, and
+                    // nothing is bound.
+                    if item.onfail == "close" { return CapVal.Nil }
+                    let gm = rule_first_expect_msg(g, gname)
+                    st.report(if gm != "" { gm } else { "expected ${gname}" })
+                    st.set_abort_prop(true)
+                    env.set_abort(true)
+                    return CapVal.Node(st.error_node_silent())
+                }
+                st.set_abort_prop(false)
+                let gv = exec_primary(g, item.prim, st, env, multi, annots)
+                if st.abort_prop {
+                    if item.onfail == "close" { st.set_abort_prop(false) } else { env.set_abort(true) }
+                    return CapVal.Node(st.error_node_silent())
+                }
+                bind(env, item.label, gv, multi)
+                return gv
+            }
+            _ -> {}
+        }
     }
     // t-myz7 `@onfail(bail)`: the CALLEE owns the message, the caller owns the control
     // flow — abort if the sub-parse REPORTED. Deliberately not `@require`'s FIRST check,
@@ -4457,9 +4507,31 @@ export fn capval_to_stmt(st: PState, v: CapVal) -> StmtId {
     match v {
         .SNode(id) -> id
         _ -> {
-            st.report("expected a statement")
+            // An ABORTED sub-parse is not a shape mismatch — it is a rule that already
+            // reported and handed back `error_node_silent()`. Reporting over it adds a
+            // second diagnostic for one failure, which the hand never does:
+            // `enum E { A( }` is "expected field name" + the caller's F0013, and the
+            // coercion was inserting "expected a statement" between them (t-myz7). The
+            // shape mismatch it was written for — a rule whose build yields the wrong
+            // family — still reports, so the silent-corruption guard is intact.
+            if !capval_is_error_expr(st, v) { st.report("expected a statement") }
             st.store.stmts.add_leaf(Stmt.Error)
         }
+    }
+}
+
+/// Did this CapVal come back as the ERROR EXPRESSION node an abort yields? The expression
+/// twin of `capval_is_error_stmt`, and the signal every `capval_to_*` needs to tell "this
+/// rule failed and said so" from "this rule built the wrong kind of thing".
+export fn capval_is_error_expr(st: PState, v: CapVal) -> bool {
+    match v {
+        .Node(id) -> {
+            match st.store.exprs.get(id) {
+                .Error -> true
+                _ -> false
+            }
+        }
+        _ -> false
     }
 }
 
