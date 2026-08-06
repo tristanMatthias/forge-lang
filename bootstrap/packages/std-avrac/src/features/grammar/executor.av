@@ -530,7 +530,14 @@ export fn default_expr_modes() -> ExprModes {
 /// needs that.
 export type GDiag = { code: string, msg: string }
 
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string }
+/// t-myz7 ABORT PROPAGATION (`abort_prop`). A generated `parse_X` that aborts can
+/// only `return` from ITSELF; its CALLER cannot tell an abort from an ordinary
+/// result and carries on. `enum E { A( }` aborted inside parse_variant, then
+/// enum_decl consumed the `}` as its own closing brace — so the stray `}` the hand
+/// leaves for statement-level recovery was eaten and the hand's SECOND diagnostic
+/// never appeared. Set at an abort, checked by callers. The emit twin of the
+/// executor's env.abort, which already unwinds the enclosing sequence.
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool }
 
 /// One in-place token-stream mutation (today: only `split_gt`'s `>>` → `>`),
 /// journalled so a rollback can UNDO it. The stream is SHARED — across the
@@ -762,6 +769,13 @@ impl PState {
     /// Roll the cursor + diagnostics + error flag back to a pre-speculation
     /// snapshot (the node store is truncated separately by the caller via
     /// store.truncate_to_mark). The `@try` bounded-backtracking restore.
+    /// Raise the abort-propagation flag — a generated parse fn signalling its CALLER
+    /// that it aborted rather than returned normally. A generated `st` is immutable,
+    /// so this needs a self-ptr mutator (the same reason push_table_ctx exists).
+    fn set_abort_prop(self, v: bool) {
+        self.abort_prop = v
+    }
+
     fn restore_to(self, pos: int, diags_len: int, err: bool) {
         // Un-split any `>>` the abandoned parse split at/after the rollback point.
         // A speculation only moves FORWARD from its snapshot, so exactly the edits
@@ -779,6 +793,22 @@ impl PState {
         self.pos = pos
         self.diags = list_take(self.diags, diags_len)
         self.had_error = err
+        // `diag_code` is FIRST-WRITER-WINS (report_coded), so a rolled-back
+        // speculation used to leave its code behind permanently: the branch that
+        // actually reported then rendered under an ABANDONED branch's F-code. Caught
+        // on `let` (t-myz7) — once `letdes_decl` was ordered ahead of `let_decl`, a
+        // plain `let` reported the right message under `letdes`'s F0040 instead of
+        // the hand's F0001, with nothing in either rule to explain it.
+        //
+        // Recomputing from the diagnostics that SURVIVE is only expressible because
+        // #1173 put the code ON each diagnostic; against the old one-code-wide
+        // channel there was nothing to recompute from. This is that widening's first
+        // consumer.
+        mut dc = ""
+        for d in self.diags {
+            if dc == "" && d.code != "" { dc = d.code }
+        }
+        self.diag_code = dc
     }
 
     /// Undo EVERY journalled token edit — called at EVERY shared-runner exit,
@@ -1085,6 +1115,12 @@ fn tok_starts_seq(g: Grammar, seq: GSeq, st: PState, visited: List<string>) -> b
         // instead of being entered and then failing mid-sequence. Emit's twin is the
         // same_line_wrap in seq_first_guard; keeping the two in lockstep is what stops
         // the interpreter and the generated parser picking different branches.
+        // t-myz7 GATE: the emit twin of seq_first_guard's `item.gate` early return.
+        // A gated item contributes NO FIRST — its preceding `@peek` cond is the whole
+        // dispatch condition, and branch_pred_ok has already evaluated that. Answering
+        // true here hands the decision to the cond alone, which is what makes the loop
+        // enter where the element's FIRST would have refused (EOF).
+        if item.gate { return true }
         if tok_starts_prim(g, item.prim, st, visited) && sameline_ok(st, item) { return true }
         // A One/Plus item is non-nullable — FIRST stops here.
         match item.rep {
@@ -1136,7 +1172,7 @@ export fn new_pstate(src: string) -> PState {
     d.decl_flip = false
     d.expr_flip = false
     d.expr_static = false
-    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [], table_cols: [], diag_code: "" }
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -1162,7 +1198,7 @@ export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -1198,7 +1234,7 @@ export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
 /// store + ps3t.6.5.7/6.5.10 @hand delegation.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -1223,7 +1259,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -1253,7 +1289,7 @@ export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: Node
 
 /// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -1614,6 +1650,8 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // `@hand(decl_hand)` and was silently absorbed, which is exactly the class the leaf
     // frontier probe (t-myz7) exists to surface.
     if cond == "comma_not_rparen" { return comma_not_closer(st, Tk.RightParen) }
+    if cond == "not_rparen" { return not_closer(st, Tk.RightParen) }
+    if cond == "not_rbrace" { return not_closer(st, Tk.RightBrace) }
     if cond == "comma_not_rbracket" { return comma_not_closer(st, Tk.RightBracket) }
     if cond == "comma_not_rbrace" { return comma_not_closer(st, Tk.RightBrace) }
     // `.0` tuple index — a second-token guard, same reason every `.`-led branch needs one.
@@ -3001,6 +3039,16 @@ fn hand_starts(name: string, tok: Token) -> bool {
 /// ANOTHER element rather than by `closer`? Used by `comma_not_rparen` /
 /// `comma_not_rbracket` / `comma_not_rbrace` so the three differ only in their closer
 /// and cannot drift apart.
+/// "the loop is NOT at its closer" — the token twin of the hand's
+/// `while !self.check(CLOSER)` element loops. EOF is deliberately NOT excluded:
+/// the hand enters at EOF too, which is how an unterminated construct reports
+/// about its ELEMENT rather than about the closer. Only useful under `@gate`,
+/// since as a plain `@peek` it would be ANDed with the element's FIRST and could
+/// never widen entry.
+fn not_closer(st: PState, closer: Tk) -> bool {
+    st.cur().tk != closer
+}
+
 fn comma_not_closer(st: PState, closer: Tk) -> bool {
     if st.cur().tk != Tk.Comma { return false }
     if st.pos + 1 >= st.toks.length { return false }
@@ -3198,7 +3246,7 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 /// value, never a store id).
 export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3223,7 +3271,7 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
 /// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
 export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     let te = capval_to_texpr(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3255,7 +3303,7 @@ export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diag: 
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3280,7 +3328,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// straight-line speed.
 export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     let pat = capval_to_pat(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3321,7 +3369,7 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
     // counter in parse order. Behaviour-neutral until something calls `fresh_name`
     // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -3359,7 +3407,7 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     // counter in parse order. Behaviour-neutral until something calls `fresh_name`
     // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     let expr = capval_to_expr(st, parse(st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -3390,7 +3438,7 @@ export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, dia
 /// differ only in the start rule.
 fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     let stmt = capval_to_stmt(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3445,7 +3493,7 @@ export fn run_dsl_decl_at_shared(toks: List<Token>, start_byte: int, src: string
 /// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
 export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "" }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
     let stmt = capval_to_stmt(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand

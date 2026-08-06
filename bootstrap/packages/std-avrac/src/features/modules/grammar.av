@@ -45,10 +45,18 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// branch one, and every non-package import would fail on the mandatory `@`.
 export fn avra_modules_grammar() -> Grammar {
     let gp = grammar {
-  use_decl    = "use" ut:use_tail -> ut
-  use_tail    = "@" upkg:IDENT "." useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUsePkg(upkg, useg, unames)
-              | useg:IDENT ( "." ( useg:IDENT )? )* "{" ( unames:IDENT ","? )* "}" -> MkUseBare(useg, unames)
-  mod_decl    = "mod" mdname:IDENT -> MkModule(mdname)
+  use_decl    = @try "use" @cut ut:use_tail -> ut
+  use_tail    = "@" @require upkg:IDENT @require "." @require useg:IDENT ( "." ( useg:IDENT )? )* @require "{" ( unames:IDENT ","? )* @require "}"
+                @expect("IDENT", "expected package name")
+                @expect(".", "expected `.` after package scope")
+                @expect("{", "expected `{` in use declaration")
+                @expect("}", "expected `}` in use declaration") -> MkUsePkg(upkg, useg, unames)
+              | @fallback @require useg:IDENT ( "." ( useg:IDENT )? )* @require "{" ( unames:IDENT ","? )* @require "}"
+                @expect("IDENT", "expected module path after `use`")
+                @expect("{", "expected `{` in use declaration")
+                @expect("}", "expected `}` in use declaration") -> MkUseBare(useg, unames)
+  mod_decl    = @try "mod" @cut @require mdname:IDENT
+                @expect("IDENT", "expected module name after `mod`") -> MkModule(mdname)
     }
     grammar_checked(gp)
 }

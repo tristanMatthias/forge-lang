@@ -183,6 +183,16 @@ export fn parse_grammar(src: string) -> GrammarParse {
         let ce = validate_cuts(g)
         if ce != "" { p.error = ce }
     }
+    // t-myz7: a `@gate` with no `@when`/`@peek` ahead of it in the SAME branch is
+    // worse than dead — `seq_first_guard` returns the preds alone for a gated item,
+    // so with no preds the guard is the EMPTY STRING and emit renders `if  {`, or the
+    // group's guard collapses entirely. Reject it here, next to the `@cut` check,
+    // for the same reason: a marker that silently produces a broken guard is the
+    // failure mode these validators exist to prevent.
+    if p.error == "" {
+        let ge = validate_gates(g)
+        if ge != "" { p.error = ge }
+    }
     // t-47hc.28: a repetition bound `x{#cap}` must name a capture the SAME branch has
     // already collected. Unbound or later-bound, the cap would read an empty list and
     // silently clamp the loop to zero iterations — a whole repetition vanishing with no
@@ -453,7 +463,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_gensym_primary(p) || at_rawbrace_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) }
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_gensym_primary(p) || at_rawbrace_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) || at_gate_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -501,6 +511,13 @@ fn at_rawbrace_primary(p: GP) -> bool {
 
 /// True when the cursor is `@peek` — the zero-width LOOKAHEAD-predicate primary
 /// (t-47hc paren prep), the token-stream sibling of `@when`.
+fn at_gate_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "gate"
+}
+
 fn at_peek_primary(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
@@ -549,7 +566,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `body` followed by `:` (t-47hc slice A). `kw_let`: the current token is the
     // `let` keyword — comp_field's declared-dispatch gate over `declaration`'s
     // routed let_decl. See executor.lookahead_ok for both.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_lbrace_feature" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "comma_not_rbracket" || cond == "comma_not_rbrace" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let" || cond == "cfg_pair_value" || cond == "cfg_pair_eq" || cond == "comp_inst_shape" || cond == "comp_nested_named" || cond == "comp_nested_bare" || cond == "comp_nested_raw_named" || cond == "comp_nested_raw_bare" || cond == "comp_method" || cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" || cond == "always"
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_lbrace_feature" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "not_rparen" || cond == "not_rbrace" || cond == "comma_not_rbracket" || cond == "comma_not_rbrace" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let" || cond == "cfg_pair_value" || cond == "cfg_pair_eq" || cond == "comp_inst_shape" || cond == "comp_nested_named" || cond == "comp_nested_bare" || cond == "comp_nested_raw_named" || cond == "comp_nested_raw_bare" || cond == "comp_method" || cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" || cond == "always"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -1054,6 +1071,41 @@ fn group_label_shapes(node: GNode, multi: bool) -> LabelShapes {
 /// nested in a speculative branch is still inside that branch's rollback scope, so a
 /// cut there is honored (both emitters inline the group into the branch body, and the
 /// executor shares one CapEnv across the whole rule). Returns "" when clean.
+/// Every `@gate` must have a branch-local `@when`/`@peek` BEFORE it — that predicate
+/// is what replaces the FIRST it removes. See the call site for why an unguarded gate
+/// is a broken guard rather than a no-op.
+fn validate_gates(g: Grammar) -> string {
+    for rule in g.rules {
+        let e = check_gate_node(g, rule.body, rule.name)
+        if e != "" { return e }
+    }
+    ""
+}
+
+fn check_gate_node(g: Grammar, node: GNode, rule: string) -> string {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                mut seen_pred = false
+                for it in b.items {
+                    if prim_is_pred(it.prim) { seen_pred = true }
+                    if it.gate && !seen_pred {
+                        return "`@gate` needs a `@when`/`@peek` before it in the same branch (rule `${rule}`) — the gate REPLACES the item's FIRST with that predicate, so without one the branch guard is empty"
+                    }
+                    match it.prim {
+                        .Group(inner) -> {
+                            let e = check_gate_node(g, inner, rule)
+                            if e != "" { return e }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+            ""
+        }
+    }
+}
+
 fn validate_cuts(g: Grammar) -> string {
     for rule in g.rules {
         let e = check_cut_node(g, rule.body, rule.name, false)
@@ -1243,6 +1295,18 @@ fn parse_labeled(p: GP) -> GItem {
     // t-47hc.21 ABORT: `@require` makes a mismatch on this terminal stop the rule
     // rather than report-and-continue. Bare marker (no parens) — the message is the
     // sequence's `@expect`, so diagnostics keep ONE seam.
+    // t-myz7 GATE: `@gate(cond)` is `@peek(cond)` whose cond REPLACES the FIRST
+    // guard rather than narrowing it. Recorded on the item it precedes, exactly as
+    // `@cut` is — the gate sits BETWEEN the guard and the item it admits.
+    mut gate = false
+    if at_gate_marker(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "gate"
+        gate = true
+        if !seq_can_continue(p) {
+            p.fail("`@gate(cond)` must be followed by an item — it replaces that item's FIRST guard")
+        }
+    }
     mut require = false
     if at_require_marker(p) {
         let _ = p.advance()   // "@"
@@ -1394,7 +1458,7 @@ fn parse_labeled(p: GP) -> GItem {
         .RawBrace(_) -> if label == "" { p.fail("`@rawbrace(tag)` must be LABELLED — the captured slice is its only product (`body:@rawbrace(grammar)`)") }
         _ -> {}
     }
-    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, mode_bump, mode_on_if, cut, require, bound: base.bound }
+    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, mode_bump, mode_on_if, cut, require, gate, bound: base.bound }
 }
 
 // postfix = primary ( "*" | "+" | "?" )? ( "{" "#" NAME "}" )?

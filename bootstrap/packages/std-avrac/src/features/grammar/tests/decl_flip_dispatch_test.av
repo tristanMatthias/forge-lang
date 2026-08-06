@@ -278,6 +278,18 @@ fn native_without_delegate(name: string, src: string) -> bool {
     !parse_failed(out) && !refusal_in_file(out, fixture_path(name))
 }
 
+/// The RECOVERY twin of `native_without_delegate`: did `src` fail to parse, and fail
+/// WITHOUT the delegate? Both halves are load-bearing for the same reason the valid-
+/// input probe needs both — "the leaf was not refused" ALSO holds when nothing
+/// reported at all, so a negative alone would stay green if a converted keyword
+/// started silently ACCEPTING its malformed forms. That is not hypothetical: a gated
+/// `enum E { 5 }` did exactly that during this slice (bound `5` as a variant name,
+/// exit 0), which is what this asserts against.
+fn recovery_without_delegate(name: string, src: string) -> bool {
+    let out = refuse_out("decl_hand", name, src)
+    parse_failed(out) && !refusal_in_file(out, fixture_path(name))
+}
+
 spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     then "the probe is DORMANT unless asked" {
         // A guard that cannot fail is worth nothing, and a probe that fires by
@@ -478,5 +490,43 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // Both leaves remain reachable for error recovery, so that probe stays live and
         // keeps this one honest. If it is ever deleted, these negatives go vacuous.
         !refused_here("*", "feat_control_all", "fn f() -> int { 1 }")
+    }
+
+    // t-myz7 — the FIRST MALFORMED form to stop needing the leaf.
+    //
+    // Valid input already needs neither leaf (the spec above). RECOVERY is the part
+    // still outstanding: every routed decl keyword delegates its aborts to
+    // `@hand(decl_hand)`, because a native rule that reports rolls back under `@try`
+    // and the hand re-parses. `mod_decl` is the first to OWN its abort, via
+    // `@try … @cut @require` inside the fragment rule — referenced BARE from
+    // `declaration` so the `@try` and its `@cut` share a branch. They have to: a
+    // `@cut`'s commit flag is per-RULE-INVOCATION (executor.av CapEnv) and cannot
+    // reach a caller's `@try`, so a cut written in a rule invoked as `@try mod_decl`
+    // is rejected outright.
+    //
+    // That shape required the emit fix landing in this same change: a LONE `@try`
+    // branch was lowered by emit_single_branch, straight into the rule fn with no
+    // dispatch loop, so it emitted the caller's bookkeeping (`s_diags` / `s_err` /
+    // `s_cut`, plus a `break`) with nothing declaring it — the generated parser did
+    // not compile. Silent until now only because no rule had the shape.
+    then "malformed `mod` and `use` own their recovery — the first forms off the leaf" {
+        // All three of the hand's abort paths for `mod` are native now. Each asserts
+        // BOTH halves — reports, and reports without the delegate.
+        recovery_without_delegate("mod_bare", "mod\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("mod_num", "mod 5\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("mod_brace", "mod {\nfn f() -> int { 1 }") &&
+        // `use` follows, via `@try … @cut` on use_decl plus `@fallback` on the bare
+        // branch so a token that starts NEITHER form still reports "expected module
+        // path after `use`" instead of falling through un-owned.
+        recovery_without_delegate("use_bare", "use\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("use_dot", "use .{x}\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("use_no_brace", "use foo\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("use_pkg_noname", "use @std.{}\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("use_pkg_dotdot", "use @std..{x}\nfn f() -> int { 1 }") &&
+        // ANTI-VACUITY: negatives alone would also pass if `refused_here` simply
+        // stopped detecting refusals. A SIBLING keyword's malformed form must still
+        // refuse. `enum` has not been converted, so this fires today — RE-POINT it at
+        // the next unconverted keyword when `enum` lands, never delete it.
+        refused_here("decl_hand", "enum_still_needs_leaf", "enum\nfn f() -> int { 1 }")
     }
 }
