@@ -32,12 +32,19 @@
 //      of them and fell to the delegate, which owns "expected field name after `.`". The
 //      `@fallback` `.` branch owns it now.
 //
-// THE FALLTHROUGH IS STILL REAL, THOUGH — and the claim that cleared it was WRONG.
-// This header used to say every compound was "measured with the delegate actually deleted"
-// and agreed. Asserted as corpus (error_recovery_differential_test), five of the six do:
-// `x!\n[0]`, `x!\n(1)`, `x!\n.f`, `x!!`, `x!?`. `x!` + a NEXT-LINE `?` does NOT — the hand
-// rejects it, production folds it into a Try. The mechanism and the divergence are recorded
-// beside that spec. Do not re-derive the claim from this file; the spec is the record.
+// THE FALLTHROUGH WAS REAL, AND IS NOW CLOSED — but note what the history cost.
+// This header once said every compound was "measured with the delegate actually deleted"
+// and agreed. Asserted as corpus (error_recovery_differential_test), five of six did;
+// `x!` + a NEXT-LINE `?` did not — the hand rejected it while production folded it into a
+// Try, because `postfix_step` consumed the `!` run and re-dispatched on `?` without
+// re-testing the entry guard's `allow_dot_postfix && current_line == prev_line`.
+//
+// The fallthrough re-tests those conjuncts now, so all six agree — measured on all four
+// paths: `x!\n[0]`, `x!\n(1)`, `x!\n.f`, `x!!`, `x!?` clean everywhere, and `x!\n?` F0040
+// everywhere. Note the second sentence of this header was itself stale for a while: it
+// described the pre-fix divergence as current long after the re-guard landed. A prose
+// claim about behaviour goes out of date silently, which is the whole reason those six
+// are corpus. Do not re-derive any of it from this file; the spec is the record.
 
 use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar}
 
@@ -441,9 +448,12 @@ spec "t-47hc.33: `expr!` is grammar-native" {
         //   1. The reserved-keyword-field gap — closed by t-47hc.33.1 (FIELDNAME). Its
         //      example was wrong too: `if` / `match` are ACTIVE keywords the hand REJECTS
         //      in field position, never evidence of the gap.
-        //   2. The `!`-loop fallthrough — NOT the blocker at all. Measured with the
-        //      delegate actually deleted, every compound agrees: `x!\n?`, `x!\n.f`,
-        //      `x!\n[0]`, `x!\n(1)`, `x!!`, `x!?`.
+        //   2. The `!`-loop fallthrough — NOT the blocker for the tail, but a real bug
+        //      in its own right, and this comment used to state the measurement that
+        //      MISSED it ("every compound agrees"). It did not: `x!\n?` folded into a
+        //      Try that the entry guard would have rejected. Fixed by re-testing the
+        //      guard on the fallthrough dispatch; all six agree now, and they are
+        //      corpus (error_recovery_differential_test) rather than a sentence here.
         //
         // The real blocker was a TRAILING DOT. Every `.`-led branch is @peek-gated on a
         // valid field name, so `a.` completed none of them and fell to the delegate —
