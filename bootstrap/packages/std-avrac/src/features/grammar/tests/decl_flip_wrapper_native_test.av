@@ -68,15 +68,23 @@ spec "t-47hc Phase 4: the doc / module-doc / annotation wrappers are emitted as 
             doc_at < hand_at && mdoc_at < hand_at && ann_at < hand_at
     }
 
-    then "the branches are SPECULATIVE — they roll back into the hand gate on error" {
-        // Load-bearing, not incidental. A bare branch is error-TOLERANT: it would
-        // build a partial wrapper where the hand ABORTS, and every form the native
-        // rules cannot express (`@foo let x = 1`, a keyword-named `@type`, `//!`
-        // under `@a`) would be parsed WRONG instead of handed back.
+    then "doc / annot stay SPECULATIVE; mdoc is COMMITTED" {
+        // The split is deliberate, and it is about where a LONE prefix lands. `//!` wraps
+        // no declaration at all — `mdoc_decl` is the whole item — so there is nothing it
+        // can fail to express and nothing to hand back; it routes bare (t-47hc.5).
+        //
+        // `///` and `@ann` do wrap one, and a LONE `/// doc` or `@ann` at EOF falls
+        // through to the EXPRESSION view, where the hand answers F0040 "expected
+        // expression". A committed wrapper would answer F0001 instead, so these two keep
+        // the rollback until their inner alternation can own that frontier. A bare branch
+        // is error-TOLERANT: it builds a partial wrapper where the hand ABORTS, and every
+        // form the native rules cannot express (`@foo let x = 1`, a keyword-named
+        // `@type`, `//!` under `@a`) would be parsed WRONG instead of handed back.
         let src = decl_src()
         src.contains("s_last = parse_doc_decl(st)") &&
-            src.contains("s_last = parse_mdoc_decl(st)") &&
             src.contains("s_last = parse_annot_decl(st)") &&
+            !src.contains("s_last = parse_mdoc_decl(st)") &&
+            src.contains("return parse_mdoc_decl(st)") &&
             src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
             src.contains("st.store.truncate_to_mark(s_mark)")
     }

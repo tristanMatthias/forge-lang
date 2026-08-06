@@ -41,6 +41,7 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 // The local wrappers below delegate to it so the two engines cannot drift.
 use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, seq_is_leading_hand, rule_owns_recovery}
 use features.grammar.{ExpectHit, expect_for, rule_own_expect_msg, rule_first_expect_msg, rule_first_expect_msg_leaf, gated_ref_of, node_has_onfail}
+use features.grammar.{grammar_has_gate, rule_body_has_gate}
 use features.grammar.{is_hand_stmt_leaf, is_hand_expr_leaf}
 use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule, hand_kind}
 
@@ -1504,6 +1505,45 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                     "${ind}}\n" +
                     emit_ref_capture_of(g, item, name, "__gres", ind, list_labels, opts)
             }
+            // `@require`'s SECOND half (t-47hc.5): the FIRST check above proves the
+            // sub-rule STARTS here; this proves it FINISHED. A callee that raised
+            // `abort_prop` did not satisfy the requirement, so the caller must not go
+            // on to build a node around its silent error — `export enum { A }` did
+            // exactly that, wrapping the aborted `enum` in an `(export …)` and so
+            // reaching the seam as a NON-Error statement, which is adopted verbatim
+            // instead of handed back for the caller's synchronize. The hand's second
+            // diagnostic (the stray `}`) vanished with it. The pre-call guard cannot
+            // see this: it distinguishes an ABSENT sub-rule, not a sub-rule whose body
+            // aborted, which is precisely the split the comment above draws.
+            //
+            // Scoped exactly as every other `abort_prop` read is — gate-bearing
+            // grammars only — so a cross-view callee (`type_expr`, `block_expr`), whose
+            // view never writes the flag, is untouched. There the error NODE is the
+            // signal that crosses, and `@onfail(bail)` is the marker that reads it.
+            if item.require && abortable && grammar_has_gate(g) {
+                let ubody = if spec_ctx == spec_committed() {
+                    "${ind}    if s_cut {\n" +
+                    "${ind}        return CapVal.Node(st.error_node_silent())\n" +
+                    "${ind}    }\n"
+                } else { "${ind}    return CapVal.Node(st.error_node_silent())\n" }
+                // ARMED the same way a gated element is (`gated_abort_arm`): clear
+                // immediately before the sub-parse so the check reads THAT sub-parse's
+                // outcome and not "has anything aborted since the start rule reset".
+                // BOTH the flag and the error NODE, in either shape. The flag alone is
+                // blind wherever a callee's failure has been COERCED on the way out:
+                // `exportable_decl` is one item under a `-> MkStampAt` build, and
+                // `mk_stamp_stmt_at` turns the aborted result into a `Stmt.Error` boxed as
+                // `SNode` — a perfectly good statement to a flag-only test. `export let (a
+                // b) = t` built `(export (error))` off that, which the seam adopts as a
+                // NON-Error item instead of handing back for the caller's synchronize, so
+                // the tail re-parsed and added an F0040 the hand never emits. This is the
+                // same signal the gate arm reads, for the same reason.
+                return req +
+                    "${ind}st.set_abort_prop(false)\n" +
+                    "${ind}let __rres = parse_${name}(st)\n" +
+                    "${ind}if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {\n" + ubody + "${ind}}\n" +
+                    emit_ref_capture_of(g, item, name, "__rres", ind, list_labels, opts)
+            }
             req + emit_ref_capture(g, item, name, ind, list_labels, opts)
         }
         .Hand(hf) -> {
@@ -2026,33 +2066,10 @@ fn node_has_gate(node: GNode) -> bool {
 /// NESTED entries — reached mid-declaration, many times per item — so resetting
 /// there states something false about the flag's lifetime even where it happens
 /// to be harmless.
-fn grammar_has_gate(g: Grammar) -> bool {
-    for r in g.rules {
-        if rule_body_has_gate(r.body) { return true }
-    }
-    false
-}
-
-/// The recursive form of `node_has_gate`: a gate can sit inside a `( … )*` /
-/// `( … )?` group (that is where `enum_decl` and `trait_decl` put theirs), so a
-/// top-level-only scan would miss every real one.
-fn rule_body_has_gate(node: GNode) -> bool {
-    match node {
-        .Alt(branches) -> {
-            for b in branches {
-                for it in b.items {
-                    if it.gate { return true }
-                    match it.prim {
-                        .Group(inner) -> { if rule_body_has_gate(inner) { return true } }
-                        _ -> {}
-                    }
-                }
-            }
-            false
-        }
-    }
-}
-
+/// Lives in `ast.av` — the shared DSL contract both engines import. The
+/// interpreter needs the SAME scoping answer as the emitter (its `@require`-ref
+/// abort check is the twin of `emit_one`'s), and `executor.av` deliberately does
+/// not import `emit.av`, so a second copy here would be the drift hazard.
 fn rule_reaches_hand(g: Grammar, name: string) -> bool {
     let i = rule_index_of(g, name)
     if i < 0 { return false }

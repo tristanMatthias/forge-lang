@@ -24,7 +24,15 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 export fn avra_fn_decl_grammar() -> Grammar {
     let gp = grammar {
   fn_decl     = "fn" name:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "(" ( params:param ( @peek(comma_not_rparen) "," params:param )* ( "," )? )? ")" ( "->" ret:type_expr )? "{" body:body_item* "}" @expect("}", "expected `}` after function body") -> MkFnDecl(name, tparams, params, ret, body)
-  extern_decl = "extern" "fn" ename:IDENT "(" ( eparams:param ( @peek(comma_not_rparen) "," eparams:param )* ( "," )? )? ")" ( "->" eret:type_expr )? -> MkExtern(ename, eparams, eret)
+  // t-myz7: `extern` owns its recovery. Every position the hand `consume`s with a message
+  // is `@require`d here, and the parameter list is GATED so an unclosed `(` reports about
+  // the PARAMETER — `extern fn f(` is "expected parameter name" on the hand.
+  extern_decl = @try "extern" @cut @require "fn" @require ename:IDENT @require "(" ( @peek(not_rparen) @gate eparams:param ( @peek(comma_not_rparen) "," eparams:param )* ( "," )? )? @require ")" ( "->" @require eret:type_expr )?
+                @expect("fn", "expected `fn` after `extern`")
+                @expect("IDENT", "expected extern fn name")
+                @expect("(", "expected `(` after extern fn name")
+                @expect(")", "expected `)` after parameters")
+                @expect("type_expr", "expected return type after `->`") -> MkExtern(ename, eparams, eret)
     }
     grammar_checked(gp)
 }

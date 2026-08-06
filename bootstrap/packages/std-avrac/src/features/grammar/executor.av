@@ -23,10 +23,12 @@ use features.grammar.{dispatch_has_tail}
 // t-myz7: the gated-call FIRST message, SHARED with emit (see ast.av) — the
 // executor's gate check must say exactly what the generated parser's says.
 use features.grammar.{rule_first_expect_msg, gated_ref_of, GatedRef}
+use features.grammar.{grammar_has_gate}
 use features.grammar.{rule_result_kind, gprim_ref_name}
 use features.grammar.{rule_first_expect_msg}
 // The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
 use core.{tk_is_field_name}
+use core.{tk_keyword_str, lookup_decl_parser}
 // The SHARED if-let desugar, also called by the hand's parse_if_let_expression — one
 // definition of the rows, so the native rule and the oracle cannot lower differently.
 use core.{build_if_let_expr, build_if_let_stmt}
@@ -1148,7 +1150,29 @@ fn tok_starts_seq(g: Grammar, seq: GSeq, st: PState, visited: List<string>) -> b
         // A `@when` predicate is zero-width: it contributes no FIRST token and
         // never stops the scan — skip past it to the next item. (Its mode gate
         // is checked separately in branch_pred_ok, ANDed onto the branch.)
-        if prim_is_pred(item.prim) { continue }
+        // A LEADING predicate is part of the FIRST, and skipping it is not the same as
+        // treating it as zero-width (t-47hc.5). Emit's twin folds `@when`/`@peek` into
+        // `preds` and ANDs them onto the guard it returns, so on the emit side a branch
+        // led by `@peek(cond) @hand(f)` contributes the COND to FIRST rather than the
+        // hand's universal one. Here the conjunct lived only in `branch_pred_ok`, which
+        // the ALTERNATION path calls and `tok_starts_rule` does not — so `@require`'s
+        // FIRST check (and every gate's) read the un-narrowed set and the two engines
+        // dispatched differently. `export export fn g() {}` was the caught case: emit
+        // reported the hand's "expected declaration after `export`", the interpreter saw
+        // a satisfiable requirement, descended, and found no branch at all.
+        //
+        // Evaluated INLINE while scanning rather than by calling `branch_pred_ok` here,
+        // so only the predicates the scan actually walks past — the leading ones —
+        // contribute. That is exactly the set emit accumulates before its first
+        // token-bearing item. `@gensym` stays zero-width with no conjunct, as there.
+        if prim_is_pred(item.prim) {
+            match item.prim {
+                .Pred(flag) -> { if !pred_ok(flag, st) { return false } }
+                .Peek(cond) -> { if !lookahead_ok(cond, st) { return false } }
+                _ -> {}
+            }
+            continue
+        }
         // `^` is part of the FIRST, not just of the item's own match (t-47hc.33). A
         // same-line item cannot start on a token that sits on the next line, so a branch
         // led by one must NOT be selected there — it has to fall through to its siblings
@@ -2141,6 +2165,27 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if word_excluded_as_instance_name(st.toks[st.pos + 1].text) { return false }
         return st.toks[st.pos + 2].tk == Tk.LeftBrace
     }
+    // `decl_table_kw` — the current token is a keyword the feature REGISTRY has a
+    // declaration parser for. Not a keyword list: it asks `lookup_decl_parser` the
+    // question the hand's `export` branch asks, off the same registry, so the two
+    // cannot drift as features register or retire declaration keywords.
+    //
+    // It exists because `exportable_inner` ends in `@hand(decl_hand)`, whose FIRST is
+    // UNIVERSAL — and `export_decl`'s `@require` reads exactly that FIRST to decide
+    // whether a declaration follows `export`. With the tail unguarded the requirement
+    // accepted anything, so `export export fn g() { }` parsed as a nested export where
+    // the hand answers "expected declaration after `export`" (the hand looks the inner
+    // keyword up in the table, and `export` is not IN the table). Narrowing the tail
+    // narrows the FIRST it contributes, which is the whole point of `@peek`.
+    //
+    // A missing delegate means no registry to consult, and the answer is CONSERVATIVE —
+    // true, so the tail still runs and the hand still gets its chance. Same reading, and
+    // the same reason, as `ident_lbrace_is_feature_form`.
+    if cond == "decl_table_kw" {
+        let d = st.delegate()
+        if d == null { return true }
+        return lookup_decl_parser(d!.features, tk_keyword_str(st.cur().tk)) != null
+    }
     true
 }
 
@@ -2743,7 +2788,38 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
                     env.set_abort(true)
                     return CapVal.Node(st.error_node_silent())
                 }
-                return exec_item_marked(g, item, st, env, multi, annots)
+                // `@require`'s SECOND half — the FIRST check proves the sub-rule STARTS
+                // here, this proves it FINISHED. A callee that raised `abort_prop` did
+                // not satisfy the requirement, so the caller must abort rather than build
+                // a node around its silent error. See the emit twin in `emit_one` for the
+                // case (`export enum { A }`) and for why the flag is the signal here:
+                // reads of `abort_prop` are scoped to gate-bearing grammars, so a
+                // cross-view callee is untouched and `@onfail(bail)` owns that direction.
+                //
+                // The interpreter raises `abort_prop` in exactly ONE place (the gated
+                // FIRST failure); a `@require` TERMINAL aborts through the per-rule
+                // `env.abort` instead, and the callee's abort reaches its CALLER as the
+                // silent error NODE it returns. So the node is the signal that has to be
+                // read here for the two engines to answer alike — the same pairing the
+                // gate arm above already makes, and the same one `@onfail(bail)` reads.
+                // Scoped to gate-bearing grammars so the expression/type views, whose
+                // `@require`s sit over rules that recover internally, are untouched.
+                if !grammar_has_gate(g) { return exec_item_marked(g, item, st, env, multi, annots) }
+                st.set_abort_prop(false)
+                let rr = exec_item_marked(g, item, st, env, multi, annots)
+                // BOTH node kinds, because a declaration-view callee can hand its failure
+                // back as either. `export_decl`'s inner is `exportable_decl`, a single
+                // item under a `-> MkStampAt` build, and `mk_stamp_stmt_at` coerces the
+                // aborted EXPR error node into a `Stmt.Error` and re-boxes it as `SNode`.
+                // Reading only the expr shape saw a perfectly good statement there and
+                // built `(export (error))` — which reaches the seam as a NON-Error item
+                // and is adopted verbatim rather than handed back for the caller's
+                // synchronize, losing the hand's second diagnostic on the stray `}`.
+                if st.abort_prop || capval_is_error_expr(st, rr) || capval_is_error_stmt(st, rr) {
+                    env.set_abort(true)
+                    return CapVal.Node(st.error_node_silent())
+                }
+                return rr
             }
             _ -> {}
         }
@@ -2899,7 +2975,7 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
 /// aborted without reporting still yields a node, and the statement-list loop must treat
 /// it as a failed child rather than a parsed one.
 
-fn capval_is_error_stmt(st: PState, v: CapVal) -> bool {
+export fn capval_is_error_stmt(st: PState, v: CapVal) -> bool {
     match v {
         .SNode(id) -> {
             match st.store.stmts.get(id) {

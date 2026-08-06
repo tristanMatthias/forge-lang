@@ -988,6 +988,39 @@ export fn node_has_onfail(node: GNode, policy: string) -> bool {
     }
 }
 
+/// `abort_prop` is the CROSS-RULE abort signal, and it is scoped to grammars that
+/// actually have a `@gate` — one emitter renders FOUR checked-in parsers (decl /
+/// expr / type / pattern) and only the decl view gates, so an unscoped write would
+/// put the flag into all four for no reader. This predicate is that scope, shared:
+/// the emitter asks it to decide what to EMIT, the interpreter asks it to decide
+/// what to CHECK, and the two must never answer differently about the same grammar.
+export fn grammar_has_gate(g: Grammar) -> bool {
+    for r in g.rules {
+        if rule_body_has_gate(r.body) { return true }
+    }
+    false
+}
+
+/// The recursive form of `node_has_gate`: a gate can sit inside a `( … )*` /
+/// `( … )?` group (that is where `enum_decl` and `trait_decl` put theirs), so a
+/// top-level-only scan would miss every real one.
+export fn rule_body_has_gate(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.gate { return true }
+                    match it.prim {
+                        .Group(inner) -> { if rule_body_has_gate(inner) { return true } }
+                        _ -> {}
+                    }
+                }
+            }
+            false
+        }
+    }
+}
+
 export fn gated_ref_of(node: GNode) -> GatedRef {
     match node {
         .Alt(branches) -> {

@@ -75,36 +75,36 @@ spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
         let sel_at = src.index_of("parse_select_decl(st)")
         let par_at = src.index_of("parse_parallel_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        // `parallel_decl` is `@try` IN THE DISPATCHER, so it still lowers to the
-        // speculative `s_last = …` bookkeeping. `select_decl` no longer does: its
-        // `@try` moved INSIDE the rule (a `@cut`'s commit flag is per-rule-invocation
-        // and cannot reach a caller's `@try`), so the dispatcher reaches it by a
-        // direct predictive `return parse_select_decl(st)`.
+        // BOTH reach the dispatcher by a direct predictive `return parse_X(st)` now:
+        // each one's `@try` lives INSIDE its rule (a `@cut`'s commit flag is
+        // per-rule-invocation and cannot reach a caller's `@try`), so neither lowers to
+        // the speculative `s_last = …` bookkeeping in the dispatcher any more.
         //
-        // The two forms are asserted SEPARATELY rather than dropping the check,
-        // because "routed as `@try`, never bare" is the invariant — see the
-        // speculation assertion below, which reads the rule BODY for it. Pinning only
-        // `s_last = ` would have quietly stopped testing `select` the moment it was
-        // committed, which is what this assertion is here to prevent.
+        // The forms are asserted EXPLICITLY rather than dropping the check, because
+        // "routed as `@try`, never bare" is the invariant — see the speculation
+        // assertions below, which read each rule BODY for it. Pinning only `s_last = `
+        // would have quietly stopped testing a keyword the moment it committed, which is
+        // what this assertion is here to prevent.
         // Bound to the `decl_hand` POSITION, not merely present: index the EXACT
         // dispatch text and compare that index with `hand_at`. `contains` alone would
         // pass if the direct return sat AFTER the hand gate, or in some other fn
         // entirely — which is the #1028 dead-code failure this assertion exists for.
         let sel_ret = src.index_of("return parse_select_decl(st)")
-        let par_ret = src.index_of("s_last = parse_parallel_decl(st)")
+        let par_ret = src.index_of("return parse_parallel_decl(st)")
         hand_at >= 0 && sel_ret >= 0 && par_ret >= 0 &&
             sel_ret < hand_at && par_ret < hand_at &&
             sel_at >= 0 && par_at >= 0 &&
             sel_at < hand_at && par_at < hand_at
     }
 
-    then "`select` is routed as `@try`, never bare — the rule owns the rollback" {
+    then "`select` / `parallel` are routed as `@try`, never bare — each rule owns its rollback" {
         // The other half of the dispatch check above. A direct `return parse_X(st)`
         // is only safe when the rule ITSELF speculates: it must snapshot, and on a
         // pre-`@cut` failure roll the cursor, node store and diagnostics back so the
         // `@hand` gate below still sees untouched input. A BARE branch would be
         // error-TOLERANT and build partial nodes where the hand aborts.
-        rule_speculates("fn parse_select_decl(st: PState)")
+        rule_speculates("fn parse_select_decl(st: PState)") &&
+            rule_speculates("fn parse_parallel_decl(st: PState)")
     }
 
     then "the select-arm accumulator is typed List<SelectArm>, not the ExprId default" {

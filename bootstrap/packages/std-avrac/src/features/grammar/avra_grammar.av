@@ -482,7 +482,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `letdes_decl` UNREACHABLE — at that point the two must swap, with the more
   // specific `let (` form first. Recorded because the breakage would be silent:
   // destructuring would simply stop parsing, with no diagnostic naming the cause.
-  declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | @try extern_decl | @try fn_decl | trait_decl | impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | mut_decl | const_decl | @try letdes_decl | select_decl | @try parallel_decl | spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | @try fn_decl | trait_decl | impl_decl | export_decl | @try doc_decl | mdoc_decl | @try annot_decl | @try let_decl | mut_decl | const_decl | @try letdes_decl | select_decl | parallel_decl | spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -514,9 +514,41 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `avra_null_deref_trap` line baked into the IR — moves with it. diff-test caught it as
   // selfhost line numbers drifting by 2, 3 and 41; arbitrary deltas are the tell that a
   // position is inherited rather than shifted.
-  export_decl      = "export" ed:exportable_decl -> MkExport(ed)
+  // t-myz7: `export` owns its recovery. The inner is `@require`d with a declared message
+  // because `exportable_decl`'s FIRST is a disjunction of keywords — there is no single
+  // token to name, which is exactly the case `@expect("<rule>", …)` exists for.
+  export_decl      = @try "export" @cut @require ed:exportable_decl
+                     @expect("exportable_decl", "expected declaration after `export`") -> MkExport(ed)
   exportable_decl  = ei:exportable_inner -> MkStampAt(ei)
-  exportable_inner = @try fn_decl | type_decl | enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | impl_decl | @try use_decl | @try mod_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
+  // t-47hc.5: this alternation MIRRORS `declaration`'s, tail role included. A `@try`
+  // branch commits only if the callee reported NOTHING, so a keyword whose native rule
+  // reports and then rolls back leaves the alternation with no branch at all — and with
+  // no tail that is `Nil`, which `MkStampAt`'s `capval_to_stmt` answers with a generic
+  // "expected a statement" ON TOP of a re-parse of the same keyword by the caller.
+  // `export let` showed both: the hand says "expected variable name" once, the native
+  // path said "expected a statement" and then, having consumed only `export`, let the
+  // top-level loop hand `let` to the hand parser for the real message.
+  //
+  // So the unrouted keywords keep the SAME tail they have at the top level: the hand.
+  // It is the same `@hand(decl_hand)` leaf `declaration` ends with — one leaf, two
+  // references — and it dies with that one when the last keyword routes. The keywords
+  // already BARE in `declaration` are bare here too, because a routed rule owns its
+  // recovery and must not be given a rollback it does not have at the top level.
+  //
+  // The tail is `@peek`-NARROWED, and that is load-bearing rather than tidy: a bare
+  // `@hand` tail's FIRST is UNIVERSAL, and `export_decl`'s `@require` reads exactly
+  // that FIRST to decide whether a declaration follows. Unguarded, `export export fn
+  // g() { }` parsed as a nested export where the hand rejects it — the hand looks the
+  // inner keyword up in the feature registry's declaration table, and `export` is not
+  // in that table. `decl_table_kw` asks the registry the SAME question, so this rule's
+  // acceptance frontier is the table's, not a keyword list that can drift from it.
+  // The branch list is `declaration`'s, MINUS the four prefix wrappers (`export`,
+  // `///`, `@ann`, `//!`) and the IDENT-led component instantiations — neither is in
+  // the decl table, so the hand's `export` branch cannot reach them either — and minus
+  // the `statement` tail, which is not a declaration. Same `@try`/bare split, same
+  // order (`let_decl` before `letdes_decl` for the reason `declaration` records), so
+  // the two alternations cannot disagree about who owns a keyword.
+  exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | @try fn_decl | trait_decl | impl_decl | @try let_decl | mut_decl | const_decl | @try letdes_decl | select_decl | parallel_decl | spec_decl | @try component_decl | @peek(decl_table_kw) @hand(decl_hand)
   // The remaining three prefix wrappers (t-47hc Phase 4), same shape as `export_decl`
   // with ONE deliberate difference: their inner IS recursive. The hand's doc and
   // annotation branches re-enter `parse_declaration` (unlike export's direct table
@@ -555,7 +587,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // native and `@expand` on a `fn` was fine. Its FIRST (`component`) collides with
   // nothing else here, and `wrapped_inner` is shared by both `annot_decl` and
   // `doc_decl`, so this covers the doc-comment form too.
-  wrapped_inner  = @try fn_decl | type_decl | enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | impl_decl | @try component_decl | @try use_decl | @try mod_decl | @try export_decl | @try doc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
+  wrapped_inner  = @try fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | @try component_decl | @try use_decl | @try mod_decl | export_decl | @try doc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
   // The `let` / `mut` / `const` BINDINGS (t-47hc Phase 4) — the highest-traffic
   // residue of `@hand(decl_hand)`: every binding statement in every routed body
   // used to detour through the hand delegate. The rules mirror the hand parsers
@@ -613,7 +645,9 @@ fn avra_decl_edge_grammar() -> Grammar {
   // re-check emit inserts is what reports for it. `@expect("IDENT", …)` on
   // `select_arm` supplies that check's message; with no declared message it would
   // fall back to a generic "expected select_arm", naming a grammar rule at the user.
-  parallel_decl = "parallel" "{" body:declaration* "}" -> MkParallel(body)
+  parallel_decl = @try "parallel" @cut @require "{" body:declaration* @require "}"
+                  @expect("{", "expected `{` after parallel")
+                  @expect("}", "expected `}` to close parallel block") -> MkParallel(body)
   // NOT committed, for the reason recorded on `enum_decl`: `select { x }` must report
   // the missing `<-` and still build `(select ())`, while a committed rule ABORTS to
   // `(error)` and additionally leaves the `}` unconsumed so the caller adds a spurious
