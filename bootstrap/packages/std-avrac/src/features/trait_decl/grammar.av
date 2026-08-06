@@ -12,7 +12,12 @@ export fn avra_trait_decl_grammar() -> Grammar {
                 @expect("IDENT", "expected trait name")
                 @expect("{", "expected `{` after trait name")
                 @expect("}", "expected `}` after trait body") -> MkTraitDecl(trname, tmembers)
+  // The message is keyed on the RULE'S OWN NAME because this rule is
+  // ALTERNATION-led and so has no single leading token to key on. Without it the
+  // gated call in `trait_decl` fell back to `expected trait_member` — a grammar
+  // rule name, printed at a user.
   trait_member  = assoc_member | method_member
+                  @expect("trait_member", "expected `type` or `fn` in trait body")
   // Both members COMMIT after their keyword, and both had to: without a `@require`
   // on the name each one consumed whatever token was present, on the promise that
   // its caller proved FIRST. `trait T { type }` bound the `}` AS THE ASSOCIATED TYPE

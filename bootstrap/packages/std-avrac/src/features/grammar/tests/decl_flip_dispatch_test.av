@@ -19,7 +19,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
-use @std.avrac.features.grammar.{hand_leaf_refused}
+use @std.avrac.features.grammar.{hand_leaf_refused, avra_program_grammar, Grammar, GNode, GAnnot}
 
 fn flip_decl(src: string) -> string {
     mut p = parser_new(src)
@@ -316,6 +316,58 @@ fn native_without_delegate(name: string, src: string) -> bool {
 fn recovery_without_delegate(name: string, src: string) -> bool {
     let out = refuse_out("decl_hand", name, src)
     parse_failed(out) && !refusal_in_file(out, fixture_path(name))
+}
+
+/// The `@expect` message the grammar declares for `key` on rule `rule`, or "".
+/// Reads the GRAMMAR OBJECT, which is the single source of truth — the annotation
+/// on a rule's LEADING item never lowers to emitted parser text (the caller proved
+/// FIRST, so that item is advanced unconditionally), so it cannot be read back out
+/// of any generated file.
+fn declared_expect(rule: string, key: string) -> string {
+    let g = avra_program_grammar()
+    for r in g.rules {
+        if r.name == rule {
+            match r.body {
+                .Alt(branches) -> {
+                    for b in branches {
+                        for a in b.annots {
+                            match a {
+                                .Expect(tok, msg) -> { if tok == key { return msg } }
+                                _ -> {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ""
+}
+
+spec "t-myz7: the cross-view `param` message is not allowed to drift" {
+    then "emit's declared message is the string the `param` grammar annotation carries" {
+        // `param` is DEFINED in the expression view, so `rule_first_expect_msg` cannot
+        // read its `@expect` from the DECLARATION grammar at all — the decl parser calls
+        // the separately generated expression parser for it. emit therefore declares the
+        // wording in code, beside the FIRST it pairs with, and nothing otherwise binds
+        // the two: editing the annotation in avra_grammar.av would silently leave the
+        // decl view on the stale string, visible only to a diagnostic-TEXT oracle.
+        //
+        // This reads the GRAMMAR OBJECT rather than a generated file, because the
+        // annotation sits on `param`'s LEADING item and so lowers to no emitted text at
+        // all — two earlier drafts of this guard asserted on generated sources and were
+        // guards that could not fail. Change the annotation, and this goes red.
+        declared_expect("param", "IDENT") == "expected parameter name"
+    }
+
+    then "the guard is not vacuous — the lookup really finds annotations" {
+        // The positive control the two failed drafts lacked. A key the grammar does NOT
+        // declare must come back empty, so a `declared_expect` that silently returned ""
+        // for everything (a renamed rule, a changed annot shape) cannot satisfy the
+        // assertion above by accident.
+        declared_expect("param", "NOT_A_REAL_KEY") == "" &&
+            declared_expect("no_such_rule", "IDENT") == ""
+    }
 }
 
 spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {

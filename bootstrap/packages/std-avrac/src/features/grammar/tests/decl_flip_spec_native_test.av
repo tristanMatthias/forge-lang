@@ -69,8 +69,11 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
         // still asserted (dispatch precedes the hand gate, else the rule is dead
         // code); the speculation half moved to its own assertion below, so committing
         // a keyword can no longer silently retire the check.
-        src.contains("return parse_spec_decl(st)") &&
-            spec_at >= 0 && hand_at >= 0 && spec_at < hand_at
+        // Bound to the `decl_hand` POSITION, not merely present — see the sibling
+        // assertion in decl_flip_select_parallel_native_test.
+        let spec_ret = src.index_of("return parse_spec_decl(st)")
+        hand_at >= 0 && spec_ret >= 0 && spec_ret < hand_at &&
+            spec_at >= 0 && spec_at < hand_at
     }
 
     then "`spec` is routed as `@try`, never bare — the rule owns the rollback" {
