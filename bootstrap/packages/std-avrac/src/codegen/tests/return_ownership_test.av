@@ -73,8 +73,11 @@ fn releasables_of(src: string, fname: string) -> List<string> {
     let fresh = analyze_return_ownership_set(p.store, ids!)
     for sid in ids! {
         match stmt_unwrap(p.store, p.store.stmts.get(sid)) {
-            .Function(n, _, _, _, body) -> {
-                if n == fname { return analyze_releasable(p.store, body, fresh) }
+            .Function(n, _, _, ret, body) -> {
+                if n == fname {
+                    let tail_yields = match ret { .Void -> false, _ -> true }
+                    return analyze_releasable(p.store, body, fresh, tail_yields)
+                }
             }
             _ -> {}
         }
@@ -258,6 +261,25 @@ spec "t-k6lm releasable set: a CALL ARGUMENT carries a local's parts out of the 
             // delegating composites to the plain walker drops it.
             not_releasable(PRELUDE + "fn keep(i: Inner) -> Inner { i }\nfn db() -> Holder { let p = Holder { inner: Inner { n: 1 } }\n return Holder { inner: keep(p.inner) } }\n", "db", "p")
         }
+        then "a VALUE-YIELDING tail call escapes, like an explicit return" {
+            // The `db_for` shape: no `return` keyword, but the fn declares a
+            // result, so the tail call's value IS the frame's result and its
+            // arguments escape. This is the pair to the void case below — the
+            // two have IDENTICAL statement shape and differ only in the
+            // declared return type, which is why it has to be threaded in.
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db() -> Holder { let p = Holder { inner: Inner { n: 1 } }\n keep(p.inner) }\n", "db", "p")
+        }
+        then "a BLOCK-BODIED tail match arm escapes (CodeRabbit #1176)" {
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db(c: bool) -> Holder { let p = Holder { inner: Inner { n: 1 } }\n match c { true -> { keep(p.inner) }\n _ -> { Holder { inner: Inner { n: 2 } } } } }\n", "db", "p")
+        }
+        then "a RETURNED match arm's field read escapes (wider than reported)" {
+            // Neither walker handled .MatchExpr at all, so this plain field
+            // read — no call involved — was missed too.
+            not_releasable(PRELUDE + "fn db(c: bool) -> Inner { let p = Holder { inner: Inner { n: 1 } }\n return match c { true -> p.inner\n _ -> Inner { n: 2 } } }\n", "db", "p")
+        }
+        then "a RETURNED if-expression branch's field read escapes" {
+            not_releasable(PRELUDE + "fn db(c: bool) -> Inner { let p = Holder { inner: Inner { n: 1 } }\n return if c { p.inner } else { Inner { n: 2 } } }\n", "db", "p")
+        }
         then "a DISCARDED tail call does NOT cost the local its candidacy" {
             // The boundary of the rule above, and the reason it is limited to
             // explicit returns: `collect_tail_exprs` yields the last STATEMENT,
@@ -271,5 +293,89 @@ spec "t-k6lm releasable set: a CALL ARGUMENT carries a local's parts out of the 
             // denial of every local in a fn that happens to contain a call.
             is_releasable(PRELUDE + "fn side() -> int { 7 }\nfn db() -> int { let p = Holder { inner: Inner { n: 1 } }\n side() }\n", "db", "p")
         }
+    }
+}
+
+// A STRING LITERAL field does not make its holder ownable (t-k6lm).
+//
+// `init_is_owned` used to answer `.String(_) -> true`, treating a literal as
+// an allocation the struct owns. It is not one, and the holder's recursive
+// `__release_<T>` would free it. This was found by diffing the RELEASABLE set
+// with the fresh-set wiring off vs on across the @std::avrac lib build, which
+// named exactly one new local: `lang_gen::render_one_diag :: def`, bound from
+// `error_def`, whose every arm is `ErrorDef { code: "<literal>", help:
+// "<literal>" }`.
+//
+// Scalars are deliberately NOT denied — an int/bool/float/null field has no
+// pointer to release, so it cannot misfire. The third arm pins that boundary,
+// so this cannot decay into "deny every literal".
+const SLIT: string = "type E = { code: string }\nfn mk() -> E { E { code: \"F0001\" } }\n"
+const SNUM: string = "type S = { n: int }\nfn mk2() -> S { S { n: 1 } }\n"
+
+spec "a string-literal field does not make its holder fresh (t-k6lm)" {
+    then "a fn returning a struct with a string-literal field is NOT fresh" {
+        not_fresh(SLIT, "mk")
+    }
+    then "so the caller's binding of it is NOT releasable" {
+        not_releasable(SLIT + "fn use_it() -> int { let d = mk()\n 0 }\n", "use_it", "d")
+    }
+    then "a struct with only SCALAR literal fields IS still fresh" {
+        // The boundary, and the positive control: scalars own nothing to
+        // free, so denying them would be a pure leak with no bug behind it.
+        is_fresh(SNUM, "mk2")
+    }
+    then "an enum payload holding a string literal is NOT fresh either" {
+        // Same base case, reached through `arg_ids_all_owned` instead of
+        // `field_inits_all_owned` — `.Err("…")` is the shape `noop_parse`
+        // uses, and it was admitted for the same reason.
+        not_fresh("fn mk3() -> Result<int, string> { .Err(\"boom\") }\n", "mk3")
+    }
+}
+
+// ── An EMPTY body proves nothing (t-k6lm slice 2) ─────────────────────────────
+//
+// The shape that blocked the wiring for several sessions, and it is not a
+// hand-written one: the metadata fast-path synthesizes a signature-only stub
+// for every non-generic `@std` export — `Stmt.Function(n, …, empty_body)` in
+// build/metadata_synthesize.av — so a whole package arrives as declarations
+// with NO body.
+//
+// An empty body is VACUOUSLY fresh: `collect_return_exprs` finds nothing to
+// reject and `tail_is_fresh` answers true at `body.length == 0`. That admitted
+// the entire stubbed `@std` surface at once, `extract_unit_metadata` among it —
+// and its `UnitMetadata` BORROWS the entry strings it carries from the AST
+// store, shared across every slice extracted from that store. The caller's
+// recursive `__release_UnitMetadata` then freed children the next slice still
+// held: `avra_rc_release received a pointer to freed RC memory`, in
+// tests/per_file_metadata_fixtures/sample.av under AVRA_RC_STRICT=1.
+//
+// It reproduces ONLY through the fast path — a whole-program compile sees the
+// real body and denies it on the field reads — which is why the fixture passes
+// a direct `diagnose.sh --run` and fails the suite. Neither the specs below nor
+// a standalone run can observe that difference, so what they pin is the
+// PREDICATE: a body this analysis cannot inspect is never a candidate.
+const STUB_RET: string = "type B = { v: int }\nfn stub() -> B { }\n"
+
+spec "a body the analysis cannot SEE is never fresh (t-k6lm)" {
+    then "an empty-bodied fn with a declared return type is NOT fresh" {
+        not_fresh(STUB_RET, "stub")
+    }
+    then "so the caller's binding of it is NOT releasable" {
+        // The consequence that actually crashed: without this, `let b = stub()`
+        // takes a recursive release on a value whose contents the callee never
+        // owned.
+        not_releasable(STUB_RET + "fn use_stub() -> int { let b = stub()\n 0 }\n", "use_stub", "b")
+    }
+    then "an empty-bodied VOID fn is NOT fresh either" {
+        // Harmless in practice (a unit binding is never ptr-typed, so no
+        // release is emitted) but it entered the set by the same vacuous
+        // truth, and a set that is honest only where it is load-bearing is
+        // the kind of thing that stops being honest later.
+        not_fresh("fn nothing() { }\n", "nothing")
+    }
+    then "a fn with a REAL fresh body is still fresh (the positive control)" {
+        // Denying an empty body must not decay into denying everything: this
+        // is the arm that fails if the guard is written too wide.
+        is_fresh("type B2 = { v: int }\nfn mk_b2() -> B2 { B2 { v: 1 } }\n", "mk_b2")
     }
 }

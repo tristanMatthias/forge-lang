@@ -35,7 +35,13 @@ export fn avra_struct_decl_grammar() -> Grammar {
   // `tparam` REPORTS and is stepped over rather than binding whatever token is there,
   // and a missing `>` throws the whole list away (`return empty`), so
   // `type Foo<T { x: int }` keeps neither `T` nor a stray brace.
-  type_decl   = @try "type" @cut @require tname:IDENT ( "<" @onfail(skip) tparams:tparam ( "," @onfail(skip) tparams:tparam )* @onfail(discard, tparams) ">" )? @require "=" ( "{" ( @peek(not_rbrace) @gate fields:field ","? )* @require "}" | talias:type_expr ( top:( "without" | "only" ) @require "{" ( topf:IDENT ","? )* @require "}" @expect("{", "expected `{` after type operator") @expect("}", "expected `}` after type operator fields") )? )?
+  // The inner list is OPTIONAL, gated on `@peek(not_gt)` — the acceptance frontier has to
+  // stay exactly where the hand's is. `parse_type_param_entries` opens with
+  // `if check(Greater) { return out }` and only then demands an IDENT, so the hand
+  // accepts `E<>` AND reports "expected type parameter name" for `E< {`. A bare `( … )?`
+  // inner reproduces the first and silently loses the second; the peek splits them where
+  // the hand does.
+  type_decl   = @try "type" @cut @require tname:IDENT ( "<" ( @peek(not_gt) @gate @onfail(skip) tparams:tparam ( "," @onfail(skip) tparams:tparam )* )? @onfail(discard, tparams) ">" )? @require "=" ( "{" ( @peek(not_rbrace) @gate fields:field ","? )* @require "}" | talias:type_expr ( top:( "without" | "only" ) @require "{" ( topf:IDENT ","? )* @require "}" @expect("{", "expected `{` after type operator") @expect("}", "expected `}` after type operator fields") )? )?
                 @expect("IDENT", "expected type name")
                 @expect("=", "expected `=` after type name")
                 @expect(">", "expected `>` after type parameters")

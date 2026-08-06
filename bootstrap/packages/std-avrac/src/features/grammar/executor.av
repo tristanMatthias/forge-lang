@@ -20,6 +20,9 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 use features.grammar.{Token, lex_real, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
 use features.grammar.{dispatch_has_tail}
+// t-myz7: the gated-call FIRST message, SHARED with emit (see ast.av) — the
+// executor's gate check must say exactly what the generated parser's says.
+use features.grammar.{rule_first_expect_msg, gated_ref_of, GatedRef}
 use features.grammar.{rule_result_kind, gprim_ref_name}
 use features.grammar.{rule_first_expect_msg}
 // The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
@@ -1927,6 +1930,19 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.pos + 1 >= st.toks.length { return false }
         return st.toks[st.pos + 1].text == "type"
     }
+    // t-myz7: the token is not the CLOSING `>` of an angle list — the guard that makes
+    // the inner list optional without making the first element silent.
+    //
+    // `parse_type_param_entries` opens with `if check(Greater) { return out }` and only
+    // then demands an IDENT, so the hand accepts `enum E<>` AND reports "expected type
+    // parameter name" for `enum E< {`. A plain `( … )?` inner list reproduces the first
+    // and loses the second; this cond splits them exactly where the hand does. `>>` is a
+    // split slot for a nested generic close, so it counts as a `>` here for the same
+    // reason the terminal emitters widen for it.
+    if cond == "not_gt" {
+        if st.at_end() { return false }
+        return !(st.cur().tk == Tk.Greater || st.cur().text == ">>")
+    }
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
     }
@@ -2629,7 +2645,7 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     //   the capture guard — an aborted sub-parse yields a silent error node, and BINDING
     //     it means a `capval_to_*` reports over it at build time ("expected a select
     //     arm"), a second diagnostic for one failure.
-    if item.gate {
+    if item.gate && item.onfail != "skip" {
         match item.prim {
             .Ref(gname) -> {
                 let gseen: List<string> = []
@@ -2991,6 +3007,49 @@ fn capval_len(v: CapVal) -> int {
 /// Execute a primary. Terminals match+consume (or trigger @expect /
 /// @recover when a required terminal is missing); a ref calls its rule;
 /// a group recurses the enclosing env so its captures propagate out.
+/// The gated call's FIRST re-check — the interpreter twin of emit's
+/// `gated_first_check` (t-myz7).
+///
+/// `@gate` REPLACES a group's FIRST with the preceding `@peek` cond, which is the
+/// whole point: it lets the loop enter where the element's own FIRST would refuse
+/// (`}` / EOF), so the hand's "report about the ELEMENT" recovery is reproducible.
+/// The cost is that the callee's standing promise — "my caller proved my FIRST" —
+/// no longer holds, so the gated call must re-check it HERE and report the ELEMENT's
+/// message. emit has done this since the gate landed; the interpreter never did, and
+/// simply fell into the sub-rule.
+///
+/// That gap is why `shape S = { x: int` (unclosed, next line starts `fn`) answered
+/// with three diagnostics where the hand and the generated parser both answer with
+/// one: the loop entered `field` standing on `fn`, `field` reported a missing name,
+/// then a missing `:`, and `shape_decl` then reported a missing `}`. Same shape for
+/// `trait T {`, which reached the EXPRESSION tail and said `expected expression`
+/// where the hand names the missing member.
+///
+/// The message comes from `rule_first_expect_msg` — the SAME function emit renders
+/// from, now shared out of ast.av — so the two engines cannot word this differently.
+/// Aborting through `env` (not `st.abort_prop`) is deliberate and sufficient: a group
+/// shares its enclosing rule's CapEnv, so `env.set_abort(true)` unwinds the rule that
+/// owns the gate, which is exactly the scope emit's `return` has.
+fn gated_first_ok(g: Grammar, inner: GNode, st: PState, env: CapEnv) -> bool {
+    let gr = gated_ref_of(inner)
+    if !gr.found { return true }
+    // `@onfail(skip)` / `@onfail(close)` own this position themselves — the emit twin
+    // (`gated_first_check`) stands down for exactly these two, and the interpreter has to
+    // stand down at the same point or the two engines report different things for the same
+    // input. `skip` reports at the ITEM, with the caller's declared message and no abort;
+    // reporting here as well produced the generic "expected tparam" AND aborted, which is
+    // how `enum E< { A }` lost the hand's second diagnostic on the default path (the
+    // executor answers invalid input there, so emit-vs-hand was blind to it — t-zrn3).
+    // The gate's remaining job is the ENTRY decision, which `tok_starts_seq` already made.
+    if gr.onfail == "skip" || gr.onfail == "close" { return true }
+    let seen: List<string> = []
+    if tok_starts_rule(g, gr.rule, st, seen) { return true }
+    let em = rule_first_expect_msg(g, gr.rule)
+    st.report(if em == "" { "expected ${gr.rule}" } else { em })
+    env.set_abort(true)
+    false
+}
+
 fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
     match prim {
         .Lit(t) -> {
@@ -3008,7 +3067,16 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
             CapVal.Node(st.missing_node())
         }
         .Ref(name) -> exec_rule(g, name, st)
-        .Group(inner) -> exec_node(g, inner, st, env, multi, annots)
+        .Group(inner) -> {
+            // t-myz7: the interpreter twin of emit's `gated_first_check`, planted at
+            // exactly the same place — emit renders it into BOTH the `( … )?` and the
+            // `( … )*` group bodies, and both reach this one arm here.
+            if gated_first_ok(g, inner, st, env) {
+                exec_node(g, inner, st, env, multi, annots)
+            } else {
+                CapVal.Node(st.error_node_silent())
+            }
+        }
         // Statement/declaration hand rules delegate to the real hand parser and
         // yield a Stmt node; expression hand rules (`ident`/`number`) yield an
         // Expr node. Dispatch on the rule name so a mixed declaration grammar
@@ -3371,66 +3439,69 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
 /// The result of `run_dsl_type_at`: the built type, the byte offset the DSL
 /// stopped at (so a hand-parser caller can resync its token cursor), and the
 /// error channel.
-/// The code of the diagnostic the boundary is ALSO taking its message from.
+/// The F-code to render diagnostic `i` under.
 ///
-/// `diag = st.diags[0].msg` and `diag_code = st.diag_code` read different things: the
-/// slot is first-writer-wins across the whole parse, so a later reporter's code could
-/// be surfaced beside an earlier reporter's message. Reading both from `diags[0]` is
-/// the point of carrying the code per-diagnostic (t-47hc.5 / #1173). Falls back to the
-/// slot when the first diagnostic carries no code, so untouched paths are unchanged.
-///
-/// The fallback is NARROWED by diagnostic COUNT, and that narrowing is the whole
-/// correctness argument. The slot says nothing about WHICH diagnostic set it, so:
+/// The message and the code must describe the SAME diagnostic, so both are read off
+/// `st.diags[i]` (t-47hc.5 / #1173). `PState.diag_code` — the pre-existing slot — is
+/// consulted only as a FALLBACK for a diagnostic that carries no code of its own, and
+/// that fallback is NARROWED by diagnostic COUNT, which is the whole correctness
+/// argument. The slot is first-writer-wins across the entire parse and says nothing
+/// about WHICH diagnostic set it, so:
 ///   - one diagnostic  → the slot can only be describing that one. Authoritative,
 ///                       and this is the overwhelmingly common case, which is why
 ///                       every pre-existing single-error path is bit-for-bit
 ///                       unchanged by this function.
 ///   - several         → a bare `report()` first and a `report_coded` /
 ///                       `error_node_coded` later means the slot describes a LATER
-///                       diagnostic. Borrowing it renders diags[0]'s MESSAGE under
-///                       another diagnostic's CODE — `select { x }` surfaced
-///                       "expected `<-` after select arm binding" under F0040 while
-///                       the hand says F0001. A bare `report()` IS an F0001, so say
-///                       so directly instead of borrowing a stranger's code.
+///                       diagnostic. Borrowing it renders one diagnostic's MESSAGE
+///                       under another's CODE — `select { x }` surfaced "expected
+///                       `<-` after select arm binding" under F0040 while the hand
+///                       says F0001. A bare `report()` IS an F0001, so say so
+///                       directly instead of borrowing a stranger's code.
 ///
 /// Stamping F0001 onto `report()` itself was tried first and is WRONG: it is global
 /// (every generated parser and the executor report through it), it makes this
 /// fallback unreachable, and it re-coded ~40 specs on keywords that were never part
 /// of the change. The defect is in the JOIN between message and code, so the join is
 /// where it gets fixed.
-fn first_diag_code(st: PState) -> string {
-    if st.diags.length == 0 { return st.diag_code }
-    if st.diags[0].code != "" { return st.diags[0].code }
+fn resolved_diag_code(st: PState, i: int) -> string {
+    if st.diags[i].code != "" { return st.diags[i].code }
     if st.diags.length == 1 { return st.diag_code }
     "F0001"
 }
 
-/// EVERY diagnostic the native parse produced, each already carrying the code it is to be
-/// reported under — the WIDE channel across the flip seam (t-myz7).
+/// EVERY diagnostic the DSL run recorded, each resolved to its own F-code — the
+/// boundary's error channel (t-myz7).
 ///
-/// `diag`/`diag_code` are a ONE-DIAGNOSTIC summary, and the seam that reads them
-/// (parse/mod.av's `d.bag.diagnostics.length == 0` branch) therefore surfaced the FIRST
-/// native diagnostic and dropped the rest. That is invisible while a native rule aborts
-/// on its first error, and becomes a divergence the moment one RECOVERS and keeps
-/// reporting: `enum E< { A }` produces "expected type parameter name" AND "expected `>`
-/// after type parameters" on the hand, and the native rule now produces both too — only
-/// one of them could cross. The hand parser has always shown every parse error (see
-/// `Parser.report`), so the seam was the narrow part, not the grammar.
+/// It used to be ONE diagnostic wide (`diag: string` + `diag_code: string`, both read
+/// off `diags[0]`), and that seam is what blocked retiring `@hand(decl_hand)`. A
+/// committed native rule owns its recovery completely, and real recovery reports more
+/// than once: `enum E< { A }` gets "expected type parameter name" AND "expected `>`
+/// after type parameters" from the hand. Both were generated natively — reading the
+/// regenerated `parse_enum_decl` confirmed both `st.report(...)` calls fire — and the
+/// second was dropped on the floor here, so the native path could never reproduce
+/// multi-error recovery no matter what the grammar said. The recovery oracle compares
+/// the ORDERED F-code signature with duplicates preserved, so a dropped error is a
+/// hard divergence. `report_coded` widened the CHANNEL for this (each diagnostic has
+/// carried its own code since #1173); this spends it.
 ///
-/// The per-diagnostic code follows the same rule `first_diag_code` states: a `GDiag`'s own
-/// code wins; the one-wide `PState.diag_code` slot is authoritative only when there is
-/// exactly ONE diagnostic to attribute it to; otherwise the code is left blank and the
-/// consumer's default applies.
-fn resolved_diags(st: PState) -> List<GDiag> {
+/// Gated on `had_error` exactly as the single-diagnostic read was: a run that recorded
+/// diagnostics without erroring surfaced nothing before and surfaces nothing now.
+/// Likewise an empty `diags` yields an empty list — the old code produced `diag == ""`
+/// there, which the one consumer skipped — so the `diag_code`-only fallback that case
+/// used to take was already unobservable and is not reproduced.
+fn boundary_diags(st: PState) -> List<GDiag> {
     mut out: List<GDiag> = []
-    for d in st.diags {
-        let c = if d.code != "" { d.code } else if st.diags.length == 1 { st.diag_code } else { "" }
-        out.push(GDiag { code: c, msg: d.msg })
+    if !st.had_error { return out }
+    mut i = 0
+    while i < st.diags.length {
+        out.push(GDiag { code: resolved_diag_code(st, i), msg: st.diags[i].msg })
+        i = i + 1
     }
     out
 }
 
-export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, diag: string, diag_code: string }
+export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, diags: List<GDiag> }
 
 /// Inverse type runner (ps3t.6.5.12 slice 1): lets the hand parser delegate a
 /// whole type expression to the DSL. It runs the unified program grammar's `type_expr`
@@ -3487,11 +3558,7 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
     // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
-    mut diag = ""
-    if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0].msg
-    }
-    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
+    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
 /// t-47hc.4.4 Phase 3d — the STATIC type-parser boundary. IDENTICAL PState setup to
@@ -3512,17 +3579,13 @@ export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: str
     // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
-    mut diag = ""
-    if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0].msg
-    }
-    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
+    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
 /// The result of `run_dsl_pattern_at_shared`: the built pattern (a `PatId` VALID
 /// in the caller's shared `store` — patterns are arena-backed, unlike types),
 /// the stop byte for cursor resync, and the error channel.
-export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diag: string, diag_code: string }
+export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diags: List<GDiag> }
 
 /// INVERSE-@hand PATTERN runner (ps3t.6.5.12) — the pattern-family sibling of
 /// `run_dsl_type_at_shared`. Runs `grammar`'s `rule` (`pattern_or` for the
@@ -3544,11 +3607,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
     // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
-    mut diag = ""
-    if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0].msg
-    }
-    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
+    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
 /// t-47hc.4.4 Phase 3d (pattern half) — the STATIC pattern-parser boundary. IDENTICAL
@@ -3569,17 +3628,13 @@ export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: stri
     // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
-    mut diag = ""
-    if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0].msg
-    }
-    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
+    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
 /// The result of `run_dsl_expr_at_shared`: the built expression (an `ExprId`
 /// VALID in the caller's shared `store` — expressions are arena-backed, like
 /// patterns), the stop byte for cursor resync, and the error channel.
-export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, diag: string, diag_code: string }
+export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, diags: List<GDiag> }
 
 /// INVERSE-@hand EXPRESSION runner (ps3t.6.5.12) — the expression-family sibling
 /// of `run_dsl_pattern_at_shared`. Runs `grammar`'s `expression` rule over the
@@ -3611,11 +3666,7 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
     // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
-    mut diag = ""
-    if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0].msg
-    }
-    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
+    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
 /// ps3t.6.7 Step G — the STATIC-parser boundary. IDENTICAL PState setup to
@@ -3649,20 +3700,13 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
-    mut diag = ""
-    if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0].msg
-    }
-    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
+    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
 /// The result of `run_dsl_stmt_at_shared`: the built statement (a `StmtId` VALID
 /// in the caller's shared `store` — statements are arena-backed, like
 /// expressions/patterns), the stop byte for cursor resync, and the error channel.
-/// `diags` is the WIDE channel — every native diagnostic, each with its own code (see
-/// `resolved_diags`). `diag`/`diag_code` remain the first-diagnostic summary for the
-/// consumers that need only one.
-export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, diag: string, diag_code: string, diags: List<GDiag> }
+export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, diags: List<GDiag> }
 
 /// Shared core of the statement- and declaration-family runners: runs `grammar`'s
 /// `rule` over the pre-lexed `toks` at byte `start_byte`, SHARING the caller-owned
@@ -3682,11 +3726,7 @@ fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src
     // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
-    mut diag = ""
-    if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0].msg
-    }
-    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st), diags: resolved_diags(st) }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
 /// INVERSE-@hand STATEMENT runner (ps3t.6.7 Step G slice 4) — the statement-
@@ -3737,11 +3777,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
     // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
-    mut diag = ""
-    if st.had_error && st.diags.length > 0 {
-        diag = st.diags[0].msg
-    }
-    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st), diags: resolved_diags(st) }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
 // Which names build an EXPRESSION via REAL hand delegation (`run_hand_expr` →
@@ -3983,11 +4019,44 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
 
 /// Coerce a capture value to an Expr node: a node passes through; a bare
 /// token becomes a literal; anything else is an error node.
+/// Report a CapVal-coercion failure — but only when nothing has been reported yet.
+///
+/// The four `capval_to_*` coercions are the boundary's "this rule did not produce the
+/// node kind I asked for" fallback. That is a real finding on a CLEAN parse (a grammar
+/// or builder bug), and pure noise on a FAILED one: the rule aborted, so of course it
+/// handed back `Nil`. `st.had_error` is exactly that distinction.
+///
+/// This is invisible until the boundary carries N diagnostics, and then it is the
+/// single largest source of divergence (t-myz7). `capval_to_stmt` runs on the run's
+/// RESULT, so its "expected a statement" is appended AFTER every real diagnostic — it
+/// was `diags[1]` on almost every aborted declaration and the one-diagnostic seam
+/// dropped it silently. Surfacing all N without this guard gave `use`, `mod`, `const`,
+/// `mut` and `shape` a spurious trailing F0001 apiece where the hand reports one error
+/// and stops: 25 of the 29 corpus divergences, all the same artifact.
+///
+/// Baseline-neutral by construction: when a coercion message is the FIRST diagnostic
+/// `had_error` is still false, so it reports exactly as before; when it is not first it
+/// was already being dropped at the seam. So this changes nothing that was observable
+/// before the widening, which is why it is not a separate behavioural change.
+/// The placeholder a guarded coercion builds must be SILENT. Three of these
+/// coercions (`capval_to_arm`, `capval_to_when_arm`, `capval_to_select_arm`) build a
+/// struct with an inner node, and reaching for `error_node` there re-reports the
+/// message a second time — unconditionally, so it both DOUBLE-reports on a clean parse
+/// and defeats this guard on a failed one. `error_node_silent` is the placeholder-only
+/// form; the report above is the single reporting site. Raised in review on #1180.
+fn report_coercion(st: PState, msg: string) {
+    if st.had_error { return }
+    st.report(msg)
+}
+
 export fn capval_to_expr(st: PState, v: CapVal) -> ExprId {
     match v {
         .Node(id) -> id
         .Tok(t) -> literal_node(st, t)
-        _ -> st.error_node("expected expression")
+        _ -> {
+            report_coercion(st, "expected expression")
+            st.store.exprs.add_leaf(Expr.Error)
+        }
     }
 }
 
@@ -4517,14 +4586,7 @@ export fn capval_to_stmt(st: PState, v: CapVal) -> StmtId {
     match v {
         .SNode(id) -> id
         _ -> {
-            // An ABORTED sub-parse is not a shape mismatch — it is a rule that already
-            // reported and handed back `error_node_silent()`. Reporting over it adds a
-            // second diagnostic for one failure, which the hand never does:
-            // `enum E { A( }` is "expected field name" + the caller's F0013, and the
-            // coercion was inserting "expected a statement" between them (t-myz7). The
-            // shape mismatch it was written for — a rule whose build yields the wrong
-            // family — still reports, so the silent-corruption guard is intact.
-            if !capval_is_error_expr(st, v) { st.report("expected a statement") }
+            report_coercion(st, "expected a statement")
             st.store.stmts.add_leaf(Stmt.Error)
         }
     }
@@ -4565,7 +4627,7 @@ export fn capval_to_pat(st: PState, v: CapVal) -> PatId {
     match v {
         .PNode(id) -> id
         _ -> {
-            st.report("expected a pattern")
+            report_coercion(st, "expected a pattern")
             st.store.pats.add_leaf(Pattern.Wildcard)
         }
     }
@@ -4590,7 +4652,7 @@ export fn capval_to_texpr(st: PState, v: CapVal) -> TypeExpr {
     match v {
         .TExpr(te) -> te
         _ -> {
-            st.report("expected a type")
+            report_coercion(st, "expected a type")
             TypeExpr.Infer
         }
     }
@@ -4814,8 +4876,8 @@ export fn capval_to_when_arm(st: PState, v: CapVal) -> WhenArm {
     match v {
         .WArm(a) -> a
         _ -> {
-            st.report("expected a when arm")
-            WhenArm { cond_id: none, body_id: st.error_node("expected a when arm") }
+            report_coercion(st, "expected a when arm")
+            WhenArm { cond_id: none, body_id: st.error_node_silent() }
         }
     }
 }
@@ -5027,7 +5089,7 @@ export fn capval_to_comp_config_pair(st: PState, v: CapVal) -> CompConfigPair {
     match v {
         .CPair(p) -> p
         _ -> {
-            st.report("expected a component config pair")
+            report_coercion(st, "expected a component config pair")
             CompConfigPair { key: "", value: Expr.Missing }
         }
     }
@@ -5037,7 +5099,7 @@ export fn capval_to_comp_config(st: PState, v: CapVal) -> CompConfig {
     match v {
         .CCfg(c) -> c
         _ -> {
-            st.report("expected a config entry")
+            report_coercion(st, "expected a config entry")
             CompConfig { key: "", ty_vt: ValueType.Unknown, default_id: none, ty_id: st.store.ingest_type(ValueType.Unknown, byte_span_none()) }
         }
     }
@@ -5048,7 +5110,7 @@ export fn capval_to_children_slot(st: PState, v: CapVal) -> ChildrenSlot {
     match v {
         .CSlot(c) -> c
         _ -> {
-            st.report("expected a children slot")
+            report_coercion(st, "expected a children slot")
             ChildrenSlot { slot_name: "", child_ty: ValueType.Unknown }
         }
     }
@@ -5059,8 +5121,8 @@ export fn capval_to_select_arm(st: PState, v: CapVal) -> SelectArm {
     match v {
         .SArm(a) -> a
         _ -> {
-            st.report("expected a select arm")
-            SelectArm { binding: "", chan_id: st.error_node("expected a select arm"), body_ids: [] }
+            report_coercion(st, "expected a select arm")
+            SelectArm { binding: "", chan_id: st.error_node_silent(), body_ids: [] }
         }
     }
 }
@@ -5106,7 +5168,7 @@ export fn capval_to_pentry(st: PState, v: CapVal) -> ParamEntry {
     match v {
         .PEntry(p) -> p
         _ -> {
-            st.report("expected a parameter")
+            report_coercion(st, "expected a parameter")
             ParamEntry { name: "", vtype: ValueType.Unknown }
         }
     }
@@ -5119,7 +5181,7 @@ export fn capval_to_ann(st: PState, v: CapVal) -> Annotation {
     match v {
         .Ann(a) -> a
         _ -> {
-            st.report("expected an annotation")
+            report_coercion(st, "expected an annotation")
             Annotation { name: "", arg_ids: [] }
         }
     }
@@ -5131,7 +5193,7 @@ export fn capval_to_field(st: PState, v: CapVal) -> FieldEntry {
     match v {
         .Field(f) -> f
         _ -> {
-            st.report("expected a field")
+            report_coercion(st, "expected a field")
             FieldEntry { name: "", resolved: ValueType.Unknown }
         }
     }
@@ -5142,7 +5204,7 @@ export fn capval_to_variant(st: PState, v: CapVal) -> Variant {
     match v {
         .Var(vv) -> vv
         _ -> {
-            st.report("expected a variant")
+            report_coercion(st, "expected a variant")
             Variant { name: "", fields: [] }
         }
     }
@@ -5976,9 +6038,9 @@ export fn capval_to_arm(st: PState, v: CapVal) -> MatchArm {
     match v {
         .Arm(a) -> a
         _ -> {
-            st.report("expected a match arm")
+            report_coercion(st, "expected a match arm")
             let pid = st.store.pats.add_leaf(Pattern.Wildcard)
-            MatchArm { pattern: Pattern.Wildcard, pattern_id: pid, guard_id: none, body_id: st.error_node("expected a match arm") }
+            MatchArm { pattern: Pattern.Wildcard, pattern_id: pid, guard_id: none, body_id: st.error_node_silent() }
         }
     }
 }
@@ -6000,7 +6062,7 @@ export fn capval_to_finit(st: PState, v: CapVal) -> FieldInit {
     match v {
         .FInit(f) -> f
         _ -> {
-            st.report("expected field name")
+            report_coercion(st, "expected field name")
             FieldInit { name: "", value_id: st.store.exprs.add_leaf(Expr.Error) }
         }
     }
@@ -6077,7 +6139,7 @@ export fn capval_to_tparam(st: PState, v: CapVal) -> TypeParamEntry {
     match v {
         .TParam(tp) -> tp
         _ -> {
-            st.report("expected a type parameter")
+            report_coercion(st, "expected a type parameter")
             TypeParamEntry { name: "", bounds: "" }
         }
     }

@@ -41,10 +41,16 @@ fn releasable_remove(set: List<string>, name: string) -> List<string> {
 /// order, so the algorithm walks the list once — a `let` adds the
 /// name; later uses only ever remove. Forward references therefore
 /// work without a second pass.
-export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr) -> List<string> {
+/// `tail_yields` says whether the body's TAIL EXPRESSION is the frame's
+/// result — i.e. whether this fn declares a non-void return. It cannot be
+/// read off the statements: `println(x.f)` and `pass_db_new(…, p.store, …)`
+/// are the same `.Expr` shape as the last statement, and only the declared
+/// return type says whether the value escapes or is discarded. Callers with
+/// no enclosing fn (program-level statements) pass false.
+export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr, tail_yields: bool) -> List<string> {
     let empty: List<string> = []
     let swept = single_pass_escape_ids(store, body, empty, fresh)
-    remove_returned_field_roots(store, body, swept)
+    remove_returned_field_roots(store, body, swept, tail_yields)
 }
 
 /// Apply the "not returned" half of the rule above to FIELD READS.
@@ -68,20 +74,24 @@ export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr) -
 /// as a post-filter rather than a flag threaded through
 /// `single_pass_stmt`'s 40 arms — both passes only ever REMOVE, so the
 /// order between them cannot matter.
-fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<string>) -> List<string> {
+fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<string>, tail_yields: bool) -> List<string> {
     mut cur = set
     // A `return f(x.g)` yields the CALL'S RESULT, so its arguments escape.
-    // A TAIL statement does not necessarily: `collect_tail_exprs` returns the
-    // last STATEMENT, whose value is often discarded — `println(string(p2.y))`
-    // ending a void fn is not an escape of `p2`, and treating it as one leaks
-    // every such local (caught by difftest_corpus/collections.av). Distinguishing
-    // the two needs the fn's declared return type, which this analysis does not
-    // yet receive; until it does, only explicit returns descend into calls.
+    // A TAIL statement escapes only when its value is the frame's result:
+    // `collect_tail_exprs` returns the last STATEMENT either way, and
+    // `println(string(p2.y))` ending a VOID fn discards it — treating that as
+    // an escape leaks every such local (difftest_corpus/collections.av). The
+    // declared return type is the only thing that separates the two, so it is
+    // threaded in as `tail_yields` rather than guessed from the shape.
     for e in collect_return_exprs(store, body) {
         cur = remove_field_root_calls(store, store.exprs.get(e), cur)
     }
     for e in collect_tail_exprs(store, body) {
-        cur = remove_field_root(store, store.exprs.get(e), cur)
+        if tail_yields {
+            cur = remove_field_root_calls(store, store.exprs.get(e), cur)
+        } else {
+            cur = remove_field_root(store, store.exprs.get(e), cur)
+        }
     }
     cur
 }
@@ -89,22 +99,14 @@ fn remove_returned_field_roots(store: NodeStore, body: List<StmtId>, set: List<s
 /// Drop the root of a field-access chain from the releasable set. A
 /// bare `.Ident` is already removed by the main sweep, so re-removing
 /// it is a no-op; anything else the sweep has handled on its own.
+///
+/// This and `remove_field_root_calls` are ONE walker with a mode flag, not two
+/// implementations. They were two, and the copies drifted twice: composites
+/// dropped the call mode one level in, and NEITHER learned about control flow
+/// (#1174, #1176 — both found in review, both the same shape). A single
+/// traversal cannot drift from itself.
 fn remove_field_root(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
-    match expr {
-        .FieldAccess(obj, _) -> remove_field_root(store, store.exprs.get(obj), set)
-        .Ident(name) -> releasable_remove(set, name)
-        // A returned COMPOSITE carries its parts out of the frame too, so
-        // the rule has to reach inside it — `TypeStructureFps { fps: st.done }`
-        // hands back a field of `st` just as surely as a bare `st.done` does,
-        // and releasing `st` frees what the caller was handed. Walking only
-        // the top-level chain missed exactly this (t-k6lm: the `st` release
-        // in `core::type_structure_fingerprints`).
-        .StructLit(_, inits) -> remove_field_roots_inits(store, inits, set)
-        .With(_, inits) -> remove_field_roots_inits(store, inits, set)
-        .EnumCtor(_, _, args) -> remove_field_roots_args(store, args, set)
-        .Tuple(elems) -> remove_field_roots_args(store, elems, set)
-        _ -> set
-    }
+    remove_field_root_mode(store, expr, set, false)
 }
 
 /// As `remove_field_root`, and ALSO descends through CALLS.
@@ -117,42 +119,75 @@ fn remove_field_root(store: NodeStore, expr: Expr, set: List<string>) -> List<st
 ///
 /// We cannot see into a callee, so a field passed out is an escape
 /// unconditionally — the conservative direction is a leak at worst, the other
-/// is a use-after-free. That conservatism is why this is reserved for explicit
-/// `return`s: applied to a discarded tail statement it leaks on every
+/// is a use-after-free. That conservatism is why this is reserved for ESCAPE
+/// POSITION (an explicit `return`, or a tail whose value is the frame's
+/// result): applied to a discarded tail statement it leaks on every
 /// `println(x.f)`, which is what difftest_corpus/collections.av caught.
 fn remove_field_root_calls(store: NodeStore, expr: Expr, set: List<string>) -> List<string> {
+    remove_field_root_mode(store, expr, set, true)
+}
+
+/// The shared walker. `calls` = "this expression's value ESCAPES the frame",
+/// which is what licenses descending into call arguments and control-flow
+/// arms; with it false the value is discarded and only the plain field-root
+/// chain matters.
+fn remove_field_root_mode(store: NodeStore, expr: Expr, set: List<string>, calls: bool) -> List<string> {
     match expr {
+        .FieldAccess(obj, _) -> remove_field_root_mode(store, store.exprs.get(obj), set, calls)
+        .Ident(name) -> releasable_remove(set, name)
+        // A returned COMPOSITE carries its parts out of the frame too, so
+        // the rule has to reach inside it — `TypeStructureFps { fps: st.done }`
+        // hands back a field of `st` just as surely as a bare `st.done` does,
+        // and releasing `st` frees what the caller was handed. Walking only
+        // the top-level chain missed exactly this (t-k6lm: the `st` release
+        // in `core::type_structure_fingerprints`). The mode RIDES ALONG, so a
+        // call nested in one still escapes: `Holder { inner: keep(p.inner) }`.
+        .StructLit(_, inits) -> remove_field_roots_inits_mode(store, inits, set, calls)
+        .With(_, inits) -> remove_field_roots_inits_mode(store, inits, set, calls)
+        .EnumCtor(_, _, args) -> remove_field_roots_args_mode(store, args, set, calls)
+        .Tuple(elems) -> remove_field_roots_args_mode(store, elems, set, calls)
+        // CONTROL FLOW in escape position: the value handed back comes from a
+        // branch or arm, so each one is itself in escape position. A non-void
+        // fn ending in `match` puts the arm bodies exactly there, and a
+        // block-bodied arm nests one level deeper still (#1176). Only in
+        // escape position — a DISCARDED `match` statement hands back nothing.
+        .Block(body) -> if calls { remove_field_roots_tails(store, body, set) } else { set }
+        .IfExpr(_, t, e) -> if calls {
+            remove_field_root_mode(store, store.exprs.get(e), remove_field_root_mode(store, store.exprs.get(t), set, true), true)
+        } else { set }
+        .MatchExpr(_, arms) -> if calls { remove_field_roots_arms(store, arms, set) } else { set }
         // The CALLEE matters too when it is a field access: a returned
         // `p.method(…)` may hand back a field of `p`, exactly as `p.f` does.
         // Only field-access callees descend — a bare `.Ident` callee is a FN
         // NAME, and removing that would drop an unrelated same-named local.
-        .Call(callee, args) -> remove_field_roots_args_calls(store, args, remove_callee_root(store, callee, set))
-        .GenericCall(_, _, args) -> remove_field_roots_args_calls(store, args, set)
-        .OptionalMethodCall(obj, _, args) -> remove_field_roots_args_calls(store, args, remove_field_root_calls(store, store.exprs.get(obj), set))
+        .Call(callee, args) -> if calls {
+            remove_field_roots_args_mode(store, args, remove_callee_root(store, callee, set), true)
+        } else { set }
+        .GenericCall(_, _, args) -> if calls { remove_field_roots_args_mode(store, args, set, true) } else { set }
+        .OptionalMethodCall(obj, _, args) -> if calls {
+            remove_field_roots_args_mode(store, args, remove_field_root_mode(store, store.exprs.get(obj), set, true), true)
+        } else { set }
         // `x.f ?? default` hands back `x.f` on the non-null path.
-        .NullCoalesce(l, r) -> remove_field_root_calls(store, store.exprs.get(r), remove_field_root_calls(store, store.exprs.get(l), set))
-        // A returned COMPOSITE is STILL escape position, so a call inside it
-        // escapes its arguments too — `return Holder { inner: keep(p.inner) }`
-        // is the same over-release as the bare `return keep(p.inner)`.
-        // Delegating these to the plain walker drops the call-descending mode
-        // at the first level of nesting (caught in review on #1174).
-        .StructLit(_, inits) -> remove_field_roots_inits_calls(store, inits, set)
-        .With(_, inits) -> remove_field_roots_inits_calls(store, inits, set)
-        .EnumCtor(_, _, args) -> remove_field_roots_args_calls(store, args, set)
-        .Tuple(elems) -> remove_field_roots_args_calls(store, elems, set)
-        _ -> remove_field_root(store, expr, set)
+        .NullCoalesce(l, r) -> if calls {
+            remove_field_root_mode(store, store.exprs.get(r), remove_field_root_mode(store, store.exprs.get(l), set, true), true)
+        } else { set }
+        _ -> set
     }
 }
 
-/// `remove_field_roots_inits` for a RETURNED composite — every initializer is
-/// in escape position, so nested calls inside one escape too.
-fn remove_field_roots_inits_calls(store: NodeStore, inits: List<FieldInit>, set: List<string>) -> List<string> {
+/// Every arm body of a returned `match` is in escape position.
+fn remove_field_roots_arms(store: NodeStore, arms: List<MatchArm>, set: List<string>) -> List<string> {
     mut acc = set
-    mut i = 0
-    while i < inits.length {
-        acc = remove_field_root_calls(store, store.exprs.get(inits[i].value_id), acc)
-        i = i + 1
-    }
+    for arm in arms { acc = remove_field_root_mode(store, store.exprs.get(arm.body_id), acc, true) }
+    acc
+}
+
+/// A returned BLOCK yields its tail, so the tail is in escape position.
+/// Reuses `collect_tail_exprs` so block / if / nested-block tails are found
+/// by the same rule the statement level already uses.
+fn remove_field_roots_tails(store: NodeStore, body: List<StmtId>, set: List<string>) -> List<string> {
+    mut acc = set
+    for e in collect_tail_exprs(store, body) { acc = remove_field_root_mode(store, store.exprs.get(e), acc, true) }
     acc
 }
 
@@ -167,34 +202,26 @@ fn remove_callee_root(store: NodeStore, callee: ExprId, set: List<string>) -> Li
     }
 }
 
-fn remove_field_roots_inits(store: NodeStore, inits: List<FieldInit>, set: List<string>) -> List<string> {
+/// Fold over a composite's initializers, CARRYING the escape mode — the one
+/// place that used to have a `_calls` twin, which is how the mode got dropped.
+fn remove_field_roots_inits_mode(store: NodeStore, inits: List<FieldInit>, set: List<string>, calls: bool) -> List<string> {
     mut acc = set
     mut i = 0
     while i < inits.length {
-        acc = remove_field_root(store, store.exprs.get(inits[i].value_id), acc)
+        acc = remove_field_root_mode(store, store.exprs.get(inits[i].value_id), acc, calls)
         i = i + 1
     }
     acc
 }
 
-/// `remove_field_roots_args` for arguments of a RETURNED call — every
-/// argument is already in escape position, so nested calls and `??` inside
-/// one escape too (`keep(p.inner ?? Inner { n: 0 })`).
-fn remove_field_roots_args_calls(store: NodeStore, args: List<ExprId>, set: List<string>) -> List<string> {
+/// Fold over call arguments / tuple elements, carrying the escape mode. In
+/// escape position every argument is itself in escape position, so nested
+/// calls and `??` inside one escape too (`keep(p.inner ?? Inner { n: 0 })`).
+fn remove_field_roots_args_mode(store: NodeStore, args: List<ExprId>, set: List<string>, calls: bool) -> List<string> {
     mut acc = set
     mut i = 0
     while i < args.length {
-        acc = remove_field_root_calls(store, store.exprs.get(args[i]), acc)
-        i = i + 1
-    }
-    acc
-}
-
-fn remove_field_roots_args(store: NodeStore, args: List<ExprId>, set: List<string>) -> List<string> {
-    mut acc = set
-    mut i = 0
-    while i < args.length {
-        acc = remove_field_root(store, store.exprs.get(args[i]), acc)
+        acc = remove_field_root_mode(store, store.exprs.get(args[i]), acc, calls)
         i = i + 1
     }
     acc
@@ -231,7 +258,11 @@ fn collect_tail_exprs(store: NodeStore, ids: List<StmtId>) -> List<ExprId> {
 /// inner `List<StmtId>`.
 export fn analyze_releasable_expr(store: NodeStore, body: Expr, fresh: ptr) -> List<string> {
     match body {
-        .Block(stmts) -> analyze_releasable(store, stmts, fresh)
+        // A lambda's block TAIL is its value — `(x) -> { … }` yields the last
+        // expression — so tails escape here. True is also the safe direction
+        // if a particular lambda is used for effect only: over-removing costs
+        // a leak, under-removing is a use-after-free.
+        .Block(stmts) -> analyze_releasable(store, stmts, fresh, true)
         _ -> {
             let empty: List<string> = []
             empty
@@ -1191,6 +1222,29 @@ fn refine_return_fresh(store: NodeStore, ids: List<StmtId>, cands: ptr, mod_path
 /// each explicit `return` anywhere inside it, plus the body's tail
 /// expression (Avra returns the last expression implicitly).
 fn fn_returns_fresh(store: NodeStore, body: List<StmtId>, cands: ptr) -> bool {
+    // A body we cannot SEE proves nothing, and an EMPTY one is vacuously
+    // fresh: there are no returns to collect, and `tail_is_fresh` answers
+    // true at `body.length == 0`. That is not a hypothetical shape — the
+    // metadata fast-path synthesizes a signature-only stub for every
+    // non-generic `@std` export (`Stmt.Function(n, …, empty_body)`,
+    // build/metadata_synthesize.av), which is exactly how the whole stubbed
+    // `@std` surface entered the candidate set at once.
+    //
+    // Measured (t-k6lm): `extract_unit_metadata` returns a `UnitMetadata`
+    // whose entry strings are BORROWED from the AST store and shared across
+    // every slice extracted from it. Admitted as fresh, the caller's
+    // `let whole = extract_unit_metadata(…)` became releasable and the
+    // recursive `__release_UnitMetadata` freed children the next slice still
+    // held — `avra_rc_release received a pointer to freed RC memory` in
+    // tests/per_file_metadata_fixtures/sample.av under AVRA_RC_STRICT=1.
+    // It reproduces ONLY through the fast path: a whole-program compile sees
+    // the real body and denies it on the field reads, which is why a plain
+    // `diagnose.sh --run` passes and the test suite does not.
+    //
+    // A genuine `fn f() {}` returns unit and has nothing to own, so denying
+    // it costs nothing. The bias is this file's stated one: a miss leaks, a
+    // false hit double-frees.
+    if body.length == 0 { return false }
     for e in collect_return_exprs(store, body) {
         if !expr_is_fresh(store, store.exprs.get(e), cands) { return false }
     }
@@ -1327,7 +1381,22 @@ fn init_is_owned(store: NodeStore, e: Expr, cands: ptr) -> bool {
     match e {
         .Number(_) -> true
         .FloatLit(_) -> true
-        .String(_) -> true
+        // A string LITERAL is NOT an allocation the holder owns, so the
+        // recursive `__release_<T>` would free a pointer this struct never
+        // took a tick on. Every other literal here is a SCALAR — no ptr
+        // field, nothing to release — so `.String` is the only arm of this
+        // match that can misfire, and the only one that needs denying.
+        //
+        // Measured (t-k6lm): `error_def` (diagnostics) returns
+        // `ErrorDef { code: "F0001", help: "…" }` from every match arm. With
+        // `true` here, all-literal arms made the fn FRESH, which made
+        // `lang_gen::render_one_diag`'s `let def = error_def(code)`
+        // RELEASABLE — the single releasable local the fresh set adds across
+        // the whole @std::avrac lib build — and its release freed the two
+        // literals. Denying is the leak direction, which is this analysis's
+        // stated bias: "the cost is a leak left unfixed, never an
+        // over-release".
+        .String(_) -> false
         .Bool(_) -> true
         .None -> true
         _ -> expr_is_fresh(store, e, cands)

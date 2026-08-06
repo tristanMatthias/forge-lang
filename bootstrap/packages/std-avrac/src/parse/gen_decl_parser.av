@@ -2122,17 +2122,20 @@ fn parse_type_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
-                if !(st.cur().tk == Tk.Identifier) {
-                    st.report("expected type parameter name")
-                } else {
-                    tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
-                }
-                while st.cur().tk == Tk.Comma {
-                    let _ = st.advance()
+                if lookahead_ok("not_gt", st) {
+                    st.set_abort_prop(false)
                     if !(st.cur().tk == Tk.Identifier) {
                         st.report("expected type parameter name")
                     } else {
                         tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+                    }
+                    while st.cur().tk == Tk.Comma {
+                        let _ = st.advance()
+                        if !(st.cur().tk == Tk.Identifier) {
+                            st.report("expected type parameter name")
+                        } else {
+                            tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+                        }
                     }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
@@ -2358,17 +2361,20 @@ fn parse_enum_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
-                if !(st.cur().tk == Tk.Identifier) {
-                    st.report("expected type parameter name")
-                } else {
-                    tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
-                }
-                while st.cur().tk == Tk.Comma {
-                    let _ = st.advance()
+                if lookahead_ok("not_gt", st) {
+                    st.set_abort_prop(false)
                     if !(st.cur().tk == Tk.Identifier) {
                         st.report("expected type parameter name")
                     } else {
                         tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+                    }
+                    while st.cur().tk == Tk.Comma {
+                        let _ = st.advance()
+                        if !(st.cur().tk == Tk.Identifier) {
+                            st.report("expected type parameter name")
+                        } else {
+                            tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+                        }
                     }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
@@ -2624,10 +2630,12 @@ fn parse_trait_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
-                let _ = parse_tparam(st)
-                while st.cur().tk == Tk.Comma {
-                    let _ = st.advance()
+                if st.cur().tk == Tk.Identifier {
                     let _ = parse_tparam(st)
+                    while st.cur().tk == Tk.Comma {
+                        let _ = st.advance()
+                        let _ = parse_tparam(st)
+                    }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
                     st.report("expected >")
@@ -2856,10 +2864,12 @@ fn parse_impl_decl(st: PState) -> CapVal {
             if !s_cut { break }
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
-                let _ = parse_tparam(st)
-                while st.cur().tk == Tk.Comma {
-                    let _ = st.advance()
+                if st.cur().tk == Tk.Identifier {
                     let _ = parse_tparam(st)
+                    while st.cur().tk == Tk.Comma {
+                        let _ = st.advance()
+                        let _ = parse_tparam(st)
+                    }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
                     st.report("expected >")
@@ -2875,10 +2885,12 @@ fn parse_impl_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
-                let _ = parse_type_expr(st)
-                while st.cur().tk == Tk.Comma {
-                    let _ = st.advance()
+                if tok_starts_type(st.cur()) {
                     let _ = parse_type_expr(st)
+                    while st.cur().tk == Tk.Comma {
+                        let _ = st.advance()
+                        let _ = parse_type_expr(st)
+                    }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
                     st.report("expected >")
@@ -2895,10 +2907,12 @@ fn parse_impl_decl(st: PState) -> CapVal {
                 }
                 if st.cur().tk == Tk.Less {
                     let _ = st.advance()
-                    let _ = parse_type_expr(st)
-                    while st.cur().tk == Tk.Comma {
-                        let _ = st.advance()
+                    if tok_starts_type(st.cur()) {
                         let _ = parse_type_expr(st)
+                        while st.cur().tk == Tk.Comma {
+                            let _ = st.advance()
+                            let _ = parse_type_expr(st)
+                        }
                     }
                     if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
                         st.report("expected >")

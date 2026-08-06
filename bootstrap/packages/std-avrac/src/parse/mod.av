@@ -1086,14 +1086,14 @@ impl Parser {
             // the orphan-Error-row + cascade source the full-program flip hit).
             // A GRAMMAR-NATIVE diagnostic lives on the DSL RESULT, not on the
             // delegate's bag: the generated parser (and the interpreter) report into
-            // their own PState, and `dsl.diag` carries the first message out. Merging
-            // only `d.bag` therefore DROPS it, leaving had_error set with no
-            // diagnostic — which is precisely why every leaf still needed an
-            // `@hand(*_edge)` sibling whose only job was to own the message. Surface
-            // it whenever the delegate itself reported nothing, so a native rule can
-            // carry its own diagnostics. (The span is this parser's current position
-            // rather than the exact mismatch byte; the F-code and message match the
-            // hand parser, which is what the recovery oracle compares.)
+            // their own PState, and `dsl.diags` carries them out. Merging only `d.bag`
+            // therefore DROPS them, leaving had_error set with no diagnostic — which is
+            // precisely why every leaf still needed an `@hand(*_edge)` sibling whose only
+            // job was to own the message. Surface them whenever the delegate itself
+            // reported nothing, so a native rule can carry its own diagnostics. (The span
+            // is this parser's current position rather than the exact mismatch byte; the
+            // F-code and message match the hand parser, which is what the recovery oracle
+            // compares.)
             // The CODE comes from the rule that reported (t-47hc.5), not from a single
             // default for every grammar diagnostic. `SyntaxError` is right for the
             // declaration keywords' own messages, but the expression alternation's
@@ -1101,23 +1101,26 @@ impl Parser {
             // as F0001 was the single divergence keeping `@hand(primary_base)` alive.
             // An uncoded diagnostic keeps the previous default, so every rule that has
             // not opted in behaves exactly as before.
-            // EVERY native diagnostic crosses, not just the first (t-myz7). `dsl.diag` is
-            // a one-diagnostic summary, and while it was the only channel a rule that
-            // reported twice lost the second message — which the hand shows, because it
-            // reports straight into this bag and `report` says at its own site that it
-            // keeps every parse error. Both halves of `type Foo<T { x: int }` are the
-            // case: "expected `>` after type parameters" AND "expected `=` after type
-            // name", from a hand path that then `return .Err`s. So aborting is NOT a
-            // reason to drop the rest — a native rule's extra diagnostics on an abort
-            // were COERCION noise (`capval_to_*` reporting over a silent error node),
-            // and that is fixed where it is produced, in emit's gated element.
-            if d.bag.diagnostics.length == 0 && dsl.diag != "" {
-                for gd in dsl.diags {
+            //
+            // ALL of them, in order, not just the first (t-myz7). A committed native rule
+            // owns its recovery completely, and recovery reports more than once: the hand
+            // answers `enum E< { A }` with "expected type parameter name" AND "expected
+            // `>` after type parameters". The native rule generated both and this seam
+            // discarded the second, so no grammar could have matched the hand here. The
+            // recovery oracle compares the ORDERED F-code signature with duplicates
+            // preserved, which is exactly what a one-diagnostic boundary cannot serve.
+            // `Parser.report` appends unconditionally ("show ALL parse errors, not just
+            // the first"), so the loop lands N bag entries in report order.
+            if d.bag.diagnostics.length == 0 {
+                mut gi = 0
+                while gi < dsl.diags.length {
+                    let gd = dsl.diags[gi]
                     if gd.code == "F0040" {
                         self.report(DiagCode.ExpectedExpression, gd.msg)
                     } else {
                         self.set_error(gd.msg)
                     }
+                    gi = gi + 1
                 }
             }
             self.bag = bag_merge(self.bag, d.bag)

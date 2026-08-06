@@ -376,6 +376,97 @@ spec "t-myz7: the cross-view `param` message is not allowed to drift" {
     }
 }
 
+spec "t-myz7: a rule-name-keyed @expect reaches the EMITTED parser" {
+    then "the gated call on `trait_member` carries the declared wording, not the rule name" {
+        // The guard the `param` spec above CANNOT be. That one compares the grammar with
+        // a string, so it stays green no matter what emit does with the annotation — and
+        // that blind spot is exactly where a bug lived: `rule_first_expect_msg` read the
+        // rule-name-keyed `@expect` off `branches[0]` only, while `trait_member =
+        // assoc_member | method_member @expect("trait_member", …)` binds it to the LAST
+        // branch. The lookup missed it, `gated_first_check` fell back to its generic
+        // path, and the emitted parser reported `expected trait_member` — a GRAMMAR RULE
+        // NAME, printed at a user.
+        //
+        // Note `declared_expect` below scans EVERY branch (it always did). The emitter
+        // scanning only the first is what the two disagreed about, so a guard that reads
+        // the grammar on both sides could never see it. This one reads the EMITTED
+        // source, so it can.
+        let declared = declared_expect("trait_member", "trait_member")
+        let src = emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+        declared != "" &&
+            src.contains(declared) &&
+            !src.contains("expected trait_member")
+    }
+}
+
+/// Every `declaration` branch that is `@try` AND refers to a rule containing `@cut`.
+/// Empty is the invariant; each entry is an inert commit.
+fn inert_committed_branches() -> List<string> {
+    let g = avra_decl_dispatch_grammar()
+    mut out: List<string> = []
+    let d = emit_lookup_rule(g, "declaration")
+    match d.body {
+        .Alt(branches) -> {
+            for b in branches {
+                if b.speculative {
+                    for it in b.items {
+                        match it.prim {
+                            .Ref(rname) -> {
+                                let r = emit_lookup_rule(g, rname)
+                                if r.name != "" && rule_body_has_cut(r.body) { out.push(rname) }
+                            }
+                            _ -> {}
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+spec "t-myz7: a `@cut`-committed rule is never dispatched under `@try`" {
+    then "no `declaration` branch is both speculative and committed" {
+        // THE INERT-COMMIT TRAP, made detectable. `@try X` where `X` commits internally
+        // is a no-op: the branch snapshots diagnostics and rolls back the instant the
+        // rule reports, so the `@cut` — whose entire purpose is "do not roll back past
+        // this point" — is discarded by a wrapper one level up, and the `@hand(decl_hand)`
+        // gate below answers exactly as it did before.
+        //
+        // Nothing else in this suite can see that. The emitted parser changes, the rule
+        // genuinely commits, `--hand-leaves` does not move, and every recovery oracle
+        // still AGREES — because the hand is still the one recovering. It was measured as
+        // "corpus unchanged before and after, therefore the commit is clean" when the
+        // truth was "corpus unchanged, therefore the commit did nothing", and the two are
+        // indistinguishable from output alone. The refusal probe below distinguishes them
+        // for a keyword you already suspect; this says which keywords to suspect.
+        //
+        // The FIX when this fires is not to drop the `@cut` — it is to dispatch the rule
+        // BARE, which is how `use` / `mod` / `shape` / `trait` / `const` are already
+        // wired. Their own leading `@try … @cut` is what makes "not my keyword" roll back,
+        // so the dispatcher wrapper is redundant there and destructive here.
+        let inert = inert_committed_branches()
+        if inert.length > 0 { println("inert @try over committed rule(s): " + inert.join(", ")) }
+        inert.length == 0
+    }
+
+    then "the scan DISCRIMINATES — it finds the committed rules it is looking at" {
+        // Anti-vacuity: an `inert_committed_branches` that never detected anything would
+        // satisfy the assertion above perfectly. `rule_body_has_cut` must actually answer
+        // true for a rule that commits (every routed keyword does) and false for one that
+        // does not, or the invariant is a guard that cannot fail.
+        // The false case is keyed on `field` / `variant` — SUB-rules, never dispatched
+        // as declaration branches, so they have no reason to ever gain a `@cut`. Keying
+        // it on a decl keyword instead would make this arm flip red the day that keyword
+        // is legitimately committed, i.e. it would fail for being RIGHT.
+        let g = avra_decl_dispatch_grammar()
+        rule_body_has_cut(emit_lookup_rule(g, "shape_decl").body) &&
+            rule_body_has_cut(emit_lookup_rule(g, "trait_decl").body) &&
+            !rule_body_has_cut(emit_lookup_rule(g, "field").body) &&
+            !rule_body_has_cut(emit_lookup_rule(g, "variant").body)
+    }
+}
+
 spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     then "the probe is DORMANT unless asked" {
         // A guard that cannot fail is worth nothing, and a probe that fires by

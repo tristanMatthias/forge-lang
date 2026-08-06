@@ -28,6 +28,7 @@ use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont
 use features.grammar.{build_rule_index}
 use features.grammar.{rep_is_one, grep_is_multi, onfail_policy_supported}
 use features.grammar.{gprim_ref_name, emit_lookup_rule, rule_result_kind}
+use features.grammar.{list_labels_of}
 use diagnostics.{diag_ice, render_diagnostic}
 
 // ── The DSL token stream ──
@@ -575,7 +576,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `body` followed by `:` (t-47hc slice A). `kw_let`: the current token is the
     // `let` keyword — comp_field's declared-dispatch gate over `declaration`'s
     // routed let_decl. See executor.lookahead_ok for both.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_lbrace_feature" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "not_rparen" || cond == "not_rbrace" || cond == "comma_not_rbracket" || cond == "comma_not_rbrace" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let" || cond == "cfg_pair_value" || cond == "cfg_pair_eq" || cond == "comp_inst_shape" || cond == "comp_nested_named" || cond == "comp_nested_bare" || cond == "comp_nested_raw_named" || cond == "comp_nested_raw_bare" || cond == "comp_method" || cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" || cond == "always"
+    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "not_gt" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_lbrace_feature" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "not_rparen" || cond == "not_rbrace" || cond == "comma_not_rbracket" || cond == "comma_not_rbrace" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let" || cond == "cfg_pair_value" || cond == "cfg_pair_eq" || cond == "comp_inst_shape" || cond == "comp_nested_named" || cond == "comp_nested_bare" || cond == "comp_nested_raw_named" || cond == "comp_nested_raw_bare" || cond == "comp_method" || cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" || cond == "always"
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -967,8 +968,15 @@ fn check_bound_node_in(node: GNode, rule: string, outer_lists: List<string>, out
                 for l in outer_seen { seen.push(l) }
                 for item in b.items {
                     if item.onfail_cap != "" {
-                        if name_in(lists, item.onfail_cap) {
-                            // fine — a list capture collected earlier in this branch
+                        // Consult the EMITTER's own answer (`list_labels_of`) rather than the
+                        // incremental `lists` prefix: emit declares every `<label>_list`
+                        // accumulator at BRANCH level, including labels bound inside nested
+                        // groups, and the discard assigns to exactly that local. The prefix scan
+                        // is right for `{#cap}` (which must only see captures to its LEFT) and
+                        // wrong here — `( "<" ( … tparams … )? @onfail(discard, tparams) ">" )?`
+                        // binds through a nested group, which the prefix cannot see.
+                        if name_in(list_labels_of(b), item.onfail_cap) {
+                            // fine — the branch declares a `<label>_list` accumulator
                         } else if name_in(seen, item.onfail_cap) {
                             return "`@onfail(discard, ${item.onfail_cap})` in rule `${rule}` names a scalar capture — discard throws away a LIST (one collected by `*`/`+`)"
                         } else {
@@ -1264,6 +1272,18 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                 let this_fold = in_fold || branch_is_expr_fold(b)
                 // Item index, skipping the zero-width predicates the emitters skip —
                 // so index 0 is the sequence's GUARD token.
+                // A branch entered on a zero-width PREDICATE is not entered on its first
+                // ITEM's FIRST — `@peek`/`@when` decide it, and the item behind them is
+                // never pre-proved. So the leading-item rule below, whose whole premise is
+                // "that position is the FIRST-set guard", does not apply to such a branch
+                // (t-myz7). `( @peek(not_gt) @onfail(skip) tparams:tparam … )?` is the shape:
+                // the peek says only that the token is not the closing `>`, which leaves
+                // "…and it had better be a type parameter name" for the marker to say.
+                mut pred_led = false
+                for pit in b.items {
+                    if prim_is_pred(pit.prim) { pred_led = true }
+                    break
+                }
                 mut idx = 0
                 for item in b.items {
                     if item.cut {
@@ -1341,7 +1361,7 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                         // (index_tail's "expected `]` after index" on `a[1 2]`). This
                         // exemption was implicit while the accessors swallowed grammar
                         // errors; grammar_checked made the validator's over-reach loud.
-                        if idx == 0 && !b.fallback {
+                        if idx == 0 && !b.fallback && !pred_led {
                             return "`@require` cannot sit on a sequence's leading item (rule `${rule}`) — that position is the FIRST-set guard; mark the item that must follow it"
                         }
                     }
@@ -1360,7 +1380,7 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                         if this_fold {
                             return "`@onfail(skip)` cannot appear on an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the skip"
                         }
-                        if idx == 0 && !b.fallback {
+                        if idx == 0 && !b.fallback && !pred_led {
                             return "`@onfail(skip)` cannot sit on a sequence's leading item (rule `${rule}`) — that position is the FIRST-set guard, which has already proved the reference starts here"
                         }
                     }
