@@ -21,6 +21,21 @@ spec "list ops" {
         let empty = []
         empty.length == 0
     }
+    // `clear` was in the method vocabulary (resolve/mod.av) with no codegen arm, so
+    // reaching it was an ICE rather than a diagnostic — green in every test because
+    // nothing in the tree called it. It is the one list method whose absence a spec
+    // could not have caught, which is exactly why it gets one now.
+    then "clear empties the list in place" {
+        mut nums = [10, 20, 30]
+        nums.clear()
+        nums.length == 0
+    }
+    then "clear leaves the list usable" {
+        mut nums = [10, 20, 30]
+        nums.clear()
+        nums.push(99)
+        nums.length == 1 && nums[0] == 99
+    }
     then "list sum via loop" {
         let nums = [10, 20, 30]
         mut sum = 0
