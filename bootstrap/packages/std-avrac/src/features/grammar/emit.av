@@ -40,6 +40,7 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 // t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
 // The local wrappers below delegate to it so the two engines cannot drift.
 use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, seq_is_leading_hand, rule_owns_recovery}
+use features.grammar.{ExpectHit, expect_for, rule_own_expect_msg, rule_first_expect_msg, rule_first_expect_msg_leaf, gated_ref_of}
 use features.grammar.{is_hand_stmt_leaf, is_hand_expr_leaf}
 use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule, hand_kind}
 
@@ -1816,132 +1817,6 @@ fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
     "${ind}}\n"
 }
 
-fn gated_ref_of(node: GNode) -> GatedRef {
-    match node {
-        .Alt(branches) -> {
-            for b in branches {
-                for it in b.items {
-                    if it.gate {
-                        match it.prim {
-                            .Ref(nm) -> return GatedRef { found: true, rule: nm }
-                            _ -> {}
-                        }
-                    }
-                }
-            }
-            GatedRef { found: false, rule: "" }
-        }
-    }
-}
-
-/// The message a rule uses when its own FIRST token is absent — its first branch's
-/// `@expect` for that token's kind. Empty when the rule declares none.
-/// One hop of `rule_first_expect_msg` with NO further `.Ref` following — the
-/// recursion stopper. Keeps the walk bounded at a single delegation step.
-/// A rule-name-keyed `@expect` describes the RULE, not one of its branches, so
-/// it is found wherever the author wrote it.
-///
-/// Reading it off `branches[0]` alone made the message depend on which side of
-/// the `|` it happened to sit on. `trait_member = assoc_member | method_member
-/// @expect("trait_member", …)` binds the annotation to the LAST branch, so the
-/// lookup missed it and `gated_first_check` fell back to printing the GRAMMAR
-/// RULE NAME at the user — the exact "expected trait_member" this convention
-/// exists to prevent. Scanning every branch is what makes the annotation mean
-/// what it reads as.
-fn rule_own_expect_msg(branches: List<GSeq>, name: string) -> string {
-    for b in branches {
-        let own = expect_for(b.annots, name)
-        if own.found { return own.msg }
-    }
-    ""
-}
-
-fn rule_first_expect_msg_leaf(g: Grammar, name: string) -> string {
-    let r = emit_lookup_rule(g, name)
-    if r.name == "" { return "" }
-    match r.body {
-        .Alt(branches) -> {
-            if branches.length == 0 { return "" }
-            let b = branches[0]
-            let own_msg = rule_own_expect_msg(branches, name)
-            if own_msg != "" { return own_msg }
-            for it in b.items {
-                match it.prim {
-                    .Named(tok) -> {
-                        let e = expect_for(b.annots, tok)
-                        if e.found { return e.msg }
-                        return ""
-                    }
-                    .Lit(text) -> {
-                        let e = expect_for(b.annots, text)
-                        if e.found { return e.msg }
-                        return ""
-                    }
-                    _ -> {}
-                }
-            }
-            ""
-        }
-    }
-}
-
-fn rule_first_expect_msg(g: Grammar, name: string) -> string {
-    let r = emit_lookup_rule(g, name)
-    if r.name == "" {
-        // CROSS-VIEW rules — the pair of rule_first_guard's declared-FIRST table just
-        // below. A rule DEFINED in another view is genuinely absent from this grammar,
-        // so its `@expect` cannot be read no matter how the annotation is written: the
-        // decl parser calls the separately generated expression parser for these.
-        // `param` is the caught instance (declared FIRST added by slice 10.13 when
-        // routing fn/extern/trait/impl made parameter lists reachable from the decl
-        // view) — a gated call on it fell back to the generic "expected param" while
-        // `field` and `variant`, which ARE local, resolved correctly. Declare the
-        // message here, beside the FIRST it pairs with, so the two stay together.
-        if name == "param" { return "expected parameter name" }
-        return ""
-    }
-    match r.body {
-        .Alt(branches) -> {
-            if branches.length == 0 { return "" }
-            let b = branches[0]
-            // A message keyed on the RULE'S OWN NAME. The token-keyed lookups below can
-            // only answer for a rule whose first branch LEADS with a terminal; an
-            // ALTERNATION-led rule (`trait_member = assoc_member | method_member`) has
-            // no single leading token, so it fell through to `gated_first_check`'s
-            // generic fallback and printed a GRAMMAR RULE NAME at the user
-            // ("expected trait_member"). Same convention `@require` on a rule reference
-            // uses, so one spelling covers both markers.
-            let own_msg = rule_own_expect_msg(branches, name)
-            if own_msg != "" { return own_msg }
-            for it in b.items {
-                match it.prim {
-                    .Named(tok) -> {
-                        let e = expect_for(b.annots, tok)
-                        if e.found { return e.msg }
-                        return ""
-                    }
-                    .Lit(text) -> {
-                        let e = expect_for(b.annots, text)
-                        if e.found { return e.msg }
-                        return ""
-                    }
-                    // Follow ONE leading rule reference, then stop. A branch that begins
-                    // by delegating (`x = y …`) has its wording on `y`, and resolving it
-                    // is what keeps the derivation general instead of accumulating a
-                    // hardcode per rule. Bounded to one hop rather than guarded by a
-                    // visited set: a single step cannot cycle, and an unbounded walk
-                    // through a left-recursive grammar could.
-                    .Ref(inner) -> {
-                        if inner == name { return "" }
-                        return rule_first_expect_msg_leaf(g, inner)
-                    }
-                    _ -> {}
-                }
-            }
-            ""
-        }
-    }
-}
 
 fn node_has_gate(node: GNode) -> bool {
     match node {
@@ -3292,19 +3167,6 @@ fn join_commas(xs: List<string>) -> string {
 
 // ── @expect / @recover lookup ──
 
-type ExpectHit = { found: bool, msg: string }
-
-fn expect_for(annots: List<GAnnot>, tok: string) -> ExpectHit {
-    for a in annots {
-        match a {
-            .Expect(t, m) -> {
-                if t == tok { return ExpectHit { found: true, msg: m } }
-            }
-            _ -> {}
-        }
-    }
-    ExpectHit { found: false, msg: "" }
-}
 
 fn recover_target(annots: List<GAnnot>) -> string {
     for a in annots {

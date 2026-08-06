@@ -735,3 +735,165 @@ export fn emit_lookup_rule(g: Grammar, name: string) -> Rule {
     }
     Rule { name: "", body: GNode.Alt([]) }
 }
+
+// ── @expect lookup + the gated-call FIRST message (SHARED) ──
+//
+// These live here, not in emit.av, because BOTH engines need them and emit.av is
+// deliberately unreachable from executor.av (the production parser). emit renders
+// `gated_first_check` from them; the executor's `gated_first_ok` reads the same
+// message for the same gated call. Split across the two modules they would drift,
+// and a gate-message drift is invisible on VALID input by construction — which is
+// the whole reason routing bugs in this area ship green.
+
+export type ExpectHit = { found: bool, msg: string }
+
+export fn expect_for(annots: List<GAnnot>, tok: string) -> ExpectHit {
+    for a in annots {
+        match a {
+            .Expect(t, m) -> {
+                if t == tok { return ExpectHit { found: true, msg: m } }
+            }
+            _ -> {}
+        }
+    }
+    ExpectHit { found: false, msg: "" }
+}
+
+
+/// The message a rule uses when its own FIRST token is absent — its first branch's
+/// `@expect` for that token's kind. Empty when the rule declares none.
+/// One hop of `rule_first_expect_msg` with NO further `.Ref` following — the
+/// recursion stopper. Keeps the walk bounded at a single delegation step.
+/// A rule-name-keyed `@expect` describes the RULE, not one of its branches, so
+/// it is found wherever the author wrote it.
+///
+/// Reading it off `branches[0]` alone made the message depend on which side of
+/// the `|` it happened to sit on. `trait_member = assoc_member | method_member
+/// @expect("trait_member", …)` binds the annotation to the LAST branch, so the
+/// lookup missed it and `gated_first_check` fell back to printing the GRAMMAR
+/// RULE NAME at the user — the exact "expected trait_member" this convention
+/// exists to prevent. Scanning every branch is what makes the annotation mean
+/// what it reads as.
+export fn rule_own_expect_msg(branches: List<GSeq>, name: string) -> string {
+    for b in branches {
+        let own = expect_for(b.annots, name)
+        if own.found { return own.msg }
+    }
+    ""
+}
+
+/// The `@expect` message for a rule DEFINED IN ANOTHER VIEW — the pair of
+/// rule_first_guard's declared-FIRST table.
+///
+/// Such a rule is genuinely absent from this grammar, so its `@expect` cannot be read
+/// no matter how the annotation is written: the decl parser calls the separately
+/// generated expression parser for these. `param` is the caught instance (its declared
+/// FIRST was added by slice 10.13, when routing fn/extern/trait/impl made parameter
+/// lists reachable from the decl view) — a gated call on it fell back to the generic
+/// "expected param" while `field` and `variant`, which ARE local, resolved correctly.
+///
+/// ONE table, consulted by BOTH `rule_first_expect_msg` and its `_leaf` twin. It lived
+/// only in the former, so a delegation through a leading `.Ref("param")` — the leaf's
+/// entire job — dropped the message and printed the grammar rule name at a user. No
+/// production rule leads with that ref today, so this is a latent hole rather than a
+/// live bug; a second copy of the table would be the durable defect, which is why it
+/// moves here instead.
+fn cross_view_expect_msg(name: string) -> string {
+    if name == "param" { return "expected parameter name" }
+    ""
+}
+
+export fn rule_first_expect_msg_leaf(g: Grammar, name: string) -> string {
+    let r = emit_lookup_rule(g, name)
+    if r.name == "" { return cross_view_expect_msg(name) }
+    match r.body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return "" }
+            let b = branches[0]
+            let own_msg = rule_own_expect_msg(branches, name)
+            if own_msg != "" { return own_msg }
+            for it in b.items {
+                match it.prim {
+                    .Named(tok) -> {
+                        let e = expect_for(b.annots, tok)
+                        if e.found { return e.msg }
+                        return ""
+                    }
+                    .Lit(text) -> {
+                        let e = expect_for(b.annots, text)
+                        if e.found { return e.msg }
+                        return ""
+                    }
+                    _ -> {}
+                }
+            }
+            ""
+        }
+    }
+}
+
+export fn rule_first_expect_msg(g: Grammar, name: string) -> string {
+    let r = emit_lookup_rule(g, name)
+    if r.name == "" { return cross_view_expect_msg(name) }
+    match r.body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return "" }
+            let b = branches[0]
+            // A message keyed on the RULE'S OWN NAME. The token-keyed lookups below can
+            // only answer for a rule whose first branch LEADS with a terminal; an
+            // ALTERNATION-led rule (`trait_member = assoc_member | method_member`) has
+            // no single leading token, so it fell through to `gated_first_check`'s
+            // generic fallback and printed a GRAMMAR RULE NAME at the user
+            // ("expected trait_member"). Same convention `@require` on a rule reference
+            // uses, so one spelling covers both markers.
+            let own_msg = rule_own_expect_msg(branches, name)
+            if own_msg != "" { return own_msg }
+            for it in b.items {
+                match it.prim {
+                    .Named(tok) -> {
+                        let e = expect_for(b.annots, tok)
+                        if e.found { return e.msg }
+                        return ""
+                    }
+                    .Lit(text) -> {
+                        let e = expect_for(b.annots, text)
+                        if e.found { return e.msg }
+                        return ""
+                    }
+                    // Follow ONE leading rule reference, then stop. A branch that begins
+                    // by delegating (`x = y …`) has its wording on `y`, and resolving it
+                    // is what keeps the derivation general instead of accumulating a
+                    // hardcode per rule. Bounded to one hop rather than guarded by a
+                    // visited set: a single step cannot cycle, and an unbounded walk
+                    // through a left-recursive grammar could.
+                    .Ref(inner) -> {
+                        if inner == name { return "" }
+                        return rule_first_expect_msg_leaf(g, inner)
+                    }
+                    _ -> {}
+                }
+            }
+            ""
+        }
+    }
+}
+
+
+export fn gated_ref_of(node: GNode) -> GatedRef {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.gate {
+                        match it.prim {
+                            .Ref(nm) -> return GatedRef { found: true, rule: nm }
+                            _ -> {}
+                        }
+                    }
+                }
+            }
+            GatedRef { found: false, rule: "" }
+        }
+    }
+}
+
