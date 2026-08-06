@@ -1700,9 +1700,16 @@ spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
         // assertion agreed about recovery from a malformed PARAMETER LIST and never
         // reached the `!!` it names. Green, and measuring nothing: the same
         // typo'd-fixture trap this file records retiring BARE_IDENT_COMP_INST for.
-        // Verified the replacement compiles clean (`ok`) before asserting on it, so
-        // `!!` is now actually the thing under test.
-        tree_agrees_everywhere("type W = int?\nfn f(x: W?) -> int {\n let a = x!!\n return 0\n}") &&
+        //
+        // `hand_oracle(src) == ""` is what makes the repair hold. `tree_agrees_everywhere`
+        // compares RENDERED TREES and nothing else, so it cannot reject a parse error the
+        // three paths share — which is exactly how the `int??` version passed. Verifying
+        // the replacement compiles and then writing "verified" in a comment would repeat
+        // the defect one level up, so the clean parse is ASSERTED. Same idiom the
+        // same-line control below uses. (`agree_all` is deliberately not added: on a clean
+        // program it compares empty against empty, the vacuity this file polices.)
+        let ubang = "type W = int?\nfn f(x: W?) -> int {\n let a = x!!\n return 0\n}"
+        tree_agrees_everywhere(ubang) && hand_oracle(ubang) == "" &&
         tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}")
     }
     then "a next-line `?` after a `!` run does NOT fold — the fallthrough re-guards" {

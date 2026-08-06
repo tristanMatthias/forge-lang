@@ -40,7 +40,7 @@
 // re-testing the entry guard's `allow_dot_postfix && current_line == prev_line`.
 //
 // The fallthrough re-tests those conjuncts now, so all six agree — measured on all four
-// paths: `x!\n[0]`, `x!\n(1)`, `x!\n.f`, `x!?` clean everywhere, and `x!\n?` F0040
+// paths: `x!\n[0]`, `x!\n(1)`, `x!\n.f`, `x!!`, `x!?` clean everywhere, and `x!\n?` F0040
 // everywhere. Note the second sentence of this header was itself stale for a while: it
 // described the pre-fix divergence as current long after the re-guard landed. A prose
 // claim about behaviour goes out of date silently, which is the whole reason those six
