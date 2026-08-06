@@ -49,6 +49,19 @@ fn rule_speculates(head: string) -> bool {
         rule.contains("st.restore_to(s_pos, s_diags, s_err)")
 }
 
+/// A malformed fixture must report `needle` on EVERY native path, not just the
+/// default. The default path answers invalid input with the EXECUTOR (static ->
+/// had_error -> re-parse), so a `default`-only assertion measures the executor and
+/// leaves the emitted static parser untested — the t-zrn3 blind spot in reverse.
+fn reports_all_paths(name: string, src: string, needle: string) -> bool {
+    let d = check_out("${name}_dflt", "", src)
+    let e = check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
+    let x = check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)
+    !clean(d) && d.contains(needle) &&
+        !clean(e) && e.contains(needle) &&
+        !clean(x) && x.contains(needle)
+}
+
 spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
     then "all four parse fns exist in the production declaration parser" {
         let src = decl_src()
@@ -143,11 +156,21 @@ spec "t-47hc Phase 4: the spec frontier did not widen" {
         !clean(out) && out.contains("error[F0040]")
     }
 
-    then "a spec missing its name reports the hand's SPECIFIC message on the default path" {
-        // The native STRING miss reports generically, the @try rolls back, and
-        // the hand's message must own the output — same shape as the guard
-        // form's coded diagnostic in the binding slice.
-        let out = check_out("noname", "", "spec\nfn f() -> int { 1 }\n")
-        !clean(out) && out.contains("expected spec name string after `spec`")
+    then "a spec missing its name reports the SPECIFIC message on every native path" {
+        // OWNED NATIVELY now (t-myz7): `@cut` sits right after `spec`, so a missing
+        // STRING commits and reports through `spec_decl`'s own `@expect` rather than
+        // rolling back to spec_test/parser.av. Asserted on all three native paths, not
+        // the default alone — the default answers invalid input with the EXECUTOR, so a
+        // default-only check leaves the emitted static parser unmeasured.
+        reports_all_paths("noname", "spec\nfn f() -> int { 1 }\n",
+            "expected spec name string after `spec`")
+    }
+
+    then "a `given` missing its name reports on every native path too" {
+        // The NESTED case, and the one rolling back could never have fixed:
+        // `parse_spec_body` swallows the Err and returns the partial item list, so
+        // `spec "s" { given }` used to close cleanly with the malformed item DROPPED.
+        reports_all_paths("given_noname", "spec \"s\" { given }\nfn f() -> int { 1 }\n",
+            "expected given name string after `given`")
     }
 }
