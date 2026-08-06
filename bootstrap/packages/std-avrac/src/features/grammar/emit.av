@@ -1765,7 +1765,19 @@ fn gated_ref_of(node: GNode) -> GatedRef {
 /// `@expect` for that token's kind. Empty when the rule declares none.
 fn rule_first_expect_msg(g: Grammar, name: string) -> string {
     let r = emit_lookup_rule(g, name)
-    if r.name == "" { return "" }
+    if r.name == "" {
+        // CROSS-VIEW rules — the pair of rule_first_guard's declared-FIRST table just
+        // below. A rule DEFINED in another view is genuinely absent from this grammar,
+        // so its `@expect` cannot be read no matter how the annotation is written: the
+        // decl parser calls the separately generated expression parser for these.
+        // `param` is the caught instance (declared FIRST added by slice 10.13 when
+        // routing fn/extern/trait/impl made parameter lists reachable from the decl
+        // view) — a gated call on it fell back to the generic "expected param" while
+        // `field` and `variant`, which ARE local, resolved correctly. Declare the
+        // message here, beside the FIRST it pairs with, so the two stay together.
+        if name == "param" { return "expected parameter name" }
+        return ""
+    }
     match r.body {
         .Alt(branches) -> {
             if branches.length == 0 { return "" }

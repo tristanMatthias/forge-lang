@@ -2421,7 +2421,7 @@ fn parse_fn_decl(st: PState) -> CapVal {
             }
             if lookahead_ok("not_rparen", st) {
                 if !(st.cur().tk == Tk.Identifier) {
-                    st.report("expected param")
+                    st.report("expected parameter name")
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
