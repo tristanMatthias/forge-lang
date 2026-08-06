@@ -2589,6 +2589,33 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     // item reported — exec_primary's handle_missing already emits the sequence's
     // `@expect` message, so `@require` adds control flow only, never a second seam for
     // diagnostics. exec_seq reads the flag and stops.
+    // `@soft`: the NON-ABORTING complement of `@require` below (t-myz7). Same FIRST
+    // test, but a mismatch reports and SKIPS the item — no call, no consumption, no
+    // abort — and the sequence carries on. This is the executor twin of emit's
+    // `item.soft` branch in emit_one, and it must stay in lockstep for the usual
+    // reason: on invalid input the DEFAULT production path re-parses the item with THIS
+    // executor, so an emit-only fix is invisible to both recovery oracles (t-zrn3).
+    //
+    // Returning Nil rather than an error node is the point — Nil is what an absent
+    // optional capture already carries, so the enclosing sequence keeps building its
+    // partial node instead of unwinding.
+    if item.soft {
+        match item.prim {
+            .Ref(sname) -> {
+                let sseen: List<string> = []
+                if !tok_starts_rule(g, sname, st, sseen) {
+                    // The rule's OWN `@expect`, via the same function emit renders from
+                    // — not `handle_missing`, which keys on the enclosing sequence's
+                    // annotations and would word this differently in the two engines.
+                    let sm = rule_first_expect_msg(g, sname)
+                    st.report(if sm == "" { "expected ${sname}" } else { sm })
+                    return CapVal.Nil
+                }
+                return exec_item_marked(g, item, st, env, multi, annots)
+            }
+            _ -> {}
+        }
+    }
     if item.require {
         // A RULE REFERENCE aborts on its FIRST, checked BEFORE the call — not on
         // "did diags grow" (t-47hc.24). The callee reports its OWN errors, so a

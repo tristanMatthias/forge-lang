@@ -233,6 +233,25 @@ export type GItem = {
     // diagnostics and one for control flow. Inside a `@try` branch BEFORE a `@cut` it
     // degrades to plain reporting — the rollback already IS the abort.
     require: bool,
+    // t-myz7 NON-ABORTING FAILURE (`@soft`): `@require`'s complement, and the third
+    // point on the axis. A missing terminal can currently do two things — report and
+    // carry on building a partial node (the default), or report and stop the rule
+    // (`@require`). Neither is what the hand does at a non-leading RULE REFERENCE.
+    //
+    // The defect this exists for: a plain `tparams:tparam` after `<` is called with its
+    // FIRST unproven, and `parse_tparam` opens `let tpn = CapVal.Tok(st.advance())` — an
+    // UNCONDITIONAL consume. On `enum E< { A }` the `{` is bound as a type-parameter
+    // name and EATEN, so the rule then fails to find `>` AND fails to find the `{` it
+    // already swallowed. The hand instead reports "expected type parameter name",
+    // consumes NOTHING, and keeps going — ending at `(enum E (A()))` with two
+    // diagnostics where the ungated native rule produced three and an `(error)`.
+    //
+    // So `@soft` means: prove the referenced rule's FIRST; if it does not match, report
+    // (message from `rule_first_expect_msg`, i.e. the rule's own `@expect`) and SKIP the
+    // item — no call, no consumption, no abort — then continue the sequence. The SKIP is
+    // the load-bearing half: reporting and then calling anyway is exactly what the
+    // ungated ref already did, and the damage was the CONSUMPTION, not the message.
+    soft: bool,
     // t-47hc.28 BOUNDED REPETITION (`x{#cap}`): the name of a capture whose LIST
     // LENGTH caps this repetition — "repeat `x`, at most `#cap` times". Empty = no
     // bound (every item before this, and today's only behaviour).
@@ -375,7 +394,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, gate: false, bound: "" }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, soft: false, gate: false, bound: "" }
 }
 
 /// True when a sequence has no explicit build — the executor then

@@ -105,3 +105,74 @@ spec "t-47hc.24: the existing terminal restrictions are untouched" {
         perr("r = \"+\" @require \"-\" @expect(\"-\", \"need a minus\")") == ""
     }
 }
+
+// ── t-myz7: `@soft`, the NON-ABORTING complement ──────────────────────────────────
+//
+// `@require` and `@soft` are the two halves of one axis, which is why they are specced
+// in one file against the SAME grammar shape: an absent sub-rule ABORTS under the first
+// and is REPORTED-AND-SKIPPED under the second. Asserting them as a contrast is what
+// makes these non-vacuous — a `@soft` that quietly behaved like `@require` (or like the
+// error-tolerant default) would pass a test that only counted "did it report".
+//
+// Why the capability exists: a plain non-leading rule ref is called with its FIRST
+// UNPROVEN, and the generated `parse_<rule>` opens by consuming. `parse_tparam` is the
+// caught instance — `let tpn = CapVal.Tok(st.advance())` — so on `enum E< { A }` the `{`
+// is bound as a type-parameter name and EATEN, and the rule then fails to find both `>`
+// and the `{` it already swallowed. The hand reports, consumes NOTHING, and carries on.
+//
+// The SKIP is the load-bearing half. Reporting and then calling anyway is exactly what
+// the ungated ref already did; the damage was the CONSUMPTION, not the missing message.
+fn g_soft() -> string {
+    "r = \"+\" @soft blk \"!\"\n" +
+    "blk = \"{\" \"}\" @expect(\"{\", \"expected a block\")"
+}
+
+spec "t-myz7: @soft reports an absent rule and CONTINUES" {
+    then "the grammar is accepted" {
+        perr(g_soft()) == ""
+    }
+    then "an absent sub-rule reports — using the REFERENCED rule's own @expect" {
+        // Not the enclosing sequence's annotations: `@soft`'s message comes from
+        // `rule_first_expect_msg`, the same function emit renders the gated check from,
+        // so the two engines cannot word it differently.
+        emitted(g_soft()).contains("expected a block")
+    }
+    then "and does NOT abort — the sequence reaches its next item" {
+        // THE contrast with @require, which returns here and yields exactly 1. Reaching
+        // `!` and finding `9` adds a second diagnostic. If @soft ever regressed into an
+        // abort this drops back to 1 and fails.
+        diags(g_soft(), "+ 9") > 1
+    }
+    then "a well-formed continuation after the skip is consumed normally" {
+        // blk absent, `!` present: report once, skip, match `!`. Exactly one diagnostic
+        // — proof the skip did not derail the rest of the sequence.
+        diags(g_soft(), "+ !") == 1
+    }
+    then "a PRESENT sub-rule is called as usual — the guard is not a rejection" {
+        !errs(g_soft(), "+ { } !")
+    }
+}
+
+spec "t-myz7: @soft SKIPS the call — it does not report-then-call" {
+    then "the absent case does not also raise the callee's own error" {
+        // If the call still happened after reporting, `blk` would report its missing `{`
+        // too and the count would be 3 (soft + blk + `!`). Skipping keeps it at 2.
+        // This is the assertion that distinguishes a real skip from a bare message.
+        diags(g_soft(), "+ 9") == 2
+    }
+    then "the emitted parser WRAPS the call rather than prefixing it" {
+        // @require emits guard-then-call (the call runs regardless, after a return);
+        // @soft must emit an else-arm so the call is genuinely skipped. Asserted on the
+        // emitted SOURCE per the t-47hc discipline — routing and skipping are both
+        // invisible on valid input, so behaviour alone cannot witness the shape.
+        let src = emitted(g_soft())
+        src.contains("} else {") && src.contains("parse_blk(st)")
+    }
+    then "and does not emit the abort scaffold @require uses" {
+        // The two markers share a FIRST guard and must NOT share the return.
+        let soft_src = emitted(g_soft())
+        let req_src = emitted(g_req())
+        req_src.contains("return CapVal.Node(st.error_node_silent())") &&
+            !soft_src.contains("return CapVal.Node(st.error_node_silent())")
+    }
+}
