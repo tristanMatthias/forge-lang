@@ -331,7 +331,14 @@ fn emit_rule_fn_in(g: Grammar, r: Rule) -> string {
     // from. Emitted as a WRAPPER around the real rule fn rather than inline, because the
     // body has many `return` points and the restore must run after EVERY one of them.
     let inner = "fn parse_${r.name}_chain(st: PState) -> CapVal {\n${snap}${emit_rule_body(g, r.body)}}\n"
-    "fn parse_${r.name}(st: PState) -> CapVal {\n" +
+    // `reset` rides the WRAPPER, not the inner chain fn: the wrapper is what callers
+    // enter, so that is where the per-item entry is. Omitting it here (the body path
+    // above has it) would mean a gate-bearing grammar whose first rule ALSO seeds the
+    // postfix chain never cleared a stale `abort_prop`. No grammar is in that shape
+    // today — the decl view's first rule is `declaration`, and only `unary` seeds the
+    // chain — so this is a consistency fix, not a live one, and the regenerated
+    // parsers are byte-identical. CodeRabbit.
+    "fn parse_${r.name}(st: PState) -> CapVal {\n${reset}" +
         "    let c_step_base = st.postfix_step_base\n" +
         "    let c_step_sp = st.postfix_step_sp\n" +
         "    let out = parse_${r.name}_chain(st)\n" +

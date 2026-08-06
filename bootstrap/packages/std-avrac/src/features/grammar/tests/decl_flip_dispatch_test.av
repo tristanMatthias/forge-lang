@@ -458,16 +458,23 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // rule's gap, closing that rule would silently make this assertion vacuous
         // again, which is the exact trap the previous anchor fell into.
         //
-        // The set is the STILL-REFUSING keywords, re-pointed this slice: `enum`
-        // graduated (its malformed forms now report natively and are asserted as such
-        // in the recovery spec below), so keeping it here would have been a guard that
-        // cannot fail — the precise vacuity this half exists to prevent. `fn` stays,
-        // for the statement-body reason recorded on MALFORMED_DECL.
-        !native_without_delegate("malformed_impl", MALFORMED_DECL()) &&
-        !native_without_delegate("malformed_type", "type Foo = {\n") &&
-        !native_without_delegate("malformed_component", "component C {\n") &&
-        !native_without_delegate("malformed_fn", "fn foo(\n") &&
-        !native_without_delegate("malformed_enum", "enum E {\n") &&
+        // The set is the STILL-REFUSING keywords. `enum` is among them: it was briefly
+        // committed and then UN-ROUTED, because a committed rule never rolls back and
+        // `enum E< { A }` does not match the hand (see MALFORMED_DECL). `fn` likewise,
+        // for the statement-body reason recorded there. An earlier draft of this
+        // comment claimed `enum` had graduated — stale, and contradicted by both the
+        // frontier table above and the assertion below it.
+        //
+        // Asserted with `refused_here`, which claims the refusal DIRECTLY. CodeRabbit:
+        // `native_without_delegate` is `!parse_failed && !refused`, so its NEGATION is
+        // satisfied by a mere parse failure — native recovery would pass it just as
+        // well as delegate refusal. That is the wrong predicate for the anti-vacuity
+        // half, whose entire job is to be the strong one.
+        refused_here("decl_hand", "malformed_impl", MALFORMED_DECL()) &&
+        refused_here("decl_hand", "malformed_type", "type Foo = {\n") &&
+        refused_here("decl_hand", "malformed_component", "component C {\n") &&
+        refused_here("decl_hand", "malformed_fn", "fn foo(\n") &&
+        refused_here("decl_hand", "malformed_enum", "enum E {\n") &&
         // ...and the VALID counterpart of the same keyword does NOT report, which is
         // what pins the discriminator to malformed-ness rather than to the keyword.
         native_without_delegate("wellformed_fn", "fn foo() -> int { 1 }")
