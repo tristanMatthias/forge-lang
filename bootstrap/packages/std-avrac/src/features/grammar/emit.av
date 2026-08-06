@@ -318,7 +318,10 @@ fn emit_rule_fn_in(g: Grammar, r: Rule) -> string {
     // placement caused the 56 -> 53 refusal drop was TESTED HERE AND REFUTED. That drop
     // comes from something else in the same commit, most likely `@require` newly raising
     // the flag, which genuinely changes how far an abort unwinds. Still open.
-    let reset = if g.rules.length > 0 && g.rules[0].name == r.name { "    st.set_abort_prop(false)\n" } else { "" }
+    //
+    // Scoped to gate-bearing grammars (see `grammar_has_gate`): emit.av renders four
+    // production parsers, and only the decl view's start rule is a per-item entry.
+    let reset = if grammar_has_gate(g) && g.rules.length > 0 && g.rules[0].name == r.name { "    st.set_abort_prop(false)\n" } else { "" }
     let body = "fn parse_${r.name}(st: PState) -> CapVal {\n${reset}${snap}${emit_rule_body(g, r.body)}}\n"
     if !rule_seeds_postfix_e(g, r) { return body }
     // CHAIN NEUTRALITY (emit twin of exec_rule's save/restore; see
@@ -1486,7 +1489,8 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // reported the missing colon, re-entered parse_field, took `int` as the next field
     // name and reported AGAIN — where the hand stops the field list at the first
     // failure. Only the committed path raises it; a pre-cut failure still rolls back.
-    let abort_ret = "${ind}    st.set_abort_prop(true)\n${ind}    return CapVal.Node(st.error_node_silent())\n"
+    let raise = if grammar_has_gate(g) { "${ind}    st.set_abort_prop(true)\n" } else { "" }
+    let abort_ret = "${raise}${ind}    return CapVal.Node(st.error_node_silent())\n"
     let abort_line = if !item.require || !abortable { "" }
         else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${abort_ret}${ind}    }\n" }
         else { abort_ret }
@@ -1828,6 +1832,46 @@ fn node_has_gate(node: GNode) -> bool {
             for b in branches {
                 for it in b.items {
                     if it.gate { return true }
+                }
+            }
+            false
+        }
+    }
+}
+
+/// `abort_prop` is READ in exactly one place — `gated_abort_unwind`, which is
+/// emitted only where a `@gate` is present. So the flag's WRITES are scoped to
+/// the same grammars: a view with no gate can never observe the value, and
+/// emitting the reset/raise there would be a pure blast radius. This is not
+/// hypothetical tidiness — `emit.av` renders FOUR checked-in production parsers
+/// (decl / expr / type / pattern) from one emitter, and an unscoped write put
+/// `st.set_abort_prop(…)` into all four while only the decl grammar has gates.
+///
+/// The `g.rules[0]` reset in particular is only sound at a PER-ITEM entry, which
+/// is what the decl view's start rule is. The expr/type/pattern start rules are
+/// NESTED entries — reached mid-declaration, many times per item — so resetting
+/// there states something false about the flag's lifetime even where it happens
+/// to be harmless.
+fn grammar_has_gate(g: Grammar) -> bool {
+    for r in g.rules {
+        if rule_body_has_gate(r.body) { return true }
+    }
+    false
+}
+
+/// The recursive form of `node_has_gate`: a gate can sit inside a `( … )*` /
+/// `( … )?` group (that is where `enum_decl` and `trait_decl` put theirs), so a
+/// top-level-only scan would miss every real one.
+fn rule_body_has_gate(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.gate { return true }
+                    match it.prim {
+                        .Group(inner) -> { if rule_body_has_gate(inner) { return true } }
+                        _ -> {}
+                    }
                 }
             }
             false
