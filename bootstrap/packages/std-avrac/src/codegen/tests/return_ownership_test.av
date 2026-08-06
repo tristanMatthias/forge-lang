@@ -331,3 +331,51 @@ spec "a string-literal field does not make its holder fresh (t-k6lm)" {
         not_fresh("fn mk3() -> Result<int, string> { .Err(\"boom\") }\n", "mk3")
     }
 }
+
+// ── An EMPTY body proves nothing (t-k6lm slice 2) ─────────────────────────────
+//
+// The shape that blocked the wiring for several sessions, and it is not a
+// hand-written one: the metadata fast-path synthesizes a signature-only stub
+// for every non-generic `@std` export — `Stmt.Function(n, …, empty_body)` in
+// build/metadata_synthesize.av — so a whole package arrives as declarations
+// with NO body.
+//
+// An empty body is VACUOUSLY fresh: `collect_return_exprs` finds nothing to
+// reject and `tail_is_fresh` answers true at `body.length == 0`. That admitted
+// the entire stubbed `@std` surface at once, `extract_unit_metadata` among it —
+// and its `UnitMetadata` BORROWS the entry strings it carries from the AST
+// store, shared across every slice extracted from that store. The caller's
+// recursive `__release_UnitMetadata` then freed children the next slice still
+// held: `avra_rc_release received a pointer to freed RC memory`, in
+// tests/per_file_metadata_fixtures/sample.av under AVRA_RC_STRICT=1.
+//
+// It reproduces ONLY through the fast path — a whole-program compile sees the
+// real body and denies it on the field reads — which is why the fixture passes
+// a direct `diagnose.sh --run` and fails the suite. Neither the specs below nor
+// a standalone run can observe that difference, so what they pin is the
+// PREDICATE: a body this analysis cannot inspect is never a candidate.
+const STUB_RET: string = "type B = { v: int }\nfn stub() -> B { }\n"
+
+spec "a body the analysis cannot SEE is never fresh (t-k6lm)" {
+    then "an empty-bodied fn with a declared return type is NOT fresh" {
+        not_fresh(STUB_RET, "stub")
+    }
+    then "so the caller's binding of it is NOT releasable" {
+        // The consequence that actually crashed: without this, `let b = stub()`
+        // takes a recursive release on a value whose contents the callee never
+        // owned.
+        not_releasable(STUB_RET + "fn use_stub() -> int { let b = stub()\n 0 }\n", "use_stub", "b")
+    }
+    then "an empty-bodied VOID fn is NOT fresh either" {
+        // Harmless in practice (a unit binding is never ptr-typed, so no
+        // release is emitted) but it entered the set by the same vacuous
+        // truth, and a set that is honest only where it is load-bearing is
+        // the kind of thing that stops being honest later.
+        not_fresh("fn nothing() { }\n", "nothing")
+    }
+    then "a fn with a REAL fresh body is still fresh (the positive control)" {
+        // Denying an empty body must not decay into denying everything: this
+        // is the arm that fails if the guard is written too wide.
+        is_fresh("type B2 = { v: int }\nfn mk_b2() -> B2 { B2 { v: 1 } }\n", "mk_b2")
+    }
+}
