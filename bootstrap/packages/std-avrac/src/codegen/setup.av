@@ -134,6 +134,7 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     decl(m, "avra_array_len", i64t, [pt])
     decl(m, "avra_array_set", i64t, [pt, i64t, i64t])
     decl(m, "avra_array_pop", i64t, [pt])
+    decl(m, "avra_array_clear", i64t, [pt])
     decl(m, "avra_array_slice", pt, [pt, i64t, i64t])
 
     // ── closures ──

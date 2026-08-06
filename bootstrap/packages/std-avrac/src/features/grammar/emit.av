@@ -1330,6 +1330,27 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
     cut_marks + body
 }
 
+/// The CALL itself for a `.Ref` item, in whichever of the four capture shapes the label
+/// is in: accumulate into the branch's parallel list, assign an optional's slot, discard,
+/// or bind. Factored out because `@onfail(skip)` needs the same call under an `else` —
+/// two copies would be the drift hazard where a capture shape is fixed on one path only,
+/// and a wrong capture shape is silent tree corruption (see the `.Gensym` arm below).
+fn emit_ref_capture(g: Grammar, item: GItem, name: string, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+    emit_ref_capture_of(g, item, name, "parse_${name}(st)", ind, list_labels, opts)
+}
+
+/// `emit_ref_capture` over an arbitrary result EXPRESSION rather than the call itself, so
+/// a policy that must inspect the result before capturing it can bind the call to a temp
+/// first. Same four shapes, one definition — the capture shape must not be decided twice.
+fn emit_ref_capture_of(g: Grammar, item: GItem, name: string, expr: string, ind: string, list_labels: List<string>, opts: List<string>) -> string {
+    if str_in(list_labels, item.label) {
+        return "${ind}${item.label}_list.push(${kind_coerce(rule_result_kind(g, name))}(st, ${expr}))\n"
+    }
+    if str_in(opts, item.label) { return "${ind}${item.label} = ${expr}\n" }
+    if item.label == "" { return "${ind}let _ = ${expr}\n" }
+    "${ind}let ${item.label} = ${expr}\n"
+}
+
 fn emit_item_body(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int) -> string {
     match item.rep {
         .One -> emit_one(g, item, idx, annots, ind, list_labels, opts, abortable, spec_ctx)
@@ -1374,14 +1395,66 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                      else { rret })
                 "${ind}if !(${rule_first_guard(g, name, [])}) {\n${body}${ind}}\n"
             }
-            if str_in(list_labels, item.label) {
-                return req + "${ind}${item.label}_list.push(${kind_coerce(rule_result_kind(g, name))}(st, parse_${name}(st)))\n"
+            // t-myz7 `@onfail(skip)` — `@require`'s recovering dual, and the same FIRST
+            // test: report that the sub-rule is absent, then step OVER it. The call is
+            // what has to be skipped, not merely the abort — a rule reference consumes
+            // its leading token on the promise that some caller proved its FIRST, and a
+            // NON-LEADING ref makes no such promise, so calling it on a token it does not
+            // start BINDS that token (`enum E< { A }` took the `{` as a type-parameter
+            // name). Guarding the call is therefore the whole fix; leaving the abort off
+            // is what lets the rest of the sequence still report (the hand's second
+            // diagnostic, "expected `>` after type parameters") and still build a node.
+            // The message is keyed EXACTLY as `@require`'s is — the rule's single-literal
+            // FIRST when it has one, else the rule NAME, looked up in the caller's
+            // `@expect` — so the two markers cannot report differently for the same
+            // absent sub-rule, and `seq_expects_key` refuses the marker unless one of
+            // the two supplies wording (validate_cuts).
+            if item.onfail == "skip" {
+                let lit = rule_first_literal(g, name)
+                let key = if lit != "" { lit } else { name }
+                let exp = expect_for(annots, key)
+                let smsg = if exp.found { exp.msg } else { "expected ${key}" }
+                // An IDENT position keeps the hand's reserved-keyword diagnostic (so07.2),
+                // the same split `handle_missing` makes in the interpreter.
+                let rep = if key == "IDENT" { "report_ident" } else { "report" }
+                return "${ind}if !(${rule_first_guard(g, name, [])}) {\n" +
+                    "${ind}    st.${rep}(\"${smsg}\")\n" +
+                    "${ind}} else {\n" +
+                    emit_ref_capture(g, item, name, ind + "    ", list_labels, opts) +
+                    "${ind}}\n"
             }
-            if str_in(opts, item.label) {
-                return req + "${ind}${item.label} = parse_${name}(st)\n"
+            // t-myz7 `@onfail(close)`: the abort is read BEFORE the result is captured,
+            // because capturing it is itself a report. `capval_to_select_arm` (and every
+            // other `capval_to_*`) answers a non-matching CapVal by reporting — and an
+            // aborted sub-parse returns exactly that, a silent error node — so pushing
+            // the failed arm and popping it afterwards left two diagnostics behind for
+            // a case the hand reports once. Bind the call, decide, then capture.
+            // t-myz7 `@onfail(bail)`: the CALLEE owns the message, the caller owns the
+            // control flow. Detected by "did diagnostics grow", which is exactly what
+            // `@require` does for a non-ref item — and deliberately NOT `@require`'s
+            // FIRST check, because that reports for the callee and so replaces its
+            // message. `select { x <- }` must stay the expression view's F0040.
+            if item.onfail == "bail" {
+                let braise = if grammar_has_gate(g) { "${ind}    st.set_abort_prop(true)\n" } else { "" }
+                let bret = braise + "${ind}    return CapVal.Node(st.error_node_silent())\n"
+                let bbody = if !abortable { "" }
+                    else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${bret}${ind}    }\n" }
+                    else { bret }
+                return "${ind}let __bdiags = st.diags.length\n" +
+                    emit_ref_capture(g, item, name, ind, list_labels, opts) +
+                    "${ind}if st.diags.length != __bdiags {\n" +
+                    bbody +
+                    "${ind}}\n"
             }
-            if item.label == "" { return req + "${ind}let _ = parse_${name}(st)\n" }
-            req + "${ind}let ${item.label} = parse_${name}(st)\n"
+            if item.onfail == "close" {
+                return "${ind}let __gres = parse_${name}(st)\n" +
+                    "${ind}if st.abort_prop {\n" +
+                    "${ind}    st.set_abort_prop(false)\n" +
+                    "${ind}    break\n" +
+                    "${ind}}\n" +
+                    emit_ref_capture_of(g, item, name, "__gres", ind, list_labels, opts)
+            }
+            req + emit_ref_capture(g, item, name, ind, list_labels, opts)
         }
         .Hand(hf) -> {
             // A `@hand` primary captured under a repetition (`( s:@hand(f) )*`)
@@ -1515,6 +1588,19 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     let abort_line = if !item.require || !abortable { "" }
         else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${abort_ret}${ind}    }\n" }
         else { abort_ret }
+    // t-myz7 `@onfail(discard, <label>)`: report the missing closer, then THROW AWAY the
+    // list the bracket was collecting, and carry on. `parse_type_params` is exactly this
+    // — `if !consume(Greater, …) { return empty }` — so `enum E<T { A }` is
+    // `(enum E (A()))` on the hand: `T` is parsed and then dropped with the unterminated
+    // bracket. Emitted into the same mismatch `else` every other terminal policy uses, so
+    // the report still happens and nothing else about the position changes.
+    //
+    // Re-bound to a fresh `[]` rather than `.clear()`: the accumulator is a `mut` local
+    // with a declared element type, so assignment is exact, and it keeps the generated
+    // parser inside the SEED compiler's vocabulary. (`clear` is in the list method list
+    // and now has a codegen arm, but a seed built before it cannot compile a caller —
+    // emitted code has to be buildable by the seed, not only by HEAD.)
+    let discard_line = if item.onfail != "discard" { "" } else { "${ind}    ${item.onfail_cap}_list = []\n" }
 
     // A repetition-captured terminal (`( … x:IDENT … )*`). idx==0 is the loop guard
     // (the enclosing `while` FIRST proved it) → unconditional push; a non-first
@@ -1525,6 +1611,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         mut o = "${ind}if ${cond} { ${item.label}_list.push(${adv}) } else {\n"
         o = o + "${ind}    ${rep}\n"
         if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
+        o = o + discard_line
         o = o + abort_line
         o = o + "${ind}}\n"
         return o
@@ -1535,6 +1622,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         mut o = "${ind}if ${cond} { ${item.label} = CapVal.Tok(${adv}) } else {\n"
         o = o + "${ind}    ${rep}\n"
         if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
+        o = o + discard_line
         o = o + abort_line
         o = o + "${ind}}\n"
         return o
@@ -1561,6 +1649,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         // two different cursors and the statement-list loops could not converge. The
         // label is still bound on the non-aborting path, so downstream `capval_tok_text`
         // stays safe exactly as before.
+        outl = outl + discard_line
         outl = outl + abort_line
         outl = outl + "${ind}    CapVal.Tok(st.cur())\n"
         outl = outl + "${ind}}\n"
@@ -1569,6 +1658,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     mut out = "${ind}if ${cond} { let _ = ${adv} } else {\n"
     out = out + "${ind}    ${rep}\n"
     if sync != "" { out = out + "${ind}    st.synchronize(\"${sync}\")\n" }
+    out = out + discard_line
     out = out + abort_line
     out = out + "${ind}}\n"
     out
@@ -1762,6 +1852,14 @@ fn rule_has_hand_alt(g: Grammar, name: string) -> bool {
 fn gated_abort_unwind(g: Grammar, inner: GNode, ind: string) -> string {
     let gr = gated_ref_of(inner)
     if !gr.found { return "" }
+    // t-myz7 `@onfail(close)` unwinds NOWHERE: the abort ends the repetition and the
+    // enclosing rule carries on to its own closer. `select { x }` is the shape — the hand
+    // reports the missing `<-` and still builds `(select ())`, so the `}` must be left for
+    // the rule's `@require "}"` rather than abandoned for the caller to report as a
+    // second, spurious F0013. The break itself is emitted at the ELEMENT (emit_one's
+    // `.Ref` arm), before its result is captured, because capturing an aborted result is
+    // itself a report.
+    if gr.onfail == "close" { return "" }
     "${ind}if st.abort_prop {\n" +
     "${ind}    return CapVal.Node(st.error_node_silent())\n" +
     "${ind}}\n"
@@ -1816,13 +1914,13 @@ fn gated_ref_of(node: GNode) -> GatedRef {
                 for it in b.items {
                     if it.gate {
                         match it.prim {
-                            .Ref(nm) -> return GatedRef { found: true, rule: nm }
+                            .Ref(nm) -> return GatedRef { found: true, rule: nm, onfail: it.onfail, label: it.label }
                             _ -> {}
                         }
                     }
                 }
             }
-            GatedRef { found: false, rule: "" }
+            GatedRef { found: false, rule: "", onfail: "", label: "" }
         }
     }
 }
@@ -1997,7 +2095,7 @@ fn rule_reaches_hand(g: Grammar, name: string) -> bool {
 /// block's statement-list recovery. No other emitted grammar uses this shape
 /// today, so wiring it into emit_repeat_group is additive (emit-gen-check proves
 /// existing grammars are byte-identical). (t-47hc.13 — the control-flow flip.)
-fn emit_stmt_list_loop(name: string, label: string, ind: string) -> string {
+fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bool) -> string {
     // had_error is a SINGLE PState flag reused across children (unlike the single-
     // statement flip path, which gets a fresh PState per statement). So we CAPTURE
     // any pre-loop error (e.g. from an if/for/while header condition parsed before
@@ -2016,7 +2114,18 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string) -> string {
         "${ind}    let __before_i = st.pos\n" +
         "${ind}    st.clear_error()\n" +
         "${ind}    let __cv = parse_${name}(st)\n" +
-        "${ind}    if st.had_error {\n" +
+        // WHICH children count as failed differs by policy, and the difference is the
+        // whole of `@onfail(drop)` (t-myz7):
+        //
+        //   default — ANY reported error. The child gets an `(error)` row, so a block
+        //     whose body merely recovered still shows the failure in the tree.
+        //   drop    — only an ABORT. A child that reported and then RECOVERED is KEPT,
+        //     because that is what the hand does: `parse_spec_body` returns its partial
+        //     item list, so an inner failure loses the inner item and nothing more.
+        //     Keying `drop` on had_error instead threw away every ANCESTOR too —
+        //     `spec "s" { given "g" { then } }` lost the whole `given`, since the body
+        //     loop's own `note_had_error` re-raises the flag on the way out.
+        (if drop_failed { "${ind}    if st.abort_prop {\n" } else { "${ind}    if st.had_error {\n" }) +
         "${ind}        __any_err = true\n" +
         "${ind}        st.synchronize_stmt()\n" +
         // t-47hc.5: step out of a group the CHILD opened and never closed. Without this
@@ -2030,13 +2139,25 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string) -> string {
         "${ind}            __ob = __ob - 1\n" +
         "${ind}        }\n" +
         "${ind}        if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }\n" +
-        "${ind}        let __elc = st.store.lines.to_linecol(__sp)\n" +
-        "${ind}        let __e = st.store.stmts.add_leaf(Stmt.Error)\n" +
-        "${ind}        st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })\n" +
-        "${ind}        ${label}_list.push(__e)\n" +
+        // `@onfail(drop)`: the aborted child is OMITTED rather than standing an `(error)`
+        // row in its place, and the abort is CLEARED — it has been handled here, and
+        // leaving it raised would abort this rule's own caller in turn. Everything else
+        // in the arm is shared: the diagnostics stay, the resync is the same one.
+        (if drop_failed {
+            "${ind}        st.set_abort_prop(false)\n"
+        } else {
+            "${ind}        let __elc = st.store.lines.to_linecol(__sp)\n" +
+            "${ind}        let __e = st.store.stmts.add_leaf(Stmt.Error)\n" +
+            "${ind}        st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })\n" +
+            "${ind}        ${label}_list.push(__e)\n"
+        }) +
         "${ind}        st.clear_error()\n" +
         "${ind}        continue\n" +
         "${ind}    }\n" +
+        // A `drop` child that reported and RECOVERED reaches here and is kept, so its
+        // error has to be carried out by hand — the default loop got that for free from
+        // the branch above, which it never falls out of.
+        (if drop_failed { "${ind}    if st.had_error { __any_err = true }\n" } else { "" }) +
         "${ind}    let __sid = capval_to_stmt(st, __cv)\n" +
         "${ind}    let __lc = st.store.lines.to_linecol(__sp)\n" +
         "${ind}    st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })\n" +
@@ -2090,7 +2211,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                 "${ind}// GRAMMAR ERROR: `${item.label}:${name}*{#${item.bound}}` — a bounded statement-list repetition is unsupported (emit_stmt_list_loop has no cap seam)\n" +
                     "${ind}let _ = emit_unsupported_bounded_stmt_list\n"
             } else if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == "stmt" {
-                emit_stmt_list_loop(name, item.label, ind)
+                emit_stmt_list_loop(name, item.label, ind, item.onfail == "drop")
             } else if item.label != "" && str_in(list_labels, item.label) {
                 // A labeled bare-ref `*`/`+` over a NON-statement rule: its `<label>_list`
                 // accumulator is declared but the discard loop below would never populate

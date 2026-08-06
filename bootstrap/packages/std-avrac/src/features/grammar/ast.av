@@ -155,8 +155,13 @@ export enum GNode {
 /// different closing-`]` diagnostics the hand parser emits, and `@expect` keys on the
 /// token so each needs its own sequence. Must be the LAST branch (a guarded branch after
 /// it would be dead) and at most one; both enforced at grammar-parse time.
-/// A gated rule reference found inside a node — see emit.gated_ref_of.
-export type GatedRef = { found: bool, rule: string }
+/// A gated rule reference found inside a node — see emit.gated_ref_of. `onfail` is that
+/// item's failure POLICY (`GItem.onfail`) and `label` its capture, both carried here
+/// because the caller-side unwind is emitted at the GROUP level, where the gated item
+/// itself is no longer in hand: the policy decides whether the abort unwinds the rule or
+/// closes the repetition, and the label names the accumulator a closed repetition must
+/// take its half-built element back off.
+export type GatedRef = { found: bool, rule: string, onfail: string, label: string }
 
 export type GSeq = {
     items: List<GItem>,
@@ -262,7 +267,83 @@ export type GItem = {
     // grammar `( x )*` exits and the enclosing `@require CLOSER` answers instead.
     // With `gate` set, the FIRST conjunct is dropped and the cond alone decides.
     gate: bool,
+    // t-myz7 NON-ABORTING FAILURE POLICY (`@onfail(policy)`): what this position does
+    // when its sub-parse fails. Empty = ABORT, which is what `@require` and `@gate`
+    // both do today and what `enum`/`trait` want (a malformed member aborts the whole
+    // declaration, so the caller still sees the stray `}` the hand leaves behind).
+    //
+    // WHY IT MUST BE STATED RATHER THAN INFERRED. The hand parsers do not agree on what
+    // a malformed element does, and the disagreement is not a property of the INPUT:
+    //
+    //     enum with a bad variant field   -> (error)         ABORTS
+    //     trait with a bad member         -> (error)         ABORTS
+    //     select with a bad arm           -> (select ())     recovers, keeps the node
+    //     spec with a bad given           -> (spec "s" )     recovers, DROPS the item
+    //
+    // A structural discriminator was derived from the first four cases and REFUTED by
+    // measurement (the "unbalanced group opener" rule — `PState.group_delta` — took the
+    // recovery corpus 109/114 -> 108/114; see the t-myz7 ticket, which records it so it
+    // is not re-attempted). What each hand parser happens to do is per-rule POLICY, so
+    // the DSL says it:
+    //
+    //     skip   on a rule REF        — check its FIRST; on failure report and step OVER
+    //                                   it. Do not call it, do not consume, do not abort;
+    //                                   the sequence continues. `@require`'s non-aborting
+    //                                   twin, and what `enum E< { A }` needs: the hand
+    //                                   reports "expected type parameter name" AND
+    //                                   "expected `>`" and still builds `(enum E (A()))`,
+    //                                   where calling `parse_tparam` on an unproven FIRST
+    //                                   BINDS the `{` as a type-parameter name.
+    //     close  on a GATED element   — an aborting element ENDS the repetition instead
+    //                                   of unwinding the rule, and its partial result is
+    //                                   not pushed. `select { x }`: report the missing
+    //                                   `<-`, close the arm list, let the rule's own `}`
+    //                                   consume the brace, build `(select ())`.
+    //     drop   on a stmt-list rep   — a failed child is OMITTED from the list rather
+    //                                   than kept as an `(error)` row. `spec "s" { given }`
+    //                                   builds `(spec "s" )`; `parse_spec_body` swallows
+    //                                   the Err and returns the partial item list.
+    //     bail   on a rule REF        — the callee reports; if it DID, abort. `@require`'s
+    //                                   other half: `@require` tests whether the sub-rule
+    //                                   STARTS here and reports for it, this tests whether
+    //                                   it SUCCEEDED and lets it keep its own message.
+    //                                   `parse_select_arm` is the shape — a channel
+    //                                   expression that fails to parse ends the arm
+    //                                   (`.Err(_) -> return out`), so `select { x <- }` is
+    //                                   the expression view's F0040 and nothing more,
+    //                                   where carrying on adds the `->` mismatch too.
+    //     discard on a CLOSING terminal — report the missing closer, then THROW AWAY the
+    //                                   list the bracket was collecting, and carry on.
+    //                                   `parse_type_params` is literally this: a missing
+    //                                   `>` returns an empty list, so `enum E<T { A }` is
+    //                                   `(enum E (A()))` on the hand — `T` is parsed and
+    //                                   then dropped with the unterminated bracket.
+    //
+    // Each policy is legal only on the shape it names (validate_onfail in seed_parser).
+    onfail: string,
+    // The capture `@onfail(discard, <label>)` throws away — empty for every other policy.
+    //
+    // NAMED rather than derived from the enclosing group because the emitters reach a
+    // terminal with the BRANCH's capture sets in hand, not the group's, and "the labels
+    // this bracket collected" is not recoverable from there. Naming it also puts the
+    // consequence at the use site, where a reader of the grammar can see which list the
+    // missing closer costs them — the same reason `x{#cap}` names its bound.
+    onfail_cap: string,
     bound: string,
+}
+
+/// The failure POLICIES `@onfail(p)` may name — the single source of truth shared by
+/// seed_parser's validation, emit and the executor, so a policy cannot be spelled in
+/// the grammar that only one engine understands. See `GItem.onfail`.
+export fn onfail_policy_supported(p: string) -> bool {
+    p == "skip" || p == "close" || p == "drop" || p == "discard" || p == "bail"
+}
+
+/// True for the policies that NAME a capture — `@onfail(discard, <label>)`. One list
+/// so the parser, its validation and the error text cannot disagree about which
+/// policies take an argument.
+export fn onfail_policy_takes_capture(p: string) -> bool {
+    p == "discard"
 }
 
 /// Repetition suffix on a primary: none / `*` / `+` / `?`.
@@ -375,7 +456,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, gate: false, bound: "" }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, gate: false, onfail: "", onfail_cap: "", bound: "" }
 }
 
 /// True when a sequence has no explicit build — the executor then

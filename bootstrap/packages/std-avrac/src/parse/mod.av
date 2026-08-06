@@ -1101,11 +1101,44 @@ impl Parser {
             // as F0001 was the single divergence keeping `@hand(primary_base)` alive.
             // An uncoded diagnostic keeps the previous default, so every rule that has
             // not opted in behaves exactly as before.
+            // How MANY native diagnostics cross depends on whether the item RECOVERED,
+            // and the split is the same one the `stmt_of` match below makes for the
+            // cursor (t-myz7):
+            //
+            //   RECOVERED (a real node) — the item owns its whole diagnostic set, because
+            //     nobody else will report for it. `dsl.diag` is a one-diagnostic summary,
+            //     so while it was the only channel everything after the first message was
+            //     dropped: `enum E< { A }` is "expected type parameter name" AND "expected
+            //     `>` after type parameters" on the hand, and the native rule produces
+            //     both. The hand parser shows every parse error (see `report`), so the
+            //     seam was the narrow part, not the grammar.
+            //
+            //   ABORTED (a bare `Stmt.Error`) — only the FIRST, exactly as before. The
+            //     hand `return .Err`s at its first failure and the caller's synchronize
+            //     writes the rest of the story (the trailing F0013); a native rule instead
+            //     runs to the end of its own body raising the abort, so the diagnostics
+            //     past the first are what the abort exists to discard. Surfacing them
+            //     turned `enum E { A( }` into four diagnostics against the hand's two.
             if d.bag.diagnostics.length == 0 && dsl.diag != "" {
-                if dsl.diag_code == "F0040" {
-                    self.report(DiagCode.ExpectedExpression, dsl.diag)
+                mut item_aborted = false
+                match self.stmt_of(dsl.stmt) {
+                    .Error -> item_aborted = true
+                    _ -> {}
+                }
+                if item_aborted {
+                    if dsl.diag_code == "F0040" {
+                        self.report(DiagCode.ExpectedExpression, dsl.diag)
+                    } else {
+                        self.set_error(dsl.diag)
+                    }
                 } else {
-                    self.set_error(dsl.diag)
+                    for gd in dsl.diags {
+                        if gd.code == "F0040" {
+                            self.report(DiagCode.ExpectedExpression, gd.msg)
+                        } else {
+                            self.set_error(gd.msg)
+                        }
+                    }
                 }
             }
             self.bag = bag_merge(self.bag, d.bag)

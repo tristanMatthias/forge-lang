@@ -2586,6 +2586,52 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     // item reported — exec_primary's handle_missing already emits the sequence's
     // `@expect` message, so `@require` adds control flow only, never a second seam for
     // diagnostics. exec_seq reads the flag and stops.
+    // t-myz7 `@onfail(skip)`: `@require`'s recovering dual, and deliberately the SAME
+    // FIRST test on the SAME side of the call — report that the sub-rule is absent, then
+    // step over it without consuming and without aborting, so the rest of the sequence
+    // still reports and still builds. Guarding the CALL is the substance: a rule
+    // reference consumes its leading token on the promise that a caller proved its FIRST,
+    // and a non-leading ref makes no such promise (`enum E< { A }` bound the `{` as a
+    // type-parameter name). Nothing is bound, exactly as an unmatched `.Opt` binds
+    // nothing, so a build reading this capture sees it absent rather than corrupt.
+    if item.onfail == "skip" {
+        match item.prim {
+            .Ref(sname) -> {
+                let sseen: List<string> = []
+                if !tok_starts_rule(g, sname, st, sseen) {
+                    let slit = rule_first_literal(g, sname)
+                    handle_missing(st, if slit != "" { slit } else { sname }, annots)
+                    return CapVal.Nil
+                }
+            }
+            _ -> {}
+        }
+        return exec_item_marked(g, item, st, env, multi, annots)
+    }
+    // t-myz7 `@onfail(bail)`: the CALLEE owns the message, the caller owns the control
+    // flow — abort if the sub-parse REPORTED. Deliberately not `@require`'s FIRST check,
+    // which reports for the callee and so replaces its message; here the sub-rule's own
+    // diagnostic is the one the hand produces (`select { x <- }` is the expression view's
+    // F0040 and nothing more, because `parse_select_arm` returns on a failed channel).
+    if item.onfail == "bail" {
+        let bbefore = st.diags.length
+        let br = exec_item_marked(g, item, st, env, multi, annots)
+        if st.diags.length != bbefore { env.set_abort(true) }
+        return br
+    }
+    // t-myz7 `@onfail(discard, <label>)`: report the missing closer (exec_primary's
+    // handle_missing already does), then THROW AWAY the list the bracket was collecting.
+    // Deliberately the same "did this item report" test `@require` uses below rather than
+    // a second signal — the two policies differ in what they DO about the mismatch, not in
+    // how they detect it. Clearing to `Nil` is what an unbound capture reads as, so the
+    // build sees no type parameters at all, exactly as `parse_type_params`' early
+    // `return empty` leaves it.
+    if item.onfail == "discard" {
+        let dbefore = st.diags.length
+        let dr = exec_item_marked(g, item, st, env, multi, annots)
+        if st.diags.length != dbefore { env.set_scalar(item.onfail_cap, CapVal.Nil) }
+        return dr
+    }
     if item.require {
         // A RULE REFERENCE aborts on its FIRST, checked BEFORE the call — not on
         // "did diags grow" (t-47hc.24). The callee reports its OWN errors, so a
@@ -2794,7 +2840,13 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
         // after the bad statement landed OUTSIDE the function. That is the `(expr r)`
         // escape, and it is why the two engines disagreed once `decl_hand` stopped
         // catching these first.
-        let child_failed = st.had_error || env.abort || capval_is_error_stmt(st, v)
+        // WHICH children count as failed differs by policy — the emit twin says why in
+        // full (emit_stmt_list_loop). `@onfail(drop)` counts only an ABORT, so a child
+        // that reported and then RECOVERED is kept, exactly as `parse_spec_body` keeps a
+        // block whose body merely lost an item. `abort_prop` rather than `env.abort`
+        // because the child is a separate RULE, whose env never reaches this one.
+        let child_failed = if item.onfail == "drop" { st.abort_prop }
+            else { st.had_error || env.abort || capval_is_error_stmt(st, v) }
         if child_failed {
             env.set_abort(false)
             any_err = true
@@ -2812,11 +2864,28 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
                 st.synchronize_stmt()
             }
             if st.pos == before && !st.at_end() { let _ = st.advance() }
-            bind(env, item.label, CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)), true)
+            // t-myz7 `@onfail(drop)`: OMIT the failed child rather than standing an
+            // `(error)` row in its place — the interpreter twin of emit_stmt_list_loop's
+            // `drop_failed`. `parse_spec_body` swallows the child's Err and returns the
+            // partial item list, so `spec "s" { given }` is `(spec "s" )` on the hand.
+            // Only the row differs: the error is still reported and `any_err` still
+            // carries it to the caller.
+            if item.onfail == "drop" {
+                // The failure is HANDLED here, so the abort stops here too — the twin of
+                // emit_stmt_list_loop's clear. Without it a nested block inherits its
+                // child's raised flag and is dropped by ITS parent in turn.
+                st.set_abort_prop(false)
+            } else {
+                bind(env, item.label, CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)), true)
+            }
             taken = taken + 1
             st.clear_error()
             continue
         }
+        // A `drop` child that reported and RECOVERED reaches here and is kept, so its
+        // error has to be carried out by hand — the failure branch above, which the
+        // default loop never falls out of, is where that happens otherwise.
+        if item.onfail == "drop" && st.had_error { any_err = true }
         bind(env, item.label, v, true)
         taken = taken + 1
         // No-progress guard, same as the plain loop: a child that consumed nothing and
@@ -3277,6 +3346,31 @@ fn first_diag_code(st: PState) -> string {
     "F0001"
 }
 
+/// EVERY diagnostic the native parse produced, each already carrying the code it is to be
+/// reported under — the WIDE channel across the flip seam (t-myz7).
+///
+/// `diag`/`diag_code` are a ONE-DIAGNOSTIC summary, and the seam that reads them
+/// (parse/mod.av's `d.bag.diagnostics.length == 0` branch) therefore surfaced the FIRST
+/// native diagnostic and dropped the rest. That is invisible while a native rule aborts
+/// on its first error, and becomes a divergence the moment one RECOVERS and keeps
+/// reporting: `enum E< { A }` produces "expected type parameter name" AND "expected `>`
+/// after type parameters" on the hand, and the native rule now produces both too — only
+/// one of them could cross. The hand parser has always shown every parse error (see
+/// `Parser.report`), so the seam was the narrow part, not the grammar.
+///
+/// The per-diagnostic code follows the same rule `first_diag_code` states: a `GDiag`'s own
+/// code wins; the one-wide `PState.diag_code` slot is authoritative only when there is
+/// exactly ONE diagnostic to attribute it to; otherwise the code is left blank and the
+/// consumer's default applies.
+fn resolved_diags(st: PState) -> List<GDiag> {
+    mut out: List<GDiag> = []
+    for d in st.diags {
+        let c = if d.code != "" { d.code } else if st.diags.length == 1 { st.diag_code } else { "" }
+        out.push(GDiag { code: c, msg: d.msg })
+    }
+    out
+}
+
 export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, diag: string, diag_code: string }
 
 /// Inverse type runner (ps3t.6.5.12 slice 1): lets the hand parser delegate a
@@ -3506,7 +3600,10 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
 /// The result of `run_dsl_stmt_at_shared`: the built statement (a `StmtId` VALID
 /// in the caller's shared `store` — statements are arena-backed, like
 /// expressions/patterns), the stop byte for cursor resync, and the error channel.
-export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, diag: string, diag_code: string }
+/// `diags` is the WIDE channel — every native diagnostic, each with its own code (see
+/// `resolved_diags`). `diag`/`diag_code` remain the first-diagnostic summary for the
+/// consumers that need only one.
+export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, diag: string, diag_code: string, diags: List<GDiag> }
 
 /// Shared core of the statement- and declaration-family runners: runs `grammar`'s
 /// `rule` over the pre-lexed `toks` at byte `start_byte`, SHARING the caller-owned
@@ -3530,7 +3627,7 @@ fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st), diags: resolved_diags(st) }
 }
 
 /// INVERSE-@hand STATEMENT runner (ps3t.6.7 Step G slice 4) — the statement-
@@ -3585,7 +3682,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st), diags: resolved_diags(st) }
 }
 
 // Which names build an EXPRESSION via REAL hand delegation (`run_hand_expr` →

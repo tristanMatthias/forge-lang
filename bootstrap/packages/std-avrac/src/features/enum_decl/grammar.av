@@ -24,13 +24,14 @@ export fn avra_enum_decl_grammar() -> Grammar {
   //
   // The `@gate`s stay: they are what make `enum E { 5 }` REPORT instead of binding `5`
   // as a variant name, and they are correct independently of the commit.
-  enum_decl   = "enum" ename:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "{" ( DOC )*
-                ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* )* )? "}"
+  enum_decl   = @try "enum" @cut @require ename:IDENT ( "<" @onfail(skip) tparams:tparam ( "," @onfail(skip) tparams:tparam )* @onfail(discard, tparams) ">" )? @require "{" ( DOC )*
+                ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* )* )? @require "}"
                 @expect("IDENT", "expected enum name")
                 @expect("{", "expected `{` after enum name")
                 @expect("}", "expected `}` after variants")
-                @expect(">", "expected `>` after type parameters") -> MkEnumDecl(ename, tparams, vars)
-  variant     = vname:IDENT ( "(" ( @peek(not_rparen) @gate vfields:field ","? )* ")" )?
+                @expect(">", "expected `>` after type parameters")
+                @expect("tparam", "expected type parameter name") -> MkEnumDecl(ename, tparams, vars)
+  variant     = vname:IDENT ( "(" ( @peek(not_rparen) @gate vfields:field ","? )* @require ")" )?
                 @expect("IDENT", "expected variant name")
                 @expect(")", "expected `)` after variant fields") -> MkEVariant(vname, vfields)
     }

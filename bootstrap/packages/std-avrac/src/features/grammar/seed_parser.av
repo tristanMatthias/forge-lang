@@ -26,6 +26,8 @@
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
 use features.grammar.{build_rule_index}
+use features.grammar.{rep_is_one, grep_is_multi, onfail_policy_supported}
+use features.grammar.{gprim_ref_name, emit_lookup_rule, rule_result_kind}
 use diagnostics.{diag_ice, render_diagnostic}
 
 // ── The DSL token stream ──
@@ -192,6 +194,13 @@ export fn parse_grammar(src: string) -> GrammarParse {
     if p.error == "" {
         let ge = validate_gates(g)
         if ge != "" { p.error = ge }
+    }
+    // t-myz7: `@onfail(drop)`'s shape check that needs the whole grammar — the referenced
+    // rule's RESULT KIND. The per-item half (labelled, repeated, a rule reference) is
+    // checked in parse_labeled where the item is built.
+    if p.error == "" {
+        let de = validate_onfail_drop(g)
+        if de != "" { p.error = de }
     }
     // t-47hc.28: a repetition bound `x{#cap}` must name a capture the SAME branch has
     // already collected. Unbound or later-bound, the cap would read an empty list and
@@ -463,7 +472,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_gensym_primary(p) || at_rawbrace_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) || at_gate_marker(p) }
+    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_gensym_primary(p) || at_rawbrace_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) || at_gate_marker(p) || at_onfail_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -642,6 +651,17 @@ fn at_require_marker(p: GP) -> bool {
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
     nxt.kind == "NAME" && nxt.text == "require"
+}
+
+/// True when the cursor is `@onfail` — the NON-ABORTING FAILURE-POLICY marker (t-myz7),
+/// `@require`'s recovering dual. Takes an argument (the policy), so unlike `@cut` /
+/// `@require` it validates it — against `onfail_policy_supported`, the one list both
+/// engines read.
+fn at_onfail_marker(p: GP) -> bool {
+    if !p.is_punct("@") { return false }
+    if p.pos + 1 >= p.toks.length { return false }
+    let nxt = p.toks[p.pos + 1]
+    nxt.kind == "NAME" && nxt.text == "onfail"
 }
 
 /// The COUNTERS a `@bump(counter)` marker may increment — an int cell in ExprModes, NOT
@@ -894,12 +914,16 @@ fn grammar_has_bound(g: Grammar) -> bool {
     false
 }
 
+/// True when anything in the grammar NAMES a capture — a `{#cap}` bound or an
+/// `@onfail(discard, <label>)`. Both are checked by the same visibility walk (a discard
+/// names a capture under exactly the rule a bound does: a LIST collected earlier in the
+/// same branch), so one detector gates both rather than two that could drift.
 fn node_has_bound(node: GNode) -> bool {
     match node {
         .Alt(branches) -> {
             for b in branches {
                 for item in b.items {
-                    if item.bound != "" { return true }
+                    if item.bound != "" || item.onfail_cap != "" { return true }
                     match item.prim {
                         .Group(inner) -> {
                             if node_has_bound(inner) { return true }
@@ -942,6 +966,15 @@ fn check_bound_node_in(node: GNode, rule: string, outer_lists: List<string>, out
                 for l in outer_lists { lists.push(l) }
                 for l in outer_seen { seen.push(l) }
                 for item in b.items {
+                    if item.onfail_cap != "" {
+                        if name_in(lists, item.onfail_cap) {
+                            // fine — a list capture collected earlier in this branch
+                        } else if name_in(seen, item.onfail_cap) {
+                            return "`@onfail(discard, ${item.onfail_cap})` in rule `${rule}` names a scalar capture — discard throws away a LIST (one collected by `*`/`+`)"
+                        } else {
+                            return "`@onfail(discard, ${item.onfail_cap})` in rule `${rule}` names `${item.onfail_cap}`, which is not captured earlier in this branch"
+                        }
+                    }
                     if item.bound != "" {
                         // A repetition bounded by a capture IT ITSELF writes is
                         // self-limiting, and the two engines would not agree on it:
@@ -1106,12 +1139,70 @@ fn check_gate_node(g: Grammar, node: GNode, rule: string) -> string {
     }
 }
 
+/// t-myz7: `@onfail(drop)` drops a failed child from the STATEMENT-LIST recovery loop —
+/// the only loop that has a failed child to drop, because it is the only one that mints
+/// an `(error)` row for one. On any other repetition there is no such row and the policy
+/// would parse clean and do NOTHING, which is the silent-no-op class every other marker
+/// validator exists to reject.
+///
+/// Checked only for a rule DEFINED in this grammar. Fragments are parsed before the merge
+/// (features/*/grammar.av), so a cross-fragment reference resolves to `rule_kind_v`'s
+/// default rather than its real kind, and rejecting on that would fail a correct grammar.
+/// Every `drop` today names a same-fragment rule, so the check is live where it is spent.
+fn validate_onfail_drop(g: Grammar) -> string {
+    for rule in g.rules {
+        let e = check_drop_node(g, rule.body, rule.name)
+        if e != "" { return e }
+    }
+    ""
+}
+
+fn check_drop_node(g: Grammar, node: GNode, rule: string) -> string {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.onfail == "drop" {
+                        let nm = gprim_ref_name(it.prim)
+                        if nm != "" && emit_lookup_rule(g, nm).name != "" && rule_result_kind(g, nm) != "stmt" {
+                            return "`@onfail(drop)` needs a STATEMENT repetition (rule `${rule}`) — `${nm}` builds a `${rule_result_kind(g, nm)}`, and only the statement-list loop mints the `(error)` row there would be to drop"
+                        }
+                    }
+                    match it.prim {
+                        .Group(inner) -> {
+                            let e = check_drop_node(g, inner, rule)
+                            if e != "" { return e }
+                        }
+                        _ -> {}
+                    }
+                }
+            }
+            ""
+        }
+    }
+}
+
 fn validate_cuts(g: Grammar) -> string {
     for rule in g.rules {
         let e = check_cut_node(g, rule.body, rule.name, false)
         if e != "" { return e }
     }
     ""
+}
+
+/// True when any item DIRECTLY in this node carries the named `@onfail` policy. One level
+/// only: a nested group is its own repetition, and its policy is that group's business.
+fn node_has_onfail(node: GNode, policy: string) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.onfail == policy { return true }
+                }
+            }
+            false
+        }
+    }
 }
 
 /// True when the sequence declares `@expect(key, …)`. The message-existence half of
@@ -1130,10 +1221,39 @@ fn seq_expects_key(seq: GSeq, key: string) -> bool {
 // `g` is threaded so a `@require` on a rule REFERENCE can look up that rule's
 // single-literal FIRST — the message key the marker needs (t-47hc.24).
 fn check_cut_node(g: Grammar, node: GNode, rule: string, in_try: bool) -> string {
-    check_cut_node_ctx(g, node, rule, in_try, false)
+    let no_annots: List<GAnnot> = []
+    check_cut_node_ctx(g, node, rule, in_try, false, no_annots)
 }
 
-fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fold: bool) -> string {
+/// True when the sequence — or any ENCLOSING one — declares `@expect(key, …)`. A group's
+/// items are checked against the annotations that will actually reach them: both emitters
+/// thread the rule sequence's `annots` down through every group (emit_node_items /
+/// exec_seq's outer_annots), so a message declared on the rule is in scope for a marker
+/// nested inside one. Checking only the immediate branch would reject
+/// `( "<" @onfail(skip) tparams:tparam )?` for want of a message the emitters do find.
+/// The annotations in scope INSIDE a group: the ones already inherited plus the branch's
+/// own, in that order — the same accumulation the emitters make when they thread `annots`
+/// down. Separate from `seq_expects_key_in` so the walk builds the scope once per descent
+/// rather than re-deriving it at every lookup.
+fn concat_annots(outer: List<GAnnot>, inner: List<GAnnot>) -> List<GAnnot> {
+    mut out: List<GAnnot> = []
+    for a in outer { out.push(a) }
+    for a in inner { out.push(a) }
+    out
+}
+
+fn seq_expects_key_in(seq: GSeq, inherited: List<GAnnot>, key: string) -> bool {
+    if seq_expects_key(seq, key) { return true }
+    for a in inherited {
+        match a {
+            .Expect(tok, _) -> { if tok == key { return true } }
+            _ -> {}
+        }
+    }
+    false
+}
+
+fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fold: bool, inherited: List<GAnnot>) -> string {
     match node {
         .Alt(branches) -> {
             for b in branches {
@@ -1189,7 +1309,7 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                                     // view's own generic F0040 and yielded Unknown — so
                                     // `enum E { A(x: ) }` BUILT `(enum E (A(x:<unknown>)))`
                                     // where the hand aborts the whole declaration.
-                                    if rule_first_literal(g, rname) == "" && !seq_expects_key(b, rname) {
+                                    if rule_first_literal(g, rname) == "" && !seq_expects_key_in(b, inherited, rname) {
                                         return "`@require` on rule reference `${rname}` (in rule `${rule}`) needs a single-literal FIRST or a declared `@expect(\"${rname}\", …)` — its FIRST is a disjunction or a token KIND, so there is no one token to name in the diagnostic and no message was supplied"
                                     }
                                 }
@@ -1225,9 +1345,41 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                             return "`@require` cannot sit on a sequence's leading item (rule `${rule}`) — that position is the FIRST-set guard; mark the item that must follow it"
                         }
                     }
+                    // t-myz7: `@onfail(skip)` reports through the SAME message key
+                    // `@require` does, so it inherits the same rule about having one. Its
+                    // other two positional constraints are `@require`'s too, and for the
+                    // same reasons: a leading item's FIRST is already proved by the
+                    // enclosing guard (so the check is dead), and an expr-fold branch
+                    // never reaches emit_item (so the skip would exist in one engine
+                    // only). The prim/rep half is checked in parse_labeled.
+                    if item.onfail == "skip" {
+                        let sname = gprim_ref_name(item.prim)
+                        if rule_first_literal(g, sname) == "" && !seq_expects_key_in(b, inherited, sname) {
+                            return "`@onfail(skip)` on rule reference `${sname}` (in rule `${rule}`) needs a single-literal FIRST or a declared `@expect(\"${sname}\", …)` — its FIRST is a token KIND or a disjunction, so there is no one token to name in the diagnostic and no message was supplied"
+                        }
+                        if this_fold {
+                            return "`@onfail(skip)` cannot appear on an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the skip"
+                        }
+                        if idx == 0 && !b.fallback {
+                            return "`@onfail(skip)` cannot sit on a sequence's leading item (rule `${rule}`) — that position is the FIRST-set guard, which has already proved the reference starts here"
+                        }
+                    }
+                    // t-myz7: `@onfail(close)` ENDS a repetition, so it needs one. The
+                    // gate is on an item INSIDE the group and the repetition is on the
+                    // group, so this is the level that can see both — and without the
+                    // check the emitted `break` would land in an `if` (`( … )?`), which
+                    // is a generated-source error rather than a diagnostic.
                     match item.prim {
                         .Group(inner) -> {
-                            let e = check_cut_node_ctx(g, inner, rule, this_try, this_fold)
+                            if node_has_onfail(inner, "close") && !grep_is_multi(item.rep) {
+                                return "`@onfail(close)` needs a REPEATED group (rule `${rule}`) — it ends the repetition its gated element failed in, and a `( … )?` has none to end"
+                            }
+                        }
+                        _ -> {}
+                    }
+                    match item.prim {
+                        .Group(inner) -> {
+                            let e = check_cut_node_ctx(g, inner, rule, this_try, this_fold, concat_annots(inherited, b.annots))
                             if e != "" { return e }
                         }
                         _ -> {}
@@ -1342,6 +1494,53 @@ fn parse_labeled(p: GP) -> GItem {
         if !seq_can_continue(p) {
             p.fail("`@require` must be followed by an item — it marks a terminal whose absence aborts the rule")
         }
+    }
+    // t-myz7 NON-ABORTING FAILURE POLICY: `@onfail(policy)` says what this position does
+    // when its sub-parse fails, for the rules whose hand parser RECOVERS where `@require`
+    // and `@gate` abort. STRICT grammar `@` `onfail` `(` NAME `)`, the policy validated
+    // against onfail_policy_supported — an unknown policy is a hard error rather than a
+    // silent fall-through to the aborting default, which would look exactly like the bug
+    // the marker was added to fix.
+    mut onfail = ""
+    mut onfail_cap = ""
+    if at_onfail_marker(p) {
+        let _ = p.advance()   // "@"
+        let _ = p.advance()   // "onfail"
+        p.expect_punct("(", "expected `(` after `@onfail`")
+        if p.peek().kind == "NAME" {
+            let pol = p.advance().text
+            if onfail_policy_supported(pol) {
+                onfail = pol
+            } else {
+                p.fail("unknown `@onfail` policy `${pol}` (expected skip / close / drop / discard / bail)")
+            }
+        } else {
+            p.fail("expected a policy name in `@onfail(policy)`")
+        }
+        // `@onfail(discard, <label>)` — the one policy that names what it throws away.
+        // Required for `discard` and refused for the rest, both ways round, so the marker
+        // can never read as "discard something unspecified" or carry a capture no code
+        // path will look at.
+        if p.is_punct(",") {
+            let _ = p.advance()
+            if !onfail_policy_takes_capture(onfail) {
+                p.fail("`@onfail(${onfail})` takes no capture — only `discard` names the list it throws away")
+            }
+            if p.peek().kind == "NAME" {
+                onfail_cap = p.advance().text
+            } else {
+                p.fail("expected a capture name in `@onfail(discard, <label>)`")
+            }
+        } else if onfail_policy_takes_capture(onfail) {
+            p.fail("`@onfail(discard)` must name the capture it throws away (`@onfail(discard, tparams)`) — a bracket's closer is not enough to say which list it was collecting")
+        }
+        p.expect_punct(")", "expected `)` to close `@onfail(policy)`")
+        if !seq_can_continue(p) {
+            p.fail("`@onfail(policy)` must be followed by an item — it marks the position whose failure it governs")
+        }
+    }
+    if onfail != "" && require {
+        p.fail("`@require` and `@onfail` are opposite answers to the same question — an item aborts on failure or it recovers, not both")
     }
     // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
     // matches only on the same source line as the previous token (the
@@ -1485,7 +1684,50 @@ fn parse_labeled(p: GP) -> GItem {
         .RawBrace(_) -> if label == "" { p.fail("`@rawbrace(tag)` must be LABELLED — the captured slice is its only product (`body:@rawbrace(grammar)`)") }
         _ -> {}
     }
-    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, mode_bump, mode_on_if, cut, require, gate, bound: base.bound }
+    // t-myz7: each `@onfail` policy is legal only on the SHAPE it describes. A policy on
+    // the wrong shape has no code path to run in, so without this it would parse clean
+    // and do nothing — the silent-no-op failure mode `@off`/`@when`/`@peek` each already
+    // reject by name. The stmt-kind half of `drop` needs the whole grammar and is checked
+    // in validate_onfail_kinds; what is checkable from one item is checked here.
+    if onfail == "skip" {
+        match base.prim {
+            .Ref(_) -> {}
+            _ -> p.fail("`@onfail(skip)` is only meaningful on a rule REFERENCE — it steps over a sub-rule whose FIRST is absent (`@onfail(skip) tparams:tparam`)")
+        }
+        if !rep_is_one(base.rep) {
+            p.fail("`@onfail(skip)` is only meaningful on a single reference — a repetition already stops when its element's FIRST fails")
+        }
+    }
+    if onfail == "close" && !gate {
+        p.fail("`@onfail(close)` governs a GATED element's abort — put it with the `@gate` whose failure should end the repetition")
+    }
+    if onfail == "drop" {
+        match base.prim {
+            .Ref(_) -> {}
+            _ -> p.fail("`@onfail(drop)` drops a failed CHILD from a captured list — it needs a rule reference (`@onfail(drop) body:spec_item*`)")
+        }
+        if label == "" || !grep_is_multi(base.rep) {
+            p.fail("`@onfail(drop)` is only meaningful on a LABELLED repetition — the list it drops from is the capture (`@onfail(drop) body:spec_item*`)")
+        }
+    }
+    if onfail == "bail" {
+        match base.prim {
+            .Ref(_) -> {}
+            _ -> p.fail("`@onfail(bail)` aborts on a SUB-RULE's own failure — it needs a rule reference (`@onfail(bail) ch:expression`)")
+        }
+        if !rep_is_one(base.rep) {
+            p.fail("`@onfail(bail)` cannot carry a repetition — an absent optional/repeated item is not a failure")
+        }
+    }
+    if onfail == "discard" {
+        if !prim_is_terminal_sp(base.prim) {
+            p.fail("`@onfail(discard, <label>)` marks a bracket's CLOSING TERMINAL — the token whose absence costs the list (`@onfail(discard, tparams) \">\"`)")
+        }
+        if !rep_is_one(base.rep) {
+            p.fail("`@onfail(discard, <label>)` cannot carry a repetition — a bracket has one closer")
+        }
+    }
+    GItem { label, rep: base.rep, prim: base.prim, sameline, mode_off, mode_on, mode_bump, mode_on_if, cut, require, gate, onfail, onfail_cap, bound: base.bound }
 }
 
 // postfix = primary ( "*" | "+" | "?" )? ( "{" "#" NAME "}" )?
