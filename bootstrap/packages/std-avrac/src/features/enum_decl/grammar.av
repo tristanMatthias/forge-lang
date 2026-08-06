@@ -12,7 +12,7 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 export fn avra_enum_decl_grammar() -> Grammar {
     let gp = grammar {
   enum_decl   = @try "enum" @cut @require ename:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? @require "{" ( DOC )*
-                ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* ( vars:variant ","? ( DOC )* )* )? @require "}"
+                ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* )* )? @require "}"
                 @expect("IDENT", "expected enum name")
                 @expect("{", "expected `{` after enum name")
                 @expect("}", "expected `}` after variants")

@@ -1350,10 +1350,24 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             // s_cut guard the terminal abort needs: a @try branch that fails before its
             // cut must still roll back rather than return past the rollback scaffold.
             let req = if !item.require { "" } else {
+                // The message key is the rule's single-literal FIRST when it has one,
+                // and otherwise the RULE NAME — see seed_parser's `seq_expects_key`,
+                // which refuses the marker unless one of the two supplies wording.
+                // The FIRST-set GUARD below is unchanged either way; only what the
+                // diagnostic says is keyed differently.
                 let lit = rule_first_literal(g, name)
-                let exp = expect_for(annots, lit)
-                let rmsg = if exp.found { exp.msg } else { "expected ${lit}" }
-                let rret = "${ind}    return CapVal.Node(st.error_node_silent())\n"
+                let key = if lit != "" { lit } else { name }
+                let exp = expect_for(annots, key)
+                let rmsg = if exp.found { exp.msg } else { "expected ${key}" }
+                // Raise the propagation flag, exactly as the required-TERMINAL abort
+                // does (`abort_ret` in emit_one_terminal). Omitting it here meant a
+                // required REF aborted its own rule and stopped: `enum E { A(x: ) }`
+                // reported the missing type and then let `variant` finish, building
+                // `(enum E (A(:<unknown>)))` where the hand aborts to `(error)`. The
+                // gated unwinds in `variant` and `enum_decl` are what carry it out, and
+                // they were reading a flag nobody set.
+                let rraise = if grammar_has_gate(g) { "${ind}    st.set_abort_prop(true)\n" } else { "" }
+                let rret = rraise + "${ind}    return CapVal.Node(st.error_node_silent())\n"
                 let body = "${ind}    st.report(\"${rmsg}\")\n" +
                     (if !abortable { "" }
                      else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${rret}${ind}    }\n" }

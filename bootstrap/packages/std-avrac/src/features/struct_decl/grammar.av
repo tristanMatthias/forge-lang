@@ -35,9 +35,17 @@ export fn avra_struct_decl_grammar() -> Grammar {
                 @expect("=", "expected `=` after shape name")
                 @expect("{", "expected `{` after `=` in shape declaration")
                 @expect("}", "expected `}` after shape fields") -> MkShapeDecl(shname, shfields)
-  field       = ( "mut" )? fname:IDENT @require ":" ftype:type_expr
+  // The TYPE position is `@require`d, keyed on the rule NAME because `type_expr`'s
+  // FIRST is a disjunction with no single token to name (t-myz7). Unrequired, a
+  // missing type did not abort: the type view reported its own generic F0040 and
+  // handed back `Unknown`, so `shape S = { x: , y: int }` and `enum E { A(x: ) }`
+  // both BUILT a field/variant — `(enum E (A(x:<unknown>)))` — where the hand aborts
+  // the whole declaration and reports F0001. Same field rule serves `type`, `shape`
+  // and `enum` payloads, so one `@require` covers all three.
+  field       = ( "mut" )? fname:IDENT @require ":" @require ftype:type_expr
                 @expect("IDENT", "expected field name")
-                @expect(":", "expected `:` after field name") -> MkField(fname, ftype)
+                @expect(":", "expected `:` after field name")
+                @expect("type_expr", "expected type after `:`") -> MkField(fname, ftype)
     }
     grammar_checked(gp)
 }

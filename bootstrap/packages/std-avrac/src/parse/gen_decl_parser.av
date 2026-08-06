@@ -2370,6 +2370,11 @@ fn parse_field(st: PState) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
+    if !(tok_starts_type(st.cur())) {
+        st.report("expected type after `:`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
     let ftype = parse_type_expr(st)
     mk_field(st, capval_tok_text(fname), ftype)
 }
@@ -2445,12 +2450,23 @@ fn parse_enum_decl(st: PState) -> CapVal {
                 while st.cur().tk == Tk.DocComment {
                     let _ = st.advance()
                 }
-                while st.cur().tk == Tk.Identifier {
+                while lookahead_ok("not_rbrace", st) {
+                    let __rep_before = st.pos
+                    st.set_abort_prop(false)
+                    if !(st.cur().tk == Tk.Identifier) {
+                        st.report("expected variant name")
+                        st.set_abort_prop(true)
+                        return CapVal.Node(st.error_node_silent())
+                    }
                     vars_list.push(capval_to_variant(st, parse_variant(st)))
                     if st.cur().tk == Tk.Comma { let _ = st.advance() }
                     while st.cur().tk == Tk.DocComment {
                         let _ = st.advance()
                     }
+                    if st.abort_prop {
+                        return CapVal.Node(st.error_node_silent())
+                    }
+                    if st.pos == __rep_before { break }
                 }
                 if st.abort_prop {
                     return CapVal.Node(st.error_node_silent())
@@ -2711,81 +2727,149 @@ fn parse_trait_member(st: PState) -> CapVal {
 }
 
 fn parse_assoc_member(st: PState) -> CapVal {
-    let _ = st.advance()
-    let atname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
-        CapVal.Tok(st.cur())
+    mut tried_spec = false
+    if st.cur().text == "type" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        mut s_cut = false
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        while true {
+            let _ = st.advance()
+            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
+            if !s_cut { break }
+            let atname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+                st.report_ident("expected associated type name")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+                CapVal.Tok(st.cur())
+            }
+            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
+                return mk_assoc_type(st, capval_tok_text(atname))
+            }
+            break
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
     }
-    mk_assoc_type(st, capval_tok_text(atname))
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
 }
 
 fn parse_method_member(st: PState) -> CapVal {
-    mut tmparams_list: List<ParamEntry> = []
-    mut tmbody_list: List<StmtId> = []
-    mut tmret: CapVal = CapVal.Nil
-    mut tmlb: CapVal = CapVal.Nil
-    let _ = st.advance()
-    let tmname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
-        CapVal.Tok(st.cur())
-    }
-    if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
-        st.report("expected (")
-    }
-    if st.cur().tk == Tk.Identifier {
-        tmparams_list.push(capval_to_pentry(st, parse_param(st)))
-        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
-            let _ = st.advance()
-            tmparams_list.push(capval_to_pentry(st, parse_param(st)))
-        }
-        if st.cur().tk == Tk.Comma {
-            let _ = st.advance()
-        }
-    }
-    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-        st.report("expected )")
-    }
-    if st.cur().tk == Tk.Arrow {
-        let _ = st.advance()
-        tmret = parse_type_expr(st)
-    }
-    if st.cur().tk == Tk.LeftBrace {
-        tmlb = CapVal.Tok(st.advance())
-        let __pre_err = st.had_error
-        mut __any_err = __pre_err
+    mut tried_spec = false
+    if st.cur().text == "fn" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        mut s_cut = false
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
         while true {
-            if st.at_end() || st.cur().text == "}" { break }
-            let __sp = st.cur().pos
-            let __before_i = st.pos
-            st.clear_error()
-            let __cv = parse_body_item(st)
-            if st.had_error {
-                __any_err = true
-                st.synchronize_stmt()
-                mut __ob = st.brace_delta(__before_i, st.pos)
-                while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
-                    let _ = st.advance()
-                    __ob = __ob - 1
+            mut tmparams_list: List<ParamEntry> = []
+            mut tmbody_list: List<StmtId> = []
+            mut tmret: CapVal = CapVal.Nil
+            mut tmlb: CapVal = CapVal.Nil
+            let _ = st.advance()
+            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
+            if !s_cut { break }
+            let tmname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+                st.report_ident("expected method name")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
-                if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-                let __elc = st.store.lines.to_linecol(__sp)
-                let __e = st.store.stmts.add_leaf(Stmt.Error)
-                st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-                tmbody_list.push(__e)
-                st.clear_error()
-                continue
+                CapVal.Tok(st.cur())
             }
-            let __sid = capval_to_stmt(st, __cv)
-            let __lc = st.store.lines.to_linecol(__sp)
-            st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
-            tmbody_list.push(__sid)
+            if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
+                st.report("expected `(` after method name")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            if st.cur().tk == Tk.Identifier {
+                tmparams_list.push(capval_to_pentry(st, parse_param(st)))
+                while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
+                    let _ = st.advance()
+                    tmparams_list.push(capval_to_pentry(st, parse_param(st)))
+                }
+                if st.cur().tk == Tk.Comma {
+                    let _ = st.advance()
+                }
+            }
+            if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+                st.report("expected `)` after method parameters")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            if st.cur().tk == Tk.Arrow {
+                let _ = st.advance()
+                tmret = parse_type_expr(st)
+            }
+            if st.cur().tk == Tk.LeftBrace {
+                tmlb = CapVal.Tok(st.advance())
+                let __pre_err = st.had_error
+                mut __any_err = __pre_err
+                while true {
+                    if st.at_end() || st.cur().text == "}" { break }
+                    let __sp = st.cur().pos
+                    let __before_i = st.pos
+                    st.clear_error()
+                    let __cv = parse_body_item(st)
+                    if st.had_error {
+                        __any_err = true
+                        st.synchronize_stmt()
+                        mut __ob = st.brace_delta(__before_i, st.pos)
+                        while __ob > 0 && !st.at_end() && st.cur().tk == Tk.RightBrace {
+                            let _ = st.advance()
+                            __ob = __ob - 1
+                        }
+                        if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+                        let __elc = st.store.lines.to_linecol(__sp)
+                        let __e = st.store.stmts.add_leaf(Stmt.Error)
+                        st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+                        tmbody_list.push(__e)
+                        st.clear_error()
+                        continue
+                    }
+                    let __sid = capval_to_stmt(st, __cv)
+                    let __lc = st.store.lines.to_linecol(__sp)
+                    st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+                    tmbody_list.push(__sid)
+                }
+                if __any_err { st.note_had_error() }
+                if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+                    st.report("expected }")
+                }
+            }
+            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
+                return mk_trait_method(st, capval_tok_text(tmname), tmparams_list, tmret, capval_present(tmret), capval_present(tmlb), tmbody_list)
+            }
+            break
         }
-        if __any_err { st.note_had_error() }
-        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
-        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
     }
-    mk_trait_method(st, capval_tok_text(tmname), tmparams_list, tmret, capval_present(tmret), capval_present(tmlb), tmbody_list)
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
 }
 
 fn parse_impl_decl(st: PState) -> CapVal {
@@ -3195,6 +3279,7 @@ fn parse_iflet_stmt(st: PState) -> CapVal {
     st.set_modes(__modes_5)
     if !(st.cur().tk == Tk.LeftBrace) {
         st.report("expected `{` after the `if let` binding")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     let t = parse_block(st)

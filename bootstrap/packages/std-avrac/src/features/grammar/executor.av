@@ -2597,7 +2597,13 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
             .Ref(rname) -> {
                 let seen: List<string> = []
                 if !tok_starts_rule(g, rname, st, seen) {
-                    handle_missing(st, rule_first_literal(g, rname), annots)
+                    // Key the message on the rule's single-literal FIRST, or — when it
+                    // has none — on the RULE NAME, which is the key `@expect` uses for
+                    // that case (emit's twin in emit_one; enforced by seed_parser's
+                    // `seq_expects_key`, so the name only ever reaches here with a
+                    // declared message behind it).
+                    let rlit = rule_first_literal(g, rname)
+                    handle_missing(st, if rlit != "" { rlit } else { rname }, annots)
                     env.set_abort(true)
                     return CapVal.Node(st.error_node_silent())
                 }

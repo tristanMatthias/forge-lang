@@ -13,8 +13,19 @@ export fn avra_trait_decl_grammar() -> Grammar {
                 @expect("{", "expected `{` after trait name")
                 @expect("}", "expected `}` after trait body") -> MkTraitDecl(trname, tmembers)
   trait_member  = assoc_member | method_member
-  assoc_member  = "type" atname:IDENT -> MkAssocType(atname)
-  method_member = "fn" tmname:IDENT "(" ( tmparams:param ( @peek(comma_not_rparen) "," tmparams:param )* ( "," )? )? ")" ( "->" tmret:type_expr )? ( tmlb:"{" tmbody:body_item* "}" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
+  // Both members COMMIT after their keyword, and both had to: without a `@require`
+  // on the name each one consumed whatever token was present, on the promise that
+  // its caller proved FIRST. `trait T { type }` bound the `}` AS THE ASSOCIATED TYPE
+  // NAME and built `(assoc-type })`; `trait T { fn m( }` built a whole member,
+  // `(extern m () -> void)`, out of a header that never closed. The hand aborts both
+  // and builds nothing, so these were silent ACCEPTS of invalid input — the same
+  // class as the gated `enum E { 5 }`, reached through a different door.
+  assoc_member  = @try "type" @cut @require atname:IDENT
+                  @expect("IDENT", "expected associated type name") -> MkAssocType(atname)
+  method_member = @try "fn" @cut @require tmname:IDENT @require "(" ( tmparams:param ( @peek(comma_not_rparen) "," tmparams:param )* ( "," )? )? @require ")" ( "->" tmret:type_expr )? ( tmlb:"{" tmbody:body_item* "}" )?
+                  @expect("IDENT", "expected method name")
+                  @expect("(", "expected `(` after method name")
+                  @expect(")", "expected `)` after method parameters") -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
     }
     grammar_checked(gp)
 }
