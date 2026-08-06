@@ -45,7 +45,7 @@ fn parse_qualified_type(st: PState) -> CapVal {
     mut qopt: CapVal = CapVal.Nil
     let _ = st.advance()
     if st.cur().tk == Tk.Identifier { qname_list.push(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
     }
     if !(lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon)) { st.report("expected at least one repetition") }
     while lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon) {
@@ -54,7 +54,7 @@ fn parse_qualified_type(st: PState) -> CapVal {
             st.report("expected :")
         }
         if st.cur().tk == Tk.Identifier { qname_list.push(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
     }
     if st.cur().tk == Tk.Less {
@@ -103,7 +103,7 @@ fn parse_dyn_type(st: PState) -> CapVal {
     mut opt: CapVal = CapVal.Nil
     let _ = st.advance()
     let t = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Question {
@@ -145,7 +145,7 @@ fn parse_named_type(st: PState) -> CapVal {
     while st.cur().tk == Tk.Dot {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { name_list.push(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
     }
     if st.cur().tk == Tk.Less {

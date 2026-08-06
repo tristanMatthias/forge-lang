@@ -19,7 +19,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
-use @std.avrac.features.grammar.{hand_leaf_refused}
+use @std.avrac.features.grammar.{hand_leaf_refused, avra_program_grammar, Grammar, GNode, GAnnot, emit_parser_source_ex, avra_decl_dispatch_grammar}
 
 fn flip_decl(src: string) -> string {
     mut p = parser_new(src)
@@ -176,8 +176,37 @@ fn BARE_IDENT_COMP_INST() -> string {
 /// will not need replacing next slice the way its four predecessors did. It closes
 /// when the native rules own recovery — the `@recover(sync_to:)` work this ticket's
 /// design field anticipates — which is the actual gate on deleting the leaf.
+///
+/// t-myz7 UPDATE — the "cannot be closed by routing one more form" claim was WRONG,
+/// and the anchor did graduate. Owning recovery per keyword is exactly what this
+/// slice does, so the table above is now split rather than uniform. Measured under
+/// `AVRA_REFUSE_HAND_LEAF=decl_hand`:
+///
+///   trait T {   shape S = {   (+ mod use const)               GRADUATED
+///   fn foo(   enum E {   select { x }   spec "s" { given }
+///   type Foo = {   impl Foo {   component C {                    still REFUSES
+///
+/// So the anchor moves to `impl`, and the assertions below split in two: the
+/// still-refusing keywords keep the anti-vacuity role, and each graduated form moves
+/// into `recovery_without_delegate` in the recovery spec — coverage GROWS as the
+/// frontier advances instead of quietly thinning. When `impl` lands, re-point this at
+/// whatever still refuses and move `impl`'s malformed forms across; when NOTHING
+/// refuses, this file's frontier specs are what say the leaf can be deleted.
+///
+/// `fn` is on the REFUSING side deliberately, and the reason generalises to every
+/// keyword with a STATEMENT BODY. Committing `fn_decl` (`@try "fn" @cut …`) is what
+/// makes it own its header diagnostics — but the `@try` that used to sit in the
+/// `declaration` alternation commits only when the branch "reported nothing", so ANY
+/// diagnostic anywhere in the fn, including deep in its body, used to roll the whole
+/// declaration back and let the hand own recovery. A committed rule never rolls back.
+/// You cannot have both: commit early to own the header, and roll back late to
+/// borrow the hand's body recovery. Measured — committing `fn` moved 27 corpus and
+/// straggler specs red, every one of them an EXPRESSION-view case (`with_suffix`,
+/// `map_literal`, `qualified_expr`, `template_lit`) that is merely WRAPPED in
+/// `fn f() -> int { … }`. So `fn` graduates only once native statement-body recovery
+/// is byte-equal to the hand's, which is what the recovery corpus measures.
 fn MALFORMED_DECL() -> string {
-    "fn foo(\n"
+    "impl Foo {\n"
 }
 
 fn fixture_path(name: string) -> string {
@@ -290,6 +319,81 @@ fn recovery_without_delegate(name: string, src: string) -> bool {
     parse_failed(out) && !refusal_in_file(out, fixture_path(name))
 }
 
+/// The `@expect` message the grammar declares for `key` on rule `rule`, or "".
+/// Reads the GRAMMAR OBJECT, which is the single source of truth — the annotation
+/// on a rule's LEADING item never lowers to emitted parser text (the caller proved
+/// FIRST, so that item is advanced unconditionally), so it cannot be read back out
+/// of any generated file.
+fn declared_expect(rule: string, key: string) -> string {
+    let g = avra_program_grammar()
+    for r in g.rules {
+        if r.name == rule {
+            match r.body {
+                .Alt(branches) -> {
+                    for b in branches {
+                        for a in b.annots {
+                            match a {
+                                .Expect(tok, msg) -> { if tok == key { return msg } }
+                                _ -> {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ""
+}
+
+spec "t-myz7: the cross-view `param` message is not allowed to drift" {
+    then "emit's declared message is the string the `param` grammar annotation carries" {
+        // `param` is DEFINED in the expression view, so `rule_first_expect_msg` cannot
+        // read its `@expect` from the DECLARATION grammar at all — the decl parser calls
+        // the separately generated expression parser for it. emit therefore declares the
+        // wording in code, beside the FIRST it pairs with, and nothing otherwise binds
+        // the two: editing the annotation in avra_grammar.av would silently leave the
+        // decl view on the stale string, visible only to a diagnostic-TEXT oracle.
+        //
+        // This reads the GRAMMAR OBJECT rather than a generated file, because the
+        // annotation sits on `param`'s LEADING item and so lowers to no emitted text at
+        // all — two earlier drafts of this guard asserted on generated sources and were
+        // guards that could not fail. Change the annotation, and this goes red.
+        declared_expect("param", "IDENT") == "expected parameter name"
+    }
+
+    then "the guard is not vacuous — the lookup really finds annotations" {
+        // The positive control the two failed drafts lacked. A key the grammar does NOT
+        // declare must come back empty, so a `declared_expect` that silently returned ""
+        // for everything (a renamed rule, a changed annot shape) cannot satisfy the
+        // assertion above by accident.
+        declared_expect("param", "NOT_A_REAL_KEY") == "" &&
+            declared_expect("no_such_rule", "IDENT") == ""
+    }
+}
+
+spec "t-myz7: a rule-name-keyed @expect reaches the EMITTED parser" {
+    then "the gated call on `trait_member` carries the declared wording, not the rule name" {
+        // The guard the `param` spec above CANNOT be. That one compares the grammar with
+        // a string, so it stays green no matter what emit does with the annotation — and
+        // that blind spot is exactly where a bug lived: `rule_first_expect_msg` read the
+        // rule-name-keyed `@expect` off `branches[0]` only, while `trait_member =
+        // assoc_member | method_member @expect("trait_member", …)` binds it to the LAST
+        // branch. The lookup missed it, `gated_first_check` fell back to its generic
+        // path, and the emitted parser reported `expected trait_member` — a GRAMMAR RULE
+        // NAME, printed at a user.
+        //
+        // Note `declared_expect` below scans EVERY branch (it always did). The emitter
+        // scanning only the first is what the two disagreed about, so a guard that reads
+        // the grammar on both sides could never see it. This one reads the EMITTED
+        // source, so it can.
+        let declared = declared_expect("trait_member", "trait_member")
+        let src = emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+        declared != "" &&
+            src.contains(declared) &&
+            !src.contains("expected trait_member")
+    }
+}
+
 spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     then "the probe is DORMANT unless asked" {
         // A guard that cannot fail is worth nothing, and a probe that fires by
@@ -353,10 +457,24 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // property of the `@try` gate itself and not of any single rule: if it were one
         // rule's gap, closing that rule would silently make this assertion vacuous
         // again, which is the exact trap the previous anchor fell into.
-        !native_without_delegate("malformed_fn", MALFORMED_DECL()) &&
-        !native_without_delegate("malformed_type", "type Foo = {\n") &&
-        !native_without_delegate("malformed_enum", "enum E {\n") &&
-        !native_without_delegate("malformed_impl", "impl Foo {\n") &&
+        //
+        // The set is the STILL-REFUSING keywords. `enum` is among them: it was briefly
+        // committed and then UN-ROUTED, because a committed rule never rolls back and
+        // `enum E< { A }` does not match the hand (see MALFORMED_DECL). `fn` likewise,
+        // for the statement-body reason recorded there. An earlier draft of this
+        // comment claimed `enum` had graduated — stale, and contradicted by both the
+        // frontier table above and the assertion below it.
+        //
+        // Asserted with `refused_here`, which claims the refusal DIRECTLY. CodeRabbit:
+        // `native_without_delegate` is `!parse_failed && !refused`, so its NEGATION is
+        // satisfied by a mere parse failure — native recovery would pass it just as
+        // well as delegate refusal. That is the wrong predicate for the anti-vacuity
+        // half, whose entire job is to be the strong one.
+        refused_here("decl_hand", "malformed_impl", MALFORMED_DECL()) &&
+        refused_here("decl_hand", "malformed_type", "type Foo = {\n") &&
+        refused_here("decl_hand", "malformed_component", "component C {\n") &&
+        refused_here("decl_hand", "malformed_fn", "fn foo(\n") &&
+        refused_here("decl_hand", "malformed_enum", "enum E {\n") &&
         // ...and the VALID counterpart of the same keyword does NOT report, which is
         // what pins the discriminator to malformed-ness rather than to the keyword.
         native_without_delegate("wellformed_fn", "fn foo() -> int { 1 }")
@@ -523,10 +641,19 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         recovery_without_delegate("use_no_brace", "use foo\nfn f() -> int { 1 }") &&
         recovery_without_delegate("use_pkg_noname", "use @std.{}\nfn f() -> int { 1 }") &&
         recovery_without_delegate("use_pkg_dotdot", "use @std..{x}\nfn f() -> int { 1 }") &&
+        // The keywords that GRADUATED this slice. Each was previously an anti-vacuity
+        // anchor in the spec above (asserted to still need the leaf); moving them here
+        // rather than deleting them is what keeps the frontier's coverage monotone —
+        // the claim changes from "still needs the leaf" to "reports WITHOUT it", and
+        // both directions stay under test the whole way across.
+        recovery_without_delegate("trait_open", "trait T {\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("trait_noname", "trait {\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("shape_open", "shape S = {\nfn f() -> int { 1 }") &&
         // ANTI-VACUITY: negatives alone would also pass if `refused_here` simply
         // stopped detecting refusals. A SIBLING keyword's malformed form must still
-        // refuse. `enum` has not been converted, so this fires today — RE-POINT it at
-        // the next unconverted keyword when `enum` lands, never delete it.
-        refused_here("decl_hand", "enum_still_needs_leaf", "enum\nfn f() -> int { 1 }")
+        // refuse. `enum` held this role until this slice converted it; `impl` has not
+        // been converted, so this fires today — RE-POINT it at the next unconverted
+        // keyword when `impl` lands, never delete it.
+        refused_here("decl_hand", "impl_still_needs_leaf", "impl\nfn f() -> int { 1 }")
     }
 }

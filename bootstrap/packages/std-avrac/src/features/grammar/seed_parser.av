@@ -1114,6 +1114,19 @@ fn validate_cuts(g: Grammar) -> string {
     ""
 }
 
+/// True when the sequence declares `@expect(key, …)`. The message-existence half of
+/// the `@require`-on-a-rule-reference rule: a ref with no single-literal FIRST has no
+/// token to name, so it may only be required when the author supplied the wording.
+fn seq_expects_key(seq: GSeq, key: string) -> bool {
+    for a in seq.annots {
+        match a {
+            .Expect(tok, _) -> { if tok == key { return true } }
+            _ -> {}
+        }
+    }
+    false
+}
+
 // `g` is threaded so a `@require` on a rule REFERENCE can look up that rule's
 // single-literal FIRST — the message key the marker needs (t-47hc.24).
 fn check_cut_node(g: Grammar, node: GNode, rule: string, in_try: bool) -> string {
@@ -1162,8 +1175,22 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                         if !prim_is_terminal_sp(item.prim) {
                             match item.prim {
                                 .Ref(rname) -> {
-                                    if rule_first_literal(g, rname) == "" {
-                                        return "`@require` on rule reference `${rname}` (in rule `${rule}`) needs a single-literal FIRST — its FIRST is a disjunction or a token KIND, so there is no one token to name in the diagnostic"
+                                    // t-myz7: a ref whose FIRST is NOT a single literal is
+                                    // legal too, PROVIDED the sequence declares its message
+                                    // as `@expect("<rule-name>", …)` — keyed on the rule name
+                                    // rather than a token. The restriction's own stated reason
+                                    // is "there is no one token to name in the diagnostic"; a
+                                    // declared message is exactly that reason removed, so the
+                                    // rule stays "never report a token you did not derive".
+                                    //
+                                    // This is what lets a TYPE position abort. `field` is
+                                    // `fname:IDENT @require ":" ftype:type_expr`, and with the
+                                    // type ref unrequired a missing type reported the type
+                                    // view's own generic F0040 and yielded Unknown — so
+                                    // `enum E { A(x: ) }` BUILT `(enum E (A(x:<unknown>)))`
+                                    // where the hand aborts the whole declaration.
+                                    if rule_first_literal(g, rname) == "" && !seq_expects_key(b, rname) {
+                                        return "`@require` on rule reference `${rname}` (in rule `${rule}`) needs a single-literal FIRST or a declared `@expect(\"${rname}\", …)` — its FIRST is a disjunction or a token KIND, so there is no one token to name in the diagnostic and no message was supplied"
                                     }
                                 }
                                 _ -> {

@@ -125,7 +125,7 @@ fn parse_eq_tail(st: PState) -> CapVal {
             st.report("expected .")
         }
         let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
             CapVal.Tok(st.cur())
         }
         return CapVal.Node(mk_is_expr(st, v))
@@ -212,7 +212,7 @@ fn parse_unary_chain(st: PState) -> CapVal {
         mut f_list: List<FieldInit> = []
         let _ = st.advance()
         let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
             CapVal.Tok(st.cur())
         }
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
@@ -676,7 +676,7 @@ fn parse_table_head(st: PState) -> CapVal {
     if st.cur().tk == Tk.Less {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { rt = CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
         if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
             st.report("expected `>` after table row type")
@@ -749,7 +749,7 @@ fn parse_qualified_expr(st: PState) -> CapVal {
     mut lb: CapVal = CapVal.Nil
     let _ = st.advance()
     let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if !(lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon)) { st.report("expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax") }
@@ -759,7 +759,7 @@ fn parse_qualified_expr(st: PState) -> CapVal {
             st.report("expected :")
         }
         if st.cur().tk == Tk.Identifier { s_list.push(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
     }
     if st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.LeftBrace) {
@@ -828,7 +828,7 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
         if st.cur().tk == Tk.LeftParen {
             let _ = st.advance()
             if st.cur().tk == Tk.Identifier { b = CapVal.Tok(st.advance()) } else {
-                st.report("expected error binding name after `catch (`")
+                st.report_ident("expected error binding name after `catch (`")
                 return CapVal.Node(st.error_node_silent())
             }
             if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
@@ -1107,7 +1107,7 @@ fn parse_variant_ctor(st: PState) -> CapVal {
     mut a_list: List<ExprId> = []
     let _ = st.advance()
     let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftParen {
@@ -1343,7 +1343,7 @@ fn parse_if_expr(st: PState) -> CapVal {
             st.report("expected let")
         }
         let b = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected a binding name after `if let`")
+            st.report_ident("expected a binding name after `if let`")
             return CapVal.Node(st.error_node_silent())
             CapVal.Tok(st.cur())
         }
@@ -1474,7 +1474,7 @@ fn parse_list_comp(st: PState) -> CapVal {
         st.report("expected for")
     }
     let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().text == "in" { let _ = st.advance() } else {

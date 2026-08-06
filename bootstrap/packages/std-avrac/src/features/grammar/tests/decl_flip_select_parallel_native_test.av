@@ -31,6 +31,19 @@ fn clean_all_paths(name: string, src: string) -> bool {
         clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
 }
 
+/// A malformed fixture must report `needle` on EVERY native path, not just the
+/// default. The default path answers invalid input with the EXECUTOR (static ->
+/// had_error -> re-parse), so a `default`-only assertion measures the executor and
+/// leaves the emitted static parser untested — the t-zrn3 blind spot in reverse.
+fn reports_all_paths(name: string, src: string, needle: string) -> bool {
+    let d = check_out("${name}_dflt", "", src)
+    let e = check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
+    let x = check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)
+    !clean(d) && d.contains(needle) &&
+        !clean(e) && e.contains(needle) &&
+        !clean(x) && x.contains(needle)
+}
+
 spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
     then "all three parse fns exist in the production declaration parser" {
         let src = decl_src()
@@ -44,9 +57,25 @@ spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
         let sel_at = src.index_of("parse_select_decl(st)")
         let par_at = src.index_of("parse_parallel_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        src.contains("s_last = parse_select_decl(st)") &&
-            src.contains("s_last = parse_parallel_decl(st)") &&
-            sel_at >= 0 && par_at >= 0 && hand_at >= 0 &&
+        // Both are `@try` IN THE DISPATCHER, so both lower to the speculative
+        // `s_last = …` bookkeeping — and that form IS the "routed as `@try`, never
+        // bare" proof: a bare branch emits a direct call with no snapshot around it.
+        //
+        // Bound to the `decl_hand` POSITION, not merely present: index the EXACT
+        // dispatch text and compare that index with `hand_at`. `contains` alone would
+        // pass if the call sat AFTER the hand gate, or in some other fn entirely —
+        // which is the #1028 dead-code failure this assertion exists for.
+        //
+        // `select` was briefly COMMITTED (`@try … @cut` inside the rule, reached by a
+        // direct `return parse_select_decl(st)`) and had to be un-routed: a committed
+        // rule never rolls back, so `select { x }` aborted to `(error)` where the hand
+        // reports the missing `<-` and still builds `(select ())`. If it is committed
+        // again, this assertion is what says so.
+        let sel_ret = src.index_of("s_last = parse_select_decl(st)")
+        let par_ret = src.index_of("s_last = parse_parallel_decl(st)")
+        hand_at >= 0 && sel_ret >= 0 && par_ret >= 0 &&
+            sel_ret < hand_at && par_ret < hand_at &&
+            sel_at >= 0 && par_at >= 0 &&
             sel_at < hand_at && par_at < hand_at
     }
 
@@ -107,16 +136,19 @@ spec "t-47hc Phase 4: the concurrency frontier did not widen" {
         !clean(out) && out.contains("error[F0001]")
     }
 
-    then "`select { x }` stays the hand's missing-`<-` diagnostic" {
-        // The native arm rule fails at `<-`, the @try rolls back, and the HAND
-        // owns the report — the exact diagnostic its silent-drop fix added.
-        let out = check_out("sel_noarrow", "", "fn main() {\n    select { x }\n}\n")
-        !clean(out) && out.contains("error[F0001]") &&
-            out.contains("expected `<-` after select arm binding")
+    then "`select { x }` reports the missing-`<-` diagnostic on every native path" {
+        // OWNED NATIVELY now (t-myz7): `@cut` sits right after `select`, so the arm's
+        // `@expect("<-", …)` reports instead of the branch rolling back to
+        // select_stmt/parser.av. Asserted on all three native paths rather than the
+        // default alone, because the default answers invalid input with the EXECUTOR —
+        // a default-only check leaves the emitted static parser unmeasured.
+        reports_all_paths("sel_noarrow", "fn main() {\n    select { x }\n}\n",
+            "expected `<-` after select arm binding")
     }
 
     then "`select { 5 }` stays a parse error — a non-IDENT never starts an arm" {
-        let out = check_out("sel_num", "", "fn main() {\n    select { 5 }\n}\n")
-        !clean(out) && out.contains("error[F0001]")
+        // The `@gate` on the arm repetition is what makes this REPORT rather than
+        // silently ending the arm list; `@expect("IDENT", …)` supplies its wording.
+        reports_all_paths("sel_num", "fn main() {\n    select { 5 }\n}\n", "error[F0001]")
     }
 }

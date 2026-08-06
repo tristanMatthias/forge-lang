@@ -305,7 +305,24 @@ fn emit_rule_fn_in(g: Grammar, r: Rule) -> string {
     // recurses into `expression` (`[i]`, `(args)`, `<T>(args)`) folds onto whatever the
     // NESTED chain last produced: `stats[i]` built `Index(i, i)`.
     let snap = if rule_has_postfix_step_build_e(g, r) { "    st.snap_postfix_step()\n" } else { "" }
-    let body = "fn parse_${r.name}(st: PState) -> CapVal {\n${snap}${emit_rule_body(g, r.body)}}\n"
+    // t-myz7: the START rule is the PER-ITEM entry, so it is where `abort_prop` dies.
+    // The flag must SURVIVE an unwind within one item (that is its whole job) and be
+    // gone before the next item starts — the PState is shared for a whole file, so a
+    // leaked `true` makes every later declaration return a silent error node at its
+    // first gated check.
+    //
+    // Chosen over resetting in `clear_error` on SCOPE, not on measurement: clear_error
+    // also fires per BODY ITEM, which is inside a declaration, so it can cut an unwind
+    // short before it reaches the enclosing rule. Both placements measure IDENTICALLY
+    // today (production 78/114, leaf-refusal 53) — the hypothesis that the clear_error
+    // placement caused the 56 -> 53 refusal drop was TESTED HERE AND REFUTED. That drop
+    // comes from something else in the same commit, most likely `@require` newly raising
+    // the flag, which genuinely changes how far an abort unwinds. Still open.
+    //
+    // Scoped to gate-bearing grammars (see `grammar_has_gate`): emit.av renders four
+    // production parsers, and only the decl view's start rule is a per-item entry.
+    let reset = if grammar_has_gate(g) && g.rules.length > 0 && g.rules[0].name == r.name { "    st.set_abort_prop(false)\n" } else { "" }
+    let body = "fn parse_${r.name}(st: PState) -> CapVal {\n${reset}${snap}${emit_rule_body(g, r.body)}}\n"
     if !rule_seeds_postfix_e(g, r) { return body }
     // CHAIN NEUTRALITY (emit twin of exec_rule's save/restore; see
     // PState.restore_postfix_chain). The chain rule saves its four chain fields and puts
@@ -314,7 +331,14 @@ fn emit_rule_fn_in(g: Grammar, r: Rule) -> string {
     // from. Emitted as a WRAPPER around the real rule fn rather than inline, because the
     // body has many `return` points and the restore must run after EVERY one of them.
     let inner = "fn parse_${r.name}_chain(st: PState) -> CapVal {\n${snap}${emit_rule_body(g, r.body)}}\n"
-    "fn parse_${r.name}(st: PState) -> CapVal {\n" +
+    // `reset` rides the WRAPPER, not the inner chain fn: the wrapper is what callers
+    // enter, so that is where the per-item entry is. Omitting it here (the body path
+    // above has it) would mean a gate-bearing grammar whose first rule ALSO seeds the
+    // postfix chain never cleared a stale `abort_prop`. No grammar is in that shape
+    // today — the decl view's first rule is `declaration`, and only `unary` seeds the
+    // chain — so this is a consistency fix, not a live one, and the regenerated
+    // parsers are byte-identical. CodeRabbit.
+    "fn parse_${r.name}(st: PState) -> CapVal {\n${reset}" +
         "    let c_step_base = st.postfix_step_base\n" +
         "    let c_step_sp = st.postfix_step_sp\n" +
         "    let out = parse_${r.name}_chain(st)\n" +
@@ -1333,10 +1357,24 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             // s_cut guard the terminal abort needs: a @try branch that fails before its
             // cut must still roll back rather than return past the rollback scaffold.
             let req = if !item.require { "" } else {
+                // The message key is the rule's single-literal FIRST when it has one,
+                // and otherwise the RULE NAME — see seed_parser's `seq_expects_key`,
+                // which refuses the marker unless one of the two supplies wording.
+                // The FIRST-set GUARD below is unchanged either way; only what the
+                // diagnostic says is keyed differently.
                 let lit = rule_first_literal(g, name)
-                let exp = expect_for(annots, lit)
-                let rmsg = if exp.found { exp.msg } else { "expected ${lit}" }
-                let rret = "${ind}    return CapVal.Node(st.error_node_silent())\n"
+                let key = if lit != "" { lit } else { name }
+                let exp = expect_for(annots, key)
+                let rmsg = if exp.found { exp.msg } else { "expected ${key}" }
+                // Raise the propagation flag, exactly as the required-TERMINAL abort
+                // does (`abort_ret` in emit_one_terminal). Omitting it here meant a
+                // required REF aborted its own rule and stopped: `enum E { A(x: ) }`
+                // reported the missing type and then let `variant` finish, building
+                // `(enum E (A(:<unknown>)))` where the hand aborts to `(error)`. The
+                // gated unwinds in `variant` and `enum_decl` are what carry it out, and
+                // they were reading a flag nobody set.
+                let rraise = if grammar_has_gate(g) { "${ind}    st.set_abort_prop(true)\n" } else { "" }
+                let rret = rraise + "${ind}    return CapVal.Node(st.error_node_silent())\n"
                 let body = "${ind}    st.report(\"${rmsg}\")\n" +
                     (if !abortable { "" }
                      else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${rret}${ind}    }\n" }
@@ -1453,6 +1491,13 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // so a plain `expected <t>` (no backticks) is deterministic; a group has no
     // single lexeme (t == "") → a generic label.
     let msg = if exp.found { exp.msg } else if t == "" { "expected token" } else { "expected ${t}" }
+    // so07.2 / 1rzz: an IDENT binding position keeps the hand parser's
+    // RESERVED-KEYWORD diagnostic ("`move` is a reserved keyword …") instead of
+    // reporting the generic `@expect` message at a `Tk.KwReserved` token. Routed via
+    // the PState method so the generated parser and the executor's `handle_missing`
+    // produce the same text from the same code. Non-IDENT terminals are untouched,
+    // so every other rule regenerates byte-identical.
+    let rep = if t == "IDENT" { "st.report_ident(\"${msg}\")" } else { "st.report(\"${msg}\")" }
     let sync = recover_target(annots)
     // `@require` ABORT: leave the rule instead of reporting and building on. The value
     // is the same error node emit already uses for "no branch matched", so callers
@@ -1466,7 +1511,14 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // (whose exec_node clears env.abort on rollback) correctly falls through to the next
     // alternative. So a committed-context abort is GUARDED on s_cut; a predictive branch
     // has no rollback to bypass and returns outright.
-    let abort_ret = "${ind}    return CapVal.Node(st.error_node_silent())\n"
+    // A COMMITTED `@require` failure raises the propagation flag for the same reason
+    // the gated FIRST check does: the caller cannot otherwise tell an abort from an
+    // ordinary result and keeps consuming. Without it `shape S = { a int, b: int }`
+    // reported the missing colon, re-entered parse_field, took `int` as the next field
+    // name and reported AGAIN — where the hand stops the field list at the first
+    // failure. Only the committed path raises it; a pre-cut failure still rolls back.
+    let raise = if grammar_has_gate(g) { "${ind}    st.set_abort_prop(true)\n" } else { "" }
+    let abort_ret = "${raise}${ind}    return CapVal.Node(st.error_node_silent())\n"
     let abort_line = if !item.require || !abortable { "" }
         else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${abort_ret}${ind}    }\n" }
         else { abort_ret }
@@ -1478,7 +1530,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     if str_in(list_labels, item.label) {
         if idx == 0 { return "${ind}${item.label}_list.push(${adv})\n" }
         mut o = "${ind}if ${cond} { ${item.label}_list.push(${adv}) } else {\n"
-        o = o + "${ind}    st.report(\"${msg}\")\n"
+        o = o + "${ind}    ${rep}\n"
         if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
         o = o + abort_line
         o = o + "${ind}}\n"
@@ -1488,7 +1540,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     if str_in(opts, item.label) {
         if idx == 0 { return "${ind}${item.label} = CapVal.Tok(${adv})\n" }
         mut o = "${ind}if ${cond} { ${item.label} = CapVal.Tok(${adv}) } else {\n"
-        o = o + "${ind}    st.report(\"${msg}\")\n"
+        o = o + "${ind}    ${rep}\n"
         if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
         o = o + abort_line
         o = o + "${ind}}\n"
@@ -1506,7 +1558,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         // Bind the label to the current token in the else so downstream
         // capval_tok_text stays safe (does NOT advance — mirrors the hand leaf).
         mut outl = "${ind}let ${item.label} = if ${cond} { CapVal.Tok(${adv}) } else {\n"
-        outl = outl + "${ind}    st.report(\"${msg}\")\n"
+        outl = outl + "${ind}    ${rep}\n"
         if sync != "" { outl = outl + "${ind}    st.synchronize(\"${sync}\")\n" }
         // A CAPTURED `@require` aborts too — the unlabeled sibling below has always
         // emitted this, and omitting it here is why the two engines consumed different
@@ -1522,7 +1574,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         return outl
     }
     mut out = "${ind}if ${cond} { let _ = ${adv} } else {\n"
-    out = out + "${ind}    st.report(\"${msg}\")\n"
+    out = out + "${ind}    ${rep}\n"
     if sync != "" { out = out + "${ind}    st.synchronize(\"${sync}\")\n" }
     out = out + abort_line
     out = out + "${ind}}\n"
@@ -1555,6 +1607,7 @@ fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_lab
             // "my caller proved FIRST" promise is broken here too. Without it
             // `enum E { 5 }` bound `5` as a variant name and compiled clean.
             "${ind}if ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                gated_abort_arm(g, inner, ind + "    ") +
                 gated_first_check(g, inner, ind + "    ") +
                 emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                 gated_abort_unwind(g, inner, ind + "    ") +
@@ -1721,6 +1774,26 @@ fn gated_abort_unwind(g: Grammar, inner: GNode, ind: string) -> string {
     "${ind}}\n"
 }
 
+/// ARM the flag: clear it immediately BEFORE a gated sub-parse, so the matching
+/// `gated_abort_unwind` reads THAT sub-parse's outcome and nothing else.
+///
+/// Without this the check is not "did the gated callee abort" but "has anything
+/// aborted anywhere in this item since the start rule reset" — `@require` raises
+/// the flag grammar-wide, so an unrelated earlier abort in the same declaration
+/// made a later gated element unwind on someone else's failure and swallow the
+/// caller's own resync diagnostic. `for` was the caught case: its header abort
+/// must leave TWO diagnostics (the header error, then the caller's resync), and a
+/// stale flag cut the second one.
+///
+/// It composes upward: an enclosing gated caller cleared before ITS sub-parse, and
+/// the inner raise happens during it, so a genuine abort still propagates out
+/// through every gated frame — only the STALE reads are removed.
+fn gated_abort_arm(g: Grammar, inner: GNode, ind: string) -> string {
+    let gr = gated_ref_of(inner)
+    if !gr.found { return "" }
+    "${ind}st.set_abort_prop(false)\n"
+}
+
 fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
     let gr = gated_ref_of(inner)
     if !gr.found { return "" }
@@ -1763,13 +1836,35 @@ fn gated_ref_of(node: GNode) -> GatedRef {
 
 /// The message a rule uses when its own FIRST token is absent — its first branch's
 /// `@expect` for that token's kind. Empty when the rule declares none.
-fn rule_first_expect_msg(g: Grammar, name: string) -> string {
+/// One hop of `rule_first_expect_msg` with NO further `.Ref` following — the
+/// recursion stopper. Keeps the walk bounded at a single delegation step.
+/// A rule-name-keyed `@expect` describes the RULE, not one of its branches, so
+/// it is found wherever the author wrote it.
+///
+/// Reading it off `branches[0]` alone made the message depend on which side of
+/// the `|` it happened to sit on. `trait_member = assoc_member | method_member
+/// @expect("trait_member", …)` binds the annotation to the LAST branch, so the
+/// lookup missed it and `gated_first_check` fell back to printing the GRAMMAR
+/// RULE NAME at the user — the exact "expected trait_member" this convention
+/// exists to prevent. Scanning every branch is what makes the annotation mean
+/// what it reads as.
+fn rule_own_expect_msg(branches: List<GSeq>, name: string) -> string {
+    for b in branches {
+        let own = expect_for(b.annots, name)
+        if own.found { return own.msg }
+    }
+    ""
+}
+
+fn rule_first_expect_msg_leaf(g: Grammar, name: string) -> string {
     let r = emit_lookup_rule(g, name)
     if r.name == "" { return "" }
     match r.body {
         .Alt(branches) -> {
             if branches.length == 0 { return "" }
             let b = branches[0]
+            let own_msg = rule_own_expect_msg(branches, name)
+            if own_msg != "" { return own_msg }
             for it in b.items {
                 match it.prim {
                     .Named(tok) -> {
@@ -1790,12 +1885,110 @@ fn rule_first_expect_msg(g: Grammar, name: string) -> string {
     }
 }
 
+fn rule_first_expect_msg(g: Grammar, name: string) -> string {
+    let r = emit_lookup_rule(g, name)
+    if r.name == "" {
+        // CROSS-VIEW rules — the pair of rule_first_guard's declared-FIRST table just
+        // below. A rule DEFINED in another view is genuinely absent from this grammar,
+        // so its `@expect` cannot be read no matter how the annotation is written: the
+        // decl parser calls the separately generated expression parser for these.
+        // `param` is the caught instance (declared FIRST added by slice 10.13 when
+        // routing fn/extern/trait/impl made parameter lists reachable from the decl
+        // view) — a gated call on it fell back to the generic "expected param" while
+        // `field` and `variant`, which ARE local, resolved correctly. Declare the
+        // message here, beside the FIRST it pairs with, so the two stay together.
+        if name == "param" { return "expected parameter name" }
+        return ""
+    }
+    match r.body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return "" }
+            let b = branches[0]
+            // A message keyed on the RULE'S OWN NAME. The token-keyed lookups below can
+            // only answer for a rule whose first branch LEADS with a terminal; an
+            // ALTERNATION-led rule (`trait_member = assoc_member | method_member`) has
+            // no single leading token, so it fell through to `gated_first_check`'s
+            // generic fallback and printed a GRAMMAR RULE NAME at the user
+            // ("expected trait_member"). Same convention `@require` on a rule reference
+            // uses, so one spelling covers both markers.
+            let own_msg = rule_own_expect_msg(branches, name)
+            if own_msg != "" { return own_msg }
+            for it in b.items {
+                match it.prim {
+                    .Named(tok) -> {
+                        let e = expect_for(b.annots, tok)
+                        if e.found { return e.msg }
+                        return ""
+                    }
+                    .Lit(text) -> {
+                        let e = expect_for(b.annots, text)
+                        if e.found { return e.msg }
+                        return ""
+                    }
+                    // Follow ONE leading rule reference, then stop. A branch that begins
+                    // by delegating (`x = y …`) has its wording on `y`, and resolving it
+                    // is what keeps the derivation general instead of accumulating a
+                    // hardcode per rule. Bounded to one hop rather than guarded by a
+                    // visited set: a single step cannot cycle, and an unbounded walk
+                    // through a left-recursive grammar could.
+                    .Ref(inner) -> {
+                        if inner == name { return "" }
+                        return rule_first_expect_msg_leaf(g, inner)
+                    }
+                    _ -> {}
+                }
+            }
+            ""
+        }
+    }
+}
+
 fn node_has_gate(node: GNode) -> bool {
     match node {
         .Alt(branches) -> {
             for b in branches {
                 for it in b.items {
                     if it.gate { return true }
+                }
+            }
+            false
+        }
+    }
+}
+
+/// `abort_prop` is READ in exactly one place — `gated_abort_unwind`, which is
+/// emitted only where a `@gate` is present. So the flag's WRITES are scoped to
+/// the same grammars: a view with no gate can never observe the value, and
+/// emitting the reset/raise there would be a pure blast radius. This is not
+/// hypothetical tidiness — `emit.av` renders FOUR checked-in production parsers
+/// (decl / expr / type / pattern) from one emitter, and an unscoped write put
+/// `st.set_abort_prop(…)` into all four while only the decl grammar has gates.
+///
+/// The `g.rules[0]` reset in particular is only sound at a PER-ITEM entry, which
+/// is what the decl view's start rule is. The expr/type/pattern start rules are
+/// NESTED entries — reached mid-declaration, many times per item — so resetting
+/// there states something false about the flag's lifetime even where it happens
+/// to be harmless.
+fn grammar_has_gate(g: Grammar) -> bool {
+    for r in g.rules {
+        if rule_body_has_gate(r.body) { return true }
+    }
+    false
+}
+
+/// The recursive form of `node_has_gate`: a gate can sit inside a `( … )*` /
+/// `( … )?` group (that is where `enum_decl` and `trait_decl` put theirs), so a
+/// top-level-only scan would miss every real one.
+fn rule_body_has_gate(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.gate { return true }
+                    match it.prim {
+                        .Group(inner) -> { if rule_body_has_gate(inner) { return true } }
+                        _ -> {}
+                    }
                 }
             }
             false
@@ -2008,6 +2201,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                 req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     bnd.guard +
                     "${ind}    let __rep_before = st.pos\n" +
+                    gated_abort_arm(g, inner, ind + "    ") +
                     gated_first_check(g, inner, ind + "    ") +
                     emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                     gated_abort_unwind(g, inner, ind + "    ") +

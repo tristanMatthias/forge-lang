@@ -590,8 +590,35 @@ impl PState {
     }
 
     fn report(self, msg: string) {
+        // Deliberately UNCODED. The "message and code came from different
+        // diagnostics" defect this used to stamp F0001 for is real, but it lives in
+        // the JOIN (`first_diag_code`), not here — stamping it at every report site
+        // is global, and it re-coded ~40 specs across keywords that had nothing to do
+        // with the change. Leaving the code blank keeps the single-diagnostic paths
+        // reading the `diag_code` slot exactly as they always have.
         self.diags.push(GDiag { code: "", msg })
         self.had_error = true
+    }
+
+    /// `report` for a missing IDENT, keeping the hand parser's RESERVED-KEYWORD
+    /// diagnostic (so07.2 / 1rzz — parse/mod.av `consume_identifier`).
+    ///
+    /// A binding position that finds `Tk.KwReserved` has something far more useful
+    /// to say than "expected function name": the lexeme itself is the problem and
+    /// the fix is to rename it. The hand parser has always said so, so a native rule
+    /// reporting its generic `@expect` message instead is a diagnostic REGRESSION —
+    /// and one that appears exactly as each keyword is routed. `fn unsafe() {}` and
+    /// a parameter named `move` both lost the message the moment `fn` went native.
+    ///
+    /// It lives on PState so BOTH engines produce the same text: the executor calls
+    /// it from `handle_missing` (which already knows the expected terminal) and the
+    /// generated parsers call it wherever emit renders an IDENT terminal miss.
+    fn report_ident(self, msg: string) {
+        if self.cur().tk == Tk.KwReserved {
+            self.report("`${self.cur().text}` is a reserved keyword and cannot be used as an identifier — rename the binding")
+            return
+        }
+        self.report(msg)
     }
 
     /// `report` with the F-CODE carried ON the diagnostic (t-47hc.5).
@@ -1116,11 +1143,23 @@ fn tok_starts_seq(g: Grammar, seq: GSeq, st: PState, visited: List<string>) -> b
         // same_line_wrap in seq_first_guard; keeping the two in lockstep is what stops
         // the interpreter and the generated parser picking different branches.
         // t-myz7 GATE: the emit twin of seq_first_guard's `item.gate` early return.
-        // A gated item contributes NO FIRST — its preceding `@peek` cond is the whole
-        // dispatch condition, and branch_pred_ok has already evaluated that. Answering
-        // true here hands the decision to the cond alone, which is what makes the loop
-        // enter where the element's FIRST would have refused (EOF).
-        if item.gate { return true }
+        // A gated item contributes NO FIRST — its preceding `@peek`/`@when` predicates
+        // ARE the whole dispatch condition, which is what lets the loop enter where the
+        // element's own FIRST would have refused (EOF).
+        //
+        // Those predicates must be evaluated HERE, not assumed already-checked. An
+        // earlier version returned a bare `true` on the reasoning that `branch_pred_ok`
+        // runs before `tok_starts_seq` — which is true on the ALTERNATION path
+        // (exec_node) and false on the GROUP path (tok_starts_prim's `.Group` arm →
+        // tok_starts_node → here), and a group is where every real gate lives. So
+        // `fn f()` entered its `( @peek(not_rparen) @gate params:param … )?` group
+        // standing on `)`, parsed `)` as a parameter, and a plain valid `fn f() {}`
+        // came back had_error on the executor path.
+        //
+        // Calling branch_pred_ok is also what keeps the two engines in lockstep: emit's
+        // seq_first_guard returns `and_join(preds)` for the same item, and this is the
+        // same conjunction over the same sequence.
+        if item.gate { return branch_pred_ok(seq, st) }
         if tok_starts_prim(g, item.prim, st, visited) && sameline_ok(st, item) { return true }
         // A One/Plus item is non-nullable — FIRST stops here.
         match item.rep {
@@ -2558,7 +2597,13 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
             .Ref(rname) -> {
                 let seen: List<string> = []
                 if !tok_starts_rule(g, rname, st, seen) {
-                    handle_missing(st, rule_first_literal(g, rname), annots)
+                    // Key the message on the rule's single-literal FIRST, or — when it
+                    // has none — on the RULE NAME, which is the key `@expect` uses for
+                    // that case (emit's twin in emit_one; enforced by seed_parser's
+                    // `seq_expects_key`, so the name only ever reaches here with a
+                    // declared message behind it).
+                    let rlit = rule_first_literal(g, rname)
+                    handle_missing(st, if rlit != "" { rlit } else { rname }, annots)
                     env.set_abort(true)
                     return CapVal.Node(st.error_node_silent())
                 }
@@ -3198,6 +3243,40 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
 /// The result of `run_dsl_type_at`: the built type, the byte offset the DSL
 /// stopped at (so a hand-parser caller can resync its token cursor), and the
 /// error channel.
+/// The code of the diagnostic the boundary is ALSO taking its message from.
+///
+/// `diag = st.diags[0].msg` and `diag_code = st.diag_code` read different things: the
+/// slot is first-writer-wins across the whole parse, so a later reporter's code could
+/// be surfaced beside an earlier reporter's message. Reading both from `diags[0]` is
+/// the point of carrying the code per-diagnostic (t-47hc.5 / #1173). Falls back to the
+/// slot when the first diagnostic carries no code, so untouched paths are unchanged.
+///
+/// The fallback is NARROWED by diagnostic COUNT, and that narrowing is the whole
+/// correctness argument. The slot says nothing about WHICH diagnostic set it, so:
+///   - one diagnostic  → the slot can only be describing that one. Authoritative,
+///                       and this is the overwhelmingly common case, which is why
+///                       every pre-existing single-error path is bit-for-bit
+///                       unchanged by this function.
+///   - several         → a bare `report()` first and a `report_coded` /
+///                       `error_node_coded` later means the slot describes a LATER
+///                       diagnostic. Borrowing it renders diags[0]'s MESSAGE under
+///                       another diagnostic's CODE — `select { x }` surfaced
+///                       "expected `<-` after select arm binding" under F0040 while
+///                       the hand says F0001. A bare `report()` IS an F0001, so say
+///                       so directly instead of borrowing a stranger's code.
+///
+/// Stamping F0001 onto `report()` itself was tried first and is WRONG: it is global
+/// (every generated parser and the executor report through it), it makes this
+/// fallback unreachable, and it re-coded ~40 specs on keywords that were never part
+/// of the change. The defect is in the JOIN between message and code, so the join is
+/// where it gets fixed.
+fn first_diag_code(st: PState) -> string {
+    if st.diags.length == 0 { return st.diag_code }
+    if st.diags[0].code != "" { return st.diags[0].code }
+    if st.diags.length == 1 { return st.diag_code }
+    "F0001"
+}
+
 export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, diag: string, diag_code: string }
 
 /// Inverse type runner (ps3t.6.5.12 slice 1): lets the hand parser delegate a
@@ -3259,7 +3338,7 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// t-47hc.4.4 Phase 3d — the STATIC type-parser boundary. IDENTICAL PState setup to
@@ -3284,7 +3363,7 @@ export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: str
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// The result of `run_dsl_pattern_at_shared`: the built pattern (a `PatId` VALID
@@ -3316,7 +3395,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// t-47hc.4.4 Phase 3d (pattern half) — the STATIC pattern-parser boundary. IDENTICAL
@@ -3341,7 +3420,7 @@ export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: stri
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// The result of `run_dsl_expr_at_shared`: the built expression (an `ExprId`
@@ -3383,7 +3462,7 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// ps3t.6.7 Step G — the STATIC-parser boundary. IDENTICAL PState setup to
@@ -3421,7 +3500,7 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// The result of `run_dsl_stmt_at_shared`: the built statement (a `StmtId` VALID
@@ -3451,7 +3530,7 @@ fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// INVERSE-@hand STATEMENT runner (ps3t.6.7 Step G slice 4) — the statement-
@@ -3506,7 +3585,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 // Which names build an EXPRESSION via REAL hand delegation (`run_hand_expr` →
@@ -3704,7 +3783,8 @@ fn handle_missing(st: PState, expected: string, annots: List<GAnnot>) {
             _ -> {}
         }
     }
-    st.report(msg)
+    // so07.2: an IDENT position keeps the hand's reserved-keyword diagnostic.
+    if expected == "IDENT" { st.report_ident(msg) } else { st.report(msg) }
     for a in annots {
         match a {
             .Recover(sync_to) -> st.synchronize(sync_to)
