@@ -590,7 +590,14 @@ impl PState {
     }
 
     fn report(self, msg: string) {
-        self.diags.push(GDiag { code: "", msg })
+        // F0001 is the code a grammar diagnostic surfaces as, so carry it ON the
+        // diagnostic rather than leaving it blank for the state slot to supply. The
+        // slot is first-writer-wins and a LATER `error_node_coded("F0040", …)` claims
+        // it, so message and code were being taken from DIFFERENT diagnostics —
+        // `select { x }` surfaced "expected `<-` after select arm binding" under
+        // F0040 while the hand says F0001. report_coded's own contract is that the
+        // two must describe the same diagnostic; this is what makes that true.
+        self.diags.push(GDiag { code: "F0001", msg })
         self.had_error = true
     }
 
@@ -632,6 +639,13 @@ impl PState {
     /// `if st.had_error` detects only THIS child's failure.
     fn clear_error(self) {
         self.had_error = false
+        // `abort_prop` is per-ITEM, and this is the per-item boundary — the
+        // statement/declaration loops call clear_error before each child parse.
+        // Nothing else resets it, and the PState is SHARED across a whole file, so a
+        // leaked `true` would make every LATER declaration return a silent error node
+        // at its first gated check instead of parsing. The flag has to survive an
+        // unwind within one item and die at its edge; this is that edge.
+        self.abort_prop = false
     }
 
     /// Push / pop the `table { … }` header context (self-ptr mutators, for the same
@@ -3198,6 +3212,18 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
 /// The result of `run_dsl_type_at`: the built type, the byte offset the DSL
 /// stopped at (so a hand-parser caller can resync its token cursor), and the
 /// error channel.
+/// The code of the diagnostic the boundary is ALSO taking its message from.
+///
+/// `diag = st.diags[0].msg` and `diag_code = st.diag_code` read different things: the
+/// slot is first-writer-wins across the whole parse, so a later reporter's code could
+/// be surfaced beside an earlier reporter's message. Reading both from `diags[0]` is
+/// the point of carrying the code per-diagnostic (t-47hc.5 / #1173). Falls back to the
+/// slot when the first diagnostic carries no code, so untouched paths are unchanged.
+fn first_diag_code(st: PState) -> string {
+    if st.diags.length > 0 && st.diags[0].code != "" { return st.diags[0].code }
+    st.diag_code
+}
+
 export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, diag: string, diag_code: string }
 
 /// Inverse type runner (ps3t.6.5.12 slice 1): lets the hand parser delegate a
@@ -3259,7 +3285,7 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// t-47hc.4.4 Phase 3d — the STATIC type-parser boundary. IDENTICAL PState setup to
@@ -3284,7 +3310,7 @@ export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: str
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// The result of `run_dsl_pattern_at_shared`: the built pattern (a `PatId` VALID
@@ -3316,7 +3342,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// t-47hc.4.4 Phase 3d (pattern half) — the STATIC pattern-parser boundary. IDENTICAL
@@ -3341,7 +3367,7 @@ export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: stri
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// The result of `run_dsl_expr_at_shared`: the built expression (an `ExprId`
@@ -3383,7 +3409,7 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// ps3t.6.7 Step G — the STATIC-parser boundary. IDENTICAL PState setup to
@@ -3421,7 +3447,7 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// The result of `run_dsl_stmt_at_shared`: the built statement (a `StmtId` VALID
@@ -3451,7 +3477,7 @@ fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 /// INVERSE-@hand STATEMENT runner (ps3t.6.7 Step G slice 4) — the statement-
@@ -3506,7 +3532,7 @@ export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: st
     if st.had_error && st.diags.length > 0 {
         diag = st.diags[0].msg
     }
-    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: st.diag_code }
+    DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diag, diag_code: first_diag_code(st) }
 }
 
 // Which names build an EXPRESSION via REAL hand delegation (`run_hand_expr` →

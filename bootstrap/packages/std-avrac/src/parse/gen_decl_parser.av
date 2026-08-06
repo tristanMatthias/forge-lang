@@ -1054,7 +1054,8 @@ fn parse_mut_decl(st: PState) -> CapVal {
             let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
                 st.report("expected variable name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
                 CapVal.Tok(st.cur())
             }
@@ -1065,7 +1066,8 @@ fn parse_mut_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
                 st.report("expected `=` after variable name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             let init = parse_expression(st)
@@ -1109,7 +1111,8 @@ fn parse_const_decl(st: PState) -> CapVal {
             let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
                 st.report("expected constant name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
                 CapVal.Tok(st.cur())
             }
@@ -1120,7 +1123,8 @@ fn parse_const_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
                 st.report("expected `=` after constant name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             let init = parse_expression(st)
@@ -1231,7 +1235,8 @@ fn parse_select_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
                 st.report("expected `{` after select")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             while lookahead_ok("not_rbrace", st) {
@@ -1250,7 +1255,8 @@ fn parse_select_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
                 st.report("expected `}` to close select")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
@@ -1272,14 +1278,20 @@ fn parse_select_arm(st: PState) -> CapVal {
     mut body_list: List<StmtId> = []
     let b = CapVal.Tok(st.advance())
     if st.cur().tk == Tk.LeftArrow { let _ = st.advance() } else {
-        st.report("expected <-")
+        st.report("expected `<-` after select arm binding")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     let ch = parse_expression(st)
     if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-        st.report("expected ->")
+        st.report("expected `->` after channel in select arm")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-        st.report("expected {")
+        st.report("expected `{` for select arm body")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     let __pre_err = st.had_error
     mut __any_err = __pre_err
@@ -1312,7 +1324,9 @@ fn parse_select_arm(st: PState) -> CapVal {
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}` to close select arm")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     mk_select_arm_g(st, capval_tok_text(b), ch, body_list)
 }
@@ -1337,14 +1351,16 @@ fn parse_spec_decl(st: PState) -> CapVal {
             let n = if st.cur().tk == Tk.String { CapVal.Tok(st.advance()) } else {
                 st.report("expected spec name string after `spec`")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
                 CapVal.Tok(st.cur())
             }
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
                 st.report("expected `{` after spec name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             let __pre_err = st.had_error
@@ -1380,7 +1396,8 @@ fn parse_spec_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
                 st.report("expected `}` to close spec block")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
@@ -2010,15 +2027,18 @@ fn parse_use_tail(st: PState) -> CapVal {
         let _ = st.advance()
         let upkg = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
             st.report("expected package name")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
             CapVal.Tok(st.cur())
         }
         if st.cur().tk == Tk.Dot { let _ = st.advance() } else {
             st.report("expected `.` after package scope")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
         if st.cur().tk == Tk.Identifier { useg_list.push(st.advance()) } else {
             st.report("expected package name")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
         while st.cur().tk == Tk.Dot {
@@ -2029,6 +2049,7 @@ fn parse_use_tail(st: PState) -> CapVal {
         }
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
             st.report("expected `{` in use declaration")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
         while st.cur().tk == Tk.Identifier {
@@ -2037,6 +2058,7 @@ fn parse_use_tail(st: PState) -> CapVal {
         }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
             st.report("expected `}` in use declaration")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
         return mk_use_pkg(st, capval_tok_list(upkg), useg_list, unames_list)
@@ -2045,6 +2067,7 @@ fn parse_use_tail(st: PState) -> CapVal {
     mut unames_list: List<Token> = []
     if st.cur().tk == Tk.Identifier { useg_list.push(st.advance()) } else {
         st.report("expected module path after `use`")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     while st.cur().tk == Tk.Dot {
@@ -2055,6 +2078,7 @@ fn parse_use_tail(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected `{` in use declaration")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     while st.cur().tk == Tk.Identifier {
@@ -2063,6 +2087,7 @@ fn parse_use_tail(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}` in use declaration")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     mk_use(st, false, useg_list, unames_list)
@@ -2087,7 +2112,8 @@ fn parse_mod_decl(st: PState) -> CapVal {
             let mdname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
                 st.report("expected module name after `mod`")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
                 CapVal.Tok(st.cur())
             }
@@ -2181,20 +2207,23 @@ fn parse_shape_decl(st: PState) -> CapVal {
             let shname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
                 st.report("expected shape name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
                 CapVal.Tok(st.cur())
             }
             if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
                 st.report("expected `=` after shape name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
                 st.report("expected `{` after `=` in shape declaration")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             while lookahead_ok("not_rbrace", st) {
@@ -2214,7 +2243,8 @@ fn parse_shape_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
                 st.report("expected `}` after shape fields")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
@@ -2242,6 +2272,7 @@ fn parse_field(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
         st.report("expected `:` after field name")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     let ftype = parse_type_expr(st)
@@ -2281,7 +2312,8 @@ fn parse_enum_decl(st: PState) -> CapVal {
             let ename = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
                 st.report("expected enum name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
                 CapVal.Tok(st.cur())
             }
@@ -2299,7 +2331,8 @@ fn parse_enum_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
                 st.report("expected `{` after enum name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             while st.cur().tk == Tk.DocComment {
@@ -2330,7 +2363,8 @@ fn parse_enum_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
                 st.report("expected `}` after variants")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
@@ -2369,6 +2403,7 @@ fn parse_variant(st: PState) -> CapVal {
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
             st.report("expected `)` after variant fields")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
     }
@@ -2398,7 +2433,8 @@ fn parse_fn_decl(st: PState) -> CapVal {
             let name = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
                 st.report("expected function name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
                 CapVal.Tok(st.cur())
             }
@@ -2416,7 +2452,8 @@ fn parse_fn_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
                 st.report("expected `(` after function name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             if lookahead_ok("not_rparen", st) {
@@ -2440,7 +2477,8 @@ fn parse_fn_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
                 st.report("expected `)` after parameters")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             if st.cur().tk == Tk.Arrow {
@@ -2450,7 +2488,8 @@ fn parse_fn_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
                 st.report("expected `{` after function parameters")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             let __pre_err = st.had_error
@@ -2486,7 +2525,8 @@ fn parse_fn_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
                 st.report("expected `}` after function body")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
@@ -2558,7 +2598,8 @@ fn parse_trait_decl(st: PState) -> CapVal {
             let trname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
                 st.report("expected trait name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
                 CapVal.Tok(st.cur())
             }
@@ -2576,7 +2617,8 @@ fn parse_trait_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
                 st.report("expected `{` after trait name")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             while lookahead_ok("not_rbrace", st) {
@@ -2595,7 +2637,8 @@ fn parse_trait_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
                 st.report("expected `}` after trait body")
                 if s_cut {
-                    return CapVal.Node(st.error_node_silent())
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
                 }
             }
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
@@ -3029,6 +3072,7 @@ fn parse_match_stmt(st: PState) -> CapVal {
         }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
             st.report("expected `}` after match arms")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
         return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(a_list))))))
@@ -3045,6 +3089,7 @@ fn parse_match_stmt(st: PState) -> CapVal {
         st.set_modes(__modes_1)
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
             st.report("expected `{` after match subject")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
         while tok_starts_pattern(st.cur()) {
@@ -3053,6 +3098,7 @@ fn parse_match_stmt(st: PState) -> CapVal {
         }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
             st.report("expected `}` after match arms")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
         return mk_match(st, subj, CapVal.Arms(arms_list))
@@ -3090,11 +3136,13 @@ fn parse_iflet_stmt(st: PState) -> CapVal {
     }
     let b = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
         st.report("expected a binding name after `if let`")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
         st.report("expected `=` after the `if let` binding")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     let __modes_5 = st.modes
@@ -3125,6 +3173,7 @@ fn parse_for_stmt(st: PState) -> CapVal {
         let fb = parse_for_binding(st)
         if st.cur().text == "in" { let _ = st.advance() } else {
             st.report("expected `in` after for destructure pattern")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
         let __modes_3 = st.modes
@@ -3144,6 +3193,7 @@ fn parse_for_stmt(st: PState) -> CapVal {
         }
         if st.cur().text == "in" { let _ = st.advance() } else {
             st.report("expected `in` after loop variable")
+            st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
         let __modes_3 = st.modes
@@ -3233,6 +3283,7 @@ fn parse_match_table_stmt(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected `{` after match table")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.Identifier { let _ = st.advance() } else {
@@ -3264,6 +3315,7 @@ fn parse_match_table_stmt(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}` after match table")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     mk_match_table(st, subj, CapVal.Toks(cols_list), CapVal.PNodes(p_list), CapVal.Nodes(v_list))
@@ -3284,6 +3336,7 @@ fn parse_match_table_expr(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected `{` after match table")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.Identifier { let _ = st.advance() } else {
@@ -3315,6 +3368,7 @@ fn parse_match_table_expr(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}` after match table")
+        st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
     mk_match_table_expr(st, sp_start, subj, CapVal.Toks(cols_list), CapVal.PNodes(p_list), CapVal.Nodes(v_list))

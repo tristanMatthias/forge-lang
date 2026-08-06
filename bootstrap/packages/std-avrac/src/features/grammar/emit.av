@@ -1466,7 +1466,13 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // (whose exec_node clears env.abort on rollback) correctly falls through to the next
     // alternative. So a committed-context abort is GUARDED on s_cut; a predictive branch
     // has no rollback to bypass and returns outright.
-    let abort_ret = "${ind}    return CapVal.Node(st.error_node_silent())\n"
+    // A COMMITTED `@require` failure raises the propagation flag for the same reason
+    // the gated FIRST check does: the caller cannot otherwise tell an abort from an
+    // ordinary result and keeps consuming. Without it `shape S = { a int, b: int }`
+    // reported the missing colon, re-entered parse_field, took `int` as the next field
+    // name and reported AGAIN — where the hand stops the field list at the first
+    // failure. Only the committed path raises it; a pre-cut failure still rolls back.
+    let abort_ret = "${ind}    st.set_abort_prop(true)\n${ind}    return CapVal.Node(st.error_node_silent())\n"
     let abort_line = if !item.require || !abortable { "" }
         else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${abort_ret}${ind}    }\n" }
         else { abort_ret }

@@ -603,7 +603,11 @@ fn avra_decl_edge_grammar() -> Grammar {
   select_decl   = @try "select" @cut @require "{" ( @peek(not_rbrace) @gate arms:select_arm )* @require "}"
                   @expect("{", "expected `{` after select")
                   @expect("}", "expected `}` to close select") -> MkSelect(arms)
-  select_arm    = b:IDENT "<-" ch:expression "->" "{" body:declaration* "}" -> MkSelectArm(b, ch, body)
+  select_arm    = b:IDENT @require "<-" ch:expression @require "->" @require "{" body:declaration* @require "}"
+                  @expect("<-", "expected `<-` after select arm binding")
+                  @expect("->", "expected `->` after channel in select arm")
+                  @expect("{", "expected `{` for select arm body")
+                  @expect("}", "expected `}` to close select arm") -> MkSelectArm(b, ch, body)
   // The SPEC-TEST blocks (t-47hc Phase 4). `spec_item` mirrors parse_spec_body's
   // dispatch — given-block | then-block | any declaration — and both nesting
   // levels stamp per-item positions via the shared stmt-repetition loop (the
