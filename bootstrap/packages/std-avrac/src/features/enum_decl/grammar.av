@@ -30,7 +30,7 @@ export fn avra_enum_decl_grammar() -> Grammar {
   // accepts `E<>` AND reports "expected type parameter name" for `E< {`. A bare `( … )?`
   // inner reproduces the first and silently loses the second; the peek splits them where
   // the hand does.
-  enum_decl   = @try "enum" @cut @require ename:IDENT ( "<" ( @peek(not_gt) @gate @onfail(skip) tparams:tparam ( "," @onfail(skip) tparams:tparam )* )? @onfail(discard, tparams) ">" )? @require "{" ( DOC )*
+  enum_decl   = @try "enum" @cut @require ename:IDENT ( "<" ( @peek(not_gt) @gate @onfail(halt) tparams:tparam ( "," @onfail(skip) tparams:tparam )* )? @onfail(discard, tparams) ">" )? @require "{" ( DOC )*
                 ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* )* )? @require "}"
                 @expect("IDENT", "expected enum name")
                 @expect("{", "expected `{` after enum name")

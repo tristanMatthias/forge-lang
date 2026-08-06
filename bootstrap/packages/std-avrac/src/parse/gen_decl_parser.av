@@ -2123,20 +2123,27 @@ fn parse_type_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
                 if lookahead_ok("not_gt", st) {
-                    st.set_abort_prop(false)
-                    if !(st.cur().tk == Tk.Identifier) {
-                        st.report("expected type parameter name")
-                    } else {
-                        tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
-                    }
-                    while st.cur().tk == Tk.Comma {
-                        let _ = st.advance()
+                while true {
+                        st.set_abort_prop(false)
                         if !(st.cur().tk == Tk.Identifier) {
                             st.report("expected type parameter name")
-                        } else {
-                            tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+                            break
                         }
-                    }
+                        let __gres = parse_tparam(st)
+                        if st.abort_prop || capval_is_error_expr(st, __gres) {
+                            return CapVal.Node(st.error_node_silent())
+                        }
+                        tparams_list.push(capval_to_tparam(st, __gres))
+                        while st.cur().tk == Tk.Comma {
+                            let _ = st.advance()
+                            if !(st.cur().tk == Tk.Identifier) {
+                                st.report("expected type parameter name")
+                            } else {
+                                tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+                            }
+                        }
+                    break
+                }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
                     st.report("expected `>` after type parameters")
@@ -2327,7 +2334,7 @@ fn parse_tparam(st: PState) -> CapVal {
     if st.cur().tk == Tk.Colon {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { tpb = CapVal.Tok(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected trait bound after `:`")
         }
     }
     mk_type_param(capval_tok_text(tpn), tpb, capval_present(tpb))
@@ -2362,20 +2369,27 @@ fn parse_enum_decl(st: PState) -> CapVal {
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
                 if lookahead_ok("not_gt", st) {
-                    st.set_abort_prop(false)
-                    if !(st.cur().tk == Tk.Identifier) {
-                        st.report("expected type parameter name")
-                    } else {
-                        tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
-                    }
-                    while st.cur().tk == Tk.Comma {
-                        let _ = st.advance()
+                while true {
+                        st.set_abort_prop(false)
                         if !(st.cur().tk == Tk.Identifier) {
                             st.report("expected type parameter name")
-                        } else {
-                            tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+                            break
                         }
-                    }
+                        let __gres = parse_tparam(st)
+                        if st.abort_prop || capval_is_error_expr(st, __gres) {
+                            return CapVal.Node(st.error_node_silent())
+                        }
+                        tparams_list.push(capval_to_tparam(st, __gres))
+                        while st.cur().tk == Tk.Comma {
+                            let _ = st.advance()
+                            if !(st.cur().tk == Tk.Identifier) {
+                                st.report("expected type parameter name")
+                            } else {
+                                tparams_list.push(capval_to_tparam(st, parse_tparam(st)))
+                            }
+                        }
+                    break
+                }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
                     st.report("expected `>` after type parameters")

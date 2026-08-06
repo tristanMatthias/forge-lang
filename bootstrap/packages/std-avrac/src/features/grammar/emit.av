@@ -40,7 +40,7 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 // t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
 // The local wrappers below delegate to it so the two engines cannot drift.
 use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, seq_is_leading_hand, rule_owns_recovery}
-use features.grammar.{ExpectHit, expect_for, rule_own_expect_msg, rule_first_expect_msg, rule_first_expect_msg_leaf, gated_ref_of}
+use features.grammar.{ExpectHit, expect_for, rule_own_expect_msg, rule_first_expect_msg, rule_first_expect_msg_leaf, gated_ref_of, node_has_onfail}
 use features.grammar.{is_hand_stmt_leaf, is_hand_expr_leaf}
 use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule, hand_kind}
 
@@ -1739,11 +1739,20 @@ fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_lab
             // `@gate` replaced the group's FIRST with a cond, so the callee's
             // "my caller proved FIRST" promise is broken here too. Without it
             // `enum E { 5 }` bound `5` as a variant name and compiled clean.
-            "${ind}if ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
-                gated_abort_arm(g, inner, ind + "    ") +
-                gated_first_check(g, inner, ind + "    ") +
-                emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
-                gated_abort_unwind(g, inner, ind + "    ") +
+            // `@onfail(halt)` leaves the group with a `break`, and an `if` has nothing to
+            // break out of — so a halt-bearing optional runs its body inside a
+            // `while true { … break }`, which is a breakable scope that still executes
+            // exactly once. A repetition already has its own loop and needs no wrapper.
+            let halting = node_has_onfail(inner, "halt")
+            let open = if halting { "${ind}while true {\n" } else { "" }
+            let close = if halting { "${ind}    break\n${ind}}\n" } else { "" }
+            let bind = if halting { ind + "    " } else { ind }
+            "${ind}if ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" + open +
+                gated_abort_arm(g, inner, bind + "    ") +
+                gated_first_check(g, inner, bind + "    ", annots) +
+                emit_node_items(g, inner, annots, bind + "    ", list_labels, opts, 0, spec_ctx) +
+                gated_abort_unwind(g, inner, bind + "    ") +
+                close +
                 "${ind}}\n"
         }
         _ -> {
@@ -1909,7 +1918,7 @@ fn gated_abort_unwind(g: Grammar, inner: GNode, ind: string) -> string {
     // second, spurious F0013. The break itself is emitted at the ELEMENT (emit_one's
     // `.Ref` arm), before its result is captured, because capturing an aborted result is
     // itself a report.
-    if gr.onfail == "skip" || gr.onfail == "close" { return "" }
+    if gr.onfail == "skip" || gr.onfail == "close" || gr.onfail == "halt" { return "" }
     "${ind}if st.abort_prop {\n" +
     "${ind}    return CapVal.Node(st.error_node_silent())\n" +
     "${ind}}\n"
@@ -1935,7 +1944,7 @@ fn gated_abort_arm(g: Grammar, inner: GNode, ind: string) -> string {
     "${ind}st.set_abort_prop(false)\n"
 }
 
-fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
+fn gated_first_check(g: Grammar, inner: GNode, ind: string, annots: List<GAnnot>) -> string {
     let gr = gated_ref_of(inner)
     if !gr.found { return "" }
     let fg = rule_first_guard(g, gr.rule, [])
@@ -1961,6 +1970,25 @@ fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
     // the element's own FIRST refuses so the element can report about it.
     if gr.onfail == "skip" { return "" }
     if gr.onfail == "close" { return "${ind}if !(${fg}) { break }\n" }
+    // `@onfail(halt)`: REPORT, then abandon the rest of this group — `close`'s reporting
+    // twin. `parse_type_param_entries` is the shape: `set_error(…); return out` leaves the
+    // cursor untouched, so the caller's `consume(Greater)` still runs and still reports.
+    // The `break` needs a loop to leave; `emit_opt` wraps a halt-bearing optional group in
+    // `while true { … break }` for exactly that (a repetition already has one).
+    if gr.onfail == "halt" {
+        // Keyed at the REFERENCE SITE, like `@require` and `@onfail(skip)`: the caller's
+        // `@expect("<rule>", …)` wins, the callee's own declared message is the fallback.
+        // It cannot come from the callee's `@expect("IDENT", …)` — `tparam` is
+        // `tpn:IDENT ( ":" tpb:IDENT )?`, TWO IDENTs, so a token-keyed lookup there lands
+        // on the BOUND ("expected trait bound after `:`") and not on the name.
+        let hkl = rule_first_literal(g, gr.rule)
+        let hkey = if hkl != "" { hkl } else { gr.rule }
+        let hexp = expect_for(annots, hkey)
+        let hm = if hexp.found { hexp.msg } else { rule_first_expect_msg(g, gr.rule) }
+        let hmsg = if hm == "" { "expected ${gr.rule}" } else { hm }
+        let hrep = if hkey == "IDENT" { "report_ident" } else { "report" }
+        return "${ind}if !(${fg}) {\n${ind}    st.${hrep}(\"${hmsg}\")\n${ind}    break\n${ind}}\n"
+    }
     let em = rule_first_expect_msg(g, gr.rule)
     let msg = if em == "" { "expected ${gr.rule}" } else { em }
     "${ind}if !(${fg}) {\n" +
@@ -2254,7 +2282,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                     bnd.guard +
                     "${ind}    let __rep_before = st.pos\n" +
                     gated_abort_arm(g, inner, ind + "    ") +
-                    gated_first_check(g, inner, ind + "    ") +
+                    gated_first_check(g, inner, ind + "    ", annots) +
                     emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                     gated_abort_unwind(g, inner, ind + "    ") +
                     "${ind}    if st.pos == __rep_before { break }\n" +

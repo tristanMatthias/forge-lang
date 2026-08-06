@@ -28,7 +28,7 @@ use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont
 use features.grammar.{build_rule_index}
 use features.grammar.{rep_is_one, grep_is_multi, onfail_policy_supported}
 use features.grammar.{gprim_ref_name, emit_lookup_rule, rule_result_kind}
-use features.grammar.{list_labels_of}
+use features.grammar.{list_labels_of, node_has_onfail}
 use diagnostics.{diag_ice, render_diagnostic}
 
 // ── The DSL token stream ──
@@ -1198,21 +1198,6 @@ fn validate_cuts(g: Grammar) -> string {
     ""
 }
 
-/// True when any item DIRECTLY in this node carries the named `@onfail` policy. One level
-/// only: a nested group is its own repetition, and its policy is that group's business.
-fn node_has_onfail(node: GNode, policy: string) -> bool {
-    match node {
-        .Alt(branches) -> {
-            for b in branches {
-                for it in b.items {
-                    if it.onfail == policy { return true }
-                }
-            }
-            false
-        }
-    }
-}
-
 /// True when the sequence declares `@expect(key, …)`. The message-existence half of
 /// the `@require`-on-a-rule-reference rule: a ref with no single-literal FIRST has no
 /// token to name, so it may only be required when the author supplied the wording.
@@ -1720,6 +1705,9 @@ fn parse_labeled(p: GP) -> GItem {
     }
     if onfail == "close" && !gate {
         p.fail("`@onfail(close)` governs a GATED element's abort — put it with the `@gate` whose failure should end the repetition")
+    }
+    if onfail == "halt" && !gate {
+        p.fail("`@onfail(halt)` governs a GATED element's failure — put it with the `@gate` whose miss should abandon the rest of the group")
     }
     if onfail == "drop" {
         match base.prim {

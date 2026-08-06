@@ -168,7 +168,7 @@ type Cap = { name: string, val: CapVal }
 /// to (exec_rule mints one per call). Set by exec_item when it reaches a cut item,
 /// read + reset by exec_node's speculative arm — the interpreter twin of the
 /// generated parser's function-local `mut s_cut`.
-type CapEnv = { caps: List<Cap>, cut: bool, cut_diags: int, cut_err: bool, abort: bool }
+type CapEnv = { caps: List<Cap>, cut: bool, cut_diags: int, cut_err: bool, abort: bool, halt: bool }
 
 impl CapEnv {
     fn get(self, name: string) -> CapVal {
@@ -206,6 +206,15 @@ impl CapEnv {
     /// nested group stops the sequence that encloses it too.
     fn set_abort(self, v: bool) {
         self.abort = v
+    }
+
+    /// `@onfail(halt)` — abandon the rest of the enclosing GROUP, not the rule. Read and
+    /// CLEARED by `exec_seq` on its way out, so it stops exactly one sequence: the group
+    /// whose element halted. `abort` would stop the rule too, and the whole point of halt
+    /// is that the rule carries on and keeps reporting (`parse_type_params` still runs its
+    /// `consume(Greater)` after `parse_type_param_entries` gives up).
+    fn set_halt(self, v: bool) {
+        self.halt = v
     }
 
     fn set_scalar(self, name: string, v: CapVal) {
@@ -1388,7 +1397,7 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     // chain fields on exit so a NESTED chain — every `[i]` index, every `(args)` argument —
     // is invisible to the outer step whose build has yet to run. Emit's twin is the
     // save/restore wrapper around the generated `parse_<rule>` fn.
-    mut env = CapEnv { caps: [], cut: false, cut_diags: 0, cut_err: false, abort: false }
+    mut env = CapEnv { caps: [], cut: false, cut_diags: 0, cut_err: false, abort: false, halt: false }
     let chain_rule = rule_seeds_postfix(g, r)
     let c_step_base = st.postfix_step_base
     let c_step_sp = st.postfix_step_sp
@@ -2501,6 +2510,12 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_a
         // the shared CapEnv, so an abort inside a nested group stops this sequence too
         // — the executor twin of the generated parser's early `return`.
         if env.abort { return CapVal.Node(st.error_node_silent()) }
+        // A halted GROUP stops here and nowhere else: clear the flag on the way out so the
+        // enclosing sequence resumes. (`abort` deliberately does NOT clear — it unwinds.)
+        if env.halt {
+            env.set_halt(false)
+            break
+        }
         // A zero-width predicate (`@when` mode read / `@peek` lookahead) is NOT the base:
         // it consumes nothing and captures nothing, so skip it when locating item 0 —
         // exactly as the emit twin does with its `continue` BEFORE `idx` increments (so
@@ -3030,7 +3045,7 @@ fn capval_len(v: CapVal) -> int {
 /// Aborting through `env` (not `st.abort_prop`) is deliberate and sufficient: a group
 /// shares its enclosing rule's CapEnv, so `env.set_abort(true)` unwinds the rule that
 /// owns the gate, which is exactly the scope emit's `return` has.
-fn gated_first_ok(g: Grammar, inner: GNode, st: PState, env: CapEnv) -> bool {
+fn gated_first_ok(g: Grammar, inner: GNode, st: PState, env: CapEnv, annots: List<GAnnot>) -> bool {
     let gr = gated_ref_of(inner)
     if !gr.found { return true }
     // `@onfail(skip)` / `@onfail(close)` own this position themselves — the emit twin
@@ -3044,6 +3059,27 @@ fn gated_first_ok(g: Grammar, inner: GNode, st: PState, env: CapEnv) -> bool {
     if gr.onfail == "skip" || gr.onfail == "close" { return true }
     let seen: List<string> = []
     if tok_starts_rule(g, gr.rule, st, seen) { return true }
+    // `@onfail(halt)`: report, then abandon the rest of THIS group. `exec_seq` reads the
+    // flag and clears it, so the enclosing rule carries on — the emit twin's `break` out
+    // of the group's breakable scope.
+    if gr.onfail == "halt" {
+        // Keyed at the REFERENCE SITE — see the emit twin for why the callee's own
+        // `@expect("IDENT", …)` is the wrong source for this one.
+        let hkl = rule_first_literal(g, gr.rule)
+        let hkey = if hkl != "" { hkl } else { gr.rule }
+        mut hm = ""
+        for a in annots {
+            match a {
+                .Expect(tok, m) -> { if tok == hkey && hm == "" { hm = m } }
+                _ -> {}
+            }
+        }
+        if hm == "" { hm = rule_first_expect_msg(g, gr.rule) }
+        let hmsg = if hm == "" { "expected ${gr.rule}" } else { hm }
+        if hkey == "IDENT" { st.report_ident(hmsg) } else { st.report(hmsg) }
+        env.set_halt(true)
+        return false
+    }
     let em = rule_first_expect_msg(g, gr.rule)
     st.report(if em == "" { "expected ${gr.rule}" } else { em })
     env.set_abort(true)
@@ -3071,9 +3107,15 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
             // t-myz7: the interpreter twin of emit's `gated_first_check`, planted at
             // exactly the same place — emit renders it into BOTH the `( … )?` and the
             // `( … )*` group bodies, and both reach this one arm here.
-            if gated_first_ok(g, inner, st, env) {
+            if gated_first_ok(g, inner, st, env, annots) {
                 exec_node(g, inner, st, env, multi, annots)
             } else {
+                // `@onfail(halt)` abandons THIS group, so the flag is consumed HERE — at
+                // the boundary of the group it governs. Left raised, the ENCLOSING
+                // sequence breaks too and the bracket's closer never runs: `enum E<,T>`
+                // lost the hand's "expected `>` after type parameters" that way. The emit
+                // twin has this for free, because its `break` leaves one scope.
+                env.set_halt(false)
                 CapVal.Node(st.error_node_silent())
             }
         }

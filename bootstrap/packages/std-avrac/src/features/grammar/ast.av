@@ -294,6 +294,15 @@ export type GItem = {
     //                                   "expected `>`" and still builds `(enum E (A()))`,
     //                                   where calling `parse_tparam` on an unproven FIRST
     //                                   BINDS the `{` as a type-parameter name.
+    //     halt   on a GATED element   — report, then ABANDON the rest of the enclosing
+    //                                   GROUP, without aborting the rule. `close`'s
+    //                                   reporting twin, and what a bracketed LIST needs:
+    //                                   `parse_type_param_entries` answers a bad entry with
+    //                                   `set_error(…); return out`, so the caller's
+    //                                   `consume(Greater)` still runs and still reports.
+    //                                   `enum E<,T>` is four diagnostics on the hand for
+    //                                   exactly that reason — abandon consumes nothing, so
+    //                                   `>`, `{` and the stray `}` each get their say.
     //     close  on a GATED element   — an aborting element ENDS the repetition instead
     //                                   of unwinding the rule, and its partial result is
     //                                   not pushed. `select { x }`: report the missing
@@ -336,7 +345,7 @@ export type GItem = {
 /// seed_parser's validation, emit and the executor, so a policy cannot be spelled in
 /// the grammar that only one engine understands. See `GItem.onfail`.
 export fn onfail_policy_supported(p: string) -> bool {
-    p == "skip" || p == "close" || p == "drop" || p == "discard" || p == "bail"
+    p == "skip" || p == "close" || p == "drop" || p == "discard" || p == "bail" || p == "halt"
 }
 
 /// True for the policies that NAME a capture — `@onfail(discard, <label>)`. One list
@@ -959,6 +968,25 @@ export fn rule_first_expect_msg(g: Grammar, name: string) -> string {
     }
 }
 
+
+/// True when any item DIRECTLY in this node carries the named `@onfail` policy. One level
+/// only: a nested group is its own scope, and its policy is that group's business.
+///
+/// Shared by seed_parser (which validates `close`'s repetition requirement), emit (which
+/// wraps a `halt`-bearing optional in a breakable scope) and the executor. A second copy
+/// would let the three disagree about which groups a policy governs.
+export fn node_has_onfail(node: GNode, policy: string) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.onfail == policy { return true }
+                }
+            }
+            false
+        }
+    }
+}
 
 export fn gated_ref_of(node: GNode) -> GatedRef {
     match node {
