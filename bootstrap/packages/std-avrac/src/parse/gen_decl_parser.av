@@ -1127,7 +1127,7 @@ fn parse_select_decl(st: PState) -> CapVal {
                 st.set_abort_prop(false)
                 if !(st.cur().tk == Tk.Identifier) { break }
                 let __gres = parse_select_arm(st)
-                if st.abort_prop {
+                if st.abort_prop || capval_is_error_expr(st, __gres) {
                     st.set_abort_prop(false)
                     break
                 }
@@ -2159,7 +2159,7 @@ fn parse_type_decl(st: PState) -> CapVal {
                             return CapVal.Node(st.error_node_silent())
                         }
                         let __gres = parse_field(st)
-                        if st.abort_prop {
+                        if st.abort_prop || capval_is_error_expr(st, __gres) {
                             return CapVal.Node(st.error_node_silent())
                         }
                         fields_list.push(capval_to_field(st, __gres))
@@ -2264,7 +2264,7 @@ fn parse_shape_decl(st: PState) -> CapVal {
                     return CapVal.Node(st.error_node_silent())
                 }
                 let __gres = parse_field(st)
-                if st.abort_prop {
+                if st.abort_prop || capval_is_error_expr(st, __gres) {
                     return CapVal.Node(st.error_node_silent())
                 }
                 shfields_list.push(capval_to_field(st, __gres))
@@ -2394,7 +2394,7 @@ fn parse_enum_decl(st: PState) -> CapVal {
                     return CapVal.Node(st.error_node_silent())
                 }
                 let __gres = parse_variant(st)
-                if st.abort_prop {
+                if st.abort_prop || capval_is_error_expr(st, __gres) {
                     return CapVal.Node(st.error_node_silent())
                 }
                 vars_list.push(capval_to_variant(st, __gres))
@@ -2411,7 +2411,7 @@ fn parse_enum_decl(st: PState) -> CapVal {
                         return CapVal.Node(st.error_node_silent())
                     }
                     let __gres = parse_variant(st)
-                    if st.abort_prop {
+                    if st.abort_prop || capval_is_error_expr(st, __gres) {
                         return CapVal.Node(st.error_node_silent())
                     }
                     vars_list.push(capval_to_variant(st, __gres))
@@ -2464,7 +2464,7 @@ fn parse_variant(st: PState) -> CapVal {
                 return CapVal.Node(st.error_node_silent())
             }
             let __gres = parse_field(st)
-            if st.abort_prop {
+            if st.abort_prop || capval_is_error_expr(st, __gres) {
                 return CapVal.Node(st.error_node_silent())
             }
             vfields_list.push(capval_to_field(st, __gres))
@@ -2649,7 +2649,7 @@ fn parse_trait_decl(st: PState) -> CapVal {
                     return CapVal.Node(st.error_node_silent())
                 }
                 let __gres = parse_trait_member(st)
-                if st.abort_prop {
+                if st.abort_prop || capval_is_error_expr(st, __gres) {
                     return CapVal.Node(st.error_node_silent())
                 }
                 tmembers_list.push(capval_to_stmt(st, __gres))
@@ -2921,7 +2921,7 @@ fn parse_impl_decl(st: PState) -> CapVal {
                     return CapVal.Node(st.error_node_silent())
                 }
                 let __gres = parse_impl_member(st)
-                if st.abort_prop {
+                if st.abort_prop || capval_is_error_expr(st, __gres) {
                     return CapVal.Node(st.error_node_silent())
                 }
                 imethods_list.push(capval_to_stmt(st, __gres))
@@ -3067,7 +3067,7 @@ fn parse_impl_method(st: PState) -> CapVal {
                     return CapVal.Node(st.error_node_silent())
                 }
                 let __gres = parse_param(st)
-                if st.abort_prop {
+                if st.abort_prop || capval_is_error_expr(st, __gres) {
                     return CapVal.Node(st.error_node_silent())
                 }
                 imparams_list.push(capval_to_pentry(st, __gres))

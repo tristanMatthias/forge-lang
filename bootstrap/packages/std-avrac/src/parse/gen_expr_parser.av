@@ -1621,6 +1621,10 @@ fn parse_param(st: PState) -> CapVal {
     let pname = CapVal.Tok(st.advance())
     if st.cur().tk == Tk.Colon {
         let _ = st.advance()
+        if !(tok_starts_type(st.cur())) {
+            st.report("expected parameter type after `:`")
+            return CapVal.Node(st.error_node_silent())
+        }
         pt = parse_type_expr(st)
     }
     mk_param(st, capval_tok_text(pname), pt, capval_present(pt))

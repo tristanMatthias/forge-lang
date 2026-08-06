@@ -2648,7 +2648,10 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
                 }
                 st.set_abort_prop(false)
                 let gv = exec_primary(g, item.prim, st, env, multi, annots)
-                if st.abort_prop {
+                // The error NODE as well as the flag — a CROSS-VIEW callee (`param`, which
+                // lives in the expression grammar) never raises `abort_prop`, because that
+                // flag is scoped to gate-bearing grammars. See the emit twin.
+                if st.abort_prop || capval_is_error_expr(st, gv) {
                     if item.onfail == "close" { st.set_abort_prop(false) } else { env.set_abort(true) }
                     return CapVal.Node(st.error_node_silent())
                 }

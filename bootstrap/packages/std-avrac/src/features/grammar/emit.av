@@ -1481,8 +1481,17 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 } else {
                     "${ind}    return CapVal.Node(st.error_node_silent())\n"
                 }
+                // `abort_prop` is scoped to gate-bearing grammars (`grammar_has_gate`), so a
+                // CROSS-VIEW callee cannot raise it: `param` is generated into the
+                // EXPRESSION parser, where the flag is deliberately never written. Its
+                // `@require` therefore aborted invisibly — the decl-side caller saw no
+                // flag, coerced the silent error node, and `capval_to_pentry` reported
+                // "expected a parameter" on top of the callee's own message.
+                //
+                // The error NODE is the signal that crosses views, and it is the same one
+                // `@onfail(bail)` reads. Same meaning either way: this element failed.
                 return "${ind}let __gres = parse_${name}(st)\n" +
-                    "${ind}if st.abort_prop {\n" +
+                    "${ind}if st.abort_prop || capval_is_error_expr(st, __gres) {\n" +
                     gact +
                     "${ind}}\n" +
                     emit_ref_capture_of(g, item, name, "__gres", ind, list_labels, opts)

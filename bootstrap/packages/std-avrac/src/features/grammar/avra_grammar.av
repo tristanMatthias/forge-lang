@@ -383,8 +383,15 @@ fn avra_expr_core() -> Grammar {
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
                | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
   lambda_body  = block_expr | expression
-  param        = pname:IDENT ( ":" pt:type_expr )?
-                 @expect("IDENT", "expected parameter name") -> MkParam(pname, pt)
+  // The TYPE position is `@require`d, keyed on the rule NAME because `type_expr`'s FIRST
+  // is a disjunction with no single token to name (t-myz7) — the same treatment `field`
+  // already has, for the same reason. Unrequired, a missing type did not abort: the
+  // expression view reported its own generic F0040 and the type view added "expected a
+  // type", so `fn foo(x: ) -> int { 1 }` came out F0040 + F0001 where the hand reports
+  // "expected parameter type after `:`" and stops.
+  param        = pname:IDENT ( ":" @require pt:type_expr )?
+                 @expect("IDENT", "expected parameter name") 
+                 @expect("type_expr", "expected parameter type after `:`") -> MkParam(pname, pt)
   // t-47hc.29 — a match-table CELL: exactly hand `parse_primary` (parse/mod.av:2528), in
   // its own dispatch order, and deliberately NOT `@hand(primary_base)`. That leaf resolves
   // to `parse_leaf_common(false)`, which handles a quote SPLICE and the PREFIX operators
@@ -1173,8 +1180,15 @@ export fn avra_program_grammar() -> Grammar {
   // is what a fn body needs and what the hand parser does. The two views never compose
   // each other, so each owns its own definition and the shared fragments stay body-agnostic.
   body_item   = statement
-  param       = pname:IDENT ( ":" pt:type_expr )?
-                 @expect("IDENT", "expected parameter name") -> MkParam(pname, pt)
+  // The TYPE position is `@require`d, keyed on the rule NAME because `type_expr`'s FIRST
+  // is a disjunction with no single token to name (t-myz7) — the same treatment `field`
+  // already has, for the same reason. Unrequired, a missing type did not abort: the
+  // expression view reported its own generic F0040 and the type view added "expected a
+  // type", so `fn foo(x: ) -> int { 1 }` came out F0040 + F0001 where the hand reports
+  // "expected parameter type after `:`" and stops.
+  param       = pname:IDENT ( ":" @require pt:type_expr )?
+                 @expect("IDENT", "expected parameter name") 
+                 @expect("type_expr", "expected parameter type after `:`") -> MkParam(pname, pt)
   statement   = return_stmt | @hand(let_stmt) | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
   return_stmt = "return" ^( rv:expression )? -> MkReturn(rv)
   defer_stmt  = "defer" de:expression -> MkDefer(de)
