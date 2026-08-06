@@ -1470,6 +1470,13 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // so a plain `expected <t>` (no backticks) is deterministic; a group has no
     // single lexeme (t == "") → a generic label.
     let msg = if exp.found { exp.msg } else if t == "" { "expected token" } else { "expected ${t}" }
+    // so07.2 / 1rzz: an IDENT binding position keeps the hand parser's
+    // RESERVED-KEYWORD diagnostic ("`move` is a reserved keyword …") instead of
+    // reporting the generic `@expect` message at a `Tk.KwReserved` token. Routed via
+    // the PState method so the generated parser and the executor's `handle_missing`
+    // produce the same text from the same code. Non-IDENT terminals are untouched,
+    // so every other rule regenerates byte-identical.
+    let rep = if t == "IDENT" { "st.report_ident(\"${msg}\")" } else { "st.report(\"${msg}\")" }
     let sync = recover_target(annots)
     // `@require` ABORT: leave the rule instead of reporting and building on. The value
     // is the same error node emit already uses for "no branch matched", so callers
@@ -1502,7 +1509,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     if str_in(list_labels, item.label) {
         if idx == 0 { return "${ind}${item.label}_list.push(${adv})\n" }
         mut o = "${ind}if ${cond} { ${item.label}_list.push(${adv}) } else {\n"
-        o = o + "${ind}    st.report(\"${msg}\")\n"
+        o = o + "${ind}    ${rep}\n"
         if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
         o = o + abort_line
         o = o + "${ind}}\n"
@@ -1512,7 +1519,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     if str_in(opts, item.label) {
         if idx == 0 { return "${ind}${item.label} = CapVal.Tok(${adv})\n" }
         mut o = "${ind}if ${cond} { ${item.label} = CapVal.Tok(${adv}) } else {\n"
-        o = o + "${ind}    st.report(\"${msg}\")\n"
+        o = o + "${ind}    ${rep}\n"
         if sync != "" { o = o + "${ind}    st.synchronize(\"${sync}\")\n" }
         o = o + abort_line
         o = o + "${ind}}\n"
@@ -1530,7 +1537,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         // Bind the label to the current token in the else so downstream
         // capval_tok_text stays safe (does NOT advance — mirrors the hand leaf).
         mut outl = "${ind}let ${item.label} = if ${cond} { CapVal.Tok(${adv}) } else {\n"
-        outl = outl + "${ind}    st.report(\"${msg}\")\n"
+        outl = outl + "${ind}    ${rep}\n"
         if sync != "" { outl = outl + "${ind}    st.synchronize(\"${sync}\")\n" }
         // A CAPTURED `@require` aborts too — the unlabeled sibling below has always
         // emitted this, and omitting it here is why the two engines consumed different
@@ -1546,7 +1553,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         return outl
     }
     mut out = "${ind}if ${cond} { let _ = ${adv} } else {\n"
-    out = out + "${ind}    st.report(\"${msg}\")\n"
+    out = out + "${ind}    ${rep}\n"
     if sync != "" { out = out + "${ind}    st.synchronize(\"${sync}\")\n" }
     out = out + abort_line
     out = out + "${ind}}\n"

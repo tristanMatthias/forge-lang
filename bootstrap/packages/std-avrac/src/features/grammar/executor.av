@@ -600,6 +600,27 @@ impl PState {
         self.had_error = true
     }
 
+    /// `report` for a missing IDENT, keeping the hand parser's RESERVED-KEYWORD
+    /// diagnostic (so07.2 / 1rzz — parse/mod.av `consume_identifier`).
+    ///
+    /// A binding position that finds `Tk.KwReserved` has something far more useful
+    /// to say than "expected function name": the lexeme itself is the problem and
+    /// the fix is to rename it. The hand parser has always said so, so a native rule
+    /// reporting its generic `@expect` message instead is a diagnostic REGRESSION —
+    /// and one that appears exactly as each keyword is routed. `fn unsafe() {}` and
+    /// a parameter named `move` both lost the message the moment `fn` went native.
+    ///
+    /// It lives on PState so BOTH engines produce the same text: the executor calls
+    /// it from `handle_missing` (which already knows the expected terminal) and the
+    /// generated parsers call it wherever emit renders an IDENT terminal miss.
+    fn report_ident(self, msg: string) {
+        if self.cur().tk == Tk.KwReserved {
+            self.report("`${self.cur().text}` is a reserved keyword and cannot be used as an identifier — rename the binding")
+            return
+        }
+        self.report(msg)
+    }
+
     /// `report` with the F-CODE carried ON the diagnostic (t-47hc.5).
     ///
     /// The pre-existing channel was one code WIDE: `PState.diag_code` is a single
@@ -3756,7 +3777,8 @@ fn handle_missing(st: PState, expected: string, annots: List<GAnnot>) {
             _ -> {}
         }
     }
-    st.report(msg)
+    // so07.2: an IDENT position keeps the hand's reserved-keyword diagnostic.
+    if expected == "IDENT" { st.report_ident(msg) } else { st.report(msg) }
     for a in annots {
         match a {
             .Recover(sync_to) -> st.synchronize(sync_to)

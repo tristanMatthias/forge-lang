@@ -636,7 +636,7 @@ fn parse_annot(st: PState) -> CapVal {
     mut a_list: List<ExprId> = []
     let _ = st.advance()
     let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftParen {
@@ -1014,7 +1014,7 @@ fn parse_let_decl(st: PState) -> CapVal {
         m = CapVal.Tok(st.advance())
     }
     let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Colon {
@@ -1053,7 +1053,7 @@ fn parse_mut_decl(st: PState) -> CapVal {
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
             let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-                st.report("expected variable name")
+                st.report_ident("expected variable name")
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
@@ -1110,7 +1110,7 @@ fn parse_const_decl(st: PState) -> CapVal {
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
             let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-                st.report("expected constant name")
+                st.report_ident("expected constant name")
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
@@ -1159,7 +1159,7 @@ fn parse_letdes_decl(st: PState) -> CapVal {
         while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             if st.cur().tk == Tk.Identifier { n_list.push(st.advance()) } else {
-                st.report("expected IDENT")
+                st.report_ident("expected IDENT")
             }
         }
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
@@ -1527,18 +1527,18 @@ fn parse_component_decl(st: PState) -> CapVal {
     mut bm: CapVal = CapVal.Nil
     let _ = st.advance()
     let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().text == "implements" {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { tr_list.push(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
         while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             if st.cur().tk == Tk.Identifier { tr_list.push(st.advance()) } else {
-                st.report("expected IDENT")
+                st.report_ident("expected IDENT")
             }
         }
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
@@ -1581,7 +1581,7 @@ fn parse_component_decl(st: PState) -> CapVal {
             st.report("expected :")
         }
         if st.cur().tk == Tk.Identifier { bm = CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
     }
     let __pre_err = st.had_error
@@ -1656,11 +1656,11 @@ fn parse_comp_inst(st: PState) -> CapVal {
     mut body_list: List<StmtId> = []
     let _ = st.advance()
     let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     let i = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
@@ -1710,7 +1710,7 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
     mut body_list: List<StmtId> = []
     let n = CapVal.Tok(st.advance())
     let i = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
@@ -1758,7 +1758,7 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
 fn parse_bare_comp_inst_raw(st: PState) -> CapVal {
     let rn = CapVal.Tok(st.advance())
     let ri = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
@@ -1794,7 +1794,7 @@ fn parse_comp_block_item(st: PState) -> CapVal {
     if lookahead_ok("comp_nested_raw_named", st) && (st.cur().tk == Tk.Identifier) {
         let rn = CapVal.Tok(st.advance())
         let ri = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
             CapVal.Tok(st.cur())
         }
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
@@ -1822,7 +1822,7 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         mut body_list: List<StmtId> = []
         let n = CapVal.Tok(st.advance())
         let i = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
             CapVal.Tok(st.cur())
         }
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
@@ -1972,7 +1972,7 @@ fn parse_comp_field(st: PState) -> CapVal {
     mut init: CapVal = CapVal.Nil
     let _ = st.advance()
     let f = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
@@ -2028,7 +2028,7 @@ fn parse_use_tail(st: PState) -> CapVal {
         mut unames_list: List<Token> = []
         let _ = st.advance()
         let upkg = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected package name")
+            st.report_ident("expected package name")
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
             CapVal.Tok(st.cur())
@@ -2039,7 +2039,7 @@ fn parse_use_tail(st: PState) -> CapVal {
             return CapVal.Node(st.error_node_silent())
         }
         if st.cur().tk == Tk.Identifier { useg_list.push(st.advance()) } else {
-            st.report("expected package name")
+            st.report_ident("expected package name")
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
@@ -2068,7 +2068,7 @@ fn parse_use_tail(st: PState) -> CapVal {
     mut useg_list: List<Token> = []
     mut unames_list: List<Token> = []
     if st.cur().tk == Tk.Identifier { useg_list.push(st.advance()) } else {
-        st.report("expected module path after `use`")
+        st.report_ident("expected module path after `use`")
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
@@ -2112,7 +2112,7 @@ fn parse_mod_decl(st: PState) -> CapVal {
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
             let mdname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-                st.report("expected module name after `mod`")
+                st.report_ident("expected module name after `mod`")
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
@@ -2142,7 +2142,7 @@ fn parse_type_decl(st: PState) -> CapVal {
     mut top: CapVal = CapVal.Nil
     let _ = st.advance()
     let tname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Less {
@@ -2207,7 +2207,7 @@ fn parse_shape_decl(st: PState) -> CapVal {
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
             let shname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-                st.report("expected shape name")
+                st.report_ident("expected shape name")
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
@@ -2270,7 +2270,7 @@ fn parse_field(st: PState) -> CapVal {
         let _ = st.advance()
     }
     let fname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected field name")
+        st.report_ident("expected field name")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
@@ -2288,7 +2288,7 @@ fn parse_tparam(st: PState) -> CapVal {
     if st.cur().tk == Tk.Colon {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { tpb = CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
     }
     mk_type_param(capval_tok_text(tpn), tpb, capval_present(tpb))
@@ -2313,7 +2313,7 @@ fn parse_enum_decl(st: PState) -> CapVal {
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
             let ename = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-                st.report("expected enum name")
+                st.report_ident("expected enum name")
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
@@ -2436,7 +2436,7 @@ fn parse_fn_decl(st: PState) -> CapVal {
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
             let name = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-                st.report("expected function name")
+                st.report_ident("expected function name")
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
@@ -2558,7 +2558,7 @@ fn parse_extern_decl(st: PState) -> CapVal {
         st.report("expected fn")
     }
     let ename = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
@@ -2602,7 +2602,7 @@ fn parse_trait_decl(st: PState) -> CapVal {
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
             let trname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-                st.report("expected trait name")
+                st.report_ident("expected trait name")
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
@@ -2676,7 +2676,7 @@ fn parse_trait_member(st: PState) -> CapVal {
 fn parse_assoc_member(st: PState) -> CapVal {
     let _ = st.advance()
     let atname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     mk_assoc_type(st, capval_tok_text(atname))
@@ -2689,7 +2689,7 @@ fn parse_method_member(st: PState) -> CapVal {
     mut tmlb: CapVal = CapVal.Nil
     let _ = st.advance()
     let tmname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
@@ -2767,7 +2767,7 @@ fn parse_impl_decl(st: PState) -> CapVal {
         }
     }
     let itn = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Less {
@@ -2784,7 +2784,7 @@ fn parse_impl_decl(st: PState) -> CapVal {
     if st.cur().text == "for" {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { ifortn = CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
         if st.cur().tk == Tk.Less {
             let _ = st.advance()
@@ -2832,7 +2832,7 @@ fn parse_impl_method(st: PState) -> CapVal {
     mut imret: CapVal = CapVal.Nil
     let _ = st.advance()
     let imname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
@@ -3043,7 +3043,7 @@ fn parse_for_binding(st: PState) -> CapVal {
         while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             if st.cur().tk == Tk.Identifier { names_list.push(st.advance()) } else {
-                st.report("expected IDENT")
+                st.report_ident("expected IDENT")
             }
         }
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
@@ -3142,7 +3142,7 @@ fn parse_iflet_stmt(st: PState) -> CapVal {
         st.report("expected let")
     }
     let b = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report("expected a binding name after `if let`")
+        st.report_ident("expected a binding name after `if let`")
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
         CapVal.Tok(st.cur())
@@ -3195,7 +3195,7 @@ fn parse_for_stmt(st: PState) -> CapVal {
         mut hi: CapVal = CapVal.Nil
         let _ = st.advance()
         let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
             CapVal.Tok(st.cur())
         }
         if st.cur().text == "in" { let _ = st.advance() } else {
@@ -3294,12 +3294,12 @@ fn parse_match_table_stmt(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.Identifier { let _ = st.advance() } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
     }
     while st.cur().tk == Tk.Pipe {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { cols_list.push(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
     }
     while tok_starts_pattern(st.cur()) {
@@ -3347,12 +3347,12 @@ fn parse_match_table_expr(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.Identifier { let _ = st.advance() } else {
-        st.report("expected IDENT")
+        st.report_ident("expected IDENT")
     }
     while st.cur().tk == Tk.Pipe {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { cols_list.push(st.advance()) } else {
-            st.report("expected IDENT")
+            st.report_ident("expected IDENT")
         }
     }
     while tok_starts_pattern(st.cur()) {
