@@ -87,7 +87,7 @@ fn decl_src() -> string {
     emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
 }
 
-spec "t-47hc slice 10.11: `enum` is routed onto the production path, speculatively" {
+spec "t-47hc slice 10.11: `enum` is routed onto the production path, COMMITTED" {
     then "parse_enum_decl and parse_variant exist and dispatch BEFORE the decl_hand gate" {
         let src = decl_src()
         let enum_at = src.index_of("parse_enum_decl(st)")
@@ -97,9 +97,23 @@ spec "t-47hc slice 10.11: `enum` is routed onto the production path, speculative
             enum_at >= 0 && hand_at >= 0 && enum_at < hand_at
     }
 
-    then "the branch is SPECULATIVE — on any diagnostic it rolls back into the hand gate" {
+    // t-myz7: `enum` OWNS its recovery, so the dispatcher calls it DIRECTLY. The `@try`
+    // moved inside the rule, paired with a `@cut` after the keyword — it has to be there,
+    // because a `@cut`'s commit flag is per-rule-invocation and cannot reach a caller's
+    // `@try`. So the rollback scaffold is still emitted, just one frame in: it now belongs
+    // to `parse_enum_decl` and covers only a failure BEFORE the cut.
+    //
+    // Both halves are asserted because they fail in opposite directions. A speculative
+    // `s_last = parse_enum_decl(st)` in the dispatcher would mean any diagnostic anywhere
+    // inside the enum — however deep — rolls the whole declaration back and `decl_hand`
+    // owns the recovery again, silently un-routing the keyword while every parity spec
+    // above still passed. A missing `s_cut` would mean the rule commits nowhere and its
+    // own `@expect` messages are unreachable.
+    then "the branch is COMMITTED — the dispatcher calls it directly, the rule owns the rollback" {
         let src = decl_src()
-        src.contains("s_last = parse_enum_decl(st)") &&
+        src.contains("return parse_enum_decl(st)") &&
+            !src.contains("s_last = parse_enum_decl(st)") &&
+            src.contains("mut s_cut = false") &&
             src.contains("st.store.truncate_to_mark(s_mark)") &&
             src.contains("st.restore_hand_state(s_hand)")
     }
