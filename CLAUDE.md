@@ -236,6 +236,27 @@ caching failures entirely via the `@@fixture-stateful@@` source directive — th
 test runner reads it with `fixture_is_stateful` and never caches a `: FAIL` from
 such a fixture, so a repaired environment re-probes instead of replaying.
 
+**And the SAME cache freezes a PASS — the direction that makes a local suite lie
+about a COMPILER change (t-k6lm).** The frozen-FAIL note above is about a test
+going red for no reason; the inverse is worse, because nothing looks wrong. A
+fixture reached through `cached_fixture_run` / `cached_fixture_capture` is
+COMPILED AND RUN BY `./build/bs2` and its stdout memoised under
+`build/cache/fixture_stdout/`. Change the compiler, re-run the suite, and every
+such fixture can be served from a capture produced by the PREVIOUS compiler — so
+the suite reports on code that no longer exists. Measured: three local
+`AVRA_RC_STRICT=1` suites green (two full, one on CI's exact failing 7-file
+batch) against 937 warm captures, while CI — always cold — failed IDENTICALLY
+twice. The failure was a real double free (`avra_rc_release received a pointer
+to freed RC memory`, `__release_UnitMetadata`), one `rm -rf` away from
+reproducing, and was nearly filed as an environment flake instead.
+**Before any local run is used as evidence about a compiler change: `rm -rf
+bootstrap/build/cache/fixture_stdout`.** A green suite over warm captures proves
+nothing about codegen. Cost of the cold run is real and worth it (1608s vs 506s
+on the full strict suite — that gap IS the fixtures actually executing). Two
+corollaries: a CI red that will not reproduce locally is evidence your local run
+is stale, NOT that CI is flaky; and a flake does not repeat byte-for-byte, so
+two identical CI failures are a defect until proven otherwise.
+
 ## Differential testing (HRN — the go-hard safety net)
 
 The `ps3t` "AST as the single source of truth" program rewrites the

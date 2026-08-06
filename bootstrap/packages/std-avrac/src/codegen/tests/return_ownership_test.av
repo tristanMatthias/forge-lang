@@ -73,8 +73,11 @@ fn releasables_of(src: string, fname: string) -> List<string> {
     let fresh = analyze_return_ownership_set(p.store, ids!)
     for sid in ids! {
         match stmt_unwrap(p.store, p.store.stmts.get(sid)) {
-            .Function(n, _, _, _, body) -> {
-                if n == fname { return analyze_releasable(p.store, body, fresh) }
+            .Function(n, _, _, ret, body) -> {
+                if n == fname {
+                    let tail_yields = match ret { .Void -> false, _ -> true }
+                    return analyze_releasable(p.store, body, fresh, tail_yields)
+                }
             }
             _ -> {}
         }
@@ -257,6 +260,25 @@ spec "t-k6lm releasable set: a CALL ARGUMENT carries a local's parts out of the 
             // call-descending mode must survive one level of composite nesting;
             // delegating composites to the plain walker drops it.
             not_releasable(PRELUDE + "fn keep(i: Inner) -> Inner { i }\nfn db() -> Holder { let p = Holder { inner: Inner { n: 1 } }\n return Holder { inner: keep(p.inner) } }\n", "db", "p")
+        }
+        then "a VALUE-YIELDING tail call escapes, like an explicit return" {
+            // The `db_for` shape: no `return` keyword, but the fn declares a
+            // result, so the tail call's value IS the frame's result and its
+            // arguments escape. This is the pair to the void case below — the
+            // two have IDENTICAL statement shape and differ only in the
+            // declared return type, which is why it has to be threaded in.
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db() -> Holder { let p = Holder { inner: Inner { n: 1 } }\n keep(p.inner) }\n", "db", "p")
+        }
+        then "a BLOCK-BODIED tail match arm escapes (CodeRabbit #1176)" {
+            not_releasable(PRELUDE + "fn keep(i: Inner) -> Holder { Holder { inner: i } }\nfn db(c: bool) -> Holder { let p = Holder { inner: Inner { n: 1 } }\n match c { true -> { keep(p.inner) }\n _ -> { Holder { inner: Inner { n: 2 } } } } }\n", "db", "p")
+        }
+        then "a RETURNED match arm's field read escapes (wider than reported)" {
+            // Neither walker handled .MatchExpr at all, so this plain field
+            // read — no call involved — was missed too.
+            not_releasable(PRELUDE + "fn db(c: bool) -> Inner { let p = Holder { inner: Inner { n: 1 } }\n return match c { true -> p.inner\n _ -> Inner { n: 2 } } }\n", "db", "p")
+        }
+        then "a RETURNED if-expression branch's field read escapes" {
+            not_releasable(PRELUDE + "fn db(c: bool) -> Inner { let p = Holder { inner: Inner { n: 1 } }\n return if c { p.inner } else { Inner { n: 2 } } }\n", "db", "p")
         }
         then "a DISCARDED tail call does NOT cost the local its candidacy" {
             // The boundary of the rule above, and the reason it is limited to
