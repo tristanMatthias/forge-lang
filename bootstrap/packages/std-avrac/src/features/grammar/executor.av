@@ -639,13 +639,6 @@ impl PState {
     /// `if st.had_error` detects only THIS child's failure.
     fn clear_error(self) {
         self.had_error = false
-        // `abort_prop` is per-ITEM, and this is the per-item boundary — the
-        // statement/declaration loops call clear_error before each child parse.
-        // Nothing else resets it, and the PState is SHARED across a whole file, so a
-        // leaked `true` would make every LATER declaration return a silent error node
-        // at its first gated check instead of parsing. The flag has to survive an
-        // unwind within one item and die at its edge; this is that edge.
-        self.abort_prop = false
     }
 
     /// Push / pop the `table { … }` header context (self-ptr mutators, for the same

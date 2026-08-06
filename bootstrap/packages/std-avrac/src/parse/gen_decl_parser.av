@@ -9,6 +9,7 @@ use core.{ExprId, Stmt, MatchArm, SelectArm, CompConfig, CompConfigPair, Childre
 
 // generated recursive-descent parser for grammar `grammar`
 export fn parse_declaration(st: PState) -> CapVal {
+    st.set_abort_prop(false)
     if st.cur().text == "use" {
         return parse_use_decl(st)
     }
