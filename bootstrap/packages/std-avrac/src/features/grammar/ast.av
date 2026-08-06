@@ -897,3 +897,34 @@ export fn gated_ref_of(node: GNode) -> GatedRef {
     }
 }
 
+
+/// Does this rule body COMMIT anywhere — i.e. contain a `@cut`?
+///
+/// The pair of `speculative` on a dispatcher branch, and the reason both live here:
+/// `@try X` where `X` commits internally is INERT. The branch snapshots diagnostics and
+/// rolls back the instant the rule reports, so the `@cut` — whose entire purpose is "do
+/// not roll back past this point" — is discarded by a wrapper one level up, and the
+/// `@hand` gate below answers exactly as it did before.
+///
+/// That combination is undetectable from behaviour: the emitted parser changes, the
+/// rule genuinely commits, and every recovery oracle still agrees, BECAUSE the hand is
+/// still the one recovering. It was measured as "corpus unchanged, therefore the commit
+/// is clean" when the truth was "corpus unchanged, therefore the commit did nothing"
+/// (t-myz7). Recurses into groups — a `@cut` nested in a `( … )` counts, which is where
+/// every committed decl rule puts its own.
+export fn rule_body_has_cut(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.cut { return true }
+                    match it.prim {
+                        .Group(inner) -> { if rule_body_has_cut(inner) { return true } }
+                        _ -> {}
+                    }
+                }
+            }
+            false
+        }
+    }
+}
