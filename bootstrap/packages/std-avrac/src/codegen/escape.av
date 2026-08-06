@@ -1222,6 +1222,29 @@ fn refine_return_fresh(store: NodeStore, ids: List<StmtId>, cands: ptr, mod_path
 /// each explicit `return` anywhere inside it, plus the body's tail
 /// expression (Avra returns the last expression implicitly).
 fn fn_returns_fresh(store: NodeStore, body: List<StmtId>, cands: ptr) -> bool {
+    // A body we cannot SEE proves nothing, and an EMPTY one is vacuously
+    // fresh: there are no returns to collect, and `tail_is_fresh` answers
+    // true at `body.length == 0`. That is not a hypothetical shape — the
+    // metadata fast-path synthesizes a signature-only stub for every
+    // non-generic `@std` export (`Stmt.Function(n, …, empty_body)`,
+    // build/metadata_synthesize.av), which is exactly how the whole stubbed
+    // `@std` surface entered the candidate set at once.
+    //
+    // Measured (t-k6lm): `extract_unit_metadata` returns a `UnitMetadata`
+    // whose entry strings are BORROWED from the AST store and shared across
+    // every slice extracted from it. Admitted as fresh, the caller's
+    // `let whole = extract_unit_metadata(…)` became releasable and the
+    // recursive `__release_UnitMetadata` freed children the next slice still
+    // held — `avra_rc_release received a pointer to freed RC memory` in
+    // tests/per_file_metadata_fixtures/sample.av under AVRA_RC_STRICT=1.
+    // It reproduces ONLY through the fast path: a whole-program compile sees
+    // the real body and denies it on the field reads, which is why a plain
+    // `diagnose.sh --run` passes and the test suite does not.
+    //
+    // A genuine `fn f() {}` returns unit and has nothing to own, so denying
+    // it costs nothing. The bias is this file's stated one: a miss leaks, a
+    // false hit double-frees.
+    if body.length == 0 { return false }
     for e in collect_return_exprs(store, body) {
         if !expr_is_fresh(store, store.exprs.get(e), cands) { return false }
     }

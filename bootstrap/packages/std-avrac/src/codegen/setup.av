@@ -415,21 +415,18 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     let copy_types = analyze_copy_types(structs, enums)
     // t-k6lm: derived here because this is the one place with BOTH the
     // whole NodeStore and the program's top-level statements in scope.
-    // t-k6lm: the analysis is BUILT but not yet CONSUMED. Swapping this for
-    // `analyze_return_ownership_set(store, stmts)` re-enables the wiring —
-    // and currently corrupts the compiled-in grammar (see the ticket). The
-    // predicate work continues against the specs until that is found.
-    // PARKED — see t-k6lm. The set is correct about the OUTER allocation and
-    // that is not enough to license the recursive `__release_<T>`: a returned
-    // struct routinely holds children it does NOT own (UnitMetadata's entries
-    // carry name strings owned by the AST store, shared across every slice
-    // extracted from it). Releasing one holder frees children a sibling still
-    // references, and the sibling's release then double-frees — caught as
-    // `avra_rc_release received a pointer to freed RC memory` in
-    // tests/per_file_metadata_fixtures/sample.av under AVRA_RC_STRICT=1.
-    // Consuming this needs DEEP freshness (the contents owned too), not just a
-    // fresh outer allocation.
-    let rc_fresh_fns = fresh_set_new()
+    // t-k6lm: the analysis is CONSUMED here — a `let x = make_thing()` whose
+    // callee provably returns a fresh allocation is reclaimed at scope exit
+    // instead of leaked.
+    //
+    // The deep-freshness requirement this waited on is met: `init_is_owned`
+    // (codegen/escape.av) admits a returned composite only when every field
+    // initializer is owned too, because `__release_<T>` is RECURSIVE and a
+    // returned struct routinely holds children it does NOT own. The last
+    // holdout was a body that could not be INSPECTED at all — the metadata
+    // fast-path's signature-only stubs, vacuously fresh — now denied at
+    // `fn_returns_fresh`.
+    let rc_fresh_fns = analyze_return_ownership_set(store, stmts)
     let empty_releasable: List<string> = []
     let empty_fn_param_names: List<string> = []
     let empty_loops: List<LoopStackFrame> = []
