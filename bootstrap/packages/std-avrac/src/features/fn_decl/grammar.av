@@ -23,7 +23,12 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// after the flat merge (features/grammar/compose.av `compose_fragments`).
 export fn avra_fn_decl_grammar() -> Grammar {
     let gp = grammar {
-  fn_decl     = "fn" name:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "(" ( params:param ( @peek(comma_not_rparen) "," params:param )* ( "," )? )? ")" ( "->" ret:type_expr )? "{" body:body_item* "}" @expect("}", "expected `}` after function body") -> MkFnDecl(name, tparams, params, ret, body)
+  fn_decl     = @try "fn" @cut @require name:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? @require "(" ( @peek(not_rparen) @gate params:param ( @peek(comma_not_rparen) "," params:param )* ( "," )? )? @require ")" ( "->" ret:type_expr )? @require "{" body:body_item* @require "}"
+                @expect("IDENT", "expected function name")
+                @expect("(", "expected `(` after function name")
+                @expect(")", "expected `)` after parameters")
+                @expect("{", "expected `{` after function parameters")
+                @expect("}", "expected `}` after function body") -> MkFnDecl(name, tparams, params, ret, body)
   extern_decl = "extern" "fn" ename:IDENT "(" ( eparams:param ( @peek(comma_not_rparen) "," eparams:param )* ( "," )? )? ")" ( "->" eret:type_expr )? -> MkExtern(ename, eparams, eret)
     }
     grammar_checked(gp)

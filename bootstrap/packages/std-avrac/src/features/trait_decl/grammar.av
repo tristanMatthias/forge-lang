@@ -8,7 +8,10 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// The `trait` declaration and its member rules.
 export fn avra_trait_decl_grammar() -> Grammar {
     let gp = grammar {
-  trait_decl  = "trait" trname:IDENT ( "<" tparam ( "," tparam )* ">" )? "{" ( tmembers:trait_member )* "}" -> MkTraitDecl(trname, tmembers)
+  trait_decl  = @try "trait" @cut @require trname:IDENT ( "<" tparam ( "," tparam )* ">" )? @require "{" ( @peek(not_rbrace) @gate tmembers:trait_member )* @require "}"
+                @expect("IDENT", "expected trait name")
+                @expect("{", "expected `{` after trait name")
+                @expect("}", "expected `}` after trait body") -> MkTraitDecl(trname, tmembers)
   trait_member  = assoc_member | method_member
   assoc_member  = "type" atname:IDENT -> MkAssocType(atname)
   method_member = "fn" tmname:IDENT "(" ( tmparams:param ( @peek(comma_not_rparen) "," tmparams:param )* ( "," )? )? ")" ( "->" tmret:type_expr )? ( tmlb:"{" tmbody:body_item* "}" )? -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)

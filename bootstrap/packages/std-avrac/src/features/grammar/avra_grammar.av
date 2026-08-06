@@ -383,7 +383,8 @@ fn avra_expr_core() -> Grammar {
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
                | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
   lambda_body  = block_expr | expression
-  param        = pname:IDENT ( ":" pt:type_expr )? -> MkParam(pname, pt)
+  param        = pname:IDENT ( ":" pt:type_expr )?
+                 @expect("IDENT", "expected parameter name") -> MkParam(pname, pt)
   // t-47hc.29 — a match-table CELL: exactly hand `parse_primary` (parse/mod.av:2528), in
   // its own dispatch order, and deliberately NOT `@hand(primary_base)`. That leaf resolves
   // to `parse_leaf_common(false)`, which handles a quote SPLICE and the PREFIX operators
@@ -474,7 +475,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `letdes_decl` UNREACHABLE — at that point the two must swap, with the more
   // specific `let (` form first. Recorded because the breakage would be silent:
   // destructuring would simply stop parsing, with no diagnostic naming the cause.
-  declaration = use_decl | mod_decl | @try shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | @try trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | @try mut_decl | const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = use_decl | mod_decl | shape_decl | enum_decl | @try type_decl | @try extern_decl | fn_decl | trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | mut_decl | const_decl | @try letdes_decl | select_decl | @try parallel_decl | spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -571,7 +572,9 @@ fn avra_decl_edge_grammar() -> Grammar {
   //     fails on `(`, the `@try` rewinds, and `letdes_decl` (next in the
   //     alternation) parses it.
   let_decl   = "let" ( m:"mut" )? n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkLetBinding(m, n, ty, init, e, tmp)
-  mut_decl   = "mut" n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkMutBinding(n, ty, init, e, tmp)
+  mut_decl   = @try "mut" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )?
+               @expect("IDENT", "expected variable name")
+               @expect("=", "expected `=` after variable name") -> MkMutBinding(n, ty, init, e, tmp)
   const_decl = @try "const" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" init:expression
                @expect("IDENT", "expected constant name")
                @expect("=", "expected `=` after constant name") -> MkConstBinding(n, ty, init)
@@ -597,7 +600,9 @@ fn avra_decl_edge_grammar() -> Grammar {
   // and the `@try` hands the whole statement back to the hand parser, whose
   // missing-`<-` diagnostic (select_stmt/parser.av) then owns recovery.
   parallel_decl = "parallel" "{" body:declaration* "}" -> MkParallel(body)
-  select_decl   = "select" "{" ( arms:select_arm )* "}" -> MkSelect(arms)
+  select_decl   = @try "select" @cut @require "{" ( @peek(not_rbrace) @gate arms:select_arm )* @require "}"
+                  @expect("{", "expected `{` after select")
+                  @expect("}", "expected `}` to close select") -> MkSelect(arms)
   select_arm    = b:IDENT "<-" ch:expression "->" "{" body:declaration* "}" -> MkSelectArm(b, ch, body)
   // The SPEC-TEST blocks (t-47hc Phase 4). `spec_item` mirrors parse_spec_body's
   // dispatch — given-block | then-block | any declaration — and both nesting
@@ -608,7 +613,10 @@ fn avra_decl_edge_grammar() -> Grammar {
   // missing-name diagnostics belong to the HAND (spec_test/parser.av — the
   // silent-drop fix): a native STRING miss reports, the `@try` rolls back, and
   // the hand's specific message owns the output.
-  spec_decl  = "spec" n:STRING "{" body:spec_item* "}" -> MkSpecBlock(n, body)
+  spec_decl  = @try "spec" @cut @require n:STRING @require "{" body:spec_item* @require "}"
+               @expect("STRING", "expected spec name string after `spec`")
+               @expect("{", "expected `{` after spec name")
+               @expect("}", "expected `}` to close spec block") -> MkSpecBlock(n, body)
   spec_item  = given_blk | then_blk | declaration
   given_blk  = "given" n:STRING "{" body:spec_item* "}" -> MkGivenBlock(n, body)
   then_blk   = "then" n:STRING "{" body:declaration* "}" -> MkThenBlock(n, body)

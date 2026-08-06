@@ -30,8 +30,14 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 export fn avra_struct_decl_grammar() -> Grammar {
     let gp = grammar {
   type_decl   = "type" tname:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "=" ( "{" ( fields:field ","? )* "}" | talias:type_expr ( top:( "without" | "only" ) "{" ( topf:IDENT ","? )* "}" )? )? -> MkTypeDeclAny(tname, tparams, fields, talias, top, topf)
-  shape_decl  = "shape" shname:IDENT "=" "{" ( shfields:field ","? )* "}" -> MkShapeDecl(shname, shfields)
-  field       = ( "mut" )? fname:IDENT ":" ftype:type_expr -> MkField(fname, ftype)
+  shape_decl  = @try "shape" @cut @require shname:IDENT @require "=" @require "{" ( @peek(not_rbrace) @gate shfields:field ","? )* @require "}"
+                @expect("IDENT", "expected shape name")
+                @expect("=", "expected `=` after shape name")
+                @expect("{", "expected `{` after `=` in shape declaration")
+                @expect("}", "expected `}` after shape fields") -> MkShapeDecl(shname, shfields)
+  field       = ( "mut" )? fname:IDENT @require ":" ftype:type_expr
+                @expect("IDENT", "expected field name")
+                @expect(":", "expected `:` after field name") -> MkField(fname, ftype)
     }
     grammar_checked(gp)
 }
