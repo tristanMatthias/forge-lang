@@ -57,10 +57,31 @@ spec "the leak counter has signal where it is permitted to run (t-0ks0)" {
                 let after = avra_rc_live_count()
 
                 // `held` is still live at the read, so these 100 are genuinely
-                // outstanding. Exact equality is the point: a counter that
-                // moved by "some" amount could still be missing whole
-                // allocation classes, which is the defect this guards.
-                warm.length == 10 && held.length == 100 && after - before == 100
+                // outstanding: the counter must have seen every one of them.
+                //
+                // AT LEAST 100, not EXACTLY 100, and the difference is not a
+                // weakening — it is what this counter can actually promise.
+                // `avra_rc_live_count()` reads the PROCESS-GLOBAL `rc_set`,
+                // while a shard runs its test files as parallel `@deferred_init`
+                // units (d4jv). Any sibling unit allocating between the two
+                // reads lands in the same counter, so the window is shared and
+                // an exact delta is not this test's to observe.
+                //
+                // Measured, same batch, two identical runs: delta=110 and
+                // delta=291, against exactly 100 when the file runs alone. The
+                // equality held only while no sibling happened to allocate in
+                // the window — it was passing by scheduling luck, and a change
+                // that merely shifts allocation timing elsewhere in the batch
+                // turns it red with nothing wrong in the diff (t-0ks0 found it
+                // exactly that way).
+                //
+                // The guard keeps its teeth. What it exists to catch is a
+                // counter that is BLIND to a whole allocation class — which
+                // reads as delta=0, or as a delta short of the 100 stranded
+                // objects. Both still fail. Only the unobservable upper bound
+                // is dropped, and sibling allocations can only ever push the
+                // delta UP, never hide a miss.
+                warm.length == 10 && held.length == 100 && after - before >= 100
             }
         }
     }
