@@ -24,8 +24,16 @@ export fn avra_enum_decl_grammar() -> Grammar {
   //
   // The `@gate`s stay: they are what make `enum E { 5 }` REPORT instead of binding `5`
   // as a variant name, and they are correct independently of the commit.
+  // The variant list is ONE repetition, not a hand-unrolled leading element plus a
+  // repetition. `( A (A)* )?` and `( A )*` accept the same language, but the unrolled
+  // form put the first variant OUTSIDE the loop — and a gated repetition clears
+  // `abort_prop` at the top of every iteration, so an abort raised by that first
+  // variant was discarded the moment a second one followed. `enum E { A(x int), B }`
+  // reported the missing `:` in `A`, then parsed on into `B` instead of unwinding.
+  // The `variant` rule's own field list below was always written as a plain
+  // repetition, which is why it never had this gap.
   enum_decl   = "enum" ename:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "{" ( DOC )*
-                ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* )* )? "}"
+                ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* )* "}"
                 @expect("IDENT", "expected enum name")
                 @expect("{", "expected `{` after enum name")
                 @expect("}", "expected `}` after variants")

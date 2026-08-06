@@ -2308,7 +2308,8 @@ fn parse_enum_decl(st: PState) -> CapVal {
     while st.cur().tk == Tk.DocComment {
         let _ = st.advance()
     }
-    if lookahead_ok("not_rbrace", st) {
+    while lookahead_ok("not_rbrace", st) {
+        let __rep_before = st.pos
         st.set_abort_prop(false)
         if !(st.cur().tk == Tk.Identifier) {
             st.report("expected variant name")
@@ -2320,27 +2321,10 @@ fn parse_enum_decl(st: PState) -> CapVal {
         while st.cur().tk == Tk.DocComment {
             let _ = st.advance()
         }
-        while lookahead_ok("not_rbrace", st) {
-            let __rep_before = st.pos
-            st.set_abort_prop(false)
-            if !(st.cur().tk == Tk.Identifier) {
-                st.report("expected variant name")
-                st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-            }
-            vars_list.push(capval_to_variant(st, parse_variant(st)))
-            if st.cur().tk == Tk.Comma { let _ = st.advance() }
-            while st.cur().tk == Tk.DocComment {
-                let _ = st.advance()
-            }
-            if st.abort_prop {
-                return CapVal.Node(st.error_node_silent())
-            }
-            if st.pos == __rep_before { break }
-        }
         if st.abort_prop {
             return CapVal.Node(st.error_node_silent())
         }
+        if st.pos == __rep_before { break }
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}` after variants")
@@ -2536,7 +2520,7 @@ fn parse_trait_decl(st: PState) -> CapVal {
                 let __rep_before = st.pos
                 st.set_abort_prop(false)
                 if !(st.cur().text == "type" || st.cur().text == "fn") {
-                    st.report("expected trait_member")
+                    st.report("expected `type` or `fn` in trait body")
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }

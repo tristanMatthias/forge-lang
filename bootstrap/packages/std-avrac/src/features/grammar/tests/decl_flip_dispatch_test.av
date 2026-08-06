@@ -19,7 +19,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
-use @std.avrac.features.grammar.{hand_leaf_refused, avra_program_grammar, Grammar, GNode, GAnnot}
+use @std.avrac.features.grammar.{hand_leaf_refused, avra_program_grammar, Grammar, GNode, GAnnot, emit_parser_source_ex, avra_decl_dispatch_grammar}
 
 fn flip_decl(src: string) -> string {
     mut p = parser_new(src)
@@ -368,6 +368,29 @@ spec "t-myz7: the cross-view `param` message is not allowed to drift" {
         // assertion above by accident.
         declared_expect("param", "NOT_A_REAL_KEY") == "" &&
             declared_expect("no_such_rule", "IDENT") == ""
+    }
+}
+
+spec "t-myz7: a rule-name-keyed @expect reaches the EMITTED parser" {
+    then "the gated call on `trait_member` carries the declared wording, not the rule name" {
+        // The guard the `param` spec above CANNOT be. That one compares the grammar with
+        // a string, so it stays green no matter what emit does with the annotation — and
+        // that blind spot is exactly where a bug lived: `rule_first_expect_msg` read the
+        // rule-name-keyed `@expect` off `branches[0]` only, while `trait_member =
+        // assoc_member | method_member @expect("trait_member", …)` binds it to the LAST
+        // branch. The lookup missed it, `gated_first_check` fell back to its generic
+        // path, and the emitted parser reported `expected trait_member` — a GRAMMAR RULE
+        // NAME, printed at a user.
+        //
+        // Note `declared_expect` below scans EVERY branch (it always did). The emitter
+        // scanning only the first is what the two disagreed about, so a guard that reads
+        // the grammar on both sides could never see it. This one reads the EMITTED
+        // source, so it can.
+        let declared = declared_expect("trait_member", "trait_member")
+        let src = emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+        declared != "" &&
+            src.contains(declared) &&
+            !src.contains("expected trait_member")
     }
 }
 
