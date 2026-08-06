@@ -1693,7 +1693,16 @@ spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
         // `x!!` and `x!?` are the `!` loop's own shape — the hand consumed the run and
         // then dispatched without re-guarding. Native, each is a separate re-entered
         // step; that this makes no observable difference is the claim under test.
-        tree_agrees_everywhere("fn f(x: int??) -> int {\n let a = x!!\n return 0\n}") &&
+        //
+        // The doubly-nullable parameter goes through an ALIAS. Written inline as
+        // `x: int??` the fixture does not parse AT ALL — `??` in a parameter type is
+        // `error[F0001]: expected \`)\` after parameters`, on every path — so the
+        // assertion agreed about recovery from a malformed PARAMETER LIST and never
+        // reached the `!!` it names. Green, and measuring nothing: the same
+        // typo'd-fixture trap this file records retiring BARE_IDENT_COMP_INST for.
+        // Verified the replacement compiles clean (`ok`) before asserting on it, so
+        // `!!` is now actually the thing under test.
+        tree_agrees_everywhere("type W = int?\nfn f(x: W?) -> int {\n let a = x!!\n return 0\n}") &&
         tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}")
     }
     then "a next-line `?` after a `!` run does NOT fold — the fallthrough re-guards" {
