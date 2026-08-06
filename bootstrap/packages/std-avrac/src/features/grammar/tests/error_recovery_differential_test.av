@@ -586,6 +586,63 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         // about. Adding `agree_all("… a?. …")` is the failing-first witness when
         // someone fixes it.
     }
+    then "a GATED member/field list agrees on ALL THREE paths, executor included" {
+        // The gated call's FIRST re-check (t-myz7). `@gate` REPLACES a group's FIRST with
+        // the preceding `@peek` cond — that is what lets the loop enter where the
+        // element's own FIRST would refuse (`}` / EOF), so the hand's "report about the
+        // ELEMENT" recovery is reproducible. The price is that the callee's standing
+        // promise, "my caller proved my FIRST", no longer holds, so the gated call has to
+        // re-check it itself. emit has done that since the gate landed
+        // (`gated_first_check`); the INTERPRETER never did and simply fell into the
+        // sub-rule.
+        //
+        // `trait T {` therefore reached the EXPRESSION tail on the default path and said
+        // F0040 `expected expression` where the hand names the missing member, and
+        // `shape S = { x: int` answered with three diagnostics to the hand's one — the
+        // loop entered `field` standing on `fn`, `field` reported a missing name then a
+        // missing `:`, and `shape_decl` then reported a missing `}`.
+        //
+        // Every input here ALREADY sits in the `agree` corpus above and passed there
+        // throughout, because `agree` compares emit against hand and emit was never the
+        // one that was wrong. The default production path answers invalid input with the
+        // EXECUTOR, so only `agree_all` can see this — the t-zrn3 blind spot, in the
+        // keyword family that has the most gates. `agree_error` first on each, per this
+        // file's rule that a signature check must also prove the signature is non-empty.
+        agree_error("trait T {\nfn f() -> int { 1 }") &&
+            agree_all("trait T {\nfn f() -> int { 1 }") &&
+            agree_error("shape S = { x: int\nfn f() -> int { 1 }") &&
+            agree_all("shape S = { x: int\nfn f() -> int { 1 }") &&
+            agree_error("enum E {\nfn f() -> int { 1 }") &&
+            agree_all("enum E {\nfn f() -> int { 1 }") &&
+            agree_error("enum E { 5 }\nfn f() -> int { 1 }") &&
+            agree_all("enum E { 5 }\nfn f() -> int { 1 }")
+    }
+    then "an aborted declaration does not trail a generic CapVal-coercion diagnostic" {
+        // The boundary now carries EVERY diagnostic the DSL run recorded, not just
+        // `diags[0]` (t-myz7 — a committed native rule reports more than once, and the
+        // one-diagnostic seam made the hand's multi-error recovery unreachable no matter
+        // what the grammar said). The four `capval_to_*` coercions are what that
+        // exposed: they run on the run's RESULT, so their generic "expected a
+        // statement" / "expected a field" was appended AFTER every real diagnostic and
+        // the seam had been dropping it silently.
+        //
+        // A coercion failure is a real finding on a CLEAN parse (a grammar or builder
+        // bug) and pure noise on a FAILED one — the rule aborted, so of course it handed
+        // back `Nil`. Without that distinction every one of these gained a spurious
+        // trailing F0001 apiece the moment the boundary widened. `agree_all`, because
+        // the coercion sits at the boundary itself and so fires on all three native
+        // paths at once.
+        agree_error("use\nfn f() -> int { 1 }") &&
+            agree_all("use\nfn f() -> int { 1 }") &&
+            agree_error("mod\nfn f() -> int { 1 }") &&
+            agree_all("mod\nfn f() -> int { 1 }") &&
+            agree_error("const\nfn f() -> int { 1 }") &&
+            agree_all("const\nfn f() -> int { 1 }") &&
+            agree_error("export const C\nfn f() -> int { 1 }") &&
+            agree_all("export const C\nfn f() -> int { 1 }") &&
+            agree_error("shape = { x: int }\nfn f() -> int { 1 }") &&
+            agree_all("shape = { x: int }\nfn f() -> int { 1 }")
+    }
     then "multi-error recovery: static-raw finds the SAME ordered error set as hand" {
         // Each program has 3-6 parse errors; recovery must resynchronise and find
         // every one, in the same order, under both parsers.
