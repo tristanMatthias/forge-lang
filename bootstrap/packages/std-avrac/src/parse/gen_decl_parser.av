@@ -1242,6 +1242,7 @@ fn parse_select_decl(st: PState) -> CapVal {
             }
             while lookahead_ok("not_rbrace", st) {
                 let __rep_before = st.pos
+                st.set_abort_prop(false)
                 if !(st.cur().tk == Tk.Identifier) {
                     st.report("expected select_arm")
                     st.set_abort_prop(true)
@@ -2229,6 +2230,7 @@ fn parse_shape_decl(st: PState) -> CapVal {
             }
             while lookahead_ok("not_rbrace", st) {
                 let __rep_before = st.pos
+                st.set_abort_prop(false)
                 if !(st.cur().text == "mut" || st.cur().tk == Tk.Identifier) {
                     st.report("expected field name")
                     st.set_abort_prop(true)
@@ -2340,6 +2342,7 @@ fn parse_enum_decl(st: PState) -> CapVal {
                 let _ = st.advance()
             }
             if lookahead_ok("not_rbrace", st) {
+                st.set_abort_prop(false)
                 if !(st.cur().tk == Tk.Identifier) {
                     st.report("expected variant name")
                     st.set_abort_prop(true)
@@ -2390,6 +2393,7 @@ fn parse_variant(st: PState) -> CapVal {
         let _ = st.advance()
         while lookahead_ok("not_rparen", st) {
             let __rep_before = st.pos
+            st.set_abort_prop(false)
             if !(st.cur().text == "mut" || st.cur().tk == Tk.Identifier) {
                 st.report("expected field name")
                 st.set_abort_prop(true)
@@ -2458,6 +2462,7 @@ fn parse_fn_decl(st: PState) -> CapVal {
                 }
             }
             if lookahead_ok("not_rparen", st) {
+                st.set_abort_prop(false)
                 if !(st.cur().tk == Tk.Identifier) {
                     st.report("expected parameter name")
                     st.set_abort_prop(true)
@@ -2624,6 +2629,7 @@ fn parse_trait_decl(st: PState) -> CapVal {
             }
             while lookahead_ok("not_rbrace", st) {
                 let __rep_before = st.pos
+                st.set_abort_prop(false)
                 if !(st.cur().text == "type" || st.cur().text == "fn") {
                     st.report("expected trait_member")
                     st.set_abort_prop(true)

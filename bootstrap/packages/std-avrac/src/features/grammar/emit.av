@@ -1579,6 +1579,7 @@ fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_lab
             // "my caller proved FIRST" promise is broken here too. Without it
             // `enum E { 5 }` bound `5` as a variant name and compiled clean.
             "${ind}if ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                gated_abort_arm(g, inner, ind + "    ") +
                 gated_first_check(g, inner, ind + "    ") +
                 emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                 gated_abort_unwind(g, inner, ind + "    ") +
@@ -1743,6 +1744,26 @@ fn gated_abort_unwind(g: Grammar, inner: GNode, ind: string) -> string {
     "${ind}if st.abort_prop {\n" +
     "${ind}    return CapVal.Node(st.error_node_silent())\n" +
     "${ind}}\n"
+}
+
+/// ARM the flag: clear it immediately BEFORE a gated sub-parse, so the matching
+/// `gated_abort_unwind` reads THAT sub-parse's outcome and nothing else.
+///
+/// Without this the check is not "did the gated callee abort" but "has anything
+/// aborted anywhere in this item since the start rule reset" — `@require` raises
+/// the flag grammar-wide, so an unrelated earlier abort in the same declaration
+/// made a later gated element unwind on someone else's failure and swallow the
+/// caller's own resync diagnostic. `for` was the caught case: its header abort
+/// must leave TWO diagnostics (the header error, then the caller's resync), and a
+/// stale flag cut the second one.
+///
+/// It composes upward: an enclosing gated caller cleared before ITS sub-parse, and
+/// the inner raise happens during it, so a genuine abort still propagates out
+/// through every gated frame — only the STALE reads are removed.
+fn gated_abort_arm(g: Grammar, inner: GNode, ind: string) -> string {
+    let gr = gated_ref_of(inner)
+    if !gr.found { return "" }
+    "${ind}st.set_abort_prop(false)\n"
 }
 
 fn gated_first_check(g: Grammar, inner: GNode, ind: string) -> string {
@@ -2084,6 +2105,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                 req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     bnd.guard +
                     "${ind}    let __rep_before = st.pos\n" +
+                    gated_abort_arm(g, inner, ind + "    ") +
                     gated_first_check(g, inner, ind + "    ") +
                     emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
                     gated_abort_unwind(g, inner, ind + "    ") +
