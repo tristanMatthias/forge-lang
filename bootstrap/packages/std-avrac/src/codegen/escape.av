@@ -1358,7 +1358,22 @@ fn init_is_owned(store: NodeStore, e: Expr, cands: ptr) -> bool {
     match e {
         .Number(_) -> true
         .FloatLit(_) -> true
-        .String(_) -> true
+        // A string LITERAL is NOT an allocation the holder owns, so the
+        // recursive `__release_<T>` would free a pointer this struct never
+        // took a tick on. Every other literal here is a SCALAR — no ptr
+        // field, nothing to release — so `.String` is the only arm of this
+        // match that can misfire, and the only one that needs denying.
+        //
+        // Measured (t-k6lm): `error_def` (diagnostics) returns
+        // `ErrorDef { code: "F0001", help: "…" }` from every match arm. With
+        // `true` here, all-literal arms made the fn FRESH, which made
+        // `lang_gen::render_one_diag`'s `let def = error_def(code)`
+        // RELEASABLE — the single releasable local the fresh set adds across
+        // the whole @std::avrac lib build — and its release freed the two
+        // literals. Denying is the leak direction, which is this analysis's
+        // stated bias: "the cost is a leak left unfixed, never an
+        // over-release".
+        .String(_) -> false
         .Bool(_) -> true
         .None -> true
         _ -> expr_is_fresh(store, e, cands)

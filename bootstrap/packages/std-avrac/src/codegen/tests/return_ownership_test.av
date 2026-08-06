@@ -295,3 +295,39 @@ spec "t-k6lm releasable set: a CALL ARGUMENT carries a local's parts out of the 
         }
     }
 }
+
+// A STRING LITERAL field does not make its holder ownable (t-k6lm).
+//
+// `init_is_owned` used to answer `.String(_) -> true`, treating a literal as
+// an allocation the struct owns. It is not one, and the holder's recursive
+// `__release_<T>` would free it. This was found by diffing the RELEASABLE set
+// with the fresh-set wiring off vs on across the @std::avrac lib build, which
+// named exactly one new local: `lang_gen::render_one_diag :: def`, bound from
+// `error_def`, whose every arm is `ErrorDef { code: "<literal>", help:
+// "<literal>" }`.
+//
+// Scalars are deliberately NOT denied — an int/bool/float/null field has no
+// pointer to release, so it cannot misfire. The third arm pins that boundary,
+// so this cannot decay into "deny every literal".
+const SLIT: string = "type E = { code: string }\nfn mk() -> E { E { code: \"F0001\" } }\n"
+const SNUM: string = "type S = { n: int }\nfn mk2() -> S { S { n: 1 } }\n"
+
+spec "a string-literal field does not make its holder fresh (t-k6lm)" {
+    then "a fn returning a struct with a string-literal field is NOT fresh" {
+        not_fresh(SLIT, "mk")
+    }
+    then "so the caller's binding of it is NOT releasable" {
+        not_releasable(SLIT + "fn use_it() -> int { let d = mk()\n 0 }\n", "use_it", "d")
+    }
+    then "a struct with only SCALAR literal fields IS still fresh" {
+        // The boundary, and the positive control: scalars own nothing to
+        // free, so denying them would be a pure leak with no bug behind it.
+        is_fresh(SNUM, "mk2")
+    }
+    then "an enum payload holding a string literal is NOT fresh either" {
+        // Same base case, reached through `arg_ids_all_owned` instead of
+        // `field_inits_all_owned` — `.Err("…")` is the shape `noop_parse`
+        // uses, and it was admitted for the same reason.
+        not_fresh("fn mk3() -> Result<int, string> { .Err(\"boom\") }\n", "mk3")
+    }
+}
