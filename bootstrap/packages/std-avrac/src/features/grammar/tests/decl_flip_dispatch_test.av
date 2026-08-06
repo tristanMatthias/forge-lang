@@ -182,16 +182,28 @@ fn BARE_IDENT_COMP_INST() -> string {
 /// slice does, so the table above is now split rather than uniform. Measured under
 /// `AVRA_REFUSE_HAND_LEAF=decl_hand`:
 ///
-///   fn foo(       enum E {       trait T {       shape S = {     GRADUATED (native)
-///   type Foo = {  impl Foo {     component C {                   still REFUSES
+///   enum E {   trait T {   shape S = {   (+ mod use const select spec)  GRADUATED
+///   fn foo(    type Foo = {   impl Foo {   component C {                still REFUSES
 ///
 /// So the anchor moves to `impl`, and the assertions below split in two: the
 /// still-refusing keywords keep the anti-vacuity role, and each graduated form moves
 /// into `recovery_without_delegate` in the recovery spec — coverage GROWS as the
 /// frontier advances instead of quietly thinning. When `impl` lands, re-point this at
-/// whatever still refuses (`type` or `component` today) and move `impl`'s malformed
-/// forms across; when NOTHING refuses, this file's frontier specs are what say the
-/// leaf can be deleted.
+/// whatever still refuses and move `impl`'s malformed forms across; when NOTHING
+/// refuses, this file's frontier specs are what say the leaf can be deleted.
+///
+/// `fn` is on the REFUSING side deliberately, and the reason generalises to every
+/// keyword with a STATEMENT BODY. Committing `fn_decl` (`@try "fn" @cut …`) is what
+/// makes it own its header diagnostics — but the `@try` that used to sit in the
+/// `declaration` alternation commits only when the branch "reported nothing", so ANY
+/// diagnostic anywhere in the fn, including deep in its body, used to roll the whole
+/// declaration back and let the hand own recovery. A committed rule never rolls back.
+/// You cannot have both: commit early to own the header, and roll back late to
+/// borrow the hand's body recovery. Measured — committing `fn` moved 27 corpus and
+/// straggler specs red, every one of them an EXPRESSION-view case (`with_suffix`,
+/// `map_literal`, `qualified_expr`, `template_lit`) that is merely WRAPPED in
+/// `fn f() -> int { … }`. So `fn` graduates only once native statement-body recovery
+/// is byte-equal to the hand's, which is what the recovery corpus measures.
 fn MALFORMED_DECL() -> string {
     "impl Foo {\n"
 }
@@ -370,13 +382,15 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // rule's gap, closing that rule would silently make this assertion vacuous
         // again, which is the exact trap the previous anchor fell into.
         //
-        // The set is the STILL-REFUSING keywords, re-pointed this slice: `fn` and
-        // `enum` graduated (their malformed forms now report natively and are asserted
-        // as such in the recovery spec below), so keeping them here would have been a
-        // guard that cannot fail — the precise vacuity this half exists to prevent.
+        // The set is the STILL-REFUSING keywords, re-pointed this slice: `enum`
+        // graduated (its malformed forms now report natively and are asserted as such
+        // in the recovery spec below), so keeping it here would have been a guard that
+        // cannot fail — the precise vacuity this half exists to prevent. `fn` stays,
+        // for the statement-body reason recorded on MALFORMED_DECL.
         !native_without_delegate("malformed_impl", MALFORMED_DECL()) &&
         !native_without_delegate("malformed_type", "type Foo = {\n") &&
         !native_without_delegate("malformed_component", "component C {\n") &&
+        !native_without_delegate("malformed_fn", "fn foo(\n") &&
         // ...and the VALID counterpart of the same keyword does NOT report, which is
         // what pins the discriminator to malformed-ness rather than to the keyword.
         native_without_delegate("wellformed_fn", "fn foo() -> int { 1 }")
@@ -548,8 +562,6 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // rather than deleting them is what keeps the frontier's coverage monotone —
         // the claim changes from "still needs the leaf" to "reports WITHOUT it", and
         // both directions stay under test the whole way across.
-        recovery_without_delegate("fn_open_paren", "fn foo(\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("fn_noname", "fn (\nfn f() -> int { 1 }") &&
         recovery_without_delegate("enum_open", "enum E {\nfn f() -> int { 1 }") &&
         recovery_without_delegate("enum_noname", "enum {\nfn f() -> int { 1 }") &&
         recovery_without_delegate("trait_open", "trait T {\nfn f() -> int { 1 }") &&
