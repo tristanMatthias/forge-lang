@@ -3888,6 +3888,12 @@ fn bind(env: CapEnv, label: string, v: CapVal, multi: bool) {
 /// `had_error` is still false, so it reports exactly as before; when it is not first it
 /// was already being dropped at the seam. So this changes nothing that was observable
 /// before the widening, which is why it is not a separate behavioural change.
+/// The placeholder a guarded coercion builds must be SILENT. Three of these
+/// coercions (`capval_to_arm`, `capval_to_when_arm`, `capval_to_select_arm`) build a
+/// struct with an inner node, and reaching for `error_node` there re-reports the
+/// message a second time — unconditionally, so it both DOUBLE-reports on a clean parse
+/// and defeats this guard on a failed one. `error_node_silent` is the placeholder-only
+/// form; the report above is the single reporting site. Raised in review on #1180.
 fn report_coercion(st: PState, msg: string) {
     if st.had_error { return }
     st.report(msg)
@@ -4705,7 +4711,7 @@ export fn capval_to_when_arm(st: PState, v: CapVal) -> WhenArm {
         .WArm(a) -> a
         _ -> {
             report_coercion(st, "expected a when arm")
-            WhenArm { cond_id: none, body_id: st.error_node("expected a when arm") }
+            WhenArm { cond_id: none, body_id: st.error_node_silent() }
         }
     }
 }
@@ -4950,7 +4956,7 @@ export fn capval_to_select_arm(st: PState, v: CapVal) -> SelectArm {
         .SArm(a) -> a
         _ -> {
             report_coercion(st, "expected a select arm")
-            SelectArm { binding: "", chan_id: st.error_node("expected a select arm"), body_ids: [] }
+            SelectArm { binding: "", chan_id: st.error_node_silent(), body_ids: [] }
         }
     }
 }
@@ -5855,7 +5861,7 @@ export fn capval_to_arm(st: PState, v: CapVal) -> MatchArm {
         _ -> {
             report_coercion(st, "expected a match arm")
             let pid = st.store.pats.add_leaf(Pattern.Wildcard)
-            MatchArm { pattern: Pattern.Wildcard, pattern_id: pid, guard_id: none, body_id: st.error_node("expected a match arm") }
+            MatchArm { pattern: Pattern.Wildcard, pattern_id: pid, guard_id: none, body_id: st.error_node_silent() }
         }
     }
 }
@@ -5877,7 +5883,7 @@ export fn capval_to_finit(st: PState, v: CapVal) -> FieldInit {
     match v {
         .FInit(f) -> f
         _ -> {
-            st.report("expected field name")
+            report_coercion(st, "expected field name")
             FieldInit { name: "", value_id: st.store.exprs.add_leaf(Expr.Error) }
         }
     }

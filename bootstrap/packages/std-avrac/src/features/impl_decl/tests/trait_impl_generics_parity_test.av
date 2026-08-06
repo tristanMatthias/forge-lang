@@ -94,8 +94,15 @@ spec "t-myz7: an EMPTY `<>` is accepted, as the blind skip always accepted it" {
         // an EMPTY hand signature against a non-empty native one only if someone
         // thought to write the case down. It surfaced from sweeping every routed
         // keyword's type-parameter list, which is the coverage gap it also closes.
+        // ALL FOUR angle-bracket positions, because all four moved: the trait's params,
+        // the impl's params, the TARGET's type arguments, and the `for` type's. Testing
+        // only `impl<>` leaves the two `type_expr` lists — a different rule reference in
+        // the same edit — unmeasured, so a regression in either would pass this suite.
+        // Raised in review on #1180.
         agrees("trait T<> {\n    fn m() -> int\n}\n") &&
-            agrees("impl<> Show for Point {\n    fn show() -> string {\n        return x\n    }\n}\n")
+            agrees("impl<> Show for Point {\n    fn show() -> string {\n        return x\n    }\n}\n") &&
+            agrees("impl Point<> {\n    fn m() -> int {\n        return 1\n    }\n}\n") &&
+            agrees("impl Show for Point<> {\n    fn show() -> string {\n        return x\n    }\n}\n")
     }
 
     then "the non-empty and absent lists are unchanged — the control" {

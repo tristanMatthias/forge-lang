@@ -782,9 +782,30 @@ export fn rule_own_expect_msg(branches: List<GSeq>, name: string) -> string {
     ""
 }
 
+/// The `@expect` message for a rule DEFINED IN ANOTHER VIEW — the pair of
+/// rule_first_guard's declared-FIRST table.
+///
+/// Such a rule is genuinely absent from this grammar, so its `@expect` cannot be read
+/// no matter how the annotation is written: the decl parser calls the separately
+/// generated expression parser for these. `param` is the caught instance (its declared
+/// FIRST was added by slice 10.13, when routing fn/extern/trait/impl made parameter
+/// lists reachable from the decl view) — a gated call on it fell back to the generic
+/// "expected param" while `field` and `variant`, which ARE local, resolved correctly.
+///
+/// ONE table, consulted by BOTH `rule_first_expect_msg` and its `_leaf` twin. It lived
+/// only in the former, so a delegation through a leading `.Ref("param")` — the leaf's
+/// entire job — dropped the message and printed the grammar rule name at a user. No
+/// production rule leads with that ref today, so this is a latent hole rather than a
+/// live bug; a second copy of the table would be the durable defect, which is why it
+/// moves here instead.
+fn cross_view_expect_msg(name: string) -> string {
+    if name == "param" { return "expected parameter name" }
+    ""
+}
+
 export fn rule_first_expect_msg_leaf(g: Grammar, name: string) -> string {
     let r = emit_lookup_rule(g, name)
-    if r.name == "" { return "" }
+    if r.name == "" { return cross_view_expect_msg(name) }
     match r.body {
         .Alt(branches) -> {
             if branches.length == 0 { return "" }
@@ -813,19 +834,7 @@ export fn rule_first_expect_msg_leaf(g: Grammar, name: string) -> string {
 
 export fn rule_first_expect_msg(g: Grammar, name: string) -> string {
     let r = emit_lookup_rule(g, name)
-    if r.name == "" {
-        // CROSS-VIEW rules — the pair of rule_first_guard's declared-FIRST table just
-        // below. A rule DEFINED in another view is genuinely absent from this grammar,
-        // so its `@expect` cannot be read no matter how the annotation is written: the
-        // decl parser calls the separately generated expression parser for these.
-        // `param` is the caught instance (declared FIRST added by slice 10.13 when
-        // routing fn/extern/trait/impl made parameter lists reachable from the decl
-        // view) — a gated call on it fell back to the generic "expected param" while
-        // `field` and `variant`, which ARE local, resolved correctly. Declare the
-        // message here, beside the FIRST it pairs with, so the two stay together.
-        if name == "param" { return "expected parameter name" }
-        return ""
-    }
+    if r.name == "" { return cross_view_expect_msg(name) }
     match r.body {
         .Alt(branches) -> {
             if branches.length == 0 { return "" }
