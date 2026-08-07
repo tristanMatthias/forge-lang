@@ -1,0 +1,204 @@
+// t-rkle — `avra_rc_live_delta_local()` is the leak instrument that actually
+// holds up under the parallel test runner. This file pins the properties that
+// make it the right default, because the guidance pointed elsewhere and cost
+// two separate investigations.
+//
+// THE INSTRUMENT THAT DOES NOT WORK, and why it reads as if it does:
+// `avra_rc_live_count()` returns `rc_set_count`, a PROCESS-GLOBAL set. A shard
+// runs its test files as parallel `@deferred_init` units (d4jv), so a sibling
+// unit allocating between a spec's two reads lands in the same counter. It is
+// also blind to bump-region objects, since `rc_set_add` is reached only from
+// `avra_rc_alloc`'s malloc FALLBACK — which is why it needs `AVRA_RC_STRICT=1`
+// to see anything at all (#1164 made it refuse to answer without it).
+//
+// Measured, `rc_live_count_signal_test` stranding 100 objects:
+//
+//     file alone                    delta = 100
+//     batched with 3 siblings       delta = 110      <- same binary,
+//     batched with 3 siblings       delta = 291         same command
+//
+// An exact assertion against that is passing on scheduling luck; it went red
+// during t-0ks0 because an unrelated codegen change shifted allocation timing
+// ELSEWHERE in the batch.
+//
+// THE INSTRUMENT THAT WORKS: `t_rc_allocs`/`t_rc_frees` are `_Thread_local`
+// (runtime.c) and are bumped on BOTH allocation paths — the region fast path
+// and the malloc fallback — so the local delta is per-thread AND sees every
+// object. The same measurement above reads exactly 100 alone, batched, and
+// under strict, repeatably. That is what the arms below pin.
+//
+// It is not a universal replacement: frees are counted on the thread that
+// performs them, so a cross-thread hand-off (a channel send) deliberately skews
+// the local view. A spec asserting TRANSFER semantics still wants the global
+// count. A spec that allocates and drops on one thread — which is nearly every
+// leak check — wants this one.
+
+extern fn avra_rc_live_delta_local() -> int
+extern fn avra_rc_strict_enabled() -> int
+
+type Boxed = { items: List<int>, label: string }
+
+fn make_boxed() -> Boxed {
+    Boxed { items: [1, 2, 3], label: "boxed" }
+}
+
+/// Returns its allocations so the caller can hold them across the read — a
+/// genuine strand, not a value the scope is free to reclaim.
+fn strand(n: int) -> List<Boxed> {
+    mut kept: List<Boxed> = []
+    mut i = 0
+    while i < n {
+        kept.push(make_boxed())
+        i = i + 1
+    }
+    kept
+}
+
+spec "t-rkle: the LOCAL live delta is exact and isolation-proof" {
+    given "N objects stranded on this thread" {
+        then "the delta is EXACTLY N — no `>=` hedge needed" {
+            // The property the global counter cannot offer. This runs inside a
+            // shard alongside sibling units; if their allocations could reach
+            // this counter, this arm would be the flaky one.
+            //
+            // SCOPE OF THE CLAIM, stated because it is narrower than it looks:
+            // what this pins is ISOLATION and SIGNAL — that the reading is the
+            // calling thread's alone, and that it moves by the expected amount.
+            // It does NOT establish that the counter tracks LIVENESS, i.e. that
+            // a dropped object brings it back down. See the open note below;
+            // for stranded objects the two are indistinguishable, which is
+            // exactly why this arm is written with objects held alive.
+            let warm = strand(10)
+            let before = avra_rc_live_delta_local()
+            let held = strand(100)
+            let after = avra_rc_live_delta_local()
+            warm.length == 10 && held.length == 100 && after - before == 100
+        }
+        then "it has signal WITHOUT AVRA_RC_STRICT=1 — region objects are counted" {
+            // `avra_rc_live_count()` is blind here by construction: these small
+            // objects come from the bump region and never enter `rc_set`. The
+            // local counter increments on that path too, so the measurement
+            // needs no strict-mode gate to mean something.
+            //
+            // Deliberately asserted in BOTH modes. Under strict the fallback
+            // path is taken instead, and the delta must still be exact — one
+            // arm covering whichever mode this suite happens to run in.
+            let before = avra_rc_live_delta_local()
+            let held = strand(50)
+            let after = avra_rc_live_delta_local()
+            held.length == 50 && after - before == 50
+        }
+        then "a bare LIST scope does not move the counter AT ALL — and that is not a control" {
+            // Kept, but explicitly NOT as the negative control it looks like.
+            //
+            // A `List` never reaches this counter: `avra_array_new` allocates
+            // through `avra_arr_xmalloc`, not `avra_rc_alloc`, so `t_rc_allocs`
+            // is never bumped. Confirmed in the IR — a loop building a list
+            // emits `avra_array_new`/`avra_array_push` and NO rc calls.
+            //
+            // So `delta == 0` here says "lists are invisible to this counter",
+            // NOT "the list was reclaimed". An earlier draft of this file used
+            // exactly this arm as proof that the counter can go DOWN, which it
+            // cannot support — a guard that passes because nothing was measured
+            // is the defect this whole area keeps producing. It is documented
+            // here so the next reader does not mistake it for one.
+            // `i` advances by a CONSTANT and `s` is kept used through a
+            // separate accumulator. An earlier version advanced the loop with
+            // `i = i + s.length - 2`, which terminates only while `length` is
+            // exactly 3 — if the list literal or `length` ever changed, the
+            // increment would go to zero or negative and this would HANG the
+            // shard rather than fail it. A test that can hang is worse than one
+            // that can be wrong, because the failure mode is unattributable.
+            let before = avra_rc_live_delta_local()
+            mut i = 0
+            mut sizes = 0
+            while i < 100 {
+                let s: List<int> = [1, 2, 3]
+                sizes = sizes + s.length
+                i = i + 1
+            }
+            let after = avra_rc_live_delta_local()
+            sizes == 300 && after - before == 0
+        }
+        then "the STRUCT-shaped negative control is deliberately absent" {
+            // Writing it surfaced a separate, unexplained finding, and asserting
+            // the observed number here would pin a suspected bug as correct —
+            // the mistake rc_live_count_signal_test's own note warns about.
+            //
+            // THE FINDING, measured after the allocating frame RETURNED so
+            // function-exit cleanup has run. It is TWO separate leaks:
+            //
+            //   inline struct literal, 100 iterations of a loop      99
+            //   call-returned struct,  100 iterations of a loop     100
+            //   call-returned struct with NO string field           100
+            //   ONE inline literal, no loop (the with_expr shape)     0
+            //
+            // (1) THE 99 IS THE TELL. Exactly one release fires for a hundred
+            // constructions, so the release for a loop-body local is emitted at
+            // FUNCTION exit, not per iteration — it reclaims only the last
+            // value the alloca held. N-1 leak per loop. A single-local function
+            // reads 0 because one release covers its one object, which is why
+            // `with_expr/tests/with_ptr_field_override_leak_test.av` passes and
+            // is NOT in conflict with this: it has no loop.
+            //
+            // (2) THE CALL-RETURNED CASE NEVER RELEASES AT ALL. `let d = mk()`
+            // is releasable only if `mk` is in the return-ownership fresh set,
+            // and `init_is_owned` denies a `.String` field (#1178) — and a
+            // `.ListLit` field too, since `expr_is_fresh` has no arm for it and
+            // the catch-all denies. So an ordinary constructor is not fresh and
+            // its results are never reclaimed. That is t-k6lm's stated
+            // leak-not-double-free bias doing exactly what it says, not a new
+            // defect — but it is the larger of the two in practice.
+            //
+            // ── SUPERSEDED READING, kept as history ───────────────────────
+            //
+            // Retained deliberately, because it shows what an IN-FRAME
+            // measurement reads and why that misleads — not because any of it
+            // is current. Everything in this block is retracted by the finding
+            // above. Measured with THIS counter, 100 constructions each:
+            //
+            //   struct bound in a loop body                        +100
+            //   struct bound then dropped                          +100
+            //   struct never bound at all (`make_x().f.length`)    +100
+            //   struct with NO string field (freshness allowed)    +100
+            //   INLINE struct literal                              +100
+            //
+            // It concluded "one object per construction for every shape, so
+            // structs leak wholesale", and specifically that **#1178 does not
+            // explain it** since the no-string-field and inline-literal cases
+            // should both be releasable.
+            //
+            // BOTH conclusions are wrong, and the second is wrong in the more
+            // useful direction: the resolution above attributes the
+            // call-returned case to `init_is_owned`'s `.String` denial, which
+            // IS #1178. The reading that ruled #1178 out was the artifact.
+            //
+            // The numbers themselves were real. They were taken inside the
+            // still-live frame, before any function-exit release had run, so
+            // every shape necessarily read +100 — the uniformity that looked
+            // like a strong signal was the measurement, not the program. Four
+            // identical numbers across four different shapes should have been
+            // read as "the instrument is not discriminating here", which is
+            // the same blind-instrument mistake this file exists to document.
+            //
+            // ──────────────────────────────────────────────────────────────
+            //
+            // Tracked as t-0ks0 item 4. This arm still asserts nothing — the
+            // fixes belong in codegen and in the freshness predicate, and this
+            // file is the instrument, not the guard for them.
+            true
+        }
+    }
+    given "the strict-mode gate" {
+        then "the local delta does not depend on it, whichever mode is active" {
+            // Pins that this instrument carries no strict-mode precondition —
+            // the thing that forced every prior leak check through the global
+            // counter in the first place.
+            let strict = avra_rc_strict_enabled()
+            let before = avra_rc_live_delta_local()
+            let held = strand(25)
+            let after = avra_rc_live_delta_local()
+            held.length == 25 && after - before == 25 && (strict == 0 || strict == 1)
+        }
+    }
+}
