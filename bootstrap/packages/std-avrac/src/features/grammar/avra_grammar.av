@@ -616,6 +616,30 @@ fn avra_decl_edge_grammar() -> Grammar {
   // quote, which is the other half of the hand's contract.
   name_or_splice = @when(in_quote_body) "~" sn:IDENT -> MkSpliceName(sn)
                  | pn:IDENT -> MkPlainName(pn)
+  // WHAT DELETING `@hand(decl_hand)` COSTS — measured, not estimated (t-47hc.5 Phase 4).
+  //
+  // Every declaration KEYWORD is routed and `--parser-frontier` reports none, so the two
+  // `@hand(decl_hand)` references below are the last leaf on the production path. Removing
+  // both was tried: the compiler still self-compiles, `--hand-leaves` reports 0, and the
+  // whole compiler source plus the entire difftest corpus parse with ZERO refusals under
+  // `AVRA_REFUSE_HAND_LEAF=decl_hand`. What it costs is exactly FIVE corpus divergences,
+  // in two clusters — both WRAPPER rules whose `@try` rollback lands on `statement` once
+  // the leaf is not there to catch it:
+  //
+  //   1. `annot_decl` — `@` or `@inline` with no declaration after it. The hand reports
+  //      F0040; the fall-through re-parses `@…` through the EXPRESSION view and reports
+  //      the qualified-reference message instead. The awkward part is WHY the hand says
+  //      F0040: `parse_annotations` takes `current_lexeme` as the annotation NAME without
+  //      requiring an identifier, so `@` followed by `fn` builds an annotation *named*
+  //      `fn` and then fails on what follows — a shape `annot = "@" n:IDENT` cannot
+  //      express. Matching it byte-for-byte means deciding whether to encode that
+  //      looseness in the grammar or to treat it as a hand bug and change the oracle.
+  //   2. `doc_decl` — `/// d` over a malformed inner (`let x: = 1`). The native path adds
+  //      an F0040 ahead of the inner's own diagnostic and splits one `(error)` into two.
+  //
+  // Neither is about the leaf; both are wrappers that need to OWN their inner's failure,
+  // the same lesson every routed keyword taught. Recorded here rather than attempted in
+  // the routing slice because cluster 1 is a design decision about the oracle, not a fix.
   declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | export_decl | @try doc_decl | mdoc_decl | @try annot_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //

@@ -535,8 +535,23 @@ Two mechanism-level fixes fell out, both worth knowing before touching the gramm
 
 What still reaches `@hand(decl_hand)` is NOT a keyword: it is the bare-IDENT lead
 `@peek(decl_lead)` admits — `Foo bar { … }`, a component instantiation whose component is
-undeclared, which `bare_comp_inst` declines. That is the leaf's remaining production role
-and what deleting it has to account for.
+undeclared, which `bare_comp_inst` declines.
+
+**Deleting the leaf was measured, and it is TWO clusters away, not a project.** Removing
+both `@hand(decl_hand)` references: the compiler still self-compiles, `--hand-leaves`
+reports 0, and the whole compiler source plus the entire difftest corpus parse with ZERO
+refusals under `AVRA_REFUSE_HAND_LEAF=decl_hand`. Cost: exactly FIVE corpus divergences,
+both in WRAPPER rules whose `@try` rollback lands on `statement` once the leaf is gone —
+`annot_decl` (`@` / `@inline` with no declaration after it) and `doc_decl` (`/// d` over a
+malformed inner). Neither is about the leaf; both are wrappers that need to OWN their
+inner's failure.
+
+The one genuinely awkward part, worth knowing before starting: the hand's
+`parse_annotations` takes `current_lexeme` as the annotation NAME **without requiring an
+identifier**, so `@` followed by `fn` builds an annotation *named* `fn` and then fails on
+what follows — which is why the hand answers a bare `@` with F0040. `annot = "@" n:IDENT`
+cannot express that, so byte-parity means deciding whether to encode the looseness in the
+grammar or to treat it as a hand bug and move the oracle. That is a design call, not a fix.
 
 Three defect SHAPES recur; check for each when a routed rule diverges:
 
