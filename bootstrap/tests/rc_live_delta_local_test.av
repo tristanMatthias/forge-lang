@@ -138,22 +138,39 @@ spec "t-rkle: the LOCAL live delta is exact and isolation-proof" {
             // over-RETAIN would read identically to a missing release here.
             // Distinguishing them needs IR inspection, not another delta.
             //
-            // Tracked as t-0ks0 item 4. This arm asserts nothing so that the
-            // file cannot quietly bless either answer.
+            // RESOLVED — it is TWO separate leaks, and the numbers above were
+            // conflating them with a measurement artifact. Measured after the
+            // allocating frame RETURNED, so function-exit cleanup has run:
             //
-            // AND THERE IS A CONTRADICTION TO RESOLVE BEFORE ANYONE ACTS ON THE
-            // ABOVE. `with_expr/tests/with_ptr_field_override_leak_test.av`
-            // asserts `avra_rc_live_delta_local() == before` after a call that
-            // builds several structs — i.e. that the delta DOES return to
-            // baseline — and it passes in the suite today. Measured here, no
-            // RC-allocated shape returns to baseline in a loop: struct +100,
-            // tuple +100, enum ctor +200, dynamic string +200 per 100
-            // iterations.
+            //   inline struct literal, 100 iterations of a loop      99
+            //   call-returned struct,  100 iterations of a loop     100
+            //   call-returned struct with NO string field           100
+            //   ONE inline literal, no loop (the with_expr shape)     0
             //
-            // Both readings cannot be right about the same counter. Until that
-            // is reconciled, do not conclude "structs leak" from the numbers
-            // above OR "structs are fine" from that test — the discriminator
-            // between those two shapes is unknown, and finding it is the work.
+            // (1) THE 99 IS THE TELL. Exactly one release fires for a hundred
+            // constructions, so the release for a loop-body local is emitted at
+            // FUNCTION exit, not per iteration — it reclaims only the last
+            // value the alloca held. N-1 leak per loop. A single-local function
+            // reads 0 because one release covers its one object, which is why
+            // `with_expr/tests/with_ptr_field_override_leak_test.av` passes and
+            // is NOT in conflict with this: it has no loop.
+            //
+            // (2) THE CALL-RETURNED CASE NEVER RELEASES AT ALL. `let d = mk()`
+            // is releasable only if `mk` is in the return-ownership fresh set,
+            // and `init_is_owned` denies a `.String` field (#1178) — and a
+            // `.ListLit` field too, since `expr_is_fresh` has no arm for it and
+            // the catch-all denies. So an ordinary constructor is not fresh and
+            // its results are never reclaimed. That is t-k6lm's stated
+            // leak-not-double-free bias doing exactly what it says, not a new
+            // defect — but it is the larger of the two in practice.
+            //
+            // The earlier reading of "+100 for every shape, so structs leak"
+            // was measuring inside the still-live frame, before any fn-exit
+            // release had run. Both numbers were real; the conclusion was not.
+            //
+            // Tracked as t-0ks0 item 4. This arm still asserts nothing — the
+            // fixes belong in codegen and in the freshness predicate, and this
+            // file is the instrument, not the guard for them.
             true
         }
     }
