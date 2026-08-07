@@ -1,0 +1,162 @@
+// t-ki3s — a method call on an UPPERCASE-named binding is not an enum
+// construction, and the resolver is where that gets decided.
+//
+// `Foo.Bar(args)` is genuinely ambiguous: an enum construction, or a method
+// call on a value named `Foo`. Which one it is depends on what `Foo` RESOLVES
+// to, and the parser cannot know that — so it guesses from CASE
+// (`p_starts_with_upper`, parse/mod.av) and commits to `Expr.EnumCtor`.
+//
+// For an uppercase VALUE the guess is wrong, and it did not fail gracefully:
+//
+//     mut XS: List<int> = []
+//     XS.push(1)      ->  error[F9999]: undefined enum type `XS`
+//
+// an ICE naming a construct the program never contained. F9999 must be
+// unreachable from user input, and this was reachable from an ordinary local
+// whose name happens to start with a capital — PascalCase as readily as
+// SCREAMING_SNAKE.
+//
+// `rewrite_expr_id` (resolve/names.av) now rebuilds such a node as the method
+// call it is, using `scope_has(ctx.locals, …)` — the same check `rewrite_ident`
+// makes first, so this is real resolution data rather than spelling.
+//
+// The ENUM arms below are the control. The fix must not work by deleting the
+// parser's guess: a genuine `C.R(1)` still has to construct an enum.
+//
+// NOTE the fixtures deliberately avoid `${…}` interpolation. These sources are
+// built as STRINGS in this file, so an interpolation written inside one is
+// evaluated against THIS file's scope, not the fixture's — it fails with
+// `undefined variable` before the fixture is ever written.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn run_capture(source: string) -> string {
+    let path = "/tmp/avra_tki3s_upper_method.av"
+    let escaped = source.replace("'", "'\\''")
+    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    avra_shell_exec("./build/bs2 run '${path}' 2>&1 || true")
+}
+
+/// No fixture may reach an internal compiler error, whatever else it does.
+fn no_ice(out: string) -> bool {
+    !out.contains("F9999") && !out.contains("undefined enum type")
+}
+
+spec "t-ki3s: a method call on an uppercase binding is not an enum ctor" {
+    given "an uppercase LOCAL receiving a method call" {
+        then "SCREAMING_SNAKE compiles, runs, and never reaches F9999" {
+            let out = run_capture(
+                "fn main() -> int {\n" +
+                "    mut XS: List<int> = []\n" +
+                "    XS.push(7)\n" +
+                "    if XS.length == 1 { println(\"len-ok\") }\n" +
+                "    if XS[0] == 7 { println(\"head-ok\") }\n" +
+                "    0\n" +
+                "}\n")
+            out.contains("len-ok") && out.contains("head-ok") && no_ice(out)
+        }
+        then "PascalCase is the same case — the trigger is the capital, not the style" {
+            let out = run_capture(
+                "fn main() -> int {\n" +
+                "    mut Xs: List<int> = []\n" +
+                "    Xs.push(3)\n" +
+                "    if Xs.length == 1 { println(\"pascal-ok\") }\n" +
+                "    0\n" +
+                "}\n")
+            out.contains("pascal-ok") && no_ice(out)
+        }
+    }
+    given "an uppercase module-level GLOBAL receiving a method call" {
+        then "it compiles and runs too — scope was never the trigger" {
+            let out = run_capture(
+                "mut XS: List<int> = []\n" +
+                "fn main() -> int {\n" +
+                "    XS.push(9)\n" +
+                "    if XS.length == 1 { println(\"global-ok\") }\n" +
+                "    0\n" +
+                "}\n")
+            out.contains("global-ok") && no_ice(out)
+        }
+    }
+    given "a genuine enum constructor — the control" {
+        then "a payload-carrying `C.R(41)` still constructs an enum" {
+            // If the fix worked by weakening the parser's rule instead of
+            // correcting it in the resolver, this is the arm that breaks.
+            let out = run_capture(
+                "enum C { R(v: int) }\n" +
+                "fn main() -> int {\n" +
+                "    let c = C.R(41)\n" +
+                "    match c { .R(v) -> { if v == 41 { println(\"enum-ok\") } } }\n" +
+                "    0\n" +
+                "}\n")
+            out.contains("enum-ok") && no_ice(out)
+        }
+        then "a zero-arg variant reference is untouched" {
+            let out = run_capture(
+                "enum Color { Red, Green }\n" +
+                "fn main() -> int {\n" +
+                "    let c = Color.Red\n" +
+                "    match c { .Red -> println(\"red-ok\")\n" +
+                "              .Green -> println(\"green\") }\n" +
+                "    0\n" +
+                "}\n")
+            out.contains("red-ok") && no_ice(out)
+        }
+    }
+    given "the call NESTED inside another expression (CodeRabbit, #1186)" {
+        then "as a call ARGUMENT it is rewritten too" {
+            // The correction lives in `rewrite_expr_id`, because it needs the
+            // row's ExprId. `rewrite_expr_list_ids` inlined the `reexpr` and
+            // called the inner `rewrite_expr`, so ARGUMENT rows skipped it
+            // entirely — the same call was fixed at statement level and broken
+            // one nesting deeper.
+            //
+            // It did not even fail the same way: the top-level form gave
+            // F9999, this gave `error[F1000]: XS is not assignable to int`,
+            // typeck rejecting an "enum" that was only ever a local. Easy to
+            // read as an unrelated type error.
+            let out = run_capture(
+                "fn consume(n: int) -> int { n }\n" +
+                "fn main() -> int {\n" +
+                "    mut XS: List<int> = []\n" +
+                "    XS.push(7)\n" +
+                "    if consume(XS.index_of(7)) == 0 { println(\"arg-ok\") }\n" +
+                "    0\n" +
+                "}\n")
+            out.contains("arg-ok") && no_ice(out) && !out.contains("not assignable")
+        }
+        then "as a COLLECTION ELEMENT it is rewritten too" {
+            let out = run_capture(
+                "fn main() -> int {\n" +
+                "    mut XS: List<int> = []\n" +
+                "    XS.push(7)\n" +
+                "    let b = [XS.index_of(7), 2]\n" +
+                "    if b.length == 2 { println(\"elem-ok\") }\n" +
+                "    0\n" +
+                "}\n")
+            out.contains("elem-ok") && no_ice(out) && !out.contains("not assignable")
+        }
+    }
+    given "a local whose name COLLIDES with a real enum type (known limitation)" {
+        then "the call no longer ICEs, though full shadowing is still unresolved" {
+            // Scoped deliberately. The ctor-vs-call decision is fixed here, so
+            // `C.push(5)` no longer reaches `emit_enum_ctor`. But a BARE field
+            // read `C.length` is resolved by `emit_field_access`, which consults
+            // the enum registry before the value scope, so the local still loses
+            // to the type and typeck reports F1000.
+            //
+            // That is a different defect with a different owner, and this arm
+            // pins the part that IS fixed: whatever else happens, it must not be
+            // an internal compiler error. Shadowing a type name is discouraged
+            // anyway (CLAUDE.md "Naming").
+            let out = run_capture(
+                "enum C { R(v: int) }\n" +
+                "fn main() -> int {\n" +
+                "    mut C: List<int> = []\n" +
+                "    C.push(5)\n" +
+                "    C.length\n" +
+                "}\n")
+            no_ice(out)
+        }
+    }
+}
