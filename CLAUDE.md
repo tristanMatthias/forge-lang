@@ -476,24 +476,67 @@ struct literals, `let … else`. All pre-existing, all invisible.
 So: **expect routing a keyword to cost far more than the keyword.** Budget for the
 constructs it stops hiding, and re-read any spec that "already passed" through it.
 
-`let` is the far end of that scale and the reason the frontier stops there: it is the
-most common statement in the corpus, so committing it uncovered **32** divergences at
-once, none of them about bindings. Every VALID binding form was already native
-(`let`/`mut`/`const`/typed/`let … else`/destructure — verified with
-`AVRA_REFUSE_HAND_LEAF=decl_hand`), so this is purely recovery parity: the initializer
-position is a hole through which every expression-level gap shows. Fixed so far —
-`variant_ctor` (`.` with no name is the hand's F0040 `ExpectedExpression`, not a bare
-F0001 missing-token), `list_expr`'s and `paren_expr`'s closer wording, the destructure
-closer aborting instead of reporting twice, and `@onfail(bail)` on the initializer so a
-FAILED init ends the binding the way the hand's `?` does. Genuinely remaining: ~27,
-led by `let a = (1) ->`, where the hand's `try_lambda_body()` returns null and yields
-`(group 1)` while the grammar's `@cut` after `->` commits and yields
-`(lambda (_) (error))`. The obvious fixes for that one — dropping the `@cut`, or gating
-with `@require lb:lambda_body` — are BOTH the exponential-backtracking trap documented
-in the F4014 section below; it needs a mechanism that decides without speculative
-parsing. Until those close, `let` stays under `@try` (the `shape` #1054 → #1059
-precedent): the message and gate fixes above are correct on their own and ship
-un-routed, and the routing lands when its invalid corpus is green.
+`let` was the far end of that scale, and it is now ROUTED — `--parser-frontier` reports
+NO keyword still needing `@hand(decl_hand)`. It is the most common statement in the
+corpus, so committing it uncovered **32** divergences at once, **none of them about
+bindings**: every VALID binding form was already native, so the whole cost was recovery
+parity, and the initializer position is a hole through which every expression-level gap
+shows. The corpus is 117/117 with it routed. What it actually took, all fixed at the rule
+that owned the gap rather than at `let`:
+
+- **`paren_expr` decides the lambda by SCAN.** `let a = (1) ->` led the list — the hand's
+  `try_lambda_body()` returns null and yields `(group 1)` where a `@cut` after `->`
+  commits and yields `(lambda (_) (error))`. The obvious fixes (drop the `@cut`, or gate
+  with `@require lb:lambda_body`) are BOTH the exponential-backtracking trap documented in
+  the F4014 section below. `@peek(paren_lambda_ahead)` walks to the matching `)` and
+  tests that an `->` follows and the token after it can start a body, so a bodiless lambda
+  never ENTERS. `paren_arrow_ahead` is the same scan WITHOUT the body test, for the TYPED
+  branch: an untyped `(1)` is a valid group so a missing body must send it there, but a
+  typed `(x: int)` is not an expression at all and requiring a body sent `(x: int) ->` to
+  the group branch.
+- **`@onfail(bail)` keys on failed **or** REPORTED**, the union the hand's `?` propagates.
+  It was failure-only, carved out for exactly the `(1) ->` case above — and once the peek
+  removed that input, the carve-out was letting `let b = x is Foo` survive as a binding
+  where the hand aborts the statement.
+- **The lexer's diagnostics reach the native parser at all.** `lex_real` built a throwaway
+  `Parser`, drove its streaming lexer and kept only the tokens, so `unexpected character` /
+  unterminated-literal reports existed on the hand path and nowhere else. They are carried
+  now (`lex_real_full` → `PState.lex_diags`), positioned by token index, and interleaved in
+  `boundary_diags`. **Merged at the BOUNDARY, never released mid-parse**: `@try`,
+  `@require` and `@onfail(bail)` all decide by asking whether `diags` GREW, so a lexer
+  diagnostic released mid-parse reads to every one of them as "this rule reported" — the
+  first attempt did that and the initializer's bail swallowed the expression's own F0041.
+- **Whoever COMMITS owns the diagnostics.** F1203 `LetElseMustDiverge` used to reach the
+  user by ROLLBACK: the native builder reported message-only, the `@try` unwound, the hand
+  re-parsed and owned the code. `@cut` leaves no rollback, so the code silently vanished
+  while the message stayed. Same class: the flip seam reported at the hand's cursor (still
+  the ITEM START), so a native diagnostic rendered at the declaration's first token —
+  `broken.av:2:9` came out `broken.av:1:1`. `Parser.report_at_byte` + `GDiag.byte` fix it.
+- **Required terminals with the hand's exact wording** on `quote type` / `quote arm`, and
+  `@onfail(bail)` on `table_lit`'s header and rows (the hand's `return .Err` leaves the
+  table's `}` UNCONSUMED, which is what makes the enclosing fn close on it and produces a
+  SECOND diagnostic).
+- **`letdes_decl` is dispatched FIRST**, predictively on its own `@peek(let_destructure)`.
+  It used to be reached by rollback, which a committed `let_decl` no longer provides.
+
+Two mechanism-level fixes fell out, both worth knowing before touching the grammar DSL:
+
+- **Grammar marker ORDER is no longer significant.** `@bump(x) @require y` and
+  `@require @bump(x) y` annotate the same item, but the straight-line marker chain in
+  `parse_labeled` accepted only its own order and rejected the other with `parse_primary`'s
+  generic "expected a rule reference, terminal, …(at `@`)" — naming neither marker. It
+  loops until a pass consumes nothing now. Making order irrelevant is what surfaced the
+  REAL diagnostic underneath, which had been unreachable.
+- **`@require` + a mode-SET marker on one item is legal.** It was rejected because a failed
+  require returns early and would skip the mode restore; the cleanup is threaded now
+  (`restore_modes_before_aborts`), and the executor never had the hole (its abort is a flag
+  set on the way out). `quote type { <type> }` needed both. Guard:
+  `mode_restore_on_abort_test.av`.
+
+What still reaches `@hand(decl_hand)` is NOT a keyword: it is the bare-IDENT lead
+`@peek(decl_lead)` admits — `Foo bar { … }`, a component instantiation whose component is
+undeclared, which `bare_comp_inst` declines. That is the leaf's remaining production role
+and what deleting it has to account for.
 
 Three defect SHAPES recur; check for each when a routed rule diverges:
 

@@ -736,43 +736,39 @@ fn avra_decl_edge_grammar() -> Grammar {
   //     else statement because that is where the hand mints (`build_let_else`
   //     parses the else, checks divergence, THEN calls `fresh`) — the same
   //     mint-order discipline as if_expr's `@gensym(iflet)`. The divergence
-  //     check itself lives in the BUILD (mk_let_binding_g): a non-diverging else
-  //     reports, the `@try` rolls the branch back, and the hand re-parses the
-  //     item owning the coded diagnostic — recovery stays the hand's,
-  //     byte-for-byte.
+  //     check itself lives in the BUILD (mk_let_binding_g), which reports the
+  //     CODED F1203 — it has to, now that the rule commits: the diagnostic used
+  //     to reach the user by ROLLBACK (report message-only, let the `@try` unwind,
+  //     let the hand re-parse and own the code), and a `@cut` leaves no rollback
+  //     to hand it off to.
   //   * `const` has no guard form and no `mut` modifier, matching the hand.
-  //   * The DESTRUCTURE form has its own rule below: `let_decl`'s `n:IDENT`
-  //     fails on `(`, the `@try` rewinds, and `letdes_decl` (next in the
-  //     alternation) parses it.
-  // t-47hc.5: `let` owns its recovery. The `@try`/`@cut` pair lives INSIDE the rule so
-  // the dispatcher references it bare, exactly as `mut` and `const` already do — and the
-  // ordering note this rule used to carry is now discharged: `letdes_decl` is selected by
-  // `@peek(let_destructure)` and dispatched FIRST, so committing here cannot make it
-  // unreachable.
+  //   * The DESTRUCTURE form has its own rule below, dispatched BEFORE this one
+  //     and selected predictively by its own `@peek(let_destructure)`. It used to
+  //     sit after `let_decl` and be reached by ROLLBACK (`n:IDENT` failing on the
+  //     `(`), which a committed rule no longer provides.
+  // t-47hc.5: `let` is ROUTED, and it was the LAST keyword under `@hand(decl_hand)` —
+  // `--parser-frontier` now reports none. The `@try`/`@cut` pair lives INSIDE the rule so
+  // the dispatcher references it bare, exactly as `mut` and `const` already do.
   //
-  // The initializer is deliberately NOT `@onfail(bail)`. `let a = (1) ->` is the case
-  // that separates "reported" from "failed": the expression view reports the missing
-  // lambda body and still hands back `(group 1)`, which the hand KEEPS. Aborting on the
-  // report would erase the whole binding.
-  // t-47hc.5: `let` is the LAST keyword under `@hand(decl_hand)`, and it stays there for
-  // now. Every VALID binding form is already native (verified with
-  // `AVRA_REFUSE_HAND_LEAF=decl_hand`); what blocks routing is purely recovery parity,
-  // because the initializer position is a hole through which every expression-level gap
-  // shows. Committing it measured 32 divergences, now 20 — the `(1) ->` lambda blocker
-  // that led the list is FIXED (see `paren_expr`'s predictive scan).
+  // Committing it measured 32 divergences and NONE of them were about bindings: the
+  // initializer position is a hole through which every expression-level gap shows, and a
+  // dispatcher-level `@try` had been hiding all of them by rolling the whole item back to
+  // the hand. What it took to close them is spread across the rules that actually owned
+  // each gap — `paren_expr`'s predictive lambda gates, `quote type`/`quote arm`'s required
+  // terminals, `table_lit`'s bailing header and rows, `if_expr`'s bailed condition, the
+  // lexer-diagnostic bridge (`lex_real_full` -> `PState.lex_diags` -> `boundary_diags`),
+  // and the flip seam reporting at its own byte. The invalid corpus
+  // (error_recovery_differential_test) is 117/117 with `let` routed, which is the gate
+  // this keyword was held behind.
   //
-  // What remains is no longer about bindings, lambdas OR `@` — the qualified-reference
-  // cluster is CLOSED (a zero-match `+` now fails the rule, and the segment name after
-  // `::` is required, so `@foo` and `@pkg::mod::name` match the hand exactly). The rest
-  // are map-literal and `with` recovery, the list-comprehension cascade, template
-  // interpolation, and `if let` — each its own expression-level gap. Routing before
-  // they close would ship a keyword whose recovery is unmeasured on 20 known inputs — the
-  // `shape` #1054 -> #1059 mistake. The ready pieces ship un-routed and correct.
+  // `@onfail(bail)` on the initializer is keyed on the sub-parse having FAILED **or**
+  // REPORTED — the union the hand's `?` propagates. It was failure-only, carved out for
+  // `let a = (1) ->`, where the expression view reported the missing lambda body and still
+  // handed back `(group 1)` that the hand KEEPS. `paren_expr`'s `@peek(paren_lambda_ahead)`
+  // removed that input (the group now parses clean and the dangling `->` is the next
+  // statement's F0040), so the carve-out went with it — and without the union
+  // `let b = x is Foo` survived as a binding where the hand aborts the statement.
   //
-  // When routing DOES land it needs, all verified against the corpus: `@try "let" @cut`,
-  // `@require` on the name / type / `=`, `@onfail(bail)` on the initializer (keyed on the
-  // sub-parse FAILING, not reporting — `let a = (1) ->` reports and still yields a value
-  // the hand keeps), and `letdes_decl` dispatched FIRST under `@peek(let_destructure)`.
   // The TYPE position is `@require`d and keyed on the rule NAME, exactly as `param`'s is
   // and for the same reason: `type_expr`'s FIRST is a disjunction with no single token to
   // name. Unrequired, `let x: = 1` did not abort — the type view reported its own generic
