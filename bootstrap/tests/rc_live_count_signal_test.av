@@ -11,10 +11,20 @@
 // PREFER `avra_rc_live_delta_local()` FOR NEW LEAK CHECKS (t-rkle). It is
 // per-thread AND counts both allocation paths, so it needs no strict-mode gate
 // and is immune to the sibling interference described below — see
-// tests/rc_live_delta_local_test.av, which pins those properties. This file
-// stays because the GLOBAL counter still has one job (cross-thread transfer
-// semantics, where the local view is deliberately skewed) and that job needs a
-// signal guard.
+// tests/rc_live_delta_local_test.av, which pins those properties.
+//
+// WHAT THIS FILE COVERS, stated exactly: the global counter has SIGNAL when
+// read from ONE thread under strict mode. That is all. It strands N objects on
+// the calling thread and checks the counter moved; there is no channel, no
+// spawn, and no cross-thread transfer anywhere in it.
+//
+// The reason the global counter still exists at all is different from what
+// this file tests, and the two were previously run together in one sentence:
+// a value moved BETWEEN threads is skewed in the per-thread view (allocated on
+// one, freed on another), so a process-wide count remains the right instrument
+// for that case. **No test covers that case yet** — this file is not it. If
+// cross-thread transfer needs pinning, it needs its own spec with an actual
+// channel in it.
 //
 // Two defences, and this file is the second:
 //   1. runtime.c now REFUSES to answer outside strict mode (a sentinel would
@@ -99,10 +109,21 @@ spec "the leak counter has signal where it is permitted to run (t-0ks0)" {
                 // the same way AND flaky, since a sibling releasing objects
                 // that were live before `before` drags the delta down.
                 //
-                // Making this provable needs per-thread accounting for `rc_set`
-                // under strict mode (each unit runs on its own worker thread),
-                // which is a runtime.c change. Tracked as t-rkle; the exact
-                // assertion returns with it.
+                // Making THIS assertion exact needs per-thread accounting for
+                // `rc_set` itself, so the global set can be read per worker
+                // thread under strict mode.
+                //
+                // t-rkle did NOT deliver that, and an earlier version of this
+                // note said it would. What it delivered is
+                // `avra_rc_live_delta_local()` — per-thread ALLOC/FREE
+                // counters, a different mechanism that does not touch `rc_set`
+                // accounting at all. That instrument is strictly better for
+                // new leak checks (see the header), but it cannot make a
+                // `rc_set`-based assertion attributable, so `>= 100` stays.
+                //
+                // Per-thread `rc_set` remains unbuilt and unticketed. Nothing
+                // currently needs it: the case it would serve is covered by
+                // the local delta instead.
                 warm.length == 10 && held.length == 100 && after - before >= 100
             }
         }

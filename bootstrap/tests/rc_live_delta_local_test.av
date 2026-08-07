@@ -102,45 +102,31 @@ spec "t-rkle: the LOCAL live delta is exact and isolation-proof" {
             // cannot support — a guard that passes because nothing was measured
             // is the defect this whole area keeps producing. It is documented
             // here so the next reader does not mistake it for one.
+            // `i` advances by a CONSTANT and `s` is kept used through a
+            // separate accumulator. An earlier version advanced the loop with
+            // `i = i + s.length - 2`, which terminates only while `length` is
+            // exactly 3 — if the list literal or `length` ever changed, the
+            // increment would go to zero or negative and this would HANG the
+            // shard rather than fail it. A test that can hang is worse than one
+            // that can be wrong, because the failure mode is unattributable.
             let before = avra_rc_live_delta_local()
             mut i = 0
+            mut sizes = 0
             while i < 100 {
                 let s: List<int> = [1, 2, 3]
-                i = i + s.length - 2
+                sizes = sizes + s.length
+                i = i + 1
             }
             let after = avra_rc_live_delta_local()
-            after - before == 0
+            sizes == 300 && after - before == 0
         }
         then "the STRUCT-shaped negative control is deliberately absent" {
             // Writing it surfaced a separate, unexplained finding, and asserting
             // the observed number here would pin a suspected bug as correct —
             // the mistake rc_live_count_signal_test's own note warns about.
             //
-            // Measured with THIS counter, 100 constructions each, every shape
-            // leaving exactly +100 while the list control above leaves 0:
-            //
-            //   struct bound in a loop body                        +100
-            //   struct bound then dropped, measured after the
-            //     frame RETURNED (so fn-exit cleanup has run)      +100
-            //   struct never bound at all (`make_x().f.length`)    +100
-            //   struct with NO string field (freshness allowed)    +100
-            //   INLINE struct literal (is_allocating_expr admits
-            //     it unconditionally, so it is releasable)         +100
-            //
-            // The last two matter: neither is explained by #1178's
-            // string-literal freshness denial, and an inline literal is
-            // releasable by construction — so "the callee wasn't fresh" does
-            // not account for it. One object per construction, reproducibly.
-            //
-            // NOT yet attributed. `t_rc_frees` is bumped from `rc_set_remove`,
-            // which runs on an actual FREE, so a release that decrements a
-            // refcount without reaching zero never reaches the counter — an
-            // over-RETAIN would read identically to a missing release here.
-            // Distinguishing them needs IR inspection, not another delta.
-            //
-            // RESOLVED — it is TWO separate leaks, and the numbers above were
-            // conflating them with a measurement artifact. Measured after the
-            // allocating frame RETURNED, so function-exit cleanup has run:
+            // THE FINDING, measured after the allocating frame RETURNED so
+            // function-exit cleanup has run. It is TWO separate leaks:
             //
             //   inline struct literal, 100 iterations of a loop      99
             //   call-returned struct,  100 iterations of a loop     100
@@ -164,9 +150,38 @@ spec "t-rkle: the LOCAL live delta is exact and isolation-proof" {
             // leak-not-double-free bias doing exactly what it says, not a new
             // defect — but it is the larger of the two in practice.
             //
-            // The earlier reading of "+100 for every shape, so structs leak"
-            // was measuring inside the still-live frame, before any fn-exit
-            // release had run. Both numbers were real; the conclusion was not.
+            // ── SUPERSEDED READING, kept as history ───────────────────────
+            //
+            // Retained deliberately, because it shows what an IN-FRAME
+            // measurement reads and why that misleads — not because any of it
+            // is current. Everything in this block is retracted by the finding
+            // above. Measured with THIS counter, 100 constructions each:
+            //
+            //   struct bound in a loop body                        +100
+            //   struct bound then dropped                          +100
+            //   struct never bound at all (`make_x().f.length`)    +100
+            //   struct with NO string field (freshness allowed)    +100
+            //   INLINE struct literal                              +100
+            //
+            // It concluded "one object per construction for every shape, so
+            // structs leak wholesale", and specifically that **#1178 does not
+            // explain it** since the no-string-field and inline-literal cases
+            // should both be releasable.
+            //
+            // BOTH conclusions are wrong, and the second is wrong in the more
+            // useful direction: the resolution above attributes the
+            // call-returned case to `init_is_owned`'s `.String` denial, which
+            // IS #1178. The reading that ruled #1178 out was the artifact.
+            //
+            // The numbers themselves were real. They were taken inside the
+            // still-live frame, before any function-exit release had run, so
+            // every shape necessarily read +100 — the uniformity that looked
+            // like a strong signal was the measurement, not the program. Four
+            // identical numbers across four different shapes should have been
+            // read as "the instrument is not discriminating here", which is
+            // the same blind-instrument mistake this file exists to document.
+            //
+            // ──────────────────────────────────────────────────────────────
             //
             // Tracked as t-0ks0 item 4. This arm still asserts nothing — the
             // fixes belong in codegen and in the freshness predicate, and this
