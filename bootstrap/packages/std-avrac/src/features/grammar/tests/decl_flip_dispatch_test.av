@@ -722,10 +722,18 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         recovery_without_delegate("impl_open", "impl Foo {\nfn f() -> int { 1 }") &&
         recovery_without_delegate("impl_noname", "impl {\nfn f() -> int { 1 }") &&
         recovery_without_delegate("impl_badmember", "impl Foo { 5 }\nfn f() -> int { 1 }") &&
+        // `component` GRADUATED (t-47hc.5) — all four header shapes, the config /
+        // children / body-marker blocks, and both body loops.
+        recovery_without_delegate("comp_field", "component acct_sr { balance: int = 100 }\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("comp_noname", "component\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("comp_nobrace", "component C\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("comp_config", "component C { config }\nfn f() -> int { 1 }") &&
         // ANTI-VACUITY: negatives alone would also pass if `refused_here` simply
         // stopped detecting refusals. A SIBLING keyword's malformed form must still
-        // refuse. `enum` held this role, then `impl`; both have converted, so it now
-        // points at `component` — RE-POINT it again when that lands, never delete it.
-        refused_here("decl_hand", "component_still_needs_leaf", "component acct_sr { balance: int = 100 }\nfn f() -> int { 1 }")
+        // refuse. `enum` held this role, then `impl`, then `component`; all have
+        // converted, so it now points at `let` — RE-POINT it again when that lands,
+        // never delete it. `let` is the LAST keyword on the frontier, so when it
+        // graduates this assertion has no successor and the leaf itself goes.
+        refused_here("decl_hand", "let_still_needs_leaf", "let = 5\nfn f() -> int { 1 }")
     }
 }

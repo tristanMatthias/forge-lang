@@ -345,7 +345,7 @@ export type GItem = {
 /// seed_parser's validation, emit and the executor, so a policy cannot be spelled in
 /// the grammar that only one engine understands. See `GItem.onfail`.
 export fn onfail_policy_supported(p: string) -> bool {
-    p == "skip" || p == "close" || p == "drop" || p == "discard" || p == "bail" || p == "halt"
+    p == "skip" || p == "close" || p == "drop" || p == "discard" || p == "bail" || p == "halt" || p == "abort"
 }
 
 /// True for the policies that NAME a capture — `@onfail(discard, <label>)`. One list
@@ -773,7 +773,7 @@ export fn build_kind(bn: string) -> string {
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkAssocTypeDef" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentBlock" || bn == "MkRawComponentBlock" || bn == "MkMethodShorthand" || bn == "MkCompField" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkAssocTypeDef" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentParenDef" || bn == "MkComponentBlock" || bn == "MkRawComponentBlock" || bn == "MkMethodShorthand" || bn == "MkCompField" { return "stmt" }
     if bn == "MkAnn" { return "ann" }
     if bn == "MkParam" { return "pentry" }
     // `MkWhereParam` yields the SAME TypeParamEntry a `tparam` does — a where entry is
@@ -783,6 +783,10 @@ export fn build_kind(bn: string) -> string {
     // name string with a `~` prefix, so it must classify as `tok` and flow through
     // `capval_tok_text` exactly as a bare IDENT does.
     if bn == "MkSpliceName" || bn == "MkPlainName" { return "tok" }
+    if bn == "MkTraitList" { return "toks" }
+    if bn == "MkCompBodyMarker" { return "tok" }
+    if bn == "MkCompConfigList" { return "ccfgs" }
+    if bn == "MkChildrenSlotList" { return "cslots" }
     if bn == "MkTypeParam" || bn == "MkWhereParam" { return "tparam" }
     if bn == "MkField" { return "field" }
     if bn == "MkEVariant" { return "variant" }

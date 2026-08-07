@@ -4,7 +4,7 @@
 // declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_is_error_expr, capval_is_error_stmt, error_stmt_of, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_if_let_stmt, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_arm_return, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_fn_decl_where_g, mk_where_param, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_assoc_type_def, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_stamp_stmt_at, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, mk_let_destructure_g, gensym_token, mk_splice_name, mk_plain_name, mk_parallel_g, mk_select_g, mk_select_arm_g, capval_to_select_arm, mk_spec_block_g, mk_given_block_g, mk_then_block_g, mk_comp_config_g, mk_children_slot_g, mk_comp_field_g, mk_component_def_g, mk_comp_config_pair_g, mk_component_block_g, mk_raw_component_block_g, mk_method_shorthand_g, rawbrace_scan, capval_to_comp_config_pair, capval_to_comp_config_pair_list, capval_to_comp_config, capval_to_children_slot, capval_tok_texts, capval_to_ann, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_is_error_expr, capval_is_error_stmt, error_stmt_of, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_if_let_stmt, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_arm_return, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_fn_decl_where_g, mk_where_param, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_assoc_type_def, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_stamp_stmt_at, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, mk_let_destructure_g, gensym_token, mk_splice_name, mk_plain_name, mk_parallel_g, mk_select_g, mk_select_arm_g, capval_to_select_arm, mk_spec_block_g, mk_given_block_g, mk_then_block_g, mk_comp_config_g, mk_children_slot_g, mk_comp_field_g, mk_component_def_g, mk_component_paren_def_g, mk_trait_list, mk_comp_body_marker, mk_comp_config_list, mk_children_slot_list, mk_comp_config_pair_g, mk_component_block_g, mk_raw_component_block_g, mk_method_shorthand_g, rawbrace_scan, capval_to_comp_config_pair, capval_to_comp_config_pair_list, capval_to_comp_config, capval_to_children_slot, capval_tok_texts, capval_to_ann, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off}
 use core.{ExprId, Stmt, MatchArm, SelectArm, CompConfig, CompConfigPair, ChildrenSlot, Tk, SrcPos, TypeParamEntry, Annotation}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -150,43 +150,8 @@ fn parse_declaration(st: PState) -> CapVal {
     if st.cur().text == "spec" {
         return parse_spec_decl(st)
     }
-    if st.cur().text == "component" {
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_component_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
-    }
-    if lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component") {
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_comp_inst(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+    if lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" {
+        return parse_comp_header(st)
     }
     if lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) {
         let s_pos = st.pos
@@ -248,7 +213,7 @@ fn parse_export_decl(st: PState) -> CapVal {
             let _ = st.advance()
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
-            if !(st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || st.cur().text == "component" || lookahead_ok("decl_table_kw", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component")) {
+            if !(st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || lookahead_ok("decl_table_kw", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component")) {
                 st.report("expected declaration after `export`")
                 if s_cut {
                     st.set_abort_prop(true)
@@ -368,25 +333,8 @@ fn parse_exportable_inner(st: PState) -> CapVal {
     if st.cur().text == "spec" {
         return parse_spec_decl(st)
     }
-    if st.cur().text == "component" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_component_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+    if lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" {
+        return parse_comp_header(st)
     }
     if lookahead_ok("decl_table_kw", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") {
         return CapVal.SNode(run_hand_stmt("decl_hand", st))
@@ -448,7 +396,7 @@ fn parse_annot(st: PState) -> CapVal {
         let _ = st.advance()
         if tok_starts_expr_leaf(st.cur()) {
             let __bres = parse_call_arg(st)
-            if capval_is_error_expr(st, __bres) {
+            if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
                 st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
             }
@@ -456,7 +404,7 @@ fn parse_annot(st: PState) -> CapVal {
             while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
                 let _ = st.advance()
                 let __bres = parse_call_arg(st)
-                if capval_is_error_expr(st, __bres) {
+                if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
@@ -530,7 +478,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
     if st.cur().text == "impl" {
         return parse_impl_decl(st)
     }
-    if st.cur().text == "component" {
+    if lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" {
         tried_spec = true
         let s_pos = st.pos
         let s_mark = st.store.mark()
@@ -540,7 +488,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
-        s_last = parse_component_decl(st)
+        s_last = parse_comp_header(st)
         if st.diags.length == s_diags && st.had_error == s_err {
             return s_last
         }
@@ -1027,7 +975,7 @@ fn parse_select_arm(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     let __bres = parse_expression(st)
-    if capval_is_error_expr(st, __bres) {
+    if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
@@ -1324,91 +1272,347 @@ fn parse_then_blk(st: PState) -> CapVal {
     CapVal.Node(st.error_node_coded("F0040", "expected expression"))
 }
 
-fn parse_component_decl(st: PState) -> CapVal {
-    mut tr_list: List<Token> = []
-    mut cfg_list: List<CompConfig> = []
-    mut cs_list: List<ChildrenSlot> = []
-    mut body_list: List<StmtId> = []
-    mut bm: CapVal = CapVal.Nil
-    let _ = st.advance()
-    let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
-        CapVal.Tok(st.cur())
+fn parse_comp_header(st: PState) -> CapVal {
+    if lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) {
+        return parse_comp_inst(st)
     }
-    if st.cur().text == "implements" {
-        let _ = st.advance()
-        if st.cur().tk == Tk.Identifier { tr_list.push(st.advance()) } else {
-            st.report_ident("expected IDENT")
+    if lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) {
+        return parse_comp_paren_decl(st)
+    }
+    if lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) {
+        return parse_comp_impl_inst(st)
+    }
+    if st.cur().text == "component" {
+        return parse_component_decl(st)
+    }
+    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+}
+
+fn parse_comp_config_block(st: PState) -> CapVal {
+    mut ccfg_list: List<CompConfig> = []
+    let _ = st.advance()
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after `config`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    while lookahead_ok("not_rbrace", st) {
+        let __rep_before = st.pos
+        st.set_abort_prop(false)
+        if !(st.cur().tk == Tk.Identifier) {
+            st.report_ident("expected config_entry")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
+        let __gres = parse_config_entry(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        ccfg_list.push(capval_to_comp_config(st, __gres))
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
+        if st.pos == __rep_before { break }
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` after config entries")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    mk_comp_config_list(CapVal.CCfgs(ccfg_list))
+}
+
+fn parse_comp_children_block(st: PState) -> CapVal {
+    mut ccs_list: List<ChildrenSlot> = []
+    let _ = st.advance()
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after `children`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    if lookahead_ok("not_rbrace", st) {
+        st.set_abort_prop(false)
+        if !(st.cur().tk == Tk.Identifier) {
+            st.report_ident("expected children_slot")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __gres = parse_children_slot(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        ccs_list.push(capval_to_children_slot(st, __gres))
         while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
-            if st.cur().tk == Tk.Identifier { tr_list.push(st.advance()) } else {
-                st.report_ident("expected IDENT")
-            }
+            ccs_list.push(capval_to_children_slot(st, parse_children_slot(st)))
         }
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` after children entries")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    mk_children_slot_list(CapVal.CSlots(ccs_list))
+}
+
+fn parse_comp_body_marker(st: PState) -> CapVal {
+    let _ = st.advance()
+    if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
+        st.report("expected `:` after `body`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let bmn = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report_ident("expected a type after `body:`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+        CapVal.Tok(st.cur())
+    }
+    mk_comp_body_marker(st, capval_tok_text(bmn))
+}
+
+fn parse_comp_implements(st: PState) -> CapVal {
+    mut ctr_list: List<Token> = []
+    let _ = st.advance()
+    if st.cur().tk == Tk.Identifier { ctr_list.push(st.advance()) } else {
+        st.report_ident("expected trait name after `implements`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Identifier { ctr_list.push(st.advance()) } else {
+            st.report_ident("expected trait name after `implements`")
+        }
+    }
+    if st.cur().tk == Tk.Comma { let _ = st.advance() }
+    mk_trait_list(CapVal.Toks(ctr_list))
+}
+
+fn parse_comp_paren_decl(st: PState) -> CapVal {
+    mut pps_list: List<ParamEntry> = []
+    mut pbody_list: List<StmtId> = []
+    mut pci: CapVal = CapVal.Nil
+    mut pcfg: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let pn = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report_ident("expected component name")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+        CapVal.Tok(st.cur())
+    }
+    if lookahead_ok("kw_implements", st) {
+        st.set_abort_prop(false)
+        if !(st.cur().text == "implements") {
+            st.report("expected comp_implements")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __gres = parse_comp_implements(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        pci = __gres
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
+    }
+    if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
+        st.report("expected `(` after component name")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    if lookahead_ok("not_rparen", st) {
+        st.set_abort_prop(false)
+        if !(st.cur().tk == Tk.Identifier) {
+            st.report_ident("expected parameter name")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __gres = parse_param(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        pps_list.push(capval_to_pentry(st, __gres))
+        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
+            let _ = st.advance()
+            pps_list.push(capval_to_pentry(st, parse_param(st)))
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+        }
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
+    }
+    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+        st.report("expected `)` after component params")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-        st.report("expected {")
+        st.report("expected `{` after component header")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
-    if st.cur().text == "config" {
-        let _ = st.advance()
-        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected {")
+    if lookahead_ok("kw_config", st) {
+        st.set_abort_prop(false)
+        if !(st.cur().text == "config") {
+            st.report("expected comp_config_block")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
-        while st.cur().tk == Tk.Identifier {
-            cfg_list.push(capval_to_comp_config(st, parse_config_entry(st)))
+        let __gres = parse_comp_config_block(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres) {
+            return CapVal.Node(st.error_node_silent())
         }
-        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
-        }
-    }
-    if st.cur().text == "children" {
-        let _ = st.advance()
-        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected {")
-        }
-        if st.cur().tk == Tk.Identifier {
-            cs_list.push(capval_to_children_slot(st, parse_children_slot(st)))
-            while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
-                let _ = st.advance()
-                cs_list.push(capval_to_children_slot(st, parse_children_slot(st)))
-            }
-            if st.cur().tk == Tk.Comma { let _ = st.advance() }
-        }
-        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
-        }
-    }
-    if lookahead_ok("body_marker", st) && (st.cur().text == "body") {
-        let _ = st.advance()
-        if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
-            st.report("expected :")
-        }
-        if st.cur().tk == Tk.Identifier { bm = CapVal.Tok(st.advance()) } else {
-            st.report_ident("expected IDENT")
+        pcfg = __gres
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
         }
     }
     let __pre_err = st.had_error
     mut __any_err = __pre_err
     while true {
-        if st.at_end() || st.cur().text == "}" { break }
+        if st.cur().text == "}" { break }
         let __sp = st.cur().pos
         let __before_i = st.pos
         st.clear_error()
         let __cv = parse_comp_item(st)
         if st.had_error { __any_err = true }
         if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
-            __any_err = true
-            st.synchronize_stmt()
-            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-            st.set_abort_prop(false)
-            let __elc = st.store.lines.to_linecol(__sp)
-            let __e = error_stmt_of(st, __cv)
-            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-            body_list.push(__e)
-            st.clear_error()
-            continue
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        pbody_list.push(__sid)
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` at end of component")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    mk_component_paren_def_g(st, capval_tok_text(pn), CapVal.PEntries(pps_list), capval_tok_texts(pci), pcfg, pbody_list)
+}
+
+fn parse_comp_impl_inst(st: PState) -> CapVal {
+    let _ = st.advance()
+    let iname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report_ident("expected IDENT")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+        CapVal.Tok(st.cur())
+    }
+    let ici = parse_comp_implements(st)
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("`implements` clause must be followed by `{` or `(` — if you meant another trait name, add a `,` (instance-prefix component blocks may not carry an `implements` clause)")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    CapVal.Nil
+}
+
+fn parse_component_decl(st: PState) -> CapVal {
+    mut body_list: List<StmtId> = []
+    mut ci: CapVal = CapVal.Nil
+    mut cfg: CapVal = CapVal.Nil
+    mut cs: CapVal = CapVal.Nil
+    mut bm: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report_ident("expected component name")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+        CapVal.Tok(st.cur())
+    }
+    if lookahead_ok("kw_implements", st) {
+        st.set_abort_prop(false)
+        if !(st.cur().text == "implements") {
+            st.report("expected comp_implements")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __gres = parse_comp_implements(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        ci = __gres
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after component name")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    if lookahead_ok("kw_config", st) {
+        st.set_abort_prop(false)
+        if !(st.cur().text == "config") {
+            st.report("expected comp_config_block")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __gres = parse_comp_config_block(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        cfg = __gres
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
+    }
+    if lookahead_ok("kw_children", st) {
+        st.set_abort_prop(false)
+        if !(st.cur().text == "children") {
+            st.report("expected comp_children_block")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __gres = parse_comp_children_block(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        cs = __gres
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
+    }
+    if lookahead_ok("body_marker", st) {
+        st.set_abort_prop(false)
+        if !(st.cur().text == "body") {
+            st.report("expected comp_body_marker")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __gres = parse_comp_body_marker(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        bm = __gres
+        if st.abort_prop {
+            return CapVal.Node(st.error_node_silent())
+        }
+    }
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        let __before_i = st.pos
+        st.clear_error()
+        let __cv = parse_comp_item(st)
+        if st.had_error { __any_err = true }
+        if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         let __sid = capval_to_stmt(st, __cv)
         let __lc = st.store.lines.to_linecol(__sp)
@@ -1417,9 +1621,11 @@ fn parse_component_decl(st: PState) -> CapVal {
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}` at end of component")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
-    mk_component_def_g(st, capval_tok_text(n), capval_tok_texts(CapVal.Toks(tr_list)), CapVal.CCfgs(cfg_list), CapVal.CSlots(cs_list), capval_tok_text(bm), capval_present(bm), body_list)
+    mk_component_def_g(st, capval_tok_text(n), capval_tok_texts(ci), cfg, cs, capval_tok_text(bm), capval_present(bm), body_list)
 }
 
 fn parse_config_entry(st: PState) -> CapVal {
@@ -1427,9 +1633,21 @@ fn parse_config_entry(st: PState) -> CapVal {
     mut d: CapVal = CapVal.Nil
     let k = CapVal.Tok(st.advance())
     if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
-        st.report("expected :")
+        st.report("expected `:` after config key")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
-    let ty = parse_type_expr(st)
+    if !(tok_starts_type(st.cur())) {
+        st.report("expected config type")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres = parse_type_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+        return CapVal.Node(st.error_node_silent())
+    }
+    let ty = __rres
     if st.cur().tk == Tk.Equal {
         let _ = st.advance()
         d = parse_expression(st)
@@ -1447,9 +1665,21 @@ fn parse_config_entry(st: PState) -> CapVal {
 fn parse_children_slot(st: PState) -> CapVal {
     let k = CapVal.Tok(st.advance())
     if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
-        st.report("expected :")
+        st.report("expected `:` after slot name")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
-    let ty = parse_type_expr(st)
+    if !(tok_starts_type(st.cur())) {
+        st.report("expected slot type")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres = parse_type_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+        return CapVal.Node(st.error_node_silent())
+    }
+    let ty = __rres
     mk_children_slot_g(st, capval_tok_text(k), ty)
 }
 
@@ -1469,28 +1699,25 @@ fn parse_comp_inst(st: PState) -> CapVal {
         st.report("expected {")
     }
     while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
-        p_list.push(capval_to_comp_config_pair(st, parse_config_pair(st)))
+        let __bres = parse_config_pair(st)
+        if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        p_list.push(capval_to_comp_config_pair(st, __bres))
     }
     let __pre_err = st.had_error
     mut __any_err = __pre_err
     while true {
-        if st.at_end() || st.cur().text == "}" { break }
+        if st.cur().text == "}" { break }
         let __sp = st.cur().pos
         let __before_i = st.pos
         st.clear_error()
         let __cv = parse_comp_block_item(st)
         if st.had_error { __any_err = true }
         if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
-            __any_err = true
-            st.synchronize_stmt()
-            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-            st.set_abort_prop(false)
-            let __elc = st.store.lines.to_linecol(__sp)
-            let __e = error_stmt_of(st, __cv)
-            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-            body_list.push(__e)
-            st.clear_error()
-            continue
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         let __sid = capval_to_stmt(st, __cv)
         let __lc = st.store.lines.to_linecol(__sp)
@@ -1499,7 +1726,9 @@ fn parse_comp_inst(st: PState) -> CapVal {
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}` at end of component block")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     mk_component_block_g(st, capval_tok_text(n), capval_tok_text(i), p_list, body_list)
 }
@@ -1516,28 +1745,25 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
         st.report("expected {")
     }
     while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
-        p_list.push(capval_to_comp_config_pair(st, parse_config_pair(st)))
+        let __bres = parse_config_pair(st)
+        if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        p_list.push(capval_to_comp_config_pair(st, __bres))
     }
     let __pre_err = st.had_error
     mut __any_err = __pre_err
     while true {
-        if st.at_end() || st.cur().text == "}" { break }
+        if st.cur().text == "}" { break }
         let __sp = st.cur().pos
         let __before_i = st.pos
         st.clear_error()
         let __cv = parse_comp_block_item(st)
         if st.had_error { __any_err = true }
         if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
-            __any_err = true
-            st.synchronize_stmt()
-            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-            st.set_abort_prop(false)
-            let __elc = st.store.lines.to_linecol(__sp)
-            let __e = error_stmt_of(st, __cv)
-            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-            body_list.push(__e)
-            st.clear_error()
-            continue
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         let __sid = capval_to_stmt(st, __cv)
         let __lc = st.store.lines.to_linecol(__sp)
@@ -1546,7 +1772,9 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}` at end of component block")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     mk_component_block_g(st, capval_tok_text(n), capval_tok_text(i), p_list, body_list)
 }
@@ -1590,26 +1818,36 @@ fn parse_comp_block_item(st: PState) -> CapVal {
     if lookahead_ok("comp_nested_raw_named", st) && (st.cur().tk == Tk.Identifier) {
         let rn = CapVal.Tok(st.advance())
         let ri = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected instance name")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
             CapVal.Tok(st.cur())
         }
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected {")
+            st.report("expected `{` after nested block name")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         let rb = CapVal.Tok(rawbrace_scan(st, "component"))
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
+            st.report("expected `}` at end of nested block")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         return mk_raw_component_block_g(st, capval_tok_text(rn), capval_tok_text(ri), capval_tok_text(rb))
     }
     if lookahead_ok("comp_nested_raw_bare", st) && (st.cur().tk == Tk.Identifier) {
         let rn = CapVal.Tok(st.advance())
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected {")
+            st.report("expected `{` after nested block name")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         let rb = CapVal.Tok(rawbrace_scan(st, "component"))
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
+            st.report("expected `}` at end of nested block")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         return mk_raw_component_block_g(st, capval_tok_text(rn), capval_tok_text(rn), capval_tok_text(rb))
     }
@@ -1618,35 +1856,36 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         mut body_list: List<StmtId> = []
         let n = CapVal.Tok(st.advance())
         let i = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected instance name")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
             CapVal.Tok(st.cur())
         }
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected {")
+            st.report("expected `{` after nested block name")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
-            p_list.push(capval_to_comp_config_pair(st, parse_config_pair(st)))
+            let __bres = parse_config_pair(st)
+            if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+                st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+            }
+            p_list.push(capval_to_comp_config_pair(st, __bres))
         }
         let __pre_err = st.had_error
         mut __any_err = __pre_err
         while true {
-            if st.at_end() || st.cur().text == "}" { break }
+            if st.cur().text == "}" { break }
             let __sp = st.cur().pos
             let __before_i = st.pos
             st.clear_error()
             let __cv = parse_comp_block_item(st)
             if st.had_error { __any_err = true }
             if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
-                __any_err = true
-                st.synchronize_stmt()
-                if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-                st.set_abort_prop(false)
-                let __elc = st.store.lines.to_linecol(__sp)
-                let __e = error_stmt_of(st, __cv)
-                st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-                body_list.push(__e)
-                st.clear_error()
-                continue
+                st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
             }
             let __sid = capval_to_stmt(st, __cv)
             let __lc = st.store.lines.to_linecol(__sp)
@@ -1655,7 +1894,9 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         }
         if __any_err { st.note_had_error() }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
+            st.report("expected `}` at end of nested block")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         return mk_component_block_g(st, capval_tok_text(n), capval_tok_text(i), p_list, body_list)
     }
@@ -1664,31 +1905,30 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         mut body_list: List<StmtId> = []
         let n = CapVal.Tok(st.advance())
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected {")
+            st.report("expected `{` after nested block name")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
-            p_list.push(capval_to_comp_config_pair(st, parse_config_pair(st)))
+            let __bres = parse_config_pair(st)
+            if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+                st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+            }
+            p_list.push(capval_to_comp_config_pair(st, __bres))
         }
         let __pre_err = st.had_error
         mut __any_err = __pre_err
         while true {
-            if st.at_end() || st.cur().text == "}" { break }
+            if st.cur().text == "}" { break }
             let __sp = st.cur().pos
             let __before_i = st.pos
             st.clear_error()
             let __cv = parse_comp_block_item(st)
             if st.had_error { __any_err = true }
             if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
-                __any_err = true
-                st.synchronize_stmt()
-                if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-                st.set_abort_prop(false)
-                let __elc = st.store.lines.to_linecol(__sp)
-                let __e = error_stmt_of(st, __cv)
-                st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-                body_list.push(__e)
-                st.clear_error()
-                continue
+                st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
             }
             let __sid = capval_to_stmt(st, __cv)
             let __lc = st.store.lines.to_linecol(__sp)
@@ -1697,7 +1937,9 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         }
         if __any_err { st.note_had_error() }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
+            st.report("expected `}` at end of nested block")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         return mk_component_block_g(st, capval_tok_text(n), capval_tok_text(n), p_list, body_list)
     }
@@ -1705,13 +1947,19 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         mut mb_list: List<StmtId> = []
         let m = CapVal.Tok(st.advance())
         if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
-            st.report("expected (")
+            st.report("expected `(` in method shorthand")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected )")
+            st.report("expected `)` in method shorthand")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected {")
+            st.report("expected `{` after method header")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         let __pre_err = st.had_error
         mut __any_err = __pre_err
@@ -1741,7 +1989,9 @@ fn parse_comp_block_item(st: PState) -> CapVal {
         }
         if __any_err { st.note_had_error() }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected }")
+            st.report("expected `}` after method body")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
         }
         return mk_method_shorthand_g(st, capval_tok_text(m), mb_list)
     }
@@ -1749,7 +1999,7 @@ fn parse_comp_block_item(st: PState) -> CapVal {
 }
 
 fn parse_comp_item(st: PState) -> CapVal {
-    if lookahead_ok("kw_let", st) && (st.cur().text == "let") {
+    if lookahead_ok("kw_let", st) {
         return parse_comp_field(st)
     }
     parse_declaration(st)
@@ -1759,13 +2009,27 @@ fn parse_comp_field(st: PState) -> CapVal {
     mut init: CapVal = CapVal.Nil
     let _ = st.advance()
     let f = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected field name")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
-        st.report("expected :")
+        st.report("expected `:` after field name")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
-    let ty = parse_type_expr(st)
+    if !(tok_starts_type(st.cur())) {
+        st.report("expected field type")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres = parse_type_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+        return CapVal.Node(st.error_node_silent())
+    }
+    let ty = __rres
     if st.cur().tk == Tk.Equal {
         let _ = st.advance()
         init = parse_expression(st)
@@ -3338,7 +3602,7 @@ fn parse_if_stmt(st: PState) -> CapVal {
     let __modes_1 = st.modes
     st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
     let __bres = parse_expression(st)
-    if capval_is_error_expr(st, __bres) {
+    if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
@@ -3387,7 +3651,7 @@ fn parse_while_stmt(st: PState) -> CapVal {
     let __modes_1 = st.modes
     st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
     let __bres = parse_expression(st)
-    if capval_is_error_expr(st, __bres) {
+    if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
@@ -3473,7 +3737,7 @@ fn parse_return_stmt(st: PState) -> CapVal {
     if lookahead_ok("return_value", st) {
         st.set_abort_prop(false)
         let __bres = parse_expression(st)
-        if capval_is_error_expr(st, __bres) {
+        if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }

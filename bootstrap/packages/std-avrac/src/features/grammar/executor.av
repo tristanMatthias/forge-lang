@@ -2006,6 +2006,21 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "kw_let" {
         return st.cur().tk == Tk.KwLet
     }
+    // `implements` is a CONTEXTUAL word, not a keyword token — the hand tests
+    // `check(Tk.Identifier) && current_lexeme == "implements"`, so this must too.
+    // It gates the component header's optional implements clause, and the gate is what
+    // makes the clause's failure ABORT the header: a `@gate`d element's abort is read
+    // before its result is captured, which is how `component C implements` stays ONE
+    // diagnostic (the hand's `?` propagates out of `parse_implements_list`) instead of
+    // also reporting the `{` that was never reached.
+    if cond == "kw_implements" {
+        return st.cur().text == "implements"
+    }
+    // `config` / `children` are CONTEXTUAL words too — the hand tests the LEXEME. Gated
+    // rather than merely peeked so a malformed block ABORTS the component, matching the
+    // hand's `return .Err` on a missing `{`.
+    if cond == "kw_config" { return st.cur().text == "config" }
+    if cond == "kw_children" { return st.cur().text == "children" }
     // ── component INSTANTIATION config pairs (t-47hc.5.1 slice B) ──
     //
     // `parse_comp_config_pairs` is a hand-rolled `while` whose continuation
@@ -2054,6 +2069,30 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // the hand's "expected trait name after `implements`" error, because a
     // clean parse never rolls the @try back. The hand tests for the word
     // before it ever considers the instance form; so does this.
+    // ── The `component` header shapes (t-47hc.5) ──
+    //
+    // `parse_component_decl` consumes `component`, a NAME, and an optional `implements`
+    // list, and only THEN branches on what follows: `{` is a definition, `(` the legacy
+    // paren form, an IDENT the instance-prefix block, anything else an error. A grammar
+    // dispatches BEFORE consuming, so the branch point has to be reachable by lookahead —
+    // and the implements list is variable-length, which is why this needs a scan rather
+    // than the fixed 3-token peek `comp_inst_shape` gets away with (that form forbids
+    // `implements` outright).
+    if cond == "comp_paren_shape" {
+        let at = comp_header_end(st)
+        if at < 0 { return false }
+        return st.toks[at].text == "("
+    }
+    // The one shape the hand answers with a MESSAGE rather than a parse: an implements
+    // clause followed by an instance name. Two readings land here — a stray `implements`
+    // on a block form, and a missing `,` between two trait names — and the hand's wording
+    // covers both, so the cond has to be exact enough to claim only them.
+    if cond == "comp_implements_inst" {
+        let at = comp_header_end(st)
+        if at < 0 { return false }
+        if st.pos + 2 >= st.toks.length || st.toks[st.pos + 2].text != "implements" { return false }
+        return st.toks[at].kind == "IDENT"
+    }
     if cond == "comp_inst_shape" {
         if st.pos + 3 >= st.toks.length { return false }
         if st.toks[st.pos + 1].kind != "IDENT" { return false }
@@ -2212,6 +2251,29 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return lookup_decl_parser(d!.features, tk_keyword_str(st.cur().tk)) != null
     }
     true
+}
+
+/// Index of the token just past `component NAME [implements A, B]` — the point where
+/// `parse_component_decl` makes its three-way decision. -1 when the header is not that
+/// shape at all (no `component`, no name), which every caller reads as "not mine".
+///
+/// Shared by the two conds above so they cannot disagree about where the header ends;
+/// the trailing comma is tolerated exactly as `parse_implements_list` tolerates it.
+fn comp_header_end(st: PState) -> int {
+    if st.cur().text != "component" { return 0 - 1 }
+    if st.pos + 2 >= st.toks.length { return 0 - 1 }
+    if st.toks[st.pos + 1].kind != "IDENT" { return 0 - 1 }
+    mut i = st.pos + 2
+    if st.toks[i].text != "implements" { return i }
+    i = i + 1
+    if i >= st.toks.length || st.toks[i].kind != "IDENT" { return 0 - 1 }
+    i = i + 1
+    while i + 1 < st.toks.length && st.toks[i].tk == Tk.Comma && st.toks[i + 1].kind == "IDENT" {
+        i = i + 2
+    }
+    // `implements A,` then the closer — a legal trailing comma, not a fourth trait.
+    if i < st.toks.length && st.toks[i].tk == Tk.Comma { i = i + 1 }
+    i
 }
 
 /// The byte offset just past the staged token's lexeme — where every raw-source
@@ -2786,7 +2848,9 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     // aborting on the report erased the whole binding.
     if item.onfail == "bail" {
         let br = exec_item_marked(g, item, st, env, multi, annots)
-        if capval_is_error_expr(st, br) { env.set_abort(true) }
+        // See the emit twin: both node shapes, because a declaration-view callee fails as
+        // a `Stmt.Error` and an expression-view one as an error `Node`.
+        if capval_is_error_expr(st, br) || capval_is_error_stmt(st, br) { env.set_abort(true) }
         return br
     }
     // t-myz7 `@onfail(discard, <label>)`: report the missing closer (exec_primary's
@@ -3049,7 +3113,10 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
     mut any_err = pre_err
     mut taken = already
     while true {
-        if st.at_end() || st.cur().text == "}" { break }
+        // See the emit twin: an `abort` loop mirrors `parse_comp_block_body`'s
+        // `while !check(RightBrace)` and does not stop at EOF.
+        if item.onfail != "abort" && st.at_end() { break }
+        if st.cur().text == "}" { break }
         if cap >= 0 && taken >= cap { break }
         let before = st.pos
         st.clear_error()
@@ -3074,6 +3141,14 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
         if st.had_error { any_err = true }
         let child_failed = if item.onfail == "drop" { st.abort_prop }
             else { st.abort_prop || env.abort || capval_is_error_expr(st, v) || capval_is_error_stmt(st, v) }
+        // t-47hc.5 `@onfail(abort)`: END THE RULE — the emit twin says why in full. The
+        // flag stays RAISED (this loop did not handle the failure, it forwarded it) and
+        // nothing is resynced, so the caller's closer is never consumed.
+        if child_failed && item.onfail == "abort" {
+            st.set_abort_prop(true)
+            env.set_abort(true)
+            return
+        }
         if child_failed {
             env.set_abort(false)
             any_err = true
@@ -4466,6 +4541,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkCompField" if args.length == 3 -> mk_comp_field_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), env.get(args[2]), capval_present(env.get(args[2])))
         "MkComponentDef" if args.length == 6 -> mk_component_def_g(st, capval_tok_text(env.get(args[0])), capval_tok_texts(env.get(args[1])), env.get(args[2]), env.get(args[3]), capval_tok_text(env.get(args[4])), capval_present(env.get(args[4])), capval_to_stmt_list(env.get(args[5])))
         "MkCompConfigPair" if args.length == 2 -> mk_comp_config_pair_g(st, capval_tok_text(env.get(args[0])), capval_to_expr(st, env.get(args[1])))
+        "MkComponentParenDef" -> mk_component_paren_def_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_tok_texts(env.get(args[2])), env.get(args[3]), capval_to_stmt_list(env.get(args[4])))
+        "MkTraitList" -> mk_trait_list(env.get(args[0]))
+        "MkCompBodyMarker" -> mk_comp_body_marker(st, capval_tok_text(env.get(args[0])))
+        "MkCompConfigList" -> mk_comp_config_list(env.get(args[0]))
+        "MkChildrenSlotList" -> mk_children_slot_list(env.get(args[0]))
         "MkComponentBlock" if args.length == 4 -> mk_component_block_g(st, capval_tok_text(env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_comp_config_pair_list(env.get(args[2])), capval_to_stmt_list(env.get(args[3])))
         "MkRawComponentBlock" if args.length == 3 -> mk_raw_component_block_g(st, capval_tok_text(env.get(args[0])), capval_tok_text(env.get(args[1])), capval_tok_text(env.get(args[2])))
         "MkMethodShorthand" if args.length == 2 -> mk_method_shorthand_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
@@ -5212,11 +5292,58 @@ export fn mk_comp_field_g(st: PState, name: string, ty_cv: CapVal, init_cv: CapV
 /// ComponentDef row. Registration reaches the registry through the hand
 /// delegate; a delegate-less PState (pure-executor harness) skips it, which no
 /// current harness exercises — both PRODUCTION paths always carry the delegate.
-export fn mk_component_def_g(st: PState, name: string, implements: List<string>, cfg_cv: CapVal, cs_cv: CapVal, marker: string, marker_present: bool, body: List<StmtId>) -> CapVal {
-    if marker_present && marker != "TokenStream" {
-        st.report("`body:` in a component declares a raw token body — the only valid type is `TokenStream`")
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error))
+/// `component NAME ( params ) { config? body }` — the LEGACY paren form (t-47hc.5).
+///
+/// The hand keeps it for backward compatibility and it differs from the brace form in
+/// exactly two ways: it carries PARAMETERS, and it admits no `children` block and no
+/// `body:` marker. So it is `mk_component_def_g` with the params filled in rather than a
+/// second copy of the registration + validation logic — that logic (raw-body detection,
+/// the children/TokenStream conflict, registering the name for keyword-free
+/// instantiation) must not exist twice.
+/// The `implements A, B` clause's value — the trait NAMES as a token list (t-47hc.5).
+/// A rule that yields a list needs an explicit build; a build-less sequence does not
+/// reliably carry its accumulator out as the rule's result (see `mk_plain_name`).
+/// The `config { … }` / `children { … }` blocks' values — the entries the enclosing
+/// component build folds in. Explicit builds for the same reason `mk_trait_list` is one:
+/// a rule that yields a LIST cannot rely on a build-less sequence to carry it out.
+export fn mk_comp_config_list(v: CapVal) -> CapVal {
+    CapVal.CCfgs(capval_to_comp_config_list(v))
+}
+
+export fn mk_children_slot_list(v: CapVal) -> CapVal {
+    CapVal.CSlots(capval_to_children_slot_list(v))
+}
+
+/// `body: <type>` — the raw-token-body marker, validated WHERE IT IS PARSED (t-47hc.5).
+///
+/// The hand checks the type immediately and returns `.Err`, so the component never
+/// reaches its closing `}`. Doing it in the enclosing build instead ran after the closer
+/// was consumed, which is why the hand's second diagnostic (the now-stray `}`) had no way
+/// to appear. The `@gate` at the reference site is what carries the abort out.
+export fn mk_comp_body_marker(st: PState, marker: string) -> CapVal {
+    if marker != "TokenStream" {
+        st.report("`body:` in a component declares a raw token body — the only valid type is `TokenStream`, got `${marker}`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
+    CapVal.Tok(Token { kind: "IDENT", text: marker, pos: st.cur().pos, tk: Tk.Identifier })
+}
+
+export fn mk_trait_list(v: CapVal) -> CapVal {
+    CapVal.Toks(capval_tok_list(v))
+}
+
+export fn mk_component_paren_def_g(st: PState, name: string, params_cv: CapVal, implements: List<string>, cfg_cv: CapVal, body: List<StmtId>) -> CapVal {
+    let ps = capval_to_pentry_list(params_cv)
+    mk_component_def_with_params(st, name, ps, implements, cfg_cv, CapVal.Nil, "", false, body)
+}
+
+export fn mk_component_def_g(st: PState, name: string, implements: List<string>, cfg_cv: CapVal, cs_cv: CapVal, marker: string, marker_present: bool, body: List<StmtId>) -> CapVal {
+    let empty_p: List<ParamEntry> = []
+    mk_component_def_with_params(st, name, empty_p, implements, cfg_cv, cs_cv, marker, marker_present, body)
+}
+
+fn mk_component_def_with_params(st: PState, name: string, params: List<ParamEntry>, implements: List<string>, cfg_cv: CapVal, cs_cv: CapVal, marker: string, marker_present: bool, body: List<StmtId>) -> CapVal {
     mut all_ids: List<StmtId> = []
     if marker_present {
         let vt = vtype_struct("TokenStream", 0)
@@ -5225,8 +5352,11 @@ export fn mk_component_def_g(st: PState, name: string, implements: List<string>,
     for id in body { all_ids.push(id) }
     let children = capval_to_children_slot_list(cs_cv)
     if children.length > 0 && body_declares_token_stream(st.store, all_ids) {
+        // Same disposition as the marker check above: the hand reports and returns `.Err`,
+        // so the closer stays unconsumed.
         st.report("component `${name}` declares both `children { … }` and `body: TokenStream` — a raw token body has no structured children; pick one")
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error))
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     if st.hand_delegate != null {
         let p = st.hand_delegate!
@@ -5237,8 +5367,7 @@ export fn mk_component_def_g(st: PState, name: string, implements: List<string>,
             register_component_name(p.features, name, (q: Parser) -> q.parse_component_block_bare())
         }
     }
-    let empty_p: List<ParamEntry> = []
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ComponentDef(name, empty_p, capval_to_comp_config_list(cfg_cv), children, implements, all_ids)))
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ComponentDef(name, params, capval_to_comp_config_list(cfg_cv), children, implements, all_ids)))
 }
 
 /// One `key value` / `key = expr` INSTANTIATION config pair — the
@@ -5248,6 +5377,11 @@ export fn mk_component_def_g(st: PState, name: string, implements: List<string>,
 /// does. Which of the two surface forms produced it is already decided by the
 /// `@peek` gate on the branch, so there is nothing to disambiguate here.
 export fn mk_comp_config_pair_g(st: PState, key: string, value_id: ExprId) -> CapVal {
+    // A FAILED value makes the pair a failure, so `@onfail(bail)` at the reference site
+    // can end the instantiation — the hand's `parse_expression_boxed()?` propagates and
+    // `component C inst { key = }` never reaches its closing brace, leaving the `}` for
+    // the caller to report. Building a CPair around an error node swallowed it.
+    if expr_id_is_error(st, value_id) { return CapVal.Node(st.error_node_silent()) }
     CapVal.CPair(CompConfigPair { key: key, value: st.store.exprs.get(value_id) })
 }
 

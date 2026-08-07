@@ -1472,8 +1472,12 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 let bbody = if !abortable { "" }
                     else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${bret}${ind}    }\n" }
                     else { bret }
+                // BOTH node shapes, for the reason the `@require` post-check reads both:
+                // a declaration-view callee hands its failure back as a `Stmt.Error`
+                // (`SNode`), an expression-view one as an error `Node`, and a policy that
+                // sees only the second is blind wherever the callee builds statements.
                 return "${ind}let __bres = parse_${name}(st)\n" +
-                    "${ind}if capval_is_error_expr(st, __bres) {\n" +
+                    "${ind}if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {\n" +
                     bbody +
                     "${ind}}\n" +
                     emit_ref_capture_of(g, item, name, "__bres", ind, list_labels, opts)
@@ -2125,7 +2129,7 @@ fn rule_reaches_hand(g: Grammar, name: string) -> bool {
 /// block's statement-list recovery. No other emitted grammar uses this shape
 /// today, so wiring it into emit_repeat_group is additive (emit-gen-check proves
 /// existing grammars are byte-identical). (t-47hc.13 — the control-flow flip.)
-fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bool) -> string {
+fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bool, abort_failed: bool) -> string {
     // had_error is a SINGLE PState flag reused across children (unlike the single-
     // statement flip path, which gets a fresh PState per statement). So we CAPTURE
     // any pre-loop error (e.g. from an if/for/while header condition parsed before
@@ -2139,7 +2143,14 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bo
     "${ind}let __pre_err = st.had_error\n" +
         "${ind}mut __any_err = __pre_err\n" +
         "${ind}while true {\n" +
-        "${ind}    if st.at_end() || st.cur().text == \"}\" { break }\n" +
+        // An `abort` loop does NOT stop at EOF, and that is the hand's shape rather than
+        // an oversight: `parse_comp_block_body` loops `while !check(RightBrace)`, so at
+        // end-of-input it ATTEMPTS a child, which reports F0040 and propagates. Breaking
+        // here instead reported the missing closer — one diagnostic either way, a
+        // different code. Safe only because a failed child in this mode returns
+        // immediately, so there is no way to spin on a token nothing consumes.
+        (if abort_failed { "${ind}    if st.cur().text == \"}\" { break }\n" }
+         else { "${ind}    if st.at_end() || st.cur().text == \"}\" { break }\n" }) +
         "${ind}    let __sp = st.cur().pos\n" +
         "${ind}    let __before_i = st.pos\n" +
         "${ind}    st.clear_error()\n" +
@@ -2168,14 +2179,27 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bo
         // exactly what happened when this was folded into the failure test.
         "${ind}    if st.had_error { __any_err = true }\n" +
         (if drop_failed { "${ind}    if st.abort_prop {\n" } else { "${ind}    if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {\n" }) +
+        // t-47hc.5 `@onfail(abort)`: END THE RULE on a failed child, the third disposition
+        // a body loop can have. `parse_comp_block_body`'s `parse_declaration()?` returns
+        // `.Err`, so the instantiation never reaches its closing `}` and the brace is left
+        // for statement-level recovery — the hand's second diagnostic. Recovering here
+        // consumed it, and one diagnostic went missing with it. Emitted BEFORE the resync
+        // for the same reason `@require` returns before consuming: there is nothing to
+        // recover into.
+        (if abort_failed {
+            "${ind}        st.set_abort_prop(true)\n" +
+            "${ind}        return CapVal.Node(st.error_node_silent())\n"
+        } else { "" }) +
+        (if abort_failed { "" } else {
         "${ind}        __any_err = true\n" +
-        "${ind}        st.synchronize_stmt()\n" +
+        "${ind}        st.synchronize_stmt()\n" }) +
         // t-47hc.5: step out of a group the CHILD opened and never closed. Without this
         // `synchronize_stmt` parks on a brace that closes the child's group rather than
         // this block's, and the scan then skips a following VALID statement instead of
         // resuming on it — the interpreter's twin keeps it, so the two engines built
         // different trees for the same recovery.
-        "${ind}        if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }\n" +
+        (if abort_failed { "" } else {
+        "${ind}        if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }\n" }) +
         // `@onfail(drop)`: the aborted child is OMITTED rather than standing an `(error)`
         // row in its place, and the abort is CLEARED — it has been handled here, and
         // leaving it raised would abort this rule's own caller in turn. Everything else
@@ -2188,6 +2212,7 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bo
         // loop then treats the whole (perfectly well-formed) `if` as failed and stands a
         // SECOND `(error)` row beside it. Same argument the `drop` variant already made
         // for itself; it was never specific to `drop`.
+        (if abort_failed { "" } else {
         "${ind}        st.set_abort_prop(false)\n" +
         (if drop_failed { "" } else {
             "${ind}        let __elc = st.store.lines.to_linecol(__sp)\n" +
@@ -2196,7 +2221,7 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bo
             "${ind}        ${label}_list.push(__e)\n"
         }) +
         "${ind}        st.clear_error()\n" +
-        "${ind}        continue\n" +
+        "${ind}        continue\n" }) +
         "${ind}    }\n" +
         // A `drop` child that reported and RECOVERED reaches here and is kept, so its
         // error has to be carried out by hand — the default loop got that for free from
@@ -2255,7 +2280,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                 "${ind}// GRAMMAR ERROR: `${item.label}:${name}*{#${item.bound}}` — a bounded statement-list repetition is unsupported (emit_stmt_list_loop has no cap seam)\n" +
                     "${ind}let _ = emit_unsupported_bounded_stmt_list\n"
             } else if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == "stmt" {
-                emit_stmt_list_loop(name, item.label, ind, item.onfail == "drop")
+                emit_stmt_list_loop(name, item.label, ind, item.onfail == "drop", item.onfail == "abort")
             } else if item.label != "" && str_in(list_labels, item.label) {
                 // A labeled bare-ref `*`/`+` over a NON-statement rule: its `<label>_list`
                 // accumulator is declared but the discard loop below would never populate
@@ -2678,7 +2703,12 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkMethodShorthand" -> "mk_method_shorthand_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkChildrenSlot" -> "mk_children_slot_g(st, capval_tok_text(${args[0]}), ${args[1]})"
         "MkCompField" -> "mk_comp_field_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
-        "MkComponentDef" -> "mk_component_def_g(st, capval_tok_text(${args[0]}), capval_tok_texts(CapVal.Toks(${args[1]}_list)), CapVal.CCfgs(${args[2]}_list), CapVal.CSlots(${args[3]}_list), capval_tok_text(${args[4]}), capval_present(${args[4]}), ${args[5]}_list)"
+        "MkComponentDef" -> "mk_component_def_g(st, capval_tok_text(${args[0]}), capval_tok_texts(${args[1]}), ${args[2]}, ${args[3]}, capval_tok_text(${args[4]}), capval_present(${args[4]}), ${args[5]}_list)"
+        "MkTraitList" -> "mk_trait_list(CapVal.Toks(${args[0]}_list))"
+        "MkCompBodyMarker" -> "mk_comp_body_marker(st, capval_tok_text(${args[0]}))"
+        "MkCompConfigList" -> "mk_comp_config_list(CapVal.CCfgs(${args[0]}_list))"
+        "MkChildrenSlotList" -> "mk_children_slot_list(CapVal.CSlots(${args[0]}_list))"
+        "MkComponentParenDef" -> "mk_component_paren_def_g(st, capval_tok_text(${args[0]}), CapVal.PEntries(${args[1]}_list), capval_tok_texts(${args[2]}), ${args[3]}, ${args[4]}_list)"
         "MkAnn" -> "mk_ann_g(capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"

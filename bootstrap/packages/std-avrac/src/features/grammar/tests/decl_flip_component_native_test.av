@@ -43,11 +43,23 @@ spec "t-47hc slice A: the component definition is emitted as a native rule" {
             src.contains("fn parse_comp_field(st: PState) -> CapVal")
     }
 
-    then "component_decl dispatches BEFORE the decl_hand gate" {
+    then "the component header dispatches BEFORE the decl_hand gate, and is COMMITTED" {
+        // t-47hc.5 flips the second half. `component` used to be `@try`d by the
+        // dispatcher, so any diagnostic rolled the whole item back to the hand; it is
+        // routed BARE now and owns its recovery. The rollback scaffold for it is gone.
+        //
+        // Dispatch goes through ONE `comp_header` branch rather than four
+        // `component`-led ones, because the four shapes (instantiation, legacy paren,
+        // the implements-then-instance error, and the brace definition) are told apart
+        // by LOOKAHEAD — and a FIRST/FIRST guard rightly flags four branches that all
+        // start with the same literal. The peeks live on `comp_header`'s branches,
+        // where that guard can see them.
         let src = decl_src()
-        let comp_at = src.index_of("parse_component_decl(st)")
+        let comp_at = src.index_of("parse_comp_header(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        src.contains("s_last = parse_component_decl(st)") &&
+        !src.contains("s_last = parse_component_decl(st)") &&
+            src.contains("fn parse_comp_header(st: PState) -> CapVal") &&
+            src.contains("fn parse_comp_paren_decl(st: PState) -> CapVal") &&
             comp_at >= 0 && hand_at >= 0 && comp_at < hand_at
     }
 
