@@ -3076,6 +3076,18 @@ fn exec_item_body(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool,
             // not a freebie before them — so it is carried into the loop as `already`.
             // Otherwise a `+{#h}` with cap 2 would take 1 + 2 = 3 here against the
             // emitted loop's 2.
+            // A zero-match `+` FAILS the rule (t-47hc.5) — the emit twin's
+            // `req`/`req_abort` pair. `return @foo` (an `@` with no `::`) must come back
+            // `(error)` like the hand's `?` propagation; forcing the iteration regardless
+            // reported and then built `(return @foo)`, a tree asserting a qualified
+            // reference was parsed. The message is the caller's `@expect("+", …)`, the
+            // same lookup emit renders.
+            let seen0: List<string> = []
+            if item_bound_cap(item, env) != 0 && !tok_starts_prim(g, item.prim, st, seen0) {
+                handle_missing(st, "+", annots)
+                env.set_abort(true)
+                return CapVal.Nil
+            }
             mut already = 0
             if item_bound_cap(item, env) != 0 {
                 let v0 = exec_primary(g, item.prim, st, env, true, annots)

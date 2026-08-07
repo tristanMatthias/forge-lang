@@ -47,7 +47,11 @@ fn parse_qualified_type(st: PState) -> CapVal {
     if st.cur().tk == Tk.Identifier { qname_list.push(st.advance()) } else {
         st.report_ident("expected IDENT")
     }
-    if !(lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon)) { st.report("expected at least one repetition") }
+    if !(lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon)) {
+        st.report("expected at least one repetition")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
     while lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon) {
         let _ = st.advance()
         if st.cur().tk == Tk.Colon { let _ = st.advance() } else {

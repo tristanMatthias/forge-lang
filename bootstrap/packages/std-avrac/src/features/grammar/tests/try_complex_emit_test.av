@@ -86,6 +86,14 @@ spec "t-47hc GAP-3: complex @try branches lower to correct generated code" {
     // Plus like eq_tail, which is entered only when its FIRST holds so the check never fires).
     then "a `+` repetition emits a required-first check so a 0-match Plus rolls back (not commits)" {
         let s = emit_tail()
-        s.contains("if !(st.cur().tk == Tk.Comma) { st.report(\"expected at least one repetition\") }")
+        // The check is now multi-line, because a 0-match `+` also ABORTS outside a
+        // speculative frame (t-47hc.5 — `return @foo` must come back `(error)`, not
+        // `(return @foo)`). This site is INSIDE a `@try`, where the abort is deliberately
+        // omitted: the report alone is the rollback signal, and an early return would skip
+        // the frame's restore. So the absence of the abort here is the assertion, not an
+        // oversight — it is what keeps the speculative arms byte-identical.
+        s.contains("if !(st.cur().tk == Tk.Comma) {") &&
+            s.contains("st.report(\"expected at least one repetition\")") &&
+            !s.contains("st.report(\"expected at least one repetition\")\n            st.set_abort_prop(true)")
     }
 }

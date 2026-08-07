@@ -2819,8 +2819,6 @@ fn parse_where_param(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.Identifier { wb_list.push(st.advance()) } else {
         st.report_ident("expected trait name in where clause")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
     }
     while st.cur().tk == Tk.Plus {
         let _ = st.advance()

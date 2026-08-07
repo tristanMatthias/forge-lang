@@ -5188,7 +5188,11 @@ mode_parser_tree() {
   # `--recover` is required, not cosmetic: plain `program` stops at the diagnostics,
   # so on the invalid input this mode exists for it prints errors and NO tree.
   # shellcheck disable=SC2086  # $1 is a `VAR=x VAR=y` list; env needs it SPLIT.
-  _pt_run() { env $1 "$BS2" program --recover "$fix" 2>/dev/null | sed 's/.\[[0-9;]*m//g'; }
+  _pt_run() {
+    local o
+    o=$(env $1 "$BS2" program --recover "$fix" 2>/dev/null) || { printf '<bs2 FAILED rc=%s>' "$?"; return 0; }
+    printf '%s' "$o" | sed 's/.\[[0-9;]*m//g'
+  }
   # `-c` counts matching LINES and suppresses `-o`, so the `-o` was inert; the label
   # below says "err rows", which is the line count — keep the unit, drop the dead flag.
   _pt_errs() { printf '%s' "$1" | grep -c '(error)' || true; }

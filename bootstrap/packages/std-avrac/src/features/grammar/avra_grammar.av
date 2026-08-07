@@ -185,8 +185,13 @@ fn avra_expr_core() -> Grammar {
   table_row  = @on(cell_mode) v:bitxor ( ^"|" ^@on(cell_mode) v:bitxor )* -> MkTableRow(v)
   struct_lit_expr = n:IDENT "{" ( f:field_init )* "}" -> MkStructLit(n, f)
   tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
-  qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" s:IDENT )+
+  // The segment name after `::` is `@require`d: unrequired it reported a bare
+  // "expected IDENT" and PARSED ON, so `@pkg::mod::name` — where `mod` is a keyword, not
+  // an identifier — left the cursor on `mod` for the declaration dispatch to pick up and
+  // added "expected module name after `mod`" on top of the hand's single message.
+  qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" @require s:IDENT )+
                    ( @when(allow_struct_lit) lb:"{" ( f:field_init )* "}" )?
+                   @expect("IDENT", "expected identifier after `::` in qualified reference")
                    @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
                    @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
   template_lit = t:TEMPLATE -> MkTemplate(t)
@@ -677,11 +682,11 @@ fn avra_decl_edge_grammar() -> Grammar {
   // shows. Committing it measured 32 divergences, now 20 — the `(1) ->` lambda blocker
   // that led the list is FIXED (see `paren_expr`'s predictive scan).
   //
-  // What remains is no longer about bindings OR lambdas. The largest cluster is `@` in an
-  // initializer: the hand rejects `let q = @pkg::mod::name` inside a fn body outright —
-  // `@` there is annotation syntax — where the native rule builds a qualified reference.
-  // That is `@`-DISPATCH work, not `let` work, and the rest are similar (map-literal and
-  // `with` recovery, list-comprehension cascade, template interpolation). Routing before
+  // What remains is no longer about bindings, lambdas OR `@` — the qualified-reference
+  // cluster is CLOSED (a zero-match `+` now fails the rule, and the segment name after
+  // `::` is required, so `@foo` and `@pkg::mod::name` match the hand exactly). The rest
+  // are map-literal and `with` recovery, the list-comprehension cascade, template
+  // interpolation, and `if let` — each its own expression-level gap. Routing before
   // they close would ship a keyword whose recovery is unmeasured on 20 known inputs — the
   // `shape` #1054 -> #1059 mistake. The ready pieces ship un-routed and correct.
   //

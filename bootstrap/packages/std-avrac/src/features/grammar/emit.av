@@ -2336,7 +2336,21 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // Plus that is REQUIRED mid-sequence — `@pkg::name`'s `( "::" IDENT )+` — does report,
     // and must match the hand parser's wording. `@expect("+", msg)` overrides it.
     let req_msg = { let e = expect_for(annots, "+")  if e.found { e.msg } else { "expected at least one repetition" } }
-    let req = match item.rep { .Plus -> "${ind}if !(${same_line_wrap(item, node_first_guard(g, inner, []))}) { st.report(\"${req_msg}\") }\n"  _ -> "" }
+    // A zero-match `+` FAILS the rule, it does not merely report (t-47hc.5). The hand
+    // propagates with `?`, so `return @foo` — an `@` with no `::` — comes back `(error)`;
+    // reporting and carrying on built `(return @foo)`, a tree asserting a qualified
+    // reference was parsed. It also let the cursor run on, so `@pkg::mod::name` re-entered
+    // the DECLARATION dispatch on the `mod` keyword and added "expected module name after
+    // `mod`" on top.
+    //
+    // The abort is emitted only OUTSIDE a speculative frame. Inside one the report is
+    // already the rollback signal (the commit-guard reads st.diags), and an early `return`
+    // there would skip the frame's restore — so the two speculative `+` sites (eq_tail's
+    // `( op r )+` and the tuple rest) stay byte-identical.
+    let req_abort = if spec_ctx == spec_none() {
+        "${ind}    st.set_abort_prop(true)\n${ind}    return CapVal.Node(st.error_node_silent())\n"
+    } else { "" }
+    let req = match item.rep { .Plus -> "${ind}if !(${same_line_wrap(item, node_first_guard(g, inner, []))}) {\n${ind}    st.report(\"${req_msg}\")\n${req_abort}${ind}}\n"  _ -> "" }
             // The bound pieces are empty strings when unbounded, so splicing them into
             // this multi-line shape leaves the generated text byte-identical.
             if group_is_single_hand(g, inner) {

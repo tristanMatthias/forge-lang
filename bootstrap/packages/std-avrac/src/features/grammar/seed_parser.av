@@ -26,7 +26,7 @@
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
 use features.grammar.{build_rule_index}
-use features.grammar.{rep_is_one, grep_is_multi, onfail_policy_supported}
+use features.grammar.{rep_is_one, grep_is_multi, onfail_policy_supported, onfail_policy_takes_capture}
 use features.grammar.{gprim_ref_name, emit_lookup_rule, rule_result_kind}
 use features.grammar.{list_labels_of, node_has_onfail}
 use diagnostics.{diag_ice, render_diagnostic}
@@ -1917,7 +1917,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, tilde_ident_lbrace, ident_lbrace_plain, ident_lbrace_feature, ident_template, ident_plain, qdot_plain_field, qdot_method_call, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen, comma_not_rbracket, comma_not_rbrace, quote_arm, quote_type, body_marker, kw_let, cfg_pair_value, cfg_pair_eq, comp_inst_shape, comp_nested_named, comp_nested_bare, comp_nested_raw_named, comp_nested_raw_bare, comp_method, bare_comp_inst, bare_comp_inst_raw, always, decl_table_kw, return_value, comp_paren_shape, comp_implements_inst, kw_implements, let_destructure, kw_config, kw_children)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, tilde_ident_lbrace, ident_lbrace_plain, ident_lbrace_feature, ident_template, ident_plain, qdot_plain_field, qdot_method_call, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen, comma_not_rbracket, comma_not_rbrace, quote_arm, quote_type, body_marker, kw_let, cfg_pair_value, cfg_pair_eq, comp_inst_shape, comp_nested_named, comp_nested_bare, comp_nested_raw_named, comp_nested_raw_bare, comp_method, bare_comp_inst, bare_comp_inst_raw, always, decl_table_kw, return_value, not_gt, not_rparen, not_rbrace, cur_ident, paren_lambda_ahead, comp_paren_shape, comp_implements_inst, kw_implements, let_destructure, kw_config, kw_children)") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")

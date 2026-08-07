@@ -138,7 +138,11 @@ fn parse_eq_tail(st: PState) -> CapVal {
     if st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual {
         mut op_list: List<Token> = []
         mut r_list: List<ExprId> = []
-        if !(st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual) { st.report("expected at least one repetition") }
+        if !(st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual) {
+            st.report("expected at least one repetition")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
         while st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual {
             op_list.push(st.advance())
             r_list.push(capval_to_expr(st, parse_bitor(st)))
@@ -749,17 +753,22 @@ fn parse_qualified_expr(st: PState) -> CapVal {
     mut lb: CapVal = CapVal.Nil
     let _ = st.advance()
     let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected identifier after `::` in qualified reference")
         CapVal.Tok(st.cur())
     }
-    if !(lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon)) { st.report("expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax") }
+    if !(lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon)) {
+        st.report("expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
     while lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon) {
         let _ = st.advance()
         if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
             st.report("expected :")
         }
         if st.cur().tk == Tk.Identifier { s_list.push(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected identifier after `::` in qualified reference")
+            return CapVal.Node(st.error_node_silent())
         }
     }
     if st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.LeftBrace) {
@@ -1592,7 +1601,9 @@ fn parse_paren_expr(st: PState) -> CapVal {
         st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
         let first = parse_expression(st)
         st.set_modes(__modes_1)
-        if !(st.cur().tk == Tk.Comma) { st.report("expected at least one repetition") }
+        if !(st.cur().tk == Tk.Comma) {
+            st.report("expected at least one repetition")
+        }
         while st.cur().tk == Tk.Comma {
             let _ = st.advance()
             if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && ((st.cur().text == "match")) || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier) {

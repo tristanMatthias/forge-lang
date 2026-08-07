@@ -59,14 +59,19 @@ export fn avra_fn_decl_grammar() -> Grammar {
   // { }` bound `{` as a type-parameter name and then reported a missing `:` where the
   // hand says nothing at all.
   //
-  // The FIRST bound is `@require`d like the `+`-joined ones — `parse_where_bounds`
-  // set_errors on a non-IDENT there too, so leaving it unrequired reported and then
-  // carried on with an empty bound. KNOWN GAP, pre-existing: the hand words the `+` case
-  // "expected trait name after `+` in where clause", and `@expect` binds ONE message per
-  // token kind per sequence, so both positions currently share the first one. Splitting
-  // the `+` bound into its own rule (its own `@expect` scope) needs a token-returning
-  // builder, which is the documented cost of a second message for one token kind.
-  where_param = wn:IDENT @require ":" @require wb:IDENT ( "+" @require wb:IDENT )*
+  // The FIRST bound is deliberately NOT `@require`d, unlike the `+`-joined ones, and the
+  // asymmetry is recorded rather than "fixed". Requiring it makes the entry ABORT, and an
+  // aborted entry still contributes to `wp`, so `where T: ` rendered `<T, >` — a trailing
+  // EMPTY type parameter the hand never produces. Suppressing that needs the failed entry
+  // to contribute nothing, which is `@onfail(skip)`; skip is wired for `@gate`, not for
+  // the `@peek` this list uses, so it silently does nothing here. Reporting-and-continuing
+  // matches the hand's TREE, which is what the corpus measures; a consistency edit that
+  // trades a correct tree for a symmetric annotation is not worth it.
+  // Second known gap, pre-existing: the hand words the `+` case "expected trait name
+  // after `+` in where clause", and `@expect` binds ONE message per token kind per
+  // sequence, so both positions share the first wording. A second message needs the `+`
+  // bound split into its own rule with its own `@expect` scope.
+  where_param = wn:IDENT @require ":" wb:IDENT ( "+" @require wb:IDENT )*
                 @expect(":", "expected `:` after type parameter in where clause")
                 @expect("IDENT", "expected trait name in where clause") -> MkWhereParam(wn, wb)
   // t-myz7: `extern` owns its recovery. Every position the hand `consume`s with a message

@@ -93,8 +93,8 @@ fn hand_only_program(src: string) -> string {
     // reads the flip/static fields from the environment and defaults them ON, so a
     // helper that names only some of them still ran generated TYPE and PATTERN parsers
     // inside the hand parse — which makes it not a hand-only oracle, and any parity
-    // spec built on it partly compares a parser against itself. `decl_static` stays true
-    // only because `decl_flip = false` already takes that path out of play.
+    // spec built on it partly compares a parser against itself. `decl_static` is pinned
+    // off too, even though `decl_flip = false` already takes that path out of play.
     mut p = parser_new(src)
     p.decl_flip = false
     p.decl_static = false

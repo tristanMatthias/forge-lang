@@ -78,11 +78,19 @@ spec "t-47hc.5: `program --recover` renders the recovery tree for invalid input"
             tree_of("valid", src).contains("(let a")
     }
 
-    then "a source that parses to NOTHING says so instead of printing an empty tree" {
-        // The `ids: null` arm. Distinguishing "no statements" from "empty output" is
-        // what keeps a silent drop visible.
-        let src = ")\n"
-        tree_of("nostmt", src).contains("no tree") ||
-            tree_of("nostmt", src).trim() != ""
+    then "a lone closer RECOVERS into an error row rather than vanishing" {
+        // Asserted directly, not OR-ed with a non-emptiness check — "no tree" is itself
+        // non-empty, so the old disjunction reduced to "stdout is not empty" and passed on
+        // any unrelated message. Tightening it also showed the block's PREMISE was wrong:
+        // `)` does not parse to nothing, it recovers into one `(error)` statement. That is
+        // the behaviour worth pinning, since plain `program` renders nothing at all here.
+        let tree = tree_of("nostmt", ")\n")
+        tree.trim() == "(error)" && !tree.contains("error[")
+    }
+
+    then "an EMPTY source renders no tree and no diagnostics" {
+        // The genuine `ids: null` / zero-statement case, which `)` is not. Empty in, empty
+        // out — and crucially no diagnostic, so an empty file is not an error.
+        tree_of("emptysrc", "").trim() == "" && stderr_of("emptysrc", "").contains("0 error(s)")
     }
 }
