@@ -44,7 +44,7 @@ spec "t-47hc slice A: the component definition is emitted as a native rule" {
             src.contains("fn parse_comp_field(st: PState) -> CapVal")
     }
 
-    then "the component header dispatches BEFORE the decl_hand gate, and is COMMITTED" {
+    then "the component header is dispatched and COMMITTED, with NO decl_hand gate (t-47hc.4.3)" {
         // t-47hc.5 flips the second half. `component` used to be `@try`d by the
         // dispatcher, so any diagnostic rolled the whole item back to the hand; it is
         // routed BARE now and owns its recovery. The rollback scaffold for it is gone.
@@ -69,7 +69,7 @@ spec "t-47hc slice A: the component definition is emitted as a native rule" {
             !disp.contains("s_last = parse_comp_header(st)") &&
             src.contains("fn parse_comp_header(st: PState) -> CapVal") &&
             src.contains("fn parse_comp_paren_decl(st: PState) -> CapVal") &&
-            comp_at >= 0 && hand_at >= 0 && comp_at < hand_at
+            comp_at >= 0 && hand_at < 0
     }
 
     then "the schema accumulators are typed, not the ExprId default" {

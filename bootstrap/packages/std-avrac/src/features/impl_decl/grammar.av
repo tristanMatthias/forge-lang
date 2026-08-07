@@ -33,7 +33,20 @@ export fn avra_impl_decl_grammar() -> Grammar {
   // token, so one shared annotation set could only ever carry one of them. A group
   // branch's annotations now MERGE with the inherited ones rather than replacing them,
   // which is what makes a second message expressible at all.
-  impl_decl   = @try "impl" @cut ( "<" ( tparam ( "," tparam )* )? ">" )? @require itn:IDENT ( "<" ( type_expr ( "," type_expr )* )? ">" )? ( "for" @require ifortn:IDENT ( "<" ( type_expr ( "," type_expr )* )? ">" )? @expect("IDENT", "expected type name after `for`") )? @require "{" ( @peek(not_rbrace) @gate imethods:impl_member )* @require "}"
+  // t-47hc.4.3 — BOTH type positions are `name_or_splice`, not bare `IDENT`, because the
+  // hand's are: `parse_impl_decl` calls `consume_name_or_splice` for each. A `~name`
+  // splice in either slot is legal inside a quote body, and `@expand` macros that emit
+  // `impl Trait for ~nm { … }` per instance depend on it.
+  //
+  // It read `IDENT` until now only because `@hand(decl_hand)` was silently covering the
+  // gap: inside a quote body the `@cut` does not fire (`had_error`/diags have already
+  // moved by then), so the splice failure rolled the whole branch back and the HAND
+  // parsed it. Deleting the leaf removed that cover and turned a latent expressibility
+  // gap into a hard "expected type name after `for`" on valid macro source — the exact
+  // defect shape the routing discipline calls "a form the routed rule cannot EXPRESS".
+  // `type_decl` was given the same treatment when `fn` routed, for the same reason.
+  impl_decl   = @try "impl" @cut ( "<" ( tparam ( "," tparam )* )? ">" )? @require itn:name_or_splice ( "<" ( type_expr ( "," type_expr )* )? ">" )? ( "for" @require ifortn:name_or_splice ( "<" ( type_expr ( "," type_expr )* )? ">" )? @expect("name_or_splice", "expected type name after `for`") @expect("IDENT", "expected type name after `for`") )? @require "{" ( @peek(not_rbrace) @gate imethods:impl_member )* @require "}"
+                @expect("name_or_splice", "expected type name after `impl`")
                 @expect("IDENT", "expected type name after `impl`")
                 @expect("{", "expected `{` after impl type name")
                 @expect("}", "expected `}` after impl block") -> MkImpl(itn, ifortn, imethods)

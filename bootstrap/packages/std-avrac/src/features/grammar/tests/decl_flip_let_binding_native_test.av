@@ -62,14 +62,18 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
             src.contains("fn parse_const_decl(st: PState) -> CapVal")
     }
 
-    then "they dispatch BEFORE the decl_hand gate — else they would be dead code" {
+    then "they are dispatched, and NO decl_hand gate survives (t-47hc.4.3)" {
         let src = decl_src()
         let let_at = src.index_of("parse_let_decl(st)")
         let mut_at = src.index_of("parse_mut_decl(st)")
         let const_at = src.index_of("parse_const_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        let_at >= 0 && mut_at >= 0 && const_at >= 0 && hand_at >= 0 &&
-            let_at < hand_at && mut_at < hand_at && const_at < hand_at
+        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
+        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
+        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
+        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
+        // be reached from the dispatcher, or it is dead code with correct output.
+        let_at >= 0 && mut_at >= 0 && const_at >= 0 && hand_at < 0
     }
 
     then "each routed branch is SPECULATIVE and its rollback restores the gensym counter" {
@@ -114,10 +118,12 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         let src = decl_src()
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
+        // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
+        tail_at >= 0 && hand_at < 0
     }
 
-    then "the destructure rule is PREDICTIVE and dispatches BEFORE let_decl and the hand gate" {
+    then "the destructure rule is PREDICTIVE and dispatches BEFORE let_decl (no hand gate remains)" {
         // letdes_decl used to sit AFTER let_decl and be reached by ROLLBACK: `let (` made
         // let_decl's `n:IDENT` report, the dispatcher's `@try` unwound, and this rule got
         // its turn. Routing `let` (t-47hc.5 Phase 4) ends that — `@try "let" @cut` commits
@@ -140,8 +146,8 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         // swallows every binding) fails here rather than only in the recovery corpus.
         src.contains("fn parse_letdes_decl(st: PState) -> CapVal") &&
             src.contains("if lookahead_ok(\"let_destructure\", st) && (st.cur().text == \"let\") {\n        return parse_letdes_decl(st)") &&
-            des_at >= 0 && let_at >= 0 && hand_at >= 0 &&
-            des_at < let_at && des_at < hand_at
+            des_at >= 0 && let_at >= 0 && hand_at < 0 &&
+            des_at < let_at
     }
 }
 

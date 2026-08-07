@@ -59,7 +59,7 @@ spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
             src.contains("fn parse_select_arm(st: PState) -> CapVal")
     }
 
-    then "they dispatch BEFORE the decl_hand gate — else they would be dead code" {
+    then "they are dispatched, and NO decl_hand gate survives (t-47hc.4.3)" {
         let src = decl_src()
         let sel_at = src.index_of("parse_select_decl(st)")
         let par_at = src.index_of("parse_parallel_decl(st)")
@@ -80,10 +80,12 @@ spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
         // entirely — which is the #1028 dead-code failure this assertion exists for.
         let sel_ret = src.index_of("return parse_select_decl(st)")
         let par_ret = src.index_of("return parse_parallel_decl(st)")
-        hand_at >= 0 && sel_ret >= 0 && par_ret >= 0 &&
-            sel_ret < hand_at && par_ret < hand_at &&
-            sel_at >= 0 && par_at >= 0 &&
-            sel_at < hand_at && par_at < hand_at
+        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
+        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
+        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
+        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
+        // be reached from the dispatcher, or it is dead code with correct output.
+        hand_at < 0 && sel_ret >= 0 && par_ret >= 0 && sel_at >= 0 && par_at >= 0
     }
 
     then "`select` / `parallel` are routed as `@try`, never bare — each rule owns its rollback" {

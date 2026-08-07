@@ -57,45 +57,13 @@ fn parse_declaration(st: PState) -> CapVal {
         return parse_export_decl(st)
     }
     if st.cur().tk == Tk.DocComment {
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_doc_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+        return parse_doc_decl(st)
     }
     if st.cur().tk == Tk.ModDocComment {
         return parse_mdoc_decl(st)
     }
-    if st.cur().tk == Tk.At {
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_annot_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+    if lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) {
+        return parse_annot_decl(st)
     }
     if lookahead_ok("let_destructure", st) && (st.cur().text == "let") {
         return parse_letdes_decl(st)
@@ -122,23 +90,7 @@ fn parse_declaration(st: PState) -> CapVal {
         return parse_comp_header(st)
     }
     if lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) {
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_bare_comp_inst_raw(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+        return parse_bare_comp_inst_raw(st)
     }
     if lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) {
         let s_pos = st.pos
@@ -159,9 +111,6 @@ fn parse_declaration(st: PState) -> CapVal {
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
-    if lookahead_ok("decl_lead", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") {
-        return CapVal.SNode(run_hand_stmt("decl_hand", st))
-    }
     parse_statement(st)
 }
 
@@ -181,7 +130,7 @@ fn parse_export_decl(st: PState) -> CapVal {
             let _ = st.advance()
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
-            if !(st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || lookahead_ok("decl_table_kw", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component")) {
+            if !(st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component") {
                 st.report("expected declaration after `export`")
                 if s_cut {
                     st.set_abort_prop(true)
@@ -266,13 +215,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
     if st.cur().text == "spec" {
         return parse_spec_decl(st)
     }
-    if lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" {
-        return parse_comp_header(st)
-    }
-    if lookahead_ok("decl_table_kw", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component") {
-        return CapVal.SNode(run_hand_stmt("decl_hand", st))
-    }
-    CapVal.Node(st.error_node_expected_expr())
+    parse_comp_header(st)
 }
 
 fn parse_doc_decl(st: PState) -> CapVal {
@@ -281,7 +224,17 @@ fn parse_doc_decl(st: PState) -> CapVal {
     while st.cur().tk == Tk.DocComment {
         d_list.push(st.advance())
     }
-    let dd = parse_docable_decl(st)
+    if !(st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "impl" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "export" || st.cur().tk == Tk.DocComment || lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "spec" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().tk == Tk.ModDocComment || lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) || st.cur().text == "break" || st.cur().text == "continue" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || tok_starts_expr_leaf(st.cur())) {
+        st.report_coded("F0040", "expected expression")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres2 = parse_docable_decl(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
+        return CapVal.Node(st.error_node_silent())
+    }
+    let dd = __rres2
     mk_doc_annotated(st, d_list, dd)
 }
 
@@ -307,7 +260,17 @@ fn parse_annot_decl(st: PState) -> CapVal {
     while st.cur().tk == Tk.At {
         an_list.push(capval_to_ann(st, parse_annot(st)))
     }
-    let ad = parse_annotable_decl(st)
+    if !(st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "impl" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "export" || st.cur().tk == Tk.DocComment || lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "spec" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().tk == Tk.ModDocComment || lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) || st.cur().text == "break" || st.cur().text == "continue" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || tok_starts_expr_leaf(st.cur())) {
+        st.report_coded("F0040", "expected expression")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres2 = parse_annotable_decl(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
+        return CapVal.Node(st.error_node_silent())
+    }
+    let ad = __rres2
     mk_annotated_args_g(st, an_list, ad)
 }
 
@@ -321,7 +284,9 @@ fn parse_annot(st: PState) -> CapVal {
     mut a_list: List<ExprId> = []
     let _ = st.advance()
     let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident_coded("F0040", "expected expression")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftParen {
@@ -349,14 +314,13 @@ fn parse_annot(st: PState) -> CapVal {
             }
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected )")
+            st.report_coded("F0040", "expected expression")
         }
     }
     mk_ann_g(capval_tok_text(n), a_list)
 }
 
 fn parse_wrapped_inner(st: PState) -> CapVal {
-    mut tried_spec = false
     if st.cur().text == "fn" {
         return parse_fn_decl(st)
     }
@@ -367,7 +331,6 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         return parse_enum_decl(st)
     }
     if st.cur().text == "trait" {
-        tried_spec = true
         let s_pos = st.pos
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
@@ -390,7 +353,6 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         return parse_extern_decl(st)
     }
     if st.cur().text == "shape" {
-        tried_spec = true
         let s_pos = st.pos
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
@@ -413,27 +375,9 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         return parse_impl_decl(st)
     }
     if lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_comp_header(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+        return parse_comp_header(st)
     }
     if st.cur().text == "use" {
-        tried_spec = true
         let s_pos = st.pos
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
@@ -453,7 +397,6 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if st.cur().text == "mod" {
-        tried_spec = true
         let s_pos = st.pos
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
@@ -476,44 +419,10 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         return parse_export_decl(st)
     }
     if st.cur().tk == Tk.DocComment {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_doc_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+        return parse_doc_decl(st)
     }
-    if st.cur().tk == Tk.At {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_annot_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+    if lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) {
+        return parse_annot_decl(st)
     }
     if lookahead_ok("let_destructure", st) && (st.cur().text == "let") {
         return parse_letdes_decl(st)
@@ -522,27 +431,24 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         return parse_let_decl(st)
     }
     if st.cur().text == "mut" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_mut_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
+        return parse_mut_decl(st)
     }
     if st.cur().text == "const" {
-        tried_spec = true
+        return parse_const_decl(st)
+    }
+    if st.cur().text == "spec" {
+        return parse_spec_decl(st)
+    }
+    if st.cur().text == "select" {
+        return parse_select_decl(st)
+    }
+    if st.cur().text == "parallel" {
+        return parse_parallel_decl(st)
+    }
+    if st.cur().tk == Tk.ModDocComment {
+        return parse_mdoc_decl(st)
+    }
+    if lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) {
         let s_pos = st.pos
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
@@ -551,7 +457,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
-        s_last = parse_const_decl(st)
+        s_last = parse_bare_comp_inst_raw(st)
         if st.diags.length == s_diags && st.had_error == s_err {
             return s_last
         }
@@ -561,8 +467,26 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_expected_expr())
+    if lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) {
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_hand = st.save_hand_state()
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut s_last: CapVal = CapVal.Nil
+        s_last = parse_bare_comp_inst(st)
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return s_last
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.restore_hand_state(s_hand)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    parse_statement(st)
 }
 
 fn parse_let_decl(st: PState) -> CapVal {
@@ -3215,14 +3139,21 @@ fn parse_impl_decl(st: PState) -> CapVal {
                     st.report("expected >")
                 }
             }
-            let itn = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-                st.report_ident("expected type name after `impl`")
+            if !(st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Identifier) {
+                st.report("expected type name after `impl`")
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
                 }
-                CapVal.Tok(st.cur())
             }
+            st.set_abort_prop(false)
+            let __rres2 = parse_name_or_splice(st)
+            if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
+                if s_cut {
+                    return CapVal.Node(st.error_node_silent())
+                }
+            }
+            let itn = __rres2
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
                 if tok_starts_type(st.cur()) {
@@ -3238,13 +3169,21 @@ fn parse_impl_decl(st: PState) -> CapVal {
             }
             if st.cur().text == "for" {
                 let _ = st.advance()
-                if st.cur().tk == Tk.Identifier { ifortn = CapVal.Tok(st.advance()) } else {
-                    st.report_ident("expected type name after `for`")
+                if !(st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Identifier) {
+                    st.report("expected type name after `for`")
                     if s_cut {
                         st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                     }
                 }
+                st.set_abort_prop(false)
+                let __rres1 = parse_name_or_splice(st)
+                if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
+                    if s_cut {
+                        return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                ifortn = __rres1
                 if st.cur().tk == Tk.Less {
                     let _ = st.advance()
                     if tok_starts_type(st.cur()) {

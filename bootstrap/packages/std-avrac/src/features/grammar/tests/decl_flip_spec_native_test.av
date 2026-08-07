@@ -60,7 +60,7 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
             src.contains("fn parse_then_blk(st: PState) -> CapVal")
     }
 
-    then "spec_decl dispatches BEFORE the decl_hand gate — else it would be dead code" {
+    then "spec_decl is dispatched, and NO decl_hand gate survives (t-47hc.4.3)" {
         let src = decl_src()
         let spec_at = src.index_of("parse_spec_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
@@ -74,8 +74,12 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
         // Bound to the `decl_hand` POSITION, not merely present — see the sibling
         // assertion in decl_flip_select_parallel_native_test.
         let spec_ret = src.index_of("return parse_spec_decl(st)")
-        hand_at >= 0 && spec_ret >= 0 && spec_ret < hand_at &&
-            spec_at >= 0 && spec_at < hand_at
+        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
+        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
+        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
+        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
+        // be reached from the dispatcher, or it is dead code with correct output.
+        hand_at < 0 && spec_ret >= 0 && spec_at >= 0
     }
 
     then "`spec` is routed as `@try`, never bare — the rule owns the rollback" {

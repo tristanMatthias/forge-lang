@@ -503,14 +503,14 @@ spec "t-myz7: a `@cut`-committed rule is never dispatched under `@try`" {
     }
 }
 
-spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
+spec "t-47hc.4.3: the decl_hand frontier is CLOSED — nothing depends on the leaf" {
     then "the probe is DORMANT unless asked" {
         // A guard that cannot fail is worth nothing, and a probe that fires by
         // accident is worse: it would refuse the leaf in every production build.
         !hand_leaf_refused("decl_hand") && !hand_leaf_refused("primary_base")
     }
 
-    then "`*` refuses EVERY leaf — exercised by a real parse, not just the predicate" {
+    then "`*` refuses NOTHING — the leaf is gone, exercised by a real parse" {
         // The predicate assertion above runs in a process with no refusal set, so it
         // only ever reaches the early return — the `want == "*"` branch is never
         // executed by it. This runs a real compile under `*` and requires the known
@@ -520,7 +520,17 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // Uses the same recovery anchor as the discriminating assertion below, so this
         // control cannot go vacuous when a form graduates — the failure that retired
         // the previous fixture (see BARE_IDENT_COMP_INST).
-        refused_here("*", "wildcard", MALFORMED_DECL()) &&
+        // t-47hc.4.3 INVERTS this, and the inversion IS the milestone: `@hand(decl_hand)`
+        // is deleted, so the wildcard has nothing left to refuse on this path. The former
+        // anchor — the bare-IDENT component instantiation the `@peek(decl_lead)` gate used
+        // to admit — parses CLEAN under `*` now.
+        //
+        // Read the honesty note on `native_without_delegate` below before adding to this
+        // spec: with no reachable leaf the refusal half of that helper can no longer come
+        // back true, so this file's remaining probes assert "parses clean", not "parses
+        // clean WITHOUT the delegate". The distinction stopped being observable when the
+        // last leaf went.
+        !refused_here("*", "wildcard", MALFORMED_DECL()) &&
         // ...and the SAME wildcard reports NOTHING for a valid file that merely IMPORTS.
         //
         // HONEST LABEL: this case does NOT fail against the previous filter *here*, and
@@ -556,7 +566,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         native_without_delegate("trait", "trait Tr { fn m(self) -> int }")
     }
 
-    then "the probe DISCRIMINATES — a malformed declaration still needs the delegate" {
+    then "not even a malformed declaration needs the delegate (the probe has no subjects left)" {
         // THE ANTI-VACUITY HALF. Every assertion above is "no refusal", which a helper
         // that never detects one would satisfy perfectly. These are the cases that must
         // come back false.
@@ -572,11 +582,33 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // in the recovery spec below), so keeping it here would have been a guard that
         // cannot fail — the precise vacuity this half exists to prevent. `fn` stays,
         // for the statement-body reason recorded on MALFORMED_DECL.
-        !native_without_delegate("malformed_let", MALFORMED_DECL()) &&
-        !native_without_delegate("malformed_type", "type Foo = {\n") &&
-        !native_without_delegate("malformed_component", "component C {\n") &&
-        !native_without_delegate("malformed_fn", "fn foo(\n") &&
-        !native_without_delegate("malformed_enum", "enum E {\n") &&
+        // t-47hc.4.3 — the anti-vacuity half has RUN OUT OF SUBJECTS, and saying so is
+        // the only honest move left. Every one of these forms used to come back false
+        // because it reached `@hand(decl_hand)`; the leaf is deleted, so none does, and
+        // asserting `!native_without_delegate(...)` for any of them would now be a guard
+        // that can only fail. They are inverted rather than removed, because "no form
+        // reaches the leaf" is exactly the claim this slice has to make and keep making.
+        //
+        // What is LOST with them is real and is recorded rather than papered over: the
+        // refusal half of `native_without_delegate` is inert from here on, so every
+        // assertion in this spec that uses it is now a PARSES-CLEAN test and nothing more.
+        // Verified by hand, not assumed — `AVRA_REFUSE_HAND_LEAF=*` over these fixtures
+        // reports zero refusals, valid and malformed alike.
+        // `recovery_without_delegate`, not `native_without_delegate`: for MALFORMED input
+        // the meaningful claim is "it still REPORTS, and reports without the delegate".
+        // That keeps the half this block actually cares about — a routed keyword that
+        // started silently ACCEPTING its malformed forms fails here, which is the
+        // `enum E { 5 }` regression the helper's own doc records. Only the delegate half
+        // went inert with the leaf; the reports-at-all half is as live as it ever was.
+        //
+        // MALFORMED_DECL is the exception and stays on the clean-parse helper: it names a
+        // bare-IDENT component instantiation, which is well-formed syntax whose component
+        // merely is not declared, so it PARSES and is rejected later.
+        native_without_delegate("malformed_let", MALFORMED_DECL()) &&
+        recovery_without_delegate("malformed_type", "type Foo = {\n") &&
+        recovery_without_delegate("malformed_component", "component C {\n") &&
+        recovery_without_delegate("malformed_fn", "fn foo(\n") &&
+        recovery_without_delegate("malformed_enum", "enum E {\n") &&
         // ...and the VALID counterpart of the same keyword does NOT report, which is
         // what pins the discriminator to malformed-ness rather than to the keyword.
         native_without_delegate("wellformed_fn", "fn foo() -> int { 1 }")
@@ -729,7 +761,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
     // dispatch loop, so it emitted the caller's bookkeeping (`s_diags` / `s_err` /
     // `s_cut`, plus a `break`) with nothing declaring it — the generated parser did
     // not compile. Silent until now only because no rule had the shape.
-    then "malformed `mod` and `use` own their recovery — the first forms off the leaf" {
+    then "malformed `mod` and `use` own their recovery, with no leaf beneath them" {
         // All three of the hand's abort paths for `mod` are native now. Each asserts
         // BOTH halves — reports, and reports without the delegate.
         recovery_without_delegate("mod_bare", "mod\nfn f() -> int { 1 }") &&
@@ -794,6 +826,8 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // stopped being true as each keyword took a `@cut` — a committed rule owns its
         // recovery and never rolls back — and `let = 5` refusing ZERO times is the
         // measurement that says so.
-        refused_here("decl_hand", "bare_inst_still_needs_leaf", "Foo bar { x: 1 }\nfn f() -> int { 1 }")
+        // t-47hc.4.3: was `refused_here(...)` — the bare-IDENT instantiation was the LAST
+        // form that needed the leaf. With the leaf deleted it is refused by nothing.
+        !refused_here("decl_hand", "bare_inst_no_longer_needs_leaf", "Foo bar { x: 1 }\nfn f() -> int { 1 }")
     }
 }

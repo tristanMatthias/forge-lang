@@ -553,7 +553,8 @@ export fn peek_cond_names() -> List<string> {
         "comp_nested_bare", "comp_nested_raw_named", "comp_nested_raw_bare", "comp_method",
         "bare_comp_inst", "bare_comp_inst_raw", "always", "decl_table_kw", "return_value",
         "cur_ident", "paren_lambda_ahead", "paren_arrow_ahead", "list_comp_ahead", "comp_paren_shape",
-        "comp_implements_inst", "kw_implements", "let_destructure", "kw_config", "kw_children"
+        "comp_implements_inst", "kw_implements", "let_destructure", "kw_config", "kw_children",
+        "annot_lead", "bare_inst_lead"
     ]
 }
 
