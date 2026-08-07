@@ -120,10 +120,47 @@ fn ff_is_pred(prim: GPrim) -> bool {
 /// state, uncorrelated with the input token, so on the shared FIRST token BOTH branches
 /// are token-level candidates (the mode merely picks one) — a real overlap the check
 /// still reports (guard: when_predicate_test.av's `@when(f) "a" "b" | "a"` shadow).
+/// A branch that is a BARE REFERENCE to a rule whose own body is peek-led counts too
+/// (t-47hc.5 Phase 4). `declaration`'s two `let` branches are `letdes_decl | let_decl`,
+/// and `letdes_decl` opens with `@peek(let_destructure)` — written inside the rule, not
+/// at the dispatch site, because the rule is referenced from three alternations and the
+/// gate belongs with the form it selects. The partitioning is identical either way: the
+/// peek is the first thing the callee evaluates and it consumes nothing when it fails,
+/// so the caller falls through to the next branch exactly as an inline peek would.
+///
+/// Deliberately ONE level and only for a SINGLE-item branch. A branch with a peek-led
+/// callee plus trailing items is not partitioned by that peek alone, and following a
+/// chain of references would make the exemption hard to reason about at the point a
+/// reader needs it — which is what an ambiguity guard is for.
 fn seq_is_peek_led(seq: GSeq) -> bool {
     if seq.items.length == 0 { return false }
     match seq.items[0].prim {
         .Peek(_) -> true
+        _ -> false
+    }
+}
+
+fn seq_is_peek_led_in(g: Grammar, seq: GSeq) -> bool {
+    if seq_is_peek_led(seq) { return true }
+    if seq.items.length != 1 { return false }
+    match seq.items[0].prim {
+        .Ref(nm) -> {
+            for r in g.rules {
+                if r.name == nm {
+                    match r.body {
+                        .Alt(bs) -> {
+                            // Every branch of the callee must be peek-led, or some input
+                            // reaches it un-partitioned.
+                            if bs.length == 0 { return false }
+                            for b in bs { if !seq_is_peek_led(b) { return false } }
+                            return true
+                        }
+                        _ -> return false
+                    }
+                }
+            }
+            false
+        }
         _ -> false
     }
 }
@@ -199,7 +236,7 @@ export fn grammar_ambiguities(g: Grammar) -> List<GAmbiguity> {
                     // genuine LL(k) disambiguation, the author's contract (as with `@try`'s
                     // rollback). A `@when(flag)` MODE-read is NOT exempt (it is uncorrelated
                     // with the token, so the token-level overlap is real — still reported).
-                    if branches[i].speculative || seq_is_peek_led(branches[i]) {
+                    if branches[i].speculative || seq_is_peek_led_in(g, branches[i]) {
                         i = i + 1
                         continue
                     }

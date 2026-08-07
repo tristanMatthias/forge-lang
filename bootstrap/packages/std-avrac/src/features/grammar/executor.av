@@ -17,7 +17,7 @@
 
 use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list, FORCE_UNWRAP_FN}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
-use features.grammar.{Token, lex_real, rule_index_of}
+use features.grammar.{Token, lex_real, LexDiag, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
 use features.grammar.{dispatch_has_tail}
 // t-myz7: the gated-call FIRST message, SHARED with emit (see ast.av) — the
@@ -542,7 +542,18 @@ export fn default_expr_modes() -> ExprModes {
 /// the DIAGNOSTIC rather than in a single `PState` slot is what lets a parse surface
 /// more than one coded diagnostic; see `report_coded`'s WHY for why the leaf removal
 /// needs that.
-export type GDiag = { code: string, msg: string }
+/// `at` is the TOKEN INDEX the diagnostic was reported at (`PState.pos`), and `byte` the
+/// source offset of that token.
+///
+/// `at` orders the merge: the lexer's own diagnostics are interleaved with the parser's
+/// in the order the HAND emits them (see `boundary_diags`).
+///
+/// `byte` positions the diagnostic at the flip seam. Without it the seam reported at the
+/// hand parser's cursor, which is still the ITEM START — so a native rule's diagnostic
+/// rendered at the first token of the declaration rather than where it was raised, and
+/// on a merged module parse `broken.av:2:9` came out `broken.av:1:1`. Invisible while
+/// the routed rules rolled back and let the hand report.
+export type GDiag = { code: string, msg: string, at: int, byte: int }
 
 /// t-myz7 ABORT PROPAGATION (`abort_prop`). A generated `parse_X` that aborts can
 /// only `return` from ITSELF; its CALLER cannot tell an abort from an ordinary
@@ -551,7 +562,20 @@ export type GDiag = { code: string, msg: string }
 /// leaves for statement-level recovery was eaten and the hand's SECOND diagnostic
 /// never appeared. Set at an abort, checked by callers. The emit twin of the
 /// executor's env.abort, which already unwinds the enclosing sequence.
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool }
+/// `lex_diags`: the LEXER's own diagnostics for this source, positioned by token index.
+///
+/// The streaming lexer reports as it scans, and the HAND parser pulls one token at a
+/// time — so a lexer diagnostic lands interleaved with the parser's, at the moment the
+/// bad token becomes current. The native path lexes the whole file up front, so those
+/// reports have to be carried and re-inserted at the matching point; discarded (which
+/// is what `lex_real` did until t-47hc.5 Phase 4) they simply do not exist natively —
+/// `let z = ;` is F0001 `unexpected character `;`` + F0041 on the hand and F0041 alone.
+///
+/// Carried, not merged eagerly. Seeding them into `diags` at the FRONT would put every
+/// lexer diagnostic before every parser one, and the recovery corpus compares the
+/// ORDERED F-code signature, so order is the assertion. Releasing them mid-parse is
+/// worse — see `seed_lex_diags`. The interleave happens in `boundary_diags`.
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool, lex_diags: List<LexDiag>, first_pos: int }
 
 /// One in-place token-stream mutation (today: only `split_gt`'s `>>` → `>`),
 /// journalled so a rollback can UNDO it. The stream is SHARED — across the
@@ -582,6 +606,20 @@ impl PState {
         t
     }
 
+    /// Carry the positioned lexer diagnostics for this parse. They are NOT pushed into
+    /// `diags` here, and deliberately so: `@try`, `@require` and `@onfail(bail)` all
+    /// decide by asking whether `diags` GREW, so a lexer diagnostic released mid-parse
+    /// reads to every one of them as "this rule reported". Measured — releasing the
+    /// `unexpected character `;`` for `let z = ;` on the way past the `;` made the
+    /// initializer's `@onfail(bail)` abort the binding, and the expression's own F0041
+    /// was never reported at all: the fix for a missing diagnostic deleted a different
+    /// one. They are merged at the boundary instead (`boundary_diags`), where nothing
+    /// is left to perturb.
+    fn seed_lex_diags(self, ld: List<LexDiag>) {
+        self.lex_diags = ld
+        self.first_pos = self.pos
+    }
+
     /// Split a `>>` (Tk.Shr) token when a single `>` is expected — the
     /// gnarly-5% nested-generic close (`List<List<T>>`), the executor-side
     /// analogue of the hand parser's `maybe_split_shr` (ps3t.6.5.10). The lexer
@@ -610,7 +648,7 @@ impl PState {
         // is global, and it re-coded ~40 specs across keywords that had nothing to do
         // with the change. Leaving the code blank keeps the single-diagnostic paths
         // reading the `diag_code` slot exactly as they always have.
-        self.diags.push(GDiag { code: "", msg })
+        self.diags.push(GDiag { code: "", msg, at: self.pos, byte: self.cur().pos })
         self.had_error = true
     }
 
@@ -668,7 +706,7 @@ impl PState {
     /// which is the same widen-then-spend discipline slice B1 used for the raw-source
     /// lookahead cores.
     fn report_coded(self, code: string, msg: string) {
-        self.diags.push(GDiag { code, msg })
+        self.diags.push(GDiag { code, msg, at: self.pos, byte: self.cur().pos })
         self.had_error = true
     }
 
@@ -1284,7 +1322,7 @@ export fn new_pstate(src: string) -> PState {
     d.decl_flip = false
     d.expr_flip = false
     d.expr_static = false
-    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -1310,7 +1348,7 @@ export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -1346,7 +1384,7 @@ export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
 /// store + ps3t.6.5.7/6.5.10 @hand delegation.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -1371,7 +1409,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -1401,7 +1439,7 @@ export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: Node
 
 /// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -1704,6 +1742,35 @@ fn ident_lbrace_owned_elsewhere(st: PState) -> bool {
 ///   double_colon — current and next are adjacent `:` tokens.
 /// An unknown cond is ungated (true) — a typo is
 ///     caught at parse time (peek_cond_supported), so this is unreachable-by-contract.
+
+/// Walk from a `(` at the cursor to its MATCHING `)`, returning that token's index when
+/// an `->` immediately follows it, and -1 otherwise (not at a `(`, unbalanced to end of
+/// input, or no arrow). The shared scan behind `paren_lambda_ahead` and
+/// `paren_arrow_ahead` — they differ only in what they ask about the token AFTER the
+/// arrow, and duplicating the walk is how the two gates would drift on nesting.
+fn paren_arrow_close(st: PState) -> int {
+    if st.cur().tk != Tk.LeftParen { return -1 }
+    mut depth = 0
+    mut i = st.pos
+    while i < st.toks.length {
+        let t = st.toks[i]
+        if t.tk == Tk.LeftParen || t.tk == Tk.LeftBracket || t.tk == Tk.LeftBrace { depth = depth + 1 }
+        else if t.tk == Tk.RightParen || t.tk == Tk.RightBracket || t.tk == Tk.RightBrace {
+            depth = depth - 1
+            if depth == 0 { break }
+            if depth < 0 { return -1 }
+        }
+        i = i + 1
+    }
+    // Unbalanced to end of input — `(1 + 2` with no closer. Not a lambda, and the group
+    // branch is the one that reports the missing `)`.
+    if i >= st.toks.length || depth != 0 { return -1 }
+    if st.toks[i].tk != Tk.RightParen { return -1 }
+    if i + 1 >= st.toks.length { return -1 }
+    if st.toks[i + 1].tk != Tk.Arrow { return -1 }
+    i
+}
+
 export fn lookahead_ok(cond: string, st: PState) -> bool {
     // `always` — the zero-width UNCONDITIONAL match (t-47hc.5). Its only use is the
     // `@fallback` tail of an alternation whose alternatives are all native: the tail
@@ -2257,26 +2324,24 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         false
     }
     if cond == "paren_lambda_ahead" {
-        if st.cur().tk != Tk.LeftParen { return false }
-        mut depth = 0
-        mut i = st.pos
-        while i < st.toks.length {
-            let t = st.toks[i]
-            if t.tk == Tk.LeftParen || t.tk == Tk.LeftBracket || t.tk == Tk.LeftBrace { depth = depth + 1 }
-            else if t.tk == Tk.RightParen || t.tk == Tk.RightBracket || t.tk == Tk.RightBrace {
-                depth = depth - 1
-                if depth == 0 { break }
-                if depth < 0 { return false }
-            }
-            i = i + 1
-        }
-        // Unbalanced to end of input — `(1 + 2` with no closer. Not a lambda, and the
-        // group branch is the one that reports the missing `)`.
-        if i >= st.toks.length || depth != 0 { return false }
-        if st.toks[i].tk != Tk.RightParen { return false }
-        if i + 2 >= st.toks.length { return false }
-        if st.toks[i + 1].tk != Tk.Arrow { return false }
-        return tok_starts_expr_leaf(st.toks[i + 2])
+        // The UNTYPED branch's gate: `( … ) ->` AND a token after the `->` that can
+        // start a body. The body check is what makes `let a = (1) ->` fall through to
+        // the group branch and yield `(group 1)` with the `->` left for the caller,
+        // which is what the hand's `try_lambda_body()` returning null produces.
+        let close = paren_arrow_close(st)
+        if close < 0 { return false }
+        if close + 2 >= st.toks.length { return false }
+        return tok_starts_expr_leaf(st.toks[close + 2])
+    }
+    if cond == "paren_arrow_ahead" {
+        // The TYPED branch's gate: `( … ) ->` and nothing more. The body check above is
+        // deliberately absent, because the two branches are choosing against different
+        // alternatives. An untyped `(1)` IS a valid group, so a missing body has to send
+        // it there. A TYPED `(x: int)` is not a valid expression at all — `->` alone
+        // settles it — so requiring a body FIRST sent `(x: int) ->` to the group branch,
+        // which reported "expected `)` after expression" where the hand reports F0040
+        // for the missing body. Same scan, one fewer question.
+        return paren_arrow_close(st) >= 0
     }
     if cond == "cur_ident" {
         return st.cur().tk == Tk.Identifier
@@ -3919,13 +3984,57 @@ fn resolved_diag_code(st: PState, i: int) -> string {
 /// Likewise an empty `diags` yields an empty list — the old code produced `diag == ""`
 /// there, which the one consumer skipped — so the `diag_code`-only fallback that case
 /// used to take was already unobservable and is not reproduced.
+/// The diagnostics this run hands back to the flip seam: the rule's own, with the
+/// LEXER's interleaved at the points the hand would have reported them.
+///
+/// The hand pulls one token at a time and its lexer reports mid-pull, so a lexer
+/// diagnostic for token `i` lands BEFORE any rule diagnostic reported while sitting at
+/// `i` or later, and AFTER every one reported earlier. That is a stable merge on the
+/// token index, lexer-first on a tie — which is what this does.
+///
+/// SCOPED to the tokens this run actually covered (`[first_pos, st.pos]`). A per-item
+/// runner re-reads the whole file's token stream, so an unscoped merge would repeat
+/// every lexer diagnostic in the file on every item.
+///
+/// Merging HERE rather than during the parse is the point: `@try`, `@require` and
+/// `@onfail(bail)` all decide by asking whether `diags` grew, so a lexer diagnostic
+/// released mid-parse reads to each of them as "this rule reported" — see
+/// `seed_lex_diags` for the measured consequence.
 fn boundary_diags(st: PState) -> List<GDiag> {
     mut out: List<GDiag> = []
-    if !st.had_error { return out }
-    mut i = 0
-    while i < st.diags.length {
-        out.push(GDiag { code: resolved_diag_code(st, i), msg: st.diags[i].msg })
-        i = i + 1
+    // The rule's own diagnostics, resolved. Note the `had_error` gate applies only to
+    // these: a file whose ONLY problem is a lexer one still has to report it.
+    mut rule_diags: List<GDiag> = []
+    if st.had_error {
+        mut i = 0
+        while i < st.diags.length {
+            rule_diags.push(GDiag { code: resolved_diag_code(st, i), msg: st.diags[i].msg, at: st.diags[i].at, byte: st.diags[i].byte })
+            i = i + 1
+        }
+    }
+    if st.lex_diags.length == 0 { return rule_diags }
+    // Lexer diagnostics inside this run's token span, in index order.
+    mut lex: List<GDiag> = []
+    for ld in st.lex_diags {
+        if ld.at >= st.first_pos && ld.at <= st.pos {
+            lex.push(GDiag { code: ld.code, msg: ld.msg, at: ld.at, byte: if ld.at < st.toks.length { st.toks[ld.at].pos } else { 0 } })
+        }
+    }
+    if lex.length == 0 { return rule_diags }
+    mut li = 0
+    mut ri = 0
+    while li < lex.length || ri < rule_diags.length {
+        // Lexer-first on a tie: the hand reports while the token becomes current,
+        // before any rule gets to look at it.
+        mut take_lex = li < lex.length
+        if take_lex && ri < rule_diags.length && lex[li].at > rule_diags[ri].at { take_lex = false }
+        if take_lex {
+            out.push(lex[li])
+            li = li + 1
+        } else {
+            out.push(rule_diags[ri])
+            ri = ri + 1
+        }
     }
     out
 }
@@ -3961,7 +4070,12 @@ export fn run_dsl_type_at(src: string, start_byte: int) -> DslTypeResult {
 /// full-selfhost flip compile). `src` is still threaded for the line index.
 /// Behaviour is otherwise identical to `run_dsl_type_at`.
 export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) -> DslTypeResult {
-    run_dsl_type_at_shared(toks, start_byte, src, new_node_store(build_line_index(src)), avra_program_grammar())
+    // The TOKEN-only entry: the caller already lexed and kept only the stream, so
+    // there are no positioned lexer diagnostics to release. The production path
+    // (`Parser.grammar_lex_diagnostics`) carries them; this one is the test/oracle
+    // surface, and an empty list is the honest answer rather than a re-lex.
+    let no_lex_diags: List<LexDiag> = []
+    run_dsl_type_at_shared(no_lex_diags, toks, start_byte, src, new_node_store(build_line_index(src)), avra_program_grammar())
 }
 
 /// Fully-shared form (ps3t.6.5.12 Step D) — takes a caller-owned `store` AND
@@ -3976,9 +4090,10 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 /// unaffected — byte-identity preserved); accumulation across a file's
 /// annotations is bounded and harmless (each call returns a fresh TypeExpr
 /// value, never a store id).
-export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
+export fn run_dsl_type_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    st.seed_lex_diags(lex_diags)
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3999,7 +4114,7 @@ export fn run_dsl_type_at_shared(toks: List<Token>, start_byte: int, src: string
 /// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
 export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let te = capval_to_texpr(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -4027,7 +4142,7 @@ export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diags:
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -4048,7 +4163,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// straight-line speed.
 export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let pat = capval_to_pat(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -4073,7 +4188,7 @@ export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, dia
 /// leaf reproduces the original mode-sensitive parse (allow_struct_lit in
 /// control-flow headers, etc.). Reuses the caller's token + grammar caches
 /// (lex-once), so a file's many expressions cost one lex + one grammar build.
-export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
+export fn run_dsl_expr_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
     // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
     // grammar and the hand share ONE monotonic sequence per parse. Without this, every
@@ -4085,7 +4200,8 @@ export fn run_dsl_expr_at_shared(toks: List<Token>, start_byte: int, src: string
     // counter in parse order. Behaviour-neutral until something calls `fresh_name`
     // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    st.seed_lex_diags(lex_diags)
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -4119,7 +4235,7 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     // counter in parse order. Behaviour-neutral until something calls `fresh_name`
     // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let expr = capval_to_expr(st, parse(st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -4144,9 +4260,10 @@ export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, dia
 /// PState. Both statements and declarations build a `StmtId` (a declaration IS a
 /// Stmt — Function/TypeDecl/Annotated/…), so ONE core serves both entries; they
 /// differ only in the start rule.
-fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
+fn run_dsl_snode_at_shared(rule: string, lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    st.seed_lex_diags(lex_diags)
     let stmt = capval_to_stmt(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -4168,8 +4285,8 @@ fn run_dsl_snode_at_shared(rule: string, toks: List<Token>, start_byte: int, src
 /// the original mode-sensitive parse byte-identically. Reuses the caller's token
 /// + grammar caches (lex-once), so a file's many statements cost one lex + one
 /// grammar build.
-export fn run_dsl_stmt_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
-    run_dsl_snode_at_shared("statement", toks, start_byte, src, file, store, grammar, modes, delegate)
+export fn run_dsl_stmt_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
+    run_dsl_snode_at_shared("statement", lex_diags, toks, start_byte, src, file, store, grammar, modes, delegate)
 }
 
 /// INVERSE-@hand DECLARATION runner (ps3t.6.7 Step G slice 4b) — the declaration/
@@ -4182,8 +4299,8 @@ export fn run_dsl_stmt_at_shared(toks: List<Token>, start_byte: int, src: string
 /// same `statement` grammar the statement flip uses (break/continue/stmt-keyword/
 /// block/expr-stmt), so a function body's statements go through the DSL. Byte-
 /// identical: each arm's builder IS the hand parser's, only routed by the grammar.
-export fn run_dsl_decl_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
-    run_dsl_snode_at_shared("declaration", toks, start_byte, src, file, store, grammar, modes, delegate)
+export fn run_dsl_decl_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
+    run_dsl_snode_at_shared("declaration", lex_diags, toks, start_byte, src, file, store, grammar, modes, delegate)
 }
 
 /// ps3t.6.7 Phase 2 — the STATIC-parser boundary for the statement/declaration
@@ -4195,9 +4312,10 @@ export fn run_dsl_decl_at_shared(toks: List<Token>, start_byte: int, src: string
 /// byte-identical AST to both the interpreter flip AND the hand parser, at
 /// straight-line speed (no per-node Grammar dispatch). The declaration entry
 /// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
-export fn run_static_snode_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
+export fn run_static_snode_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    st.seed_lex_diags(lex_diags)
     let stmt = capval_to_stmt(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand

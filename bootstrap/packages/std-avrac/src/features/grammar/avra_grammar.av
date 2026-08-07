@@ -180,7 +180,16 @@ fn avra_expr_core() -> Grammar {
   // `bitxor` IS the hand's `parse_binary_pratt(12)`: emit lowers the ladder with
   // `lbp = 10 + 2*index` and `bitor = 10`, so entering at bitxor stops before `|` and
   // the column separator is never eaten as a bitwise-or operand.
-  table_lit  = "table" table_head ( rows:table_row )* "}"
+  // Both sub-rules are `@onfail(bail)`: a header with a duplicate column and a row whose
+  // width disagrees with the header are reported by their BUILDS (mk_table_header /
+  // mk_table_row), and the hand answers either with `return .Err("parse error")` — which
+  // leaves the table's `}` UNCONSUMED. That matters beyond the table: the enclosing fn's
+  // statement list then takes the `}` as its own closer, `0` becomes a top-level
+  // statement, and the function's real `}` is the hand's second diagnostic
+  // (F0013 `unexpected }`). Without the bail the repetition merely ended, `"}"` below
+  // consumed the brace, and that whole tail — a diagnostic and two statements' placement
+  // — was silently different.
+  table_lit  = "table" @onfail(bail) table_head ( @onfail(bail) rows:table_row )* "}"
                @expect("}", "expected `}` to close table") -> MkTableLit(rows)
   table_head = ( "<" rt:IDENT ">" )? "{" ( h:IDENT ( "|" )? ( ^h:IDENT ( "|" )? )* )?
                @expect(">", "expected `>` after table row type")
@@ -416,9 +425,18 @@ fn avra_expr_core() -> Grammar {
                  @off(allow_struct_lit) s:expression @require t:block_expr ( "else" e:else_tail )?
                  @expect("IDENT", "expected a binding name after `if let`")
                  @expect("=", "expected `=` after the `if let` binding")
-                 @expect("{", "expected `{` after the `if let` binding") -> MkIfLet(tmp, b, s, t, e)
-               | "if" @off(allow_struct_lit) c:expression @require t:block_expr ( "else" e:else_tail )?
-                 @expect("{", "expected `{` after if condition") -> MkIfExpr(c, t, e)
+                 @expect("{", "expected `{` after the `if let` binding", F0010) -> MkIfLet(tmp, b, s, t, e)
+               // The condition is `@onfail(bail)`: a condition that FAILED means there is no
+               // `if` to finish, and the hand's `parse_expression()?` says so by propagating.
+               // Without it `else if` with nothing after it reported the missing condition
+               // (F0040) and then went on to report the missing block too — two diagnostics
+               // where the hand emits one.
+               | "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block_expr ( "else" e:else_tail )?
+                 // F0010 `ExpectedBlock`, matching the hand (`DiagCode.ExpectedBlock`) AND the
+                 // statement view's twin below. The expression view carried an uncoded
+                 // `@expect` and so rendered F0001 — invisible while `let`'s dispatcher-level
+                 // `@try` rolled `let v = if { 1 }` back to the hand, which owned the code.
+                 @expect("{", "expected `{` after if condition", F0010) -> MkIfExpr(c, t, e)
   else_tail    = if_expr | block_expr | expression
   when_arm     = ( "_" | "else" ) "->" body:expression -> MkWhenDefault(body)
                | cond:expression "->" body:expression -> MkWhenArm(cond, body)
@@ -446,7 +464,7 @@ fn avra_expr_core() -> Grammar {
   // untyped one: `(x: int) ->` with no body must come back `(error)` like the hand's
   // `try_lambda_body()` returning null, not `(lambda (x:int) (error))`. The scan is
   // token-level, so a typed parameter list is no different to it.
-  paren_expr   = @peek(lparen_ident_colon) @peek(paren_lambda_ahead) "(" @onfail(bail) ps:param ( "," @onfail(bail) ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
+  paren_expr   = @peek(lparen_ident_colon) @peek(paren_arrow_ahead) "(" @onfail(bail) ps:param ( "," @onfail(bail) ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
                // PREDICTIVE, by a SCAN — the non-speculative decision this branch needed
                // (t-47hc.5). `paren_lambda_ahead` walks to the matching `)` and checks two
                // tokens: an `->` follows, and the token after it is in the shared
@@ -598,7 +616,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // quote, which is the other half of the hand's contract.
   name_or_splice = @when(in_quote_body) "~" sn:IDENT -> MkSpliceName(sn)
                  | pn:IDENT -> MkPlainName(pn)
-  declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | export_decl | @try doc_decl | mdoc_decl | @try annot_decl | @try letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | export_decl | @try doc_decl | mdoc_decl | @try annot_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -664,7 +682,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // the `statement` tail, which is not a declaration. Same `@try`/bare split, same
   // order (`let_decl` before `letdes_decl` for the reason `declaration` records), so
   // the two alternations cannot disagree about who owns a keyword.
-  exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | @try letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | @peek(decl_table_kw) @hand(decl_hand)
+  exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | @peek(decl_table_kw) @hand(decl_hand)
   // The remaining three prefix wrappers (t-47hc Phase 4), same shape as `export_decl`
   // with ONE deliberate difference: their inner IS recursive. The hand's doc and
   // annotation branches re-enter `parse_declaration` (unlike export's direct table
@@ -703,7 +721,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // native and `@expand` on a `fn` was fine. Its FIRST (`component`) collides with
   // nothing else here, and `wrapped_inner` is shared by both `annot_decl` and
   // `doc_decl`, so this covers the doc-comment form too.
-  wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | @try comp_header | @try use_decl | @try mod_decl | export_decl | @try doc_decl | @try annot_decl | @try letdes_decl | let_decl | @try mut_decl | @try const_decl
+  wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | @try comp_header | @try use_decl | @try mod_decl | export_decl | @try doc_decl | @try annot_decl | letdes_decl | let_decl | @try mut_decl | @try const_decl
   // The `let` / `mut` / `const` BINDINGS (t-47hc Phase 4) — the highest-traffic
   // residue of `@hand(decl_hand)`: every binding statement in every routed body
   // used to detour through the hand delegate. The rules mirror the hand parsers
@@ -1271,7 +1289,7 @@ fn avra_stmt_common_grammar() -> Grammar {
                  @off(allow_struct_lit) s:expression @require t:block ( "else" e:statement )?
                  @expect("IDENT", "expected a binding name after `if let`")
                  @expect("=", "expected `=` after the `if let` binding")
-                 @expect("{", "expected `{` after the `if let` binding") -> MkIfLetStmt(tmp, b, s, t, e)
+                 @expect("{", "expected `{` after the `if let` binding", F0010) -> MkIfLetStmt(tmp, b, s, t, e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     grammar_checked(gp)

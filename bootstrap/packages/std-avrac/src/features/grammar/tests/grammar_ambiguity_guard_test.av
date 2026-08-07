@@ -170,3 +170,36 @@ spec "t-47hc.16: a @peek-led branch does not shadow (but a @when-led branch stil
         gp.error == "" && grammar_ambiguities(gp.grammar).length == 1
     }
 }
+
+// t-47hc.5 Phase 4 — the exemption follows a BARE REFERENCE one level. `declaration`'s
+// two `let` branches are `letdes_decl | let_decl`, and the `@peek(let_destructure)` that
+// partitions them is written inside `letdes_decl` (it is referenced from three
+// alternations, so the gate belongs with the form it selects). Read only at the dispatch
+// site, that branch is a plain `.Ref` and the pair reads as a silent shadow on `let`.
+//
+// Widening a guard's exemption is the direction that needs the discriminating cases, so
+// all three bounds are pinned here: it applies through a single-item ref to an
+// all-peek-led callee, and NOT when the callee has any un-peeked branch, NOT when the
+// branch carries trailing items, and NOT for a plain ref.
+spec "t-47hc.5: the @peek exemption follows a single bare rule reference, one level" {
+    then "a branch delegating to an all-@peek-led rule is NOT flagged" {
+        let gp = parse_grammar("r = sub | \"let\" IDENT\nsub = @peek(let_destructure) \"let\" \"(\" \")\"")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 0
+    }
+    then "CONTROL: the callee having ANY un-peeked branch keeps the shadow flagged" {
+        // `sub`'s second alternative is reachable on a bare `let` with no lookahead, so
+        // the delegating branch really can swallow input the later branch wanted.
+        let gp = parse_grammar("r = sub | \"let\" IDENT\nsub = @peek(let_destructure) \"let\" \"(\" \")\" | \"let\" \"mut\"")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 1
+    }
+    then "CONTROL: a branch with TRAILING items past the ref is not exempt" {
+        // The peek partitions only what the callee consumes; the rest of the branch is
+        // un-gated, so the pair is a genuine overlap again.
+        let gp = parse_grammar("r = sub IDENT | \"let\" IDENT\nsub = @peek(let_destructure) \"let\" \"(\" \")\"")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 1
+    }
+    then "CONTROL: a plain (non-peeked) callee is still flagged" {
+        let gp = parse_grammar("r = sub | \"let\" IDENT\nsub = \"let\" \"(\" \")\"")
+        gp.error == "" && grammar_ambiguities(gp.grammar).length == 1
+    }
+}

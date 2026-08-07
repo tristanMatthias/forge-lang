@@ -117,17 +117,31 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
     }
 
-    then "the destructure rule is emitted, speculative, and dispatches before the hand gate" {
-        // The follow-up slice (letdes_decl). It sits AFTER let_decl in the
-        // alternation — `let (` makes let_decl's `n:IDENT` report and roll
-        // back, then this rule owns the form — and like its siblings it must
-        // precede the decl_hand gate or `decl_lead` swallows `let` first.
+    then "the destructure rule is PREDICTIVE and dispatches BEFORE let_decl and the hand gate" {
+        // letdes_decl used to sit AFTER let_decl and be reached by ROLLBACK: `let (` made
+        // let_decl's `n:IDENT` report, the dispatcher's `@try` unwound, and this rule got
+        // its turn. Routing `let` (t-47hc.5 Phase 4) ends that — `@try "let" @cut` commits
+        // let_decl at the keyword, so there is no rollback left to fall through.
+        //
+        // It is dispatched FIRST instead, and predictively: its own body opens with
+        // `@peek(let_destructure)`, which consumes nothing when the form is not a
+        // destructure, so `let x = 1` still reaches let_decl on the next branch. The
+        // failure this ordering fixes is visible: `let (a, b) =` (missing initializer)
+        // reported let_decl's "expected variable name" on the `(` instead of the hand's
+        // F0040 for the absent expression.
         let src = decl_src()
         let des_at = src.index_of("parse_letdes_decl(st)")
+        let let_at = src.index_of("parse_let_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        // The gate is emitted at the DISPATCH SITE, not inside the rule: a leading
+        // `@peek` is the branch's FIRST guard, so emit hoists it to the caller and the
+        // rule fn body starts at the `let`. Asserted as the exact guarded dispatch, so
+        // a regeneration that drops the lookahead (leaving a bare `text == "let"` that
+        // swallows every binding) fails here rather than only in the recovery corpus.
         src.contains("fn parse_letdes_decl(st: PState) -> CapVal") &&
-            src.contains("s_last = parse_letdes_decl(st)") &&
-            des_at >= 0 && hand_at >= 0 && des_at < hand_at
+            src.contains("if lookahead_ok(\"let_destructure\", st) && (st.cur().text == \"let\") {\n        return parse_letdes_decl(st)") &&
+            des_at >= 0 && let_at >= 0 && hand_at >= 0 &&
+            des_at < let_at && des_at < hand_at
     }
 }
 
