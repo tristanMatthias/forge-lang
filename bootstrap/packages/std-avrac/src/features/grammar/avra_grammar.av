@@ -712,7 +712,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // reads is_mut — so `let mut (a, b) = t` is a plain destructure on both
   // engines. A BARE `mut (` stays an error (parse_mut_statement demands an
   // identifier), which is why mut_decl has no destructure sibling.
-  letdes_decl = @peek(let_destructure) "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? @require ")" @require "=" init:expression
+  letdes_decl = @peek(let_destructure) "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? @require ")" @require "=" @onfail(bail) init:expression
                 @expect(")", "expected `)` after destructure names")
                 @expect("=", "expected `=` after destructure pattern") -> MkDestructure(n, init)
   // The CONCURRENCY statements (t-47hc Phase 4). `parallel` is a keyword + a

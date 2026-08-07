@@ -835,7 +835,12 @@ fn parse_letdes_decl(st: PState) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    let init = parse_expression(st)
+    let __bres6 = parse_expression(st)
+    if capval_is_error_expr(st, __bres6) || capval_is_error_stmt(st, __bres6) {
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let init = __bres6
     mk_let_destructure_g(st, n_list, init)
 }
 
