@@ -1278,19 +1278,25 @@ fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: s
 fn restore_modes_before_aborts(body: string, ind: string, idx: int) -> string {
     let needle = "return CapVal.Node(st.error_node_silent())"
     if !body.contains(needle) { return body }
+    // Joined with an EXPLICIT separator and the terminal newline re-added from the
+    // input, rather than appending one per piece and stripping a phantom tail. `split`
+    // does NOT yield a trailing empty piece for a body ending in "\n", so the strip took
+    // a REAL newline and the wrapper's own `st.set_modes(...)` — which opens with indent,
+    // not a newline — landed on the same line: `let c = __bres1    st.set_modes(__modes_1)`
+    // in parse_if_stmt and parse_while_stmt.
     mut out = ""
+    mut first = true
     for line in body.split("\n") {
+        if !first { out = out + "\n" }
+        first = false
         if line.trim() == needle {
             let lead = line.substring(0, line.length - line.trim().length)
-            out = out + lead + "st.set_modes(__modes_${idx})\n" + line + "\n"
+            out = out + lead + "st.set_modes(__modes_${idx})\n" + line
         } else {
-            out = out + line + "\n"
+            out = out + line
         }
     }
-    // `split` on a trailing newline yields a final empty piece; the loop re-adds one
-    // newline per piece, so drop the duplicate to keep the emission byte-stable.
-    if out.length > 0 && body.length > 0 && !body.ends_with("\n") { return out.substring(0, out.length - 1) }
-    if out.length > 0 { return out.substring(0, out.length - 1) }
+    if body.ends_with("\n") { out = out + "\n" }
     out
 }
 

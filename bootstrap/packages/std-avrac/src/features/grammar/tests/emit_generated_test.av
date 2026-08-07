@@ -349,7 +349,16 @@ spec "t-47hc.5: speculative state unwinds completely, and a mode scope survives 
         // grammar never granted it. Asserted on the emitted ORDER, since that is the whole
         // content of the fix.
         let src = emit_all()
-        src.contains("st.set_modes(__modes_3)\n                return CapVal.Node(st.error_node_silent())")
+        src.contains("st.set_modes(__modes_3)\n                return CapVal.Node(st.error_node_silent())") &&
+            // …AND the wrapper's CLOSING restore still starts its own line. The first
+            // version of this transform appended a newline per split piece and then
+            // stripped a phantom tail — but `split` yields no trailing empty piece, so it
+            // took a REAL newline and the closing `st.set_modes(...)`, which opens with
+            // indent rather than a newline, merged onto the previous statement:
+            // `let c = __bres1    st.set_modes(__modes_1)`. The abort-order assertion above
+            // cannot see that, because it only looks at the line BEFORE the abort.
+            !src.contains("__bres0    st.set_modes(__modes_") &&
+            !src.contains("__bres1    st.set_modes(__modes_")
     }
 
     then "restore_to clears abort_prop — a rolled-back branch cannot abort the NEXT rule" {

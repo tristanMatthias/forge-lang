@@ -409,7 +409,15 @@ fn avra_expr_core() -> Grammar {
                | "[" ( a:expression ( @peek(comma_not_rbracket) "," a:expression )* ( "," )? )? @require "]"
                  @expect("]", "expected `]` after list") -> MkListLit(a)
   list_comp    = b:expression "for" v:IDENT "in" c:expression ( "if" f:expression )? -> MkListComp(b, v, c, f)
-  paren_expr   = @peek(lparen_ident_colon) "(" ps:param ( "," ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
+  // A FAILED param ends the lambda. `param` already reports "expected parameter type
+  // after `:`" and aborts, and the MESSAGES matched exactly — but the branch built
+  // `(lambda () x)` around the aborted param anyway, dropping it silently where the hand
+  // yields `(error)`. A message-only probe calls that agreement; only the TREE shows it.
+  // `paren_lambda_ahead` guards the TYPED branch too, for the same reason it guards the
+  // untyped one: `(x: int) ->` with no body must come back `(error)` like the hand's
+  // `try_lambda_body()` returning null, not `(lambda (x:int) (error))`. The scan is
+  // token-level, so a typed parameter list is no different to it.
+  paren_expr   = @peek(lparen_ident_colon) @peek(paren_lambda_ahead) "(" @onfail(bail) ps:param ( "," @onfail(bail) ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
                // PREDICTIVE, by a SCAN — the non-speculative decision this branch needed
                // (t-47hc.5). `paren_lambda_ahead` walks to the matching `)` and checks two
                // tokens: an `->` follows, and the token after it is in the shared
