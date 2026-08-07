@@ -36,6 +36,13 @@ spec "list ops" {
         nums.push(99)
         nums.length == 1 && nums[0] == 99
     }
+    // The RETURN VALUE, which every case above discards: `clear` hands back the same
+    // `List<T>` so it can sit mid-chain, and nothing exercised that.
+    then "clear is chainable — the returned list is the same list" {
+        mut nums = [10, 20, 30]
+        nums.clear().push(99)
+        nums.length == 1 && nums[0] == 99
+    }
     then "list sum via loop" {
         let nums = [10, 20, 30]
         mut sum = 0

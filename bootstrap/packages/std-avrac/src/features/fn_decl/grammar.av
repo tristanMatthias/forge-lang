@@ -41,7 +41,7 @@ export fn avra_fn_decl_grammar() -> Grammar {
   // reports about, `@onfail(halt)` so an empty `<>` does not manufacture a parameter out
   // of the closer, and `@onfail(discard, tparams)` so a malformed list leaves NO type
   // parameters rather than partial ones.
-  fn_decl     = @try "fn" @cut @require name:IDENT ( "<" ( @peek(not_gt) @gate @onfail(halt) tparams:tparam ( "," @onfail(skip) tparams:tparam )* )? @onfail(discard, tparams) ">" )? @require "(" ( @peek(not_rparen) @gate params:param ( @peek(comma_not_rparen) "," params:param )* ( "," )? )? @require ")" ( "->" @require ret:type_expr )? ( "where" wp:where_param ( "," wp:where_param )* )? @require "{" body:body_item* @require "}"
+  fn_decl     = @try "fn" @cut @require name:IDENT ( "<" ( @peek(not_gt) @gate @onfail(halt) tparams:tparam ( "," @onfail(skip) tparams:tparam )* )? @onfail(discard, tparams) ">" )? @require "(" ( @peek(not_rparen) @gate params:param ( @peek(comma_not_rparen) "," params:param )* ( "," )? )? @require ")" ( "->" @require ret:type_expr )? ( "where" ( @peek(cur_ident) wp:where_param ( @peek(comma_ident) "," wp:where_param )* ( "," )? )? )? @require "{" body:body_item* @require "}"
                 @expect("tparam", "expected type parameter name")
                 @expect(">", "expected `>` after type parameters")
                 @expect("IDENT", "expected function name")
@@ -52,7 +52,21 @@ export fn avra_fn_decl_grammar() -> Grammar {
                 @expect("}", "expected `}` after function body") -> MkFnDecl(name, tparams, params, ret, body, wp)
   // `T: Trait1 + Trait2` — the where entry. Every position the hand `set_error`s on is
   // `@require`d, with the hand's own wording (parse_where_entries / parse_where_bounds).
-  where_param = wn:IDENT @require ":" wb:IDENT ( "+" @require wb:IDENT )*
+  //
+  // The reference is `@peek(cur_ident)`-GATED at the call site above, because the hand
+  // ENTERS this only on `check(Tk.Identifier)` and otherwise returns its accumulator
+  // SILENTLY. Ungated, the leading `wn:IDENT` advanced unconditionally, so `fn f() where
+  // { }` bound `{` as a type-parameter name and then reported a missing `:` where the
+  // hand says nothing at all.
+  //
+  // The FIRST bound is `@require`d like the `+`-joined ones — `parse_where_bounds`
+  // set_errors on a non-IDENT there too, so leaving it unrequired reported and then
+  // carried on with an empty bound. KNOWN GAP, pre-existing: the hand words the `+` case
+  // "expected trait name after `+` in where clause", and `@expect` binds ONE message per
+  // token kind per sequence, so both positions currently share the first one. Splitting
+  // the `+` bound into its own rule (its own `@expect` scope) needs a token-returning
+  // builder, which is the documented cost of a second message for one token kind.
+  where_param = wn:IDENT @require ":" @require wb:IDENT ( "+" @require wb:IDENT )*
                 @expect(":", "expected `:` after type parameter in where clause")
                 @expect("IDENT", "expected trait name in where clause") -> MkWhereParam(wn, wb)
   // t-myz7: `extern` owns its recovery. Every position the hand `consume`s with a message

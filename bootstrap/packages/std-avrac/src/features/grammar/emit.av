@@ -1486,13 +1486,13 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 // count, so a silent one commits); emitting nothing states the current
                 // answer honestly instead of implying the opposite.
                 let bguard = if bbody == "" { "" } else {
-                    "${ind}if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {\n" +
+                    "${ind}if capval_is_error_expr(st, __bres${idx}) || capval_is_error_stmt(st, __bres${idx}) {\n" +
                     bbody +
                     "${ind}}\n"
                 }
-                return "${ind}let __bres = parse_${name}(st)\n" +
+                return "${ind}let __bres${idx} = parse_${name}(st)\n" +
                     bguard +
-                    emit_ref_capture_of(g, item, name, "__bres", ind, list_labels, opts)
+                    emit_ref_capture_of(g, item, name, "__bres${idx}", ind, list_labels, opts)
             }
             // A GATED element's result is inspected BEFORE it is captured, because
             // capturing it is itself a report: every `capval_to_*` answers a
@@ -1521,11 +1521,11 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 //
                 // The error NODE is the signal that crosses views, and it is the same one
                 // `@onfail(bail)` reads. Same meaning either way: this element failed.
-                return "${ind}let __gres = parse_${name}(st)\n" +
-                    "${ind}if st.abort_prop || capval_is_error_expr(st, __gres) {\n" +
+                return "${ind}let __gres${idx} = parse_${name}(st)\n" +
+                    "${ind}if st.abort_prop || capval_is_error_expr(st, __gres${idx}) {\n" +
                     gact +
                     "${ind}}\n" +
-                    emit_ref_capture_of(g, item, name, "__gres", ind, list_labels, opts)
+                    emit_ref_capture_of(g, item, name, "__gres${idx}", ind, list_labels, opts)
             }
             // `@require`'s SECOND half (t-47hc.5): the FIRST check above proves the
             // sub-rule STARTS here; this proves it FINISHED. A callee that raised
@@ -1562,9 +1562,9 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 // same signal the gate arm reads, for the same reason.
                 return req +
                     "${ind}st.set_abort_prop(false)\n" +
-                    "${ind}let __rres = parse_${name}(st)\n" +
-                    "${ind}if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {\n" + ubody + "${ind}}\n" +
-                    emit_ref_capture_of(g, item, name, "__rres", ind, list_labels, opts)
+                    "${ind}let __rres${idx} = parse_${name}(st)\n" +
+                    "${ind}if st.abort_prop || capval_is_error_expr(st, __rres${idx}) || capval_is_error_stmt(st, __rres${idx}) {\n" + ubody + "${ind}}\n" +
+                    emit_ref_capture_of(g, item, name, "__rres${idx}", ind, list_labels, opts)
             }
             req + emit_ref_capture(g, item, name, ind, list_labels, opts)
         }
@@ -1676,10 +1676,13 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // produce the same text from the same code. Non-IDENT terminals are untouched,
     // so every other rule regenerates byte-identical.
     // The F-CODE, when the annotation declared one (t-47hc.5) — the emit twin of
-    // `handle_missing`'s. IDENT keeps `report_ident` unconditionally: its reserved-keyword
-    // branch is a DIFFERENT message, so a code chosen for the generic wording would be
-    // wrong for the one actually printed.
-    let rep = if t == "IDENT" { "st.report_ident(\"${msg}\")" }
+    // `handle_missing`'s. An IDENT with a declared code goes through
+    // `report_ident_coded`, which keeps the reserved-keyword substitution (that branch is
+    // a DIFFERENT message and keeps its own F0001) while carrying the code on the generic
+    // one. Taking `report_ident` unconditionally rendered the declared TEXT and silently
+    // dropped its CODE.
+    let rep = if t == "IDENT" && exp.found && exp.code != "" { "st.report_ident_coded(\"${exp.code}\", \"${msg}\")" }
+        else if t == "IDENT" { "st.report_ident(\"${msg}\")" }
         else if exp.found && exp.code != "" { "st.report_coded(\"${exp.code}\", \"${msg}\")" }
         else { "st.report(\"${msg}\")" }
     let sync = recover_target(annots)

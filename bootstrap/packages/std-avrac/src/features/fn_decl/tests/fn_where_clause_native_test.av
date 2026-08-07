@@ -19,9 +19,16 @@
 // static parser, and the EXECUTOR — because the two recovery oracles both disable the
 // fallback and would leave interpreter behaviour unmeasured (t-zrn3).
 
-extern fn avra_shell_exec_status(cmd: string) -> int
-extern fn avra_selfhost_write_file(path: string, content: string) -> int
-extern fn avra_selfhost_read_file(path: string) -> string
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+/// True iff a `@hand` refusal was raised FOR `path` — the message alone is not
+/// attribution, so the location line that follows it must name the file.
+fn refusal_in_file(out: string, path: string) -> bool {
+    let at = out.index_of("is refused")
+    if at < 0 { return false }
+    let rest = out.substring(at, out.length)
+    rest.index_of(path) >= 0
+}
 
 fn run_out(name: string, env: string, src: string) -> string {
     let fixture = "build/_fn_where_${name}.av"
@@ -120,6 +127,11 @@ spec "t-47hc.5: the where clause is parsed NATIVELY, not by the hand delegate" {
             "fn main() { println(dump(Boxy { v: 1 }, Boxy { v: 2 })) }\n")
         let rc = avra_shell_exec_status("AVRA_REFUSE_HAND_LEAF=decl_hand ./build/bs2 check '${fixture}' > '${log}' 2>&1")
         let out = avra_selfhost_read_file(log)
-        rc == 0 && !out.contains("is refused")
+        // ATTRIBUTED: a bare `!out.contains("is refused")` counts a refusal raised
+        // anywhere in the compile, including inside an imported module — the trap
+        // decl_flip_dispatch_test records as having been believed twice. This fixture
+        // has no `use` today, so the bare form is correct only by accident; keying on
+        // the fixture path makes it correct by construction.
+        rc == 0 && !refusal_in_file(out, fixture)
     }
 }

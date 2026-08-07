@@ -221,13 +221,13 @@ fn parse_export_decl(st: PState) -> CapVal {
                 }
             }
             st.set_abort_prop(false)
-            let __rres = parse_exportable_decl(st)
-            if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+            let __rres1 = parse_exportable_decl(st)
+            if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
                 if s_cut {
                     return CapVal.Node(st.error_node_silent())
                 }
             }
-            let ed = __rres
+            let ed = __rres1
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
                 return mk_export_decl(st, ed)
             }
@@ -395,20 +395,20 @@ fn parse_annot(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftParen {
         let _ = st.advance()
         if tok_starts_expr_leaf(st.cur()) {
-            let __bres = parse_call_arg(st)
-            if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+            let __bres0 = parse_call_arg(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
                 st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
             }
-            a_list.push(capval_to_expr(st, __bres))
+            a_list.push(capval_to_expr(st, __bres0))
             while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
                 let _ = st.advance()
-                let __bres = parse_call_arg(st)
-                if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+                let __bres1 = parse_call_arg(st)
+                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
-                a_list.push(capval_to_expr(st, __bres))
+                a_list.push(capval_to_expr(st, __bres1))
             }
             if st.cur().tk == Tk.Comma {
                 let _ = st.advance()
@@ -941,12 +941,12 @@ fn parse_select_decl(st: PState) -> CapVal {
                 let __rep_before = st.pos
                 st.set_abort_prop(false)
                 if !(st.cur().tk == Tk.Identifier) { break }
-                let __gres = parse_select_arm(st)
-                if st.abort_prop || capval_is_error_expr(st, __gres) {
+                let __gres0 = parse_select_arm(st)
+                if st.abort_prop || capval_is_error_expr(st, __gres0) {
                     st.set_abort_prop(false)
                     break
                 }
-                arms_list.push(capval_to_select_arm(st, __gres))
+                arms_list.push(capval_to_select_arm(st, __gres0))
                 if st.pos == __rep_before { break }
             }
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -979,12 +979,12 @@ fn parse_select_arm(st: PState) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    let __bres = parse_expression(st)
-    if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+    let __bres2 = parse_expression(st)
+    if capval_is_error_expr(st, __bres2) || capval_is_error_stmt(st, __bres2) {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    let ch = __bres
+    let ch = __bres2
     if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
         st.report("expected `->` after channel in select arm")
         st.set_abort_prop(true)
@@ -1309,15 +1309,15 @@ fn parse_comp_config_block(st: PState) -> CapVal {
         let __rep_before = st.pos
         st.set_abort_prop(false)
         if !(st.cur().tk == Tk.Identifier) {
-            st.report_ident("expected config_entry")
+            st.report_ident("expected config key")
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        let __gres = parse_config_entry(st)
-        if st.abort_prop || capval_is_error_expr(st, __gres) {
+        let __gres0 = parse_config_entry(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres0) {
             return CapVal.Node(st.error_node_silent())
         }
-        ccfg_list.push(capval_to_comp_config(st, __gres))
+        ccfg_list.push(capval_to_comp_config(st, __gres0))
         if st.abort_prop {
             return CapVal.Node(st.error_node_silent())
         }
@@ -1342,15 +1342,15 @@ fn parse_comp_children_block(st: PState) -> CapVal {
     if lookahead_ok("not_rbrace", st) {
         st.set_abort_prop(false)
         if !(st.cur().tk == Tk.Identifier) {
-            st.report_ident("expected children_slot")
+            st.report_ident("expected child slot name")
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        let __gres = parse_children_slot(st)
-        if st.abort_prop || capval_is_error_expr(st, __gres) {
+        let __gres0 = parse_children_slot(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres0) {
             return CapVal.Node(st.error_node_silent())
         }
-        ccs_list.push(capval_to_children_slot(st, __gres))
+        ccs_list.push(capval_to_children_slot(st, __gres0))
         while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             ccs_list.push(capval_to_children_slot(st, parse_children_slot(st)))
@@ -1421,11 +1421,11 @@ fn parse_comp_paren_decl(st: PState) -> CapVal {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        let __gres = parse_comp_implements(st)
-        if st.abort_prop || capval_is_error_expr(st, __gres) {
+        let __gres0 = parse_comp_implements(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres0) {
             return CapVal.Node(st.error_node_silent())
         }
-        pci = __gres
+        pci = __gres0
         if st.abort_prop {
             return CapVal.Node(st.error_node_silent())
         }
@@ -1442,11 +1442,11 @@ fn parse_comp_paren_decl(st: PState) -> CapVal {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        let __gres = parse_param(st)
-        if st.abort_prop || capval_is_error_expr(st, __gres) {
+        let __gres0 = parse_param(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres0) {
             return CapVal.Node(st.error_node_silent())
         }
-        pps_list.push(capval_to_pentry(st, __gres))
+        pps_list.push(capval_to_pentry(st, __gres0))
         while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             pps_list.push(capval_to_pentry(st, parse_param(st)))
@@ -1475,11 +1475,11 @@ fn parse_comp_paren_decl(st: PState) -> CapVal {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        let __gres = parse_comp_config_block(st)
-        if st.abort_prop || capval_is_error_expr(st, __gres) {
+        let __gres0 = parse_comp_config_block(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres0) {
             return CapVal.Node(st.error_node_silent())
         }
-        pcfg = __gres
+        pcfg = __gres0
         if st.abort_prop {
             return CapVal.Node(st.error_node_silent())
         }
@@ -1549,11 +1549,11 @@ fn parse_component_decl(st: PState) -> CapVal {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        let __gres = parse_comp_implements(st)
-        if st.abort_prop || capval_is_error_expr(st, __gres) {
+        let __gres0 = parse_comp_implements(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres0) {
             return CapVal.Node(st.error_node_silent())
         }
-        ci = __gres
+        ci = __gres0
         if st.abort_prop {
             return CapVal.Node(st.error_node_silent())
         }
@@ -1570,11 +1570,11 @@ fn parse_component_decl(st: PState) -> CapVal {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        let __gres = parse_comp_config_block(st)
-        if st.abort_prop || capval_is_error_expr(st, __gres) {
+        let __gres0 = parse_comp_config_block(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres0) {
             return CapVal.Node(st.error_node_silent())
         }
-        cfg = __gres
+        cfg = __gres0
         if st.abort_prop {
             return CapVal.Node(st.error_node_silent())
         }
@@ -1586,11 +1586,11 @@ fn parse_component_decl(st: PState) -> CapVal {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        let __gres = parse_comp_children_block(st)
-        if st.abort_prop || capval_is_error_expr(st, __gres) {
+        let __gres0 = parse_comp_children_block(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres0) {
             return CapVal.Node(st.error_node_silent())
         }
-        cs = __gres
+        cs = __gres0
         if st.abort_prop {
             return CapVal.Node(st.error_node_silent())
         }
@@ -1602,11 +1602,11 @@ fn parse_component_decl(st: PState) -> CapVal {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        let __gres = parse_comp_body_marker(st)
-        if st.abort_prop || capval_is_error_expr(st, __gres) {
+        let __gres0 = parse_comp_body_marker(st)
+        if st.abort_prop || capval_is_error_expr(st, __gres0) {
             return CapVal.Node(st.error_node_silent())
         }
-        bm = __gres
+        bm = __gres0
         if st.abort_prop {
             return CapVal.Node(st.error_node_silent())
         }
@@ -1654,11 +1654,11 @@ fn parse_config_entry(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     st.set_abort_prop(false)
-    let __rres = parse_type_expr(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+    let __rres2 = parse_type_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
         return CapVal.Node(st.error_node_silent())
     }
-    let ty = __rres
+    let ty = __rres2
     if st.cur().tk == Tk.Equal {
         let _ = st.advance()
         d = parse_expression(st)
@@ -1686,11 +1686,11 @@ fn parse_children_slot(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     st.set_abort_prop(false)
-    let __rres = parse_type_expr(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+    let __rres2 = parse_type_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
         return CapVal.Node(st.error_node_silent())
     }
-    let ty = __rres
+    let ty = __rres2
     mk_children_slot_g(st, capval_tok_text(k), ty)
 }
 
@@ -1710,12 +1710,12 @@ fn parse_comp_inst(st: PState) -> CapVal {
         st.report("expected {")
     }
     while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
-        let __bres = parse_config_pair(st)
-        if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+        let __bres0 = parse_config_pair(st)
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        p_list.push(capval_to_comp_config_pair(st, __bres))
+        p_list.push(capval_to_comp_config_pair(st, __bres0))
     }
     let __pre_err = st.had_error
     mut __any_err = __pre_err
@@ -1757,12 +1757,12 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
         st.report("expected {")
     }
     while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
-        let __bres = parse_config_pair(st)
-        if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+        let __bres0 = parse_config_pair(st)
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        p_list.push(capval_to_comp_config_pair(st, __bres))
+        p_list.push(capval_to_comp_config_pair(st, __bres0))
     }
     let __pre_err = st.had_error
     mut __any_err = __pre_err
@@ -1880,12 +1880,12 @@ fn parse_comp_block_item(st: PState) -> CapVal {
             return CapVal.Node(st.error_node_silent())
         }
         while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
-            let __bres = parse_config_pair(st)
-            if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+            let __bres0 = parse_config_pair(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
                 st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
             }
-            p_list.push(capval_to_comp_config_pair(st, __bres))
+            p_list.push(capval_to_comp_config_pair(st, __bres0))
         }
         let __pre_err = st.had_error
         mut __any_err = __pre_err
@@ -1924,12 +1924,12 @@ fn parse_comp_block_item(st: PState) -> CapVal {
             return CapVal.Node(st.error_node_silent())
         }
         while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
-            let __bres = parse_config_pair(st)
-            if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+            let __bres0 = parse_config_pair(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
                 st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
             }
-            p_list.push(capval_to_comp_config_pair(st, __bres))
+            p_list.push(capval_to_comp_config_pair(st, __bres0))
         }
         let __pre_err = st.had_error
         mut __any_err = __pre_err
@@ -2041,11 +2041,11 @@ fn parse_comp_field(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     st.set_abort_prop(false)
-    let __rres = parse_type_expr(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+    let __rres3 = parse_type_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres3) || capval_is_error_stmt(st, __rres3) {
         return CapVal.Node(st.error_node_silent())
     }
-    let ty = __rres
+    let ty = __rres3
     if st.cur().tk == Tk.Equal {
         let _ = st.advance()
         init = parse_expression(st)
@@ -2230,13 +2230,13 @@ fn parse_type_decl(st: PState) -> CapVal {
                 }
             }
             st.set_abort_prop(false)
-            let __rres = parse_name_or_splice(st)
-            if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+            let __rres1 = parse_name_or_splice(st)
+            if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
                 if s_cut {
                     return CapVal.Node(st.error_node_silent())
                 }
             }
-            let tname = __rres
+            let tname = __rres1
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
                 if lookahead_ok("not_gt", st) {
@@ -2246,11 +2246,11 @@ fn parse_type_decl(st: PState) -> CapVal {
                             st.report("expected type parameter name")
                             break
                         }
-                        let __gres = parse_tparam(st)
-                        if st.abort_prop || capval_is_error_expr(st, __gres) {
+                        let __gres0 = parse_tparam(st)
+                        if st.abort_prop || capval_is_error_expr(st, __gres0) {
                             return CapVal.Node(st.error_node_silent())
                         }
-                        tparams_list.push(capval_to_tparam(st, __gres))
+                        tparams_list.push(capval_to_tparam(st, __gres0))
                         while st.cur().tk == Tk.Comma {
                             let _ = st.advance()
                             if !(st.cur().tk == Tk.Identifier) {
@@ -2285,11 +2285,11 @@ fn parse_type_decl(st: PState) -> CapVal {
                             st.set_abort_prop(true)
                             return CapVal.Node(st.error_node_silent())
                         }
-                        let __gres = parse_field(st)
-                        if st.abort_prop || capval_is_error_expr(st, __gres) {
+                        let __gres0 = parse_field(st)
+                        if st.abort_prop || capval_is_error_expr(st, __gres0) {
                             return CapVal.Node(st.error_node_silent())
                         }
-                        fields_list.push(capval_to_field(st, __gres))
+                        fields_list.push(capval_to_field(st, __gres0))
                         if st.cur().tk == Tk.Comma { let _ = st.advance() }
                         if st.abort_prop {
                             return CapVal.Node(st.error_node_silent())
@@ -2390,11 +2390,11 @@ fn parse_shape_decl(st: PState) -> CapVal {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
-                let __gres = parse_field(st)
-                if st.abort_prop || capval_is_error_expr(st, __gres) {
+                let __gres0 = parse_field(st)
+                if st.abort_prop || capval_is_error_expr(st, __gres0) {
                     return CapVal.Node(st.error_node_silent())
                 }
-                shfields_list.push(capval_to_field(st, __gres))
+                shfields_list.push(capval_to_field(st, __gres0))
                 if st.cur().tk == Tk.Comma { let _ = st.advance() }
                 if st.abort_prop {
                     return CapVal.Node(st.error_node_silent())
@@ -2442,11 +2442,11 @@ fn parse_field(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     st.set_abort_prop(false)
-    let __rres = parse_type_expr(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+    let __rres3 = parse_type_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres3) || capval_is_error_stmt(st, __rres3) {
         return CapVal.Node(st.error_node_silent())
     }
-    let ftype = __rres
+    let ftype = __rres3
     mk_field(st, capval_tok_text(fname), ftype)
 }
 
@@ -2497,11 +2497,11 @@ fn parse_enum_decl(st: PState) -> CapVal {
                             st.report("expected type parameter name")
                             break
                         }
-                        let __gres = parse_tparam(st)
-                        if st.abort_prop || capval_is_error_expr(st, __gres) {
+                        let __gres0 = parse_tparam(st)
+                        if st.abort_prop || capval_is_error_expr(st, __gres0) {
                             return CapVal.Node(st.error_node_silent())
                         }
-                        tparams_list.push(capval_to_tparam(st, __gres))
+                        tparams_list.push(capval_to_tparam(st, __gres0))
                         while st.cur().tk == Tk.Comma {
                             let _ = st.advance()
                             if !(st.cur().tk == Tk.Identifier) {
@@ -2535,11 +2535,11 @@ fn parse_enum_decl(st: PState) -> CapVal {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
-                let __gres = parse_variant(st)
-                if st.abort_prop || capval_is_error_expr(st, __gres) {
+                let __gres0 = parse_variant(st)
+                if st.abort_prop || capval_is_error_expr(st, __gres0) {
                     return CapVal.Node(st.error_node_silent())
                 }
-                vars_list.push(capval_to_variant(st, __gres))
+                vars_list.push(capval_to_variant(st, __gres0))
                 if st.cur().tk == Tk.Comma { let _ = st.advance() }
                 while st.cur().tk == Tk.DocComment {
                     let _ = st.advance()
@@ -2552,11 +2552,11 @@ fn parse_enum_decl(st: PState) -> CapVal {
                         st.set_abort_prop(true)
                         return CapVal.Node(st.error_node_silent())
                     }
-                    let __gres = parse_variant(st)
-                    if st.abort_prop || capval_is_error_expr(st, __gres) {
+                    let __gres0 = parse_variant(st)
+                    if st.abort_prop || capval_is_error_expr(st, __gres0) {
                         return CapVal.Node(st.error_node_silent())
                     }
-                    vars_list.push(capval_to_variant(st, __gres))
+                    vars_list.push(capval_to_variant(st, __gres0))
                     if st.cur().tk == Tk.Comma { let _ = st.advance() }
                     while st.cur().tk == Tk.DocComment {
                         let _ = st.advance()
@@ -2605,11 +2605,11 @@ fn parse_variant(st: PState) -> CapVal {
                 st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
             }
-            let __gres = parse_field(st)
-            if st.abort_prop || capval_is_error_expr(st, __gres) {
+            let __gres0 = parse_field(st)
+            if st.abort_prop || capval_is_error_expr(st, __gres0) {
                 return CapVal.Node(st.error_node_silent())
             }
-            vfields_list.push(capval_to_field(st, __gres))
+            vfields_list.push(capval_to_field(st, __gres0))
             if st.cur().tk == Tk.Comma { let _ = st.advance() }
             if st.abort_prop {
                 return CapVal.Node(st.error_node_silent())
@@ -2663,11 +2663,11 @@ fn parse_fn_decl(st: PState) -> CapVal {
                             st.report("expected type parameter name")
                             break
                         }
-                        let __gres = parse_tparam(st)
-                        if st.abort_prop || capval_is_error_expr(st, __gres) {
+                        let __gres0 = parse_tparam(st)
+                        if st.abort_prop || capval_is_error_expr(st, __gres0) {
                             return CapVal.Node(st.error_node_silent())
                         }
-                        tparams_list.push(capval_to_tparam(st, __gres))
+                        tparams_list.push(capval_to_tparam(st, __gres0))
                         while st.cur().tk == Tk.Comma {
                             let _ = st.advance()
                             if !(st.cur().tk == Tk.Identifier) {
@@ -2698,11 +2698,11 @@ fn parse_fn_decl(st: PState) -> CapVal {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
-                let __gres = parse_param(st)
-                if st.abort_prop || capval_is_error_expr(st, __gres) {
+                let __gres0 = parse_param(st)
+                if st.abort_prop || capval_is_error_expr(st, __gres0) {
                     return CapVal.Node(st.error_node_silent())
                 }
-                params_list.push(capval_to_pentry(st, __gres))
+                params_list.push(capval_to_pentry(st, __gres0))
                 while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
                     let _ = st.advance()
                     params_list.push(capval_to_pentry(st, parse_param(st)))
@@ -2731,20 +2731,25 @@ fn parse_fn_decl(st: PState) -> CapVal {
                     }
                 }
                 st.set_abort_prop(false)
-                let __rres = parse_type_expr(st)
-                if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+                let __rres1 = parse_type_expr(st)
+                if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
                     if s_cut {
                         return CapVal.Node(st.error_node_silent())
                     }
                 }
-                ret = __rres
+                ret = __rres1
             }
             if st.cur().text == "where" {
                 let _ = st.advance()
-                wp_list.push(capval_to_tparam(st, parse_where_param(st)))
-                while st.cur().tk == Tk.Comma {
-                    let _ = st.advance()
+                if lookahead_ok("cur_ident", st) && (st.cur().tk == Tk.Identifier) {
                     wp_list.push(capval_to_tparam(st, parse_where_param(st)))
+                    while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
+                        let _ = st.advance()
+                        wp_list.push(capval_to_tparam(st, parse_where_param(st)))
+                    }
+                    if st.cur().tk == Tk.Comma {
+                        let _ = st.advance()
+                    }
                 }
             }
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
@@ -2814,6 +2819,8 @@ fn parse_where_param(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.Identifier { wb_list.push(st.advance()) } else {
         st.report_ident("expected trait name in where clause")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     while st.cur().tk == Tk.Plus {
         let _ = st.advance()
@@ -2873,11 +2880,11 @@ fn parse_extern_decl(st: PState) -> CapVal {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
-                let __gres = parse_param(st)
-                if st.abort_prop || capval_is_error_expr(st, __gres) {
+                let __gres0 = parse_param(st)
+                if st.abort_prop || capval_is_error_expr(st, __gres0) {
                     return CapVal.Node(st.error_node_silent())
                 }
-                eparams_list.push(capval_to_pentry(st, __gres))
+                eparams_list.push(capval_to_pentry(st, __gres0))
                 while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
                     let _ = st.advance()
                     eparams_list.push(capval_to_pentry(st, parse_param(st)))
@@ -2906,13 +2913,13 @@ fn parse_extern_decl(st: PState) -> CapVal {
                     }
                 }
                 st.set_abort_prop(false)
-                let __rres = parse_type_expr(st)
-                if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+                let __rres1 = parse_type_expr(st)
+                if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
                     if s_cut {
                         return CapVal.Node(st.error_node_silent())
                     }
                 }
-                eret = __rres
+                eret = __rres1
             }
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
                 return mk_extern_fn(st, capval_tok_text(ename), eparams_list, eret, capval_present(eret))
@@ -2982,11 +2989,11 @@ fn parse_trait_decl(st: PState) -> CapVal {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
-                let __gres = parse_trait_member(st)
-                if st.abort_prop || capval_is_error_expr(st, __gres) {
+                let __gres0 = parse_trait_member(st)
+                if st.abort_prop || capval_is_error_expr(st, __gres0) {
                     return CapVal.Node(st.error_node_silent())
                 }
-                tmembers_list.push(capval_to_stmt(st, __gres))
+                tmembers_list.push(capval_to_stmt(st, __gres0))
                 if st.abort_prop {
                     return CapVal.Node(st.error_node_silent())
                 }
@@ -3258,11 +3265,11 @@ fn parse_impl_decl(st: PState) -> CapVal {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
-                let __gres = parse_impl_member(st)
-                if st.abort_prop || capval_is_error_expr(st, __gres) {
+                let __gres0 = parse_impl_member(st)
+                if st.abort_prop || capval_is_error_expr(st, __gres0) {
                     return CapVal.Node(st.error_node_silent())
                 }
-                imethods_list.push(capval_to_stmt(st, __gres))
+                imethods_list.push(capval_to_stmt(st, __gres0))
                 if st.abort_prop {
                     return CapVal.Node(st.error_node_silent())
                 }
@@ -3348,13 +3355,13 @@ fn parse_impl_assoc(st: PState) -> CapVal {
                 }
             }
             st.set_abort_prop(false)
-            let __rres = parse_type_expr(st)
-            if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+            let __rres3 = parse_type_expr(st)
+            if st.abort_prop || capval_is_error_expr(st, __rres3) || capval_is_error_stmt(st, __rres3) {
                 if s_cut {
                     return CapVal.Node(st.error_node_silent())
                 }
             }
-            let aty = __rres
+            let aty = __rres3
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
                 return mk_assoc_type_def(st, capval_tok_text(aname), aty)
             }
@@ -3411,11 +3418,11 @@ fn parse_impl_method(st: PState) -> CapVal {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
-                let __gres = parse_param(st)
-                if st.abort_prop || capval_is_error_expr(st, __gres) {
+                let __gres0 = parse_param(st)
+                if st.abort_prop || capval_is_error_expr(st, __gres0) {
                     return CapVal.Node(st.error_node_silent())
                 }
-                imparams_list.push(capval_to_pentry(st, __gres))
+                imparams_list.push(capval_to_pentry(st, __gres0))
                 while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
                     let _ = st.advance()
                     imparams_list.push(capval_to_pentry(st, parse_param(st)))
@@ -3444,13 +3451,13 @@ fn parse_impl_method(st: PState) -> CapVal {
                     }
                 }
                 st.set_abort_prop(false)
-                let __rres = parse_type_expr(st)
-                if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+                let __rres1 = parse_type_expr(st)
+                if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
                     if s_cut {
                         return CapVal.Node(st.error_node_silent())
                     }
                 }
-                imret = __rres
+                imret = __rres1
             }
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
                 st.report("expected `{` for method body")
@@ -3636,12 +3643,12 @@ fn parse_if_stmt(st: PState) -> CapVal {
     let _ = st.advance()
     let __modes_1 = st.modes
     st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
-    let __bres = parse_expression(st)
-    if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+    let __bres1 = parse_expression(st)
+    if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    let c = __bres
+    let c = __bres1
     st.set_modes(__modes_1)
     if !(st.cur().tk == Tk.LeftBrace) {
         st.report_coded("F0010", "expected `{` after if condition")
@@ -3649,11 +3656,11 @@ fn parse_if_stmt(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     st.set_abort_prop(false)
-    let __rres = parse_block(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+    let __rres2 = parse_block(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
         return CapVal.Node(st.error_node_silent())
     }
-    let t = __rres
+    let t = __rres2
     if st.cur().text == "else" {
         let _ = st.advance()
         e = parse_statement(st)
@@ -3685,12 +3692,12 @@ fn parse_while_stmt(st: PState) -> CapVal {
     let _ = st.advance()
     let __modes_1 = st.modes
     st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
-    let __bres = parse_expression(st)
-    if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+    let __bres1 = parse_expression(st)
+    if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    let c = __bres
+    let c = __bres1
     st.set_modes(__modes_1)
     if !(st.cur().tk == Tk.LeftBrace) {
         st.report_coded("F0010", "expected `{` after while condition")
@@ -3698,11 +3705,11 @@ fn parse_while_stmt(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     st.set_abort_prop(false)
-    let __rres = parse_block(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+    let __rres2 = parse_block(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
         return CapVal.Node(st.error_node_silent())
     }
-    let body = __rres
+    let body = __rres2
     mk_while(st, sp_start, c, body)
 }
 
@@ -3771,12 +3778,12 @@ fn parse_return_stmt(st: PState) -> CapVal {
     let _ = st.advance()
     if lookahead_ok("return_value", st) {
         st.set_abort_prop(false)
-        let __bres = parse_expression(st)
-        if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {
+        let __bres0 = parse_expression(st)
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        e = __bres
+        e = __bres0
     }
     mk_return_opt(st, e)
 }
@@ -3809,11 +3816,11 @@ fn parse_iflet_stmt(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     st.set_abort_prop(false)
-    let __rres = parse_block(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+    let __rres6 = parse_block(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres6) || capval_is_error_stmt(st, __rres6) {
         return CapVal.Node(st.error_node_silent())
     }
-    let t = __rres
+    let t = __rres6
     if st.cur().text == "else" {
         let _ = st.advance()
         e = parse_statement(st)

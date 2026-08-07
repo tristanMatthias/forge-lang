@@ -19,7 +19,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
-use @std.avrac.features.grammar.{hand_leaf_refused, avra_program_grammar, Grammar, GNode, GAnnot, emit_parser_source_ex, avra_decl_dispatch_grammar}
+use @std.avrac.features.grammar.{hand_leaf_refused, avra_program_grammar, Grammar, GNode, GAnnot, emit_parser_source_ex, avra_decl_dispatch_grammar, avra_expr_grammar}
 use @std.avrac.features.grammar.{emit_lookup_rule, rule_body_has_cut}
 
 fn flip_decl(src: string) -> string {
@@ -331,8 +331,17 @@ fn recovery_without_delegate(name: string, src: string) -> bool {
 /// on a rule's LEADING item never lowers to emitted parser text (the caller proved
 /// FIRST, so that item is advanced unconditionally), so it cannot be read back out
 /// of any generated file.
+/// `declared_expect` against the EXPRESSION view — where the second definition of
+/// `param` actually lives.
+fn declared_expect_expr(rule: string, key: string) -> string {
+    declared_expect_in(avra_expr_grammar(), rule, key)
+}
+
 fn declared_expect(rule: string, key: string) -> string {
-    let g = avra_program_grammar()
+    declared_expect_in(avra_program_grammar(), rule, key)
+}
+
+fn declared_expect_in(g: Grammar, rule: string, key: string) -> string {
     for r in g.rules {
         if r.name == rule {
             match r.body {
@@ -365,7 +374,20 @@ spec "t-myz7: the cross-view `param` message is not allowed to drift" {
         // annotation sits on `param`'s LEADING item and so lowers to no emitted text at
         // all — two earlier drafts of this guard asserted on generated sources and were
         // guards that could not fail. Change the annotation, and this goes red.
-        declared_expect("param", "IDENT") == "expected parameter name"
+        declared_expect("param", "IDENT") == "expected parameter name" &&
+            // The TYPE position's wording, and the SECOND definition of `param`. The rule
+            // is written twice — the program view and the EXPRESSION view, which never
+            // compose each other — and only the program view's IDENT message was pinned,
+            // so the other copy and this message could drift silently. Asserting the two
+            // views are EQUAL is the point: either one drifting turns this red.
+            //
+            // The second copy is in the EXPRESSION view, not the declaration one: the
+            // decl dispatch grammar defines no `param` rule at all (measured — both
+            // lookups come back empty there), so a decl-keyed guard would have been one
+            // that could never fail.
+            declared_expect("param", "type_expr") == "expected parameter type after `:`" &&
+            declared_expect_expr("param", "IDENT") == declared_expect("param", "IDENT") &&
+            declared_expect_expr("param", "type_expr") == declared_expect("param", "type_expr")
     }
 
     then "the guard is not vacuous — the lookup really finds annotations" {

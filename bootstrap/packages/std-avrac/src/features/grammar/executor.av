@@ -635,6 +635,22 @@ impl PState {
         self.report(msg)
     }
 
+    /// `report_ident` with the F-CODE carried on the diagnostic (t-47hc.5).
+    ///
+    /// An IDENT terminal took `report_ident` unconditionally, which drops the code, so a
+    /// declared `@expect("IDENT", …, F0040)` rendered its TEXT and lost its CODE: a bare
+    /// `.` came out F0001 where the hand reports F0040 (`parse_leaf_common`'s
+    /// ExpectedExpression — the whole expression is missing, not merely a token). The
+    /// reserved-keyword substitution is preserved, and keeps its own F0001, because that
+    /// diagnostic is about the LEXEME rather than the position that asked for it.
+    fn report_ident_coded(self, code: string, msg: string) {
+        if self.cur().tk == Tk.KwReserved {
+            self.report("`${self.cur().text}` is a reserved keyword and cannot be used as an identifier — rename it")
+            return
+        }
+        self.report_coded(code, msg)
+    }
+
     /// `report` with the F-CODE carried ON the diagnostic (t-47hc.5).
     ///
     /// The pre-existing channel was one code WIDE: `PState.diag_code` is a single
@@ -1440,9 +1456,15 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     // every `type` declaration in a file registered under the EMPTY name and the second
     // one reported `duplicate type declaration ``. Emit performs no such coercion, so this
     // was also a straight engine divergence: identical grammar, different result kind.
-    if rule_result_kind(g, name) == "tok" { return v }
+    // The `rule_result_kind` query is asked ONLY for a token result. It recurses through
+    // rule references and copies a `List<string>` visited set at each level, so hoisting
+    // it above the match put an unbounded walk plus allocations on every rule descent —
+    // and it cannot change the answer for any other CapVal shape.
     match v {
-        .Tok(t) -> CapVal.Node(literal_node(st, t))
+        .Tok(t) -> {
+            if rule_result_kind(g, name) == "tok" { return v }
+            CapVal.Node(literal_node(st, t))
+        }
         _ -> v
     }
 }
@@ -2169,6 +2191,47 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "double_colon" {
         return st.cur().text == ":" && st.pos + 1 < st.toks.length &&
             st.toks[st.pos + 1].text == ":" && st.toks[st.pos + 1].pos == st.cur().pos + 1
+    }
+    // Bare "the cursor is on an IDENT" (t-47hc.5). The where-entry list needs exactly
+    // this and nothing narrower: `parse_where_entries` enters on `check(Tk.Identifier)`
+    // alone, so `where T Trait` (no colon) DOES enter and then reports the missing `:`.
+    // Gating on `ident_colon` would skip it silently and lose that diagnostic.
+    // `( … ) -> <body>` — is this parenthesised run actually a LAMBDA? (t-47hc.5)
+    //
+    // Decided by SCANNING to the matching `)` and testing two tokens, never by parsing.
+    // That distinction is the whole point: the branch used to find out by parsing a
+    // lambda body and unwinding, and on nested parenthesised expressions that is
+    // exponential (it took the compiler to a 12GB F4014 parsing its own generated
+    // parser). A scan is linear in the group and cannot report, allocate a node, or
+    // recurse into the expression grammar.
+    //
+    // The body test is `tok_starts_expr_leaf` — the SHARED expression FIRST set, which
+    // already admits `{`, so `lambda_body = block_expr | expression` is covered by the
+    // one predicate rather than a hand-listed set that could drift from it.
+    if cond == "paren_lambda_ahead" {
+        if st.cur().tk != Tk.LeftParen { return false }
+        mut depth = 0
+        mut i = st.pos
+        while i < st.toks.length {
+            let t = st.toks[i]
+            if t.tk == Tk.LeftParen || t.tk == Tk.LeftBracket || t.tk == Tk.LeftBrace { depth = depth + 1 }
+            else if t.tk == Tk.RightParen || t.tk == Tk.RightBracket || t.tk == Tk.RightBrace {
+                depth = depth - 1
+                if depth == 0 { break }
+                if depth < 0 { return false }
+            }
+            i = i + 1
+        }
+        // Unbalanced to end of input — `(1 + 2` with no closer. Not a lambda, and the
+        // group branch is the one that reports the missing `)`.
+        if i >= st.toks.length || depth != 0 { return false }
+        if st.toks[i].tk != Tk.RightParen { return false }
+        if i + 2 >= st.toks.length { return false }
+        if st.toks[i + 1].tk != Tk.Arrow { return false }
+        return tok_starts_expr_leaf(st.toks[i + 2])
+    }
+    if cond == "cur_ident" {
+        return st.cur().tk == Tk.Identifier
     }
     if cond == "ident_colon" {
         if st.cur().kind != "IDENT" { return false }
@@ -4283,7 +4346,8 @@ fn handle_missing(st: PState, expected: string, annots: List<GAnnot>) {
         }
     }
     // so07.2: an IDENT position keeps the hand's reserved-keyword diagnostic.
-    if expected == "IDENT" { st.report_ident(msg) }
+    if expected == "IDENT" && code != "" { st.report_ident_coded(code, msg) }
+    else if expected == "IDENT" { st.report_ident(msg) }
     else if code != "" { st.report_coded(code, msg) }
     else { st.report(msg) }
     for a in annots {

@@ -17,7 +17,7 @@
 // probe (`diagnose.sh --parser-tree`) so the flag cannot silently regress to the
 // fail-fast path — which would look exactly like "the trees agree".
 
-use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn write_fixture(name: string, src: string) -> string {
     let path = "/tmp/avra_program_recover_${name}.av"
@@ -27,12 +27,25 @@ fn write_fixture(name: string, src: string) -> string {
 
 // stdout only — the diagnostic COUNT goes to stderr precisely so the tree stays
 // clean to diff, and this asserts that separation holds.
+// Both streams are captured to per-test logs and the STATUS is checked, because
+// `avra_shell_exec` discards it: a regression that rendered the right tree and the
+// right diagnostic count and then exited non-zero satisfied every assertion here.
+// A non-zero status returns "" so the caller's comparison fails loudly.
+fn recover_streams(name: string, src: string, want_stderr: bool) -> string {
+    let fix = write_fixture(name, src)
+    let out = "/tmp/avra_program_recover_${name}.out"
+    let err = "/tmp/avra_program_recover_${name}.err"
+    let rc = avra_shell_exec_status("./build/bs2 program --recover '${fix}' > '${out}' 2> '${err}'")
+    if rc != 0 { return "" }
+    if want_stderr { avra_selfhost_read_file(err) } else { avra_selfhost_read_file(out) }
+}
+
 fn tree_of(name: string, src: string) -> string {
-    avra_shell_exec("./build/bs2 program --recover '${write_fixture(name, src)}' 2>/dev/null")
+    recover_streams(name, src, false)
 }
 
 fn stderr_of(name: string, src: string) -> string {
-    avra_shell_exec("./build/bs2 program --recover '${write_fixture(name, src)}' 2>&1 >/dev/null")
+    recover_streams(name, src, true)
 }
 
 fn plain_stdout(name: string, src: string) -> string {

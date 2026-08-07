@@ -128,14 +128,14 @@ spec "t-47hc slice 10.11: `enum` is routed onto the production path, COMMITTED" 
         // The recurring trap this slice has hit four times: an executor-only build passes
         // every interpreter-driven parity spec above and emits nothing usable.
         let src = decl_src()
-        // A GATED element captures in TWO steps (t-myz7): the call binds to `__gres`,
+        // A GATED element captures in TWO steps (t-myz7): the call binds to `__gres<idx>`,
         // the abort is read, and only then does the coercion run — `capval_to_*` reports
         // over a non-matching CapVal, and an aborted sub-parse hands back exactly that.
         // The coercion is still the assertion's point; what moved is where the result
         // comes from, so the SHARED-core check is unchanged in substance.
         src.contains("mk_evariant(capval_tok_text(vname), vfields_list)") &&
-            src.contains("let __gres = parse_variant(st)") &&
-            src.contains("vars_list.push(capval_to_variant(st, __gres))")
+            src.contains("let __gres0 = parse_variant(st)") &&
+            src.contains("vars_list.push(capval_to_variant(st, __gres0))")
     }
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {

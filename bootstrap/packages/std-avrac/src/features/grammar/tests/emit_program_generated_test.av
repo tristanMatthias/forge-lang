@@ -31,12 +31,12 @@ spec "grammar emitter: renders the whole-program generated static parser" {
         src.contains("mut fields_list: List<FieldEntry> = []") &&
         src.contains("mut vars_list: List<Variant> = []") &&
         // `field` and `variant` are GATED, so their capture is two-step (t-myz7): the
-        // call binds to `__gres` and the abort is read BEFORE the coercion, which would
+        // call binds to `__gres<idx>` and the abort is read BEFORE the coercion, which would
         // otherwise report over an aborted sub-parse's silent error node. `param` is
         // ungated and keeps the direct form — which is the contrast worth pinning.
         src.contains("params_list.push(capval_to_pentry(st, parse_param(st)))") &&
-        src.contains("fields_list.push(capval_to_field(st, __gres))") &&
-        src.contains("vars_list.push(capval_to_variant(st, __gres))")
+        src.contains("fields_list.push(capval_to_field(st, __gres0))") &&
+        src.contains("vars_list.push(capval_to_variant(st, __gres0))")
     }
 
     then "the declaration builds lower to the SHARED constructor cores" {

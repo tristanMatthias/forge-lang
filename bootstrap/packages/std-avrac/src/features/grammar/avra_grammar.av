@@ -381,25 +381,29 @@ fn avra_expr_core() -> Grammar {
                  @expect("]", "expected `]` after list") -> MkListLit(a)
   list_comp    = b:expression "for" v:IDENT "in" c:expression ( "if" f:expression )? -> MkListComp(b, v, c, f)
   paren_expr   = @peek(lparen_ident_colon) "(" ps:param ( "," ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
-               // KNOWN DIVERGENCE, deliberately left in place (t-47hc.5). `let a = (1) ->`
-               // with no body comes back from the hand as `(group 1)` — `try_lambda_body()`
-               // returns null and the `->` is left for the caller to report — while this
-               // `@cut` commits and yields `(lambda (_) (error))`. It is why `let` is still
-               // under `@try` in the dispatcher rather than routed.
+               // PREDICTIVE, by a SCAN — the non-speculative decision this branch needed
+               // (t-47hc.5). `paren_lambda_ahead` walks to the matching `)` and checks two
+               // tokens: an `->` follows, and the token after it is in the shared
+               // expression FIRST set (`tok_starts_expr_leaf`, which admits `{`, so
+               // `lambda_body`'s two alternatives are covered by one predicate).
                //
-               // The `@cut` STAYS until a non-speculative fix exists, because both obvious
-               // repairs are the same trap. Dropping it, and gating with
-               // `@require lb:lambda_body`, each make this branch parse a lambda body
-               // speculatively and unwind afterwards: inside a `@try` the emitted
-               // `@require` reports without aborting (emit.av's `abortable` guard), so the
-               // callee runs anyway. With `lambda_body`'s FIRST being `{` or ANY
-               // expression, every parenthesised group then parses the whole remaining
-               // expression before unwinding, and nesting multiplies it — measured
-               // 25/65/160/636ms at 10/12/14 `(a == N) ||` terms against a flat ~24ms, and
-               // a 12GB F4014 while the compiler merely parsed its own
-               // `gen_expr_parser.av`, whose emitted FIRST-set conditions are exactly that
-               // shape. The fix this needs decides by lookahead WITHOUT parsing.
-               | @try "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
+               // `let a = (1) ->` with no body therefore never ENTERS here: the token
+               // after `->` cannot start a body, so the group branch answers and yields
+               // `(group 1)` with the `->` left for the caller — the hand's
+               // `try_lambda_body()` returning null, reached without imitating its
+               // speculation. This is what let `let` route.
+               //
+               // Deciding it by PARSING is the trap, and both obvious spellings fall into
+               // it: dropping the `@cut`, and `@require lb:lambda_body`. Inside a `@try`
+               // the emitted `@require` reports without aborting (emit.av's `abortable`
+               // guard), and the `@cut`'s own `if !s_cut { break }` is what otherwise
+               // stops a plain group before the body parse. Without that early exit every
+               // parenthesised group parses the whole remaining expression and unwinds,
+               // which nesting multiplies — measured 25/65/160/636ms at 10/12/14
+               // `(a == N) ||` terms against a flat ~24ms, and a 12GB F4014 while the
+               // compiler merely parsed its own `gen_expr_parser.av`. The `@cut` stays:
+               // the peek decides ENTRY, the cut still stops a malformed body committing.
+               | @try @peek(paren_lambda_ahead) "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
                | "(" ( @on(allow_dot_postfix) e:expression )? @require ")"
                  @expect(")", "expected `)` after expression") -> MkGroupOrEmpty(e)
@@ -666,6 +670,25 @@ fn avra_decl_edge_grammar() -> Grammar {
   // that separates "reported" from "failed": the expression view reports the missing
   // lambda body and still hands back `(group 1)`, which the hand KEEPS. Aborting on the
   // report would erase the whole binding.
+  // t-47hc.5: `let` is the LAST keyword under `@hand(decl_hand)`, and it stays there for
+  // now. Every VALID binding form is already native (verified with
+  // `AVRA_REFUSE_HAND_LEAF=decl_hand`); what blocks routing is purely recovery parity,
+  // because the initializer position is a hole through which every expression-level gap
+  // shows. Committing it measured 32 divergences, now 20 — the `(1) ->` lambda blocker
+  // that led the list is FIXED (see `paren_expr`'s predictive scan).
+  //
+  // What remains is no longer about bindings OR lambdas. The largest cluster is `@` in an
+  // initializer: the hand rejects `let q = @pkg::mod::name` inside a fn body outright —
+  // `@` there is annotation syntax — where the native rule builds a qualified reference.
+  // That is `@`-DISPATCH work, not `let` work, and the rest are similar (map-literal and
+  // `with` recovery, list-comprehension cascade, template interpolation). Routing before
+  // they close would ship a keyword whose recovery is unmeasured on 20 known inputs — the
+  // `shape` #1054 -> #1059 mistake. The ready pieces ship un-routed and correct.
+  //
+  // When routing DOES land it needs, all verified against the corpus: `@try "let" @cut`,
+  // `@require` on the name / type / `=`, `@onfail(bail)` on the initializer (keyed on the
+  // sub-parse FAILING, not reporting — `let a = (1) ->` reports and still yields a value
+  // the hand keeps), and `letdes_decl` dispatched FIRST under `@peek(let_destructure)`.
   let_decl   = "let" ( m:"mut" )? n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkLetBinding(m, n, ty, init, e, tmp)
   mut_decl   = @try "mut" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )?
                @expect("IDENT", "expected variable name")
@@ -843,10 +866,17 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `@require ":"` with the hand's own message: `parse_comp_config_schema` consumes the
   // colon with `expected `:` after config key` and RETURNS `.Err`, so a keyless entry
   // ends the config block rather than going on to look for a type (t-47hc.5).
+  // The IDENT message is declared HERE, on the callee, because that is where the gated
+  // entry re-check reads it from (`rule_first_expect_msg`) — a caller-side
+  // `@expect("config_entry", …)` is inert. Without it the fallback printed the GRAMMAR
+  // RULE NAME at the user: `component C { config { 5 } }` said "expected config_entry"
+  // where the hand says "expected config key".
   config_entry  = k:IDENT @require ":" @require ty:type_expr ( "=" d:expression )? ( "@" ( a:IDENT )? )* ","?
+                  @expect("IDENT", "expected config key")
                   @expect(":", "expected `:` after config key")
                   @expect("type_expr", "expected config type") -> MkCompConfig(k, ty, d)
   children_slot = k:IDENT @require ":" @require ty:type_expr
+                  @expect("IDENT", "expected child slot name")
                   @expect(":", "expected `:` after slot name")
                   @expect("type_expr", "expected slot type") -> MkChildrenSlot(k, ty)
   // The `@peek(kw_let)` gate declares the dispatch the ambiguity guard would
