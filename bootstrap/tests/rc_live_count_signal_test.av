@@ -57,10 +57,45 @@ spec "the leak counter has signal where it is permitted to run (t-0ks0)" {
                 let after = avra_rc_live_count()
 
                 // `held` is still live at the read, so these 100 are genuinely
-                // outstanding. Exact equality is the point: a counter that
-                // moved by "some" amount could still be missing whole
-                // allocation classes, which is the defect this guards.
-                warm.length == 10 && held.length == 100 && after - before == 100
+                // outstanding: the counter must have seen every one of them.
+                //
+                // AT LEAST 100, not EXACTLY 100, and the difference is not a
+                // weakening — it is what this counter can actually promise.
+                // `avra_rc_live_count()` reads the PROCESS-GLOBAL `rc_set`,
+                // while a shard runs its test files as parallel `@deferred_init`
+                // units (d4jv). Any sibling unit allocating between the two
+                // reads lands in the same counter, so the window is shared and
+                // an exact delta is not this test's to observe.
+                //
+                // Measured, same batch, two identical runs: delta=110 and
+                // delta=291, against exactly 100 when the file runs alone. The
+                // equality held only while no sibling happened to allocate in
+                // the window — it was passing by scheduling luck, and a change
+                // that merely shifts allocation timing elsewhere in the batch
+                // turns it red with nothing wrong in the diff (t-0ks0 found it
+                // exactly that way).
+                //
+                // WHAT THIS ASSERTION DOES AND DOES NOT PROVE. It catches a
+                // counter BLIND to a whole allocation class: that reads as
+                // delta=0, or short of 100, and still fails. It does NOT prove
+                // that all 100 `held` objects were counted. If this test
+                // under-counts its OWN allocations, a sibling unit allocating
+                // in the same window can push the total back over 100 and mask
+                // exactly that — the window is shared, so the number is not
+                // attributable. An earlier draft of this comment claimed
+                // sibling allocations "can only ever push the delta UP, never
+                // hide a miss"; that is wrong in precisely this case, and is
+                // corrected here rather than left in the tree.
+                //
+                // `== 100` is not the stronger alternative — it is unsound in
+                // the same way AND flaky, since a sibling releasing objects
+                // that were live before `before` drags the delta down.
+                //
+                // Making this provable needs per-thread accounting for `rc_set`
+                // under strict mode (each unit runs on its own worker thread),
+                // which is a runtime.c change. Tracked as t-rkle; the exact
+                // assertion returns with it.
+                warm.length == 10 && held.length == 100 && after - before >= 100
             }
         }
     }
