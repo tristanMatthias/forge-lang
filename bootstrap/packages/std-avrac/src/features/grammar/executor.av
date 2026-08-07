@@ -1014,6 +1014,19 @@ impl PState {
     /// surfaced code must describe the SAME diagnostic, so they have to be taken from the
     /// same one. A plain `error_node` leaves the code empty and the boundary keeps its
     /// existing default, so every untouched call site behaves exactly as before.
+    /// The expression alternation's NO-MATCH tail, with the hand's `;` special case.
+    ///
+    /// `parse_primary`'s tail (parse/mod.av:2829) branches: a `;` is F0041 `unexpected
+    /// \`;\`` — carrying the help "Avra doesn't use semicolons — remove the `;`" — and
+    /// anything else is F0040 `expected expression`. The native tail was unconditionally
+    /// F0040, so `let z = ;` lost both the code and the one diagnostic that tells a user
+    /// what to DO. Lives on PState so the executor and the generated parsers cannot drift:
+    /// emit renders a call to this rather than re-deciding the branch in a string.
+    fn error_node_expected_expr(self) -> ExprId {
+        if self.cur().text == ";" { return self.error_node_coded("F0041", "unexpected `;`") }
+        self.error_node_coded("F0040", "expected expression")
+    }
+
     fn error_node_coded(self, code: string, msg: string) -> ExprId {
         // `diag_code` is still written (first-writer-wins) because the DSL boundary
         // reads it — this stays behaviour-neutral. The code now ALSO rides on its own
@@ -2725,7 +2738,7 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
             // from the emit path for the same input. Same text, same F0040 as the hand's
             // `parse_leaf_common`, so all three paths agree. Nothing asserts the old
             // wording — the five references to it in tests are comments.
-            CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+            CapVal.Node(st.error_node_expected_expr())
         }
     }
 }

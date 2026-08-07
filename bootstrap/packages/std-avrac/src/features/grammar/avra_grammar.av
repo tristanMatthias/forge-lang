@@ -405,10 +405,22 @@ fn avra_expr_core() -> Grammar {
   else_tail    = if_expr | block_expr | expression
   when_arm     = ( "_" | "else" ) "->" body:expression -> MkWhenDefault(body)
                | cond:expression "->" body:expression -> MkWhenArm(cond, body)
-  list_expr    = @try "[" cb:list_comp "]" -> cb
+  // PREDICTIVE, by the same scan `paren_expr` uses. The `@try` rewound the cursor to
+  // before `[`, so a malformed comprehension failed the list-LITERAL branch's closer with
+  // the cursor sitting ON `for`, and statement-level resync then parsed a for-LOOP out of
+  // the leftovers — `[a for]` came back as two `(error)` rows and a `(for-in …)` against
+  // the hand's one. The hand never gets there: `parse_list_elements` CONSUMES `for` before
+  // aborting, so its resync starts after it. Control that isolates it: `[a while]` and
+  // `[a return]` already agreed on both parsers, because only `for` is a token the hand
+  // had already eaten.
+  list_expr    = @peek(list_comp_ahead) "[" @require cb:list_comp @require "]"
+                 @expect("list_comp", "expected a comprehension body")
+                 @expect("]", "expected `]` after list") -> cb
                | "[" ( a:expression ( @peek(comma_not_rbracket) "," a:expression )* ( "," )? )? @require "]"
                  @expect("]", "expected `]` after list") -> MkListLit(a)
-  list_comp    = b:expression "for" v:IDENT "in" c:expression ( "if" f:expression )? -> MkListComp(b, v, c, f)
+  list_comp    = b:expression "for" @require v:IDENT @require "in" c:expression ( "if" f:expression )?
+                 @expect("IDENT", "expected variable name after `for`")
+                 @expect("in", "expected `in` after loop variable") -> MkListComp(b, v, c, f)
   // A FAILED param ends the lambda. `param` already reports "expected parameter type
   // after `:`" and aborts, and the MESSAGES matched exactly — but the branch built
   // `(lambda () x)` around the aborted param anyway, dropping it silently where the hand

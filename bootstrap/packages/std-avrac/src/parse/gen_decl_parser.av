@@ -22,7 +22,7 @@ export fn parse_name_or_splice(st: PState) -> CapVal {
         let pn = CapVal.Tok(st.advance())
         return mk_plain_name(st, capval_tok_text(pn))
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_declaration(st: PState) -> CapVal {
@@ -240,7 +240,7 @@ fn parse_export_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_exportable_decl(st: PState) -> CapVal {
@@ -340,7 +340,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         return CapVal.SNode(run_hand_stmt("decl_hand", st))
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_doc_decl(st: PState) -> CapVal {
@@ -662,7 +662,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_let_decl(st: PState) -> CapVal {
@@ -757,7 +757,7 @@ fn parse_mut_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_const_decl(st: PState) -> CapVal {
@@ -816,7 +816,7 @@ fn parse_const_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_letdes_decl(st: PState) -> CapVal {
@@ -929,7 +929,7 @@ fn parse_parallel_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_select_decl(st: PState) -> CapVal {
@@ -987,7 +987,7 @@ fn parse_select_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_select_arm(st: PState) -> CapVal {
@@ -1126,7 +1126,7 @@ fn parse_spec_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_spec_item(st: PState) -> CapVal {
@@ -1215,7 +1215,7 @@ fn parse_given_blk(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_then_blk(st: PState) -> CapVal {
@@ -1297,7 +1297,7 @@ fn parse_then_blk(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_comp_header(st: PState) -> CapVal {
@@ -1313,7 +1313,7 @@ fn parse_comp_header(st: PState) -> CapVal {
     if st.cur().text == "component" {
         return parse_component_decl(st)
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_comp_config_block(st: PState) -> CapVal {
@@ -1843,7 +1843,7 @@ fn parse_config_pair(st: PState) -> CapVal {
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
         return mk_comp_config_pair_g(st, capval_tok_text(k), capval_to_expr(st, v))
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_comp_block_item(st: PState) -> CapVal {
@@ -2105,7 +2105,7 @@ fn parse_use_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_use_tail(st: PState) -> CapVal {
@@ -2217,7 +2217,7 @@ fn parse_mod_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_type_decl(st: PState) -> CapVal {
@@ -2359,7 +2359,7 @@ fn parse_type_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_shape_decl(st: PState) -> CapVal {
@@ -2439,7 +2439,7 @@ fn parse_shape_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_field(st: PState) -> CapVal {
@@ -2608,7 +2608,7 @@ fn parse_enum_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_variant(st: PState) -> CapVal {
@@ -2825,7 +2825,7 @@ fn parse_fn_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_where_param(st: PState) -> CapVal {
@@ -2950,7 +2950,7 @@ fn parse_extern_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_trait_decl(st: PState) -> CapVal {
@@ -3035,7 +3035,7 @@ fn parse_trait_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_trait_member(st: PState) -> CapVal {
@@ -3045,7 +3045,7 @@ fn parse_trait_member(st: PState) -> CapVal {
     if st.cur().text == "fn" {
         return parse_method_member(st)
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_assoc_member(st: PState) -> CapVal {
@@ -3084,7 +3084,7 @@ fn parse_assoc_member(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_method_member(st: PState) -> CapVal {
@@ -3189,7 +3189,7 @@ fn parse_method_member(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_impl_decl(st: PState) -> CapVal {
@@ -3311,7 +3311,7 @@ fn parse_impl_decl(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_impl_member(st: PState) -> CapVal {
@@ -3330,7 +3330,7 @@ fn parse_impl_member(st: PState) -> CapVal {
     if st.cur().text == "fn" {
         return parse_impl_method(st)
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_impl_assoc(st: PState) -> CapVal {
@@ -3391,7 +3391,7 @@ fn parse_impl_assoc(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_impl_method(st: PState) -> CapVal {
@@ -3530,7 +3530,7 @@ fn parse_impl_method(st: PState) -> CapVal {
         st.restore_postfix_state(s_postfix)
     }
     if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_statement(st: PState) -> CapVal {
@@ -3777,7 +3777,7 @@ fn parse_match_stmt(st: PState) -> CapVal {
         }
         return mk_match(st, subj, CapVal.Arms(arms_list))
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_defer_stmt(st: PState) -> CapVal {
@@ -3896,7 +3896,7 @@ fn parse_for_stmt(st: PState) -> CapVal {
         let body = parse_block(st)
         return mk_for_loop(st, sp_start, v, lo, hi, body)
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_match_when_arm(st: PState) -> CapVal {
@@ -3922,7 +3922,7 @@ fn parse_match_when_arm(st: PState) -> CapVal {
         st.set_modes(__modes_2)
         return mk_when_arm(st, c, b)
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_match_arm(st: PState) -> CapVal {

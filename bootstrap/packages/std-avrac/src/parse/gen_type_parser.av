@@ -36,7 +36,7 @@ fn parse_type_atom(st: PState) -> CapVal {
     if st.cur().tk == Tk.Identifier {
         return parse_named_type(st)
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_qualified_type(st: PState) -> CapVal {

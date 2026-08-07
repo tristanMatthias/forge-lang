@@ -818,9 +818,9 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
         // restored) — yield Nil and let the caller decide, rather than synthesising a
         // spurious parse error. Mirrors executor.exec_node's speculative arm.
         out = out + "    if tried_spec { return CapVal.Nil }\n"
-        out = out + "    CapVal.Node(st.error_node_coded(\"F0040\", \"expected expression\"))\n"
+        out = out + "    CapVal.Node(st.error_node_expected_expr())\n"
     } else {
-        out = out + "    CapVal.Node(st.error_node_coded(\"F0040\", \"expected expression\"))\n"
+        out = out + "    CapVal.Node(st.error_node_expected_expr())\n"
     }
     out
 }
