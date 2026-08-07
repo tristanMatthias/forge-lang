@@ -122,7 +122,7 @@ fn parse_declaration(st: PState) -> CapVal {
     if st.cur().text == "const" {
         return parse_const_decl(st)
     }
-    if st.cur().text == "let" {
+    if lookahead_ok("let_destructure", st) && (st.cur().text == "let") {
         let s_pos = st.pos
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
@@ -213,7 +213,7 @@ fn parse_export_decl(st: PState) -> CapVal {
             let _ = st.advance()
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
-            if !(st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || lookahead_ok("decl_table_kw", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component")) {
+            if !(st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || lookahead_ok("decl_table_kw", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component")) {
                 st.report("expected declaration after `export`")
                 if s_cut {
                     st.set_abort_prop(true)
@@ -304,7 +304,7 @@ fn parse_exportable_inner(st: PState) -> CapVal {
     if st.cur().text == "const" {
         return parse_const_decl(st)
     }
-    if st.cur().text == "let" {
+    if lookahead_ok("let_destructure", st) && (st.cur().text == "let") {
         tried_spec = true
         let s_pos = st.pos
         let s_mark = st.store.mark()
@@ -641,7 +641,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
-    if st.cur().text == "let" {
+    if lookahead_ok("let_destructure", st) && (st.cur().text == "let") {
         tried_spec = true
         let s_pos = st.pos
         let s_mark = st.store.mark()
@@ -826,10 +826,14 @@ fn parse_letdes_decl(st: PState) -> CapVal {
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
     }
     if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-        st.report("expected )")
+        st.report("expected `)` after destructure names")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
-        st.report("expected =")
+        st.report("expected `=` after destructure pattern")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
     }
     let init = parse_expression(st)
     mk_let_destructure_g(st, n_list, init)

@@ -454,6 +454,25 @@ struct literals, `let … else`. All pre-existing, all invisible.
 So: **expect routing a keyword to cost far more than the keyword.** Budget for the
 constructs it stops hiding, and re-read any spec that "already passed" through it.
 
+`let` is the far end of that scale and the reason the frontier stops there: it is the
+most common statement in the corpus, so committing it uncovered **32** divergences at
+once, none of them about bindings. Every VALID binding form was already native
+(`let`/`mut`/`const`/typed/`let … else`/destructure — verified with
+`AVRA_REFUSE_HAND_LEAF=decl_hand`), so this is purely recovery parity: the initializer
+position is a hole through which every expression-level gap shows. Fixed so far —
+`variant_ctor` (`.` with no name is the hand's F0040 `ExpectedExpression`, not a bare
+F0001 missing-token), `list_expr`'s and `paren_expr`'s closer wording, the destructure
+closer aborting instead of reporting twice, and `@onfail(bail)` on the initializer so a
+FAILED init ends the binding the way the hand's `?` does. Genuinely remaining: ~27,
+led by `let a = (1) ->`, where the hand's `try_lambda_body()` returns null and yields
+`(group 1)` while the grammar's `@cut` after `->` commits and yields
+`(lambda (_) (error))`. The obvious fixes for that one — dropping the `@cut`, or gating
+with `@require lb:lambda_body` — are BOTH the exponential-backtracking trap documented
+in the F4014 section below; it needs a mechanism that decides without speculative
+parsing. Until those close, `let` stays under `@try` (the `shape` #1054 → #1059
+precedent): the message and gate fixes above are correct on their own and ship
+un-routed, and the routing lands when its invalid corpus is green.
+
 Three defect SHAPES recur; check for each when a routed rule diverges:
 
 1. **A rule that reports but does not FAIL.** The hand propagates `Result` (`?`),
@@ -687,6 +706,35 @@ error[F4014]: compiler memory ceiling exceeded — 11055 MiB resident (ceiling 1
 ```
 
 The `phase:` line is the point — a runaway is now attributable to the file/pass that caused it, instead of arriving as a bare SIGKILL (or a container restart). Ceiling = `AVRA_MEM_LIMIT_MB` (default: 75% of `MemAvailable` sampled at startup; `0` disables). RSS is MEASURED, not accounted, because the compiler links LLVM and LLVM allocates through C++ `new` — an allocation-accounting scheme would miss the largest consumer. Guard: `build/tests/memory_ceiling_test.av`. **An F4014 on a normal input is a COMPILER BUG, not a box-too-small problem — read the phase and fix it; don't just raise the ceiling.**
+
+**The likeliest way YOU cause an F4014 in `phase: parse` is a grammar edit that makes the
+generated parser backtrack exponentially (t-47hc.5).** `@require` on a rule REFERENCE emits
+a FIRST-set gate, and inside a speculative `@try` branch that gate emits the REPORT but NOT
+the abort — emit.av's `abortable` guard (~line 1422) drops `rret`, so the referenced rule is
+parsed ANYWAY and the branch is only unwound afterwards by the diagnostics check. Harmless
+when the callee's FIRST is narrow. When it is broad it is not: `@require lb:lambda_body`
+(FIRST = `{` or ANY expression) in `paren_expr`'s lambda branch makes every parenthesised
+group parse the whole remaining expression before unwinding, and nesting multiplies it.
+Measured on `if (a == 0) || (a == 1) || …`: flat at ~24ms up to 16 terms before, then
+25 / 65 / 160 / 636ms at 10 / 12 / 14 terms after — and the compiler hit a 12GB F4014
+**parsing its own `gen_expr_parser.av`**, whose giant emitted FIRST-set conditions are
+exactly that shape. Prefer `@cut` (commit the branch) over a broad-FIRST `@require`.
+Three things that make this cheap to diagnose, all learned the expensive way:
+- **`./build/seed` is the control.** It is the PINNED integration compiler, so running the
+  same reproducer under it answers "did I cause this" in one command. Flat under `seed` and
+  exponential under `build/bs2` ⇒ yours. Without a control this reads as box pressure, and
+  `free` + `make stray` both come back clean because the box genuinely is fine.
+- **Reduce to a standalone file, and sample RSS correctly.** A `bs2 check` of the one big
+  generated file reproduces it in seconds; bisecting by `head -N` pins the trigger line. But
+  an RSS sampler that polls `/proc/$p/status` can miss entirely and report ~2MB for a 13.6GB
+  parse — that false reading sent this investigation down a "standalone is fine, so it must
+  be the package pipeline" path. Cross-check a suspiciously small peak against wall time.
+- **A pathological generated parser BRICKS its own regen.** `build/bs2` embeds the parser it
+  generated, so once the bad one is on disk you cannot `--emit-regen-*` your way out — and
+  reverting only the grammar does nothing, because the binary is still the old one. The exit
+  is: `git checkout` the generated parser, `make build-quick`, THEN regen from the fixed
+  grammar. Expect to want it twice; nothing about the failure says which of the two stale
+  things (grammar or binary) you are looking at.
 
 Two things this changed that you'd otherwise trip over:
 - `source_newer_than` (diagnose.sh) now watches `runtime.c` / `llvm_wrapper.c`, not just `*.av`. `build/seed` already keyed its C inputs (`seed_inputs_hash`); `build/bs2` did NOT, so a runtime.c edit rebuilt `runtime.o` and then silently re-linked the PREVIOUS bs2 — you'd be testing the code you just replaced. If a C-side change appears to do nothing, check `ls -la build/bs2 build/runtime.o` before believing it.

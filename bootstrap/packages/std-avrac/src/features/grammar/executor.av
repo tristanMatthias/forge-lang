@@ -2006,6 +2006,19 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "kw_let" {
         return st.cur().tk == Tk.KwLet
     }
+    // `let (` / `let mut (` — the DESTRUCTURE shape (t-47hc.5). Both binding rules lead
+    // with `let`, and the order between them was previously decided by `let_decl` having
+    // NO `@cut`: its `n:IDENT` failed on the `(`, the `@try` rewound, and the destructure
+    // got its turn. Committing `let_decl` removes that, so the shapes have to be told
+    // apart by LOOKAHEAD instead — which is what the grammar's own note said would be
+    // needed the moment `let` converted.
+    if cond == "let_destructure" {
+        if st.cur().tk != Tk.KwLet { return false }
+        if st.pos + 1 >= st.toks.length { return false }
+        if st.toks[st.pos + 1].tk == Tk.LeftParen { return true }
+        if st.pos + 2 >= st.toks.length { return false }
+        return st.toks[st.pos + 1].text == "mut" && st.toks[st.pos + 2].tk == Tk.LeftParen
+    }
     // `implements` is a CONTEXTUAL word, not a keyword token — the hand tests
     // `check(Tk.Identifier) && current_lexeme == "implements"`, so this must too.
     // It gates the component header's optional implements clause, and the gate is what

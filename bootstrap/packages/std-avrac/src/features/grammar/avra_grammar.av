@@ -286,7 +286,8 @@ fn avra_expr_core() -> Grammar {
               | @fallback @require "]" @expect("]", "expected `]` after index") -> MkNone()
   with_suffix = "with" "{" ( f:field_init )* "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
   field_init  = n:IDENT ( ":" v:expression )? ( "," )? -> MkFieldInit(n, v)
-  variant_ctor = "." v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )? -> mk_enum_ctor(v, a)
+  variant_ctor = "." @require v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )?
+                 @expect("IDENT", "expected a variant name after `.`", F0040) -> mk_enum_ctor(v, a)
   channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
   // t-bwjg — `quote { … }` and the block-bodied kinds. `quote type { <type> }` and
   // ALL THREE quote shapes are native now: this rule owns the block-bodied kinds, while
@@ -376,12 +377,24 @@ fn avra_expr_core() -> Grammar {
   when_arm     = ( "_" | "else" ) "->" body:expression -> MkWhenDefault(body)
                | cond:expression "->" body:expression -> MkWhenArm(cond, body)
   list_expr    = @try "[" cb:list_comp "]" -> cb
-               | "[" ( a:expression ( @peek(comma_not_rbracket) "," a:expression )* ( "," )? )? "]" -> MkListLit(a)
+               | "[" ( a:expression ( @peek(comma_not_rbracket) "," a:expression )* ( "," )? )? @require "]"
+                 @expect("]", "expected `]` after list") -> MkListLit(a)
   list_comp    = b:expression "for" v:IDENT "in" c:expression ( "if" f:expression )? -> MkListComp(b, v, c, f)
   paren_expr   = @peek(lparen_ident_colon) "(" ps:param ( "," ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
+               // `->` is NOT a commit point (t-47hc.5). `let a = (1) ->` with no body must
+               // come back as `(group 1)` with the `->` left for the caller to report —
+               // the hand's `try_lambda_body()` returning null — and a `@cut` here made it
+               // `(lambda (_) (error))` instead. The fix is a FIRST gate, not a bare
+               // rollback: `@require` tests whether a body can START and aborts into the
+               // `@try` when it cannot, so the group branch answers. Dropping the `@cut`
+               // with no gate also works semantically but reparses every parenthesised
+               // group through the lambda branch first — on the giant parenthesised
+               // conditions in `gen_expr_parser.av` that is exponential, and it took the
+               // compiler to a 12GB F4014 while merely parsing its own generated parser.
                | @try "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
-               | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
+               | "(" ( @on(allow_dot_postfix) e:expression )? @require ")"
+                 @expect(")", "expected `)` after expression") -> MkGroupOrEmpty(e)
   lambda_body  = block_expr | expression
   // The TYPE position is `@require`d, keyed on the rule NAME because `type_expr`'s FIRST
   // is a disjunction with no single token to name (t-myz7) — the same treatment `field`
@@ -635,6 +648,16 @@ fn avra_decl_edge_grammar() -> Grammar {
   //   * The DESTRUCTURE form has its own rule below: `let_decl`'s `n:IDENT`
   //     fails on `(`, the `@try` rewinds, and `letdes_decl` (next in the
   //     alternation) parses it.
+  // t-47hc.5: `let` owns its recovery. The `@try`/`@cut` pair lives INSIDE the rule so
+  // the dispatcher references it bare, exactly as `mut` and `const` already do — and the
+  // ordering note this rule used to carry is now discharged: `letdes_decl` is selected by
+  // `@peek(let_destructure)` and dispatched FIRST, so committing here cannot make it
+  // unreachable.
+  //
+  // The initializer is deliberately NOT `@onfail(bail)`. `let a = (1) ->` is the case
+  // that separates "reported" from "failed": the expression view reports the missing
+  // lambda body and still hands back `(group 1)`, which the hand KEEPS. Aborting on the
+  // report would erase the whole binding.
   let_decl   = "let" ( m:"mut" )? n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkLetBinding(m, n, ty, init, e, tmp)
   mut_decl   = @try "mut" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )?
                @expect("IDENT", "expected variable name")
@@ -653,7 +676,9 @@ fn avra_decl_edge_grammar() -> Grammar {
   // reads is_mut — so `let mut (a, b) = t` is a plain destructure on both
   // engines. A BARE `mut (` stays an error (parse_mut_statement demands an
   // identifier), which is why mut_decl has no destructure sibling.
-  letdes_decl = "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? ")" "=" init:expression -> MkDestructure(n, init)
+  letdes_decl = @peek(let_destructure) "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? @require ")" @require "=" init:expression
+                @expect(")", "expected `)` after destructure names")
+                @expect("=", "expected `=` after destructure pattern") -> MkDestructure(n, init)
   // The CONCURRENCY statements (t-47hc Phase 4). `parallel` is a keyword + a
   // brace-delimited statement list held as RAW ids under a LEAF Parallel row
   // (the hand's parse_statement_list_ids → Stmt.Parallel(ids) — no Block

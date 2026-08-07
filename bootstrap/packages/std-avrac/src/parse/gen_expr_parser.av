@@ -1134,7 +1134,8 @@ fn parse_variant_ctor(st: PState) -> CapVal {
     mut a_list: List<ExprId> = []
     let _ = st.advance()
     let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected a variant name after `.`")
+        return CapVal.Node(st.error_node_silent())
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftParen {
@@ -1482,7 +1483,8 @@ fn parse_list_expr(st: PState) -> CapVal {
             }
         }
         if st.cur().tk == Tk.RightBracket { let _ = st.advance() } else {
-            st.report("expected ]")
+            st.report("expected `]` after list")
+            return CapVal.Node(st.error_node_silent())
         }
         return CapVal.Node(mk_list_lit(st, sp_start, CapVal.Nodes(a_list)))
     }
@@ -1625,7 +1627,8 @@ fn parse_paren_expr(st: PState) -> CapVal {
             st.set_modes(__modes_0)
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected )")
+            st.report("expected `)` after expression")
+            return CapVal.Node(st.error_node_silent())
         }
         return CapVal.Node(mk_group_or_empty(st, sp_start, e))
     }
