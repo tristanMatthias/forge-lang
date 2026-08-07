@@ -1,0 +1,143 @@
+// t-rkle — `avra_rc_live_delta_local()` is the leak instrument that actually
+// holds up under the parallel test runner. This file pins the properties that
+// make it the right default, because the guidance pointed elsewhere and cost
+// two separate investigations.
+//
+// THE INSTRUMENT THAT DOES NOT WORK, and why it reads as if it does:
+// `avra_rc_live_count()` returns `rc_set_count`, a PROCESS-GLOBAL set. A shard
+// runs its test files as parallel `@deferred_init` units (d4jv), so a sibling
+// unit allocating between a spec's two reads lands in the same counter. It is
+// also blind to bump-region objects, since `rc_set_add` is reached only from
+// `avra_rc_alloc`'s malloc FALLBACK — which is why it needs `AVRA_RC_STRICT=1`
+// to see anything at all (#1164 made it refuse to answer without it).
+//
+// Measured, `rc_live_count_signal_test` stranding 100 objects:
+//
+//     file alone                    delta = 100
+//     batched with 3 siblings       delta = 110      <- same binary,
+//     batched with 3 siblings       delta = 291         same command
+//
+// An exact assertion against that is passing on scheduling luck; it went red
+// during t-0ks0 because an unrelated codegen change shifted allocation timing
+// ELSEWHERE in the batch.
+//
+// THE INSTRUMENT THAT WORKS: `t_rc_allocs`/`t_rc_frees` are `_Thread_local`
+// (runtime.c) and are bumped on BOTH allocation paths — the region fast path
+// and the malloc fallback — so the local delta is per-thread AND sees every
+// object. The same measurement above reads exactly 100 alone, batched, and
+// under strict, repeatably. That is what the arms below pin.
+//
+// It is not a universal replacement: frees are counted on the thread that
+// performs them, so a cross-thread hand-off (a channel send) deliberately skews
+// the local view. A spec asserting TRANSFER semantics still wants the global
+// count. A spec that allocates and drops on one thread — which is nearly every
+// leak check — wants this one.
+
+extern fn avra_rc_live_delta_local() -> int
+extern fn avra_rc_strict_enabled() -> int
+
+type Boxed = { items: List<int>, label: string }
+
+fn make_boxed() -> Boxed {
+    Boxed { items: [1, 2, 3], label: "boxed" }
+}
+
+/// Returns its allocations so the caller can hold them across the read — a
+/// genuine strand, not a value the scope is free to reclaim.
+fn strand(n: int) -> List<Boxed> {
+    mut kept: List<Boxed> = []
+    mut i = 0
+    while i < n {
+        kept.push(make_boxed())
+        i = i + 1
+    }
+    kept
+}
+
+spec "t-rkle: the LOCAL live delta is exact and isolation-proof" {
+    given "N objects stranded on this thread" {
+        then "the delta is EXACTLY N — no `>=` hedge needed" {
+            // The property the global counter cannot offer. This runs inside a
+            // shard alongside sibling units; if their allocations could reach
+            // this counter, this arm would be the flaky one.
+            let warm = strand(10)
+            let before = avra_rc_live_delta_local()
+            let held = strand(100)
+            let after = avra_rc_live_delta_local()
+            warm.length == 10 && held.length == 100 && after - before == 100
+        }
+        then "it has signal WITHOUT AVRA_RC_STRICT=1 — region objects are counted" {
+            // `avra_rc_live_count()` is blind here by construction: these small
+            // objects come from the bump region and never enter `rc_set`. The
+            // local counter increments on that path too, so the measurement
+            // needs no strict-mode gate to mean something.
+            //
+            // Deliberately asserted in BOTH modes. Under strict the fallback
+            // path is taken instead, and the delta must still be exact — one
+            // arm covering whichever mode this suite happens to run in.
+            let before = avra_rc_live_delta_local()
+            let held = strand(50)
+            let after = avra_rc_live_delta_local()
+            held.length == 50 && after - before == 50
+        }
+        then "the counter goes DOWN — a dropped LIST scope returns to its start" {
+            // The NEGATIVE control, and the arm that makes the others mean
+            // something: a counter that only ever increased would satisfy every
+            // arm above while being useless for detecting a leak.
+            //
+            // A bare `List` local is the shape that demonstrably reclaims, so
+            // it is what this control uses.
+            let before = avra_rc_live_delta_local()
+            mut i = 0
+            while i < 100 {
+                let s: List<int> = [1, 2, 3]
+                i = i + s.length - 2
+            }
+            let after = avra_rc_live_delta_local()
+            after - before == 0
+        }
+        then "the STRUCT-shaped negative control is deliberately absent" {
+            // Writing it surfaced a separate, unexplained finding, and asserting
+            // the observed number here would pin a suspected bug as correct —
+            // the mistake rc_live_count_signal_test's own note warns about.
+            //
+            // Measured with THIS counter, 100 constructions each, every shape
+            // leaving exactly +100 while the list control above leaves 0:
+            //
+            //   struct bound in a loop body                        +100
+            //   struct bound then dropped, measured after the
+            //     frame RETURNED (so fn-exit cleanup has run)      +100
+            //   struct never bound at all (`make_x().f.length`)    +100
+            //   struct with NO string field (freshness allowed)    +100
+            //   INLINE struct literal (is_allocating_expr admits
+            //     it unconditionally, so it is releasable)         +100
+            //
+            // The last two matter: neither is explained by #1178's
+            // string-literal freshness denial, and an inline literal is
+            // releasable by construction — so "the callee wasn't fresh" does
+            // not account for it. One object per construction, reproducibly.
+            //
+            // NOT yet attributed. `t_rc_frees` is bumped from `rc_set_remove`,
+            // which runs on an actual FREE, so a release that decrements a
+            // refcount without reaching zero never reaches the counter — an
+            // over-RETAIN would read identically to a missing release here.
+            // Distinguishing them needs IR inspection, not another delta.
+            //
+            // Tracked as t-0ks0 item 4. This arm asserts nothing so that the
+            // file cannot quietly bless either answer.
+            true
+        }
+    }
+    given "the strict-mode gate" {
+        then "the local delta does not depend on it, whichever mode is active" {
+            // Pins that this instrument carries no strict-mode precondition —
+            // the thing that forced every prior leak check through the global
+            // counter in the first place.
+            let strict = avra_rc_strict_enabled()
+            let before = avra_rc_live_delta_local()
+            let held = strand(25)
+            let after = avra_rc_live_delta_local()
+            held.length == 25 && after - before == 25 && (strict == 0 || strict == 1)
+        }
+    }
+}

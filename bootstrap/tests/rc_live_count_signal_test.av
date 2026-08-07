@@ -8,6 +8,14 @@
 // sub-cases that way, on "delta == 0" readings that could not have been
 // anything else.
 //
+// PREFER `avra_rc_live_delta_local()` FOR NEW LEAK CHECKS (t-rkle). It is
+// per-thread AND counts both allocation paths, so it needs no strict-mode gate
+// and is immune to the sibling interference described below — see
+// tests/rc_live_delta_local_test.av, which pins those properties. This file
+// stays because the GLOBAL counter still has one job (cross-thread transfer
+// semantics, where the local view is deliberately skewed) and that job needs a
+// signal guard.
+//
 // Two defences, and this file is the second:
 //   1. runtime.c now REFUSES to answer outside strict mode (a sentinel would
 //      not help — any constant still gives a zero delta between two reads).
