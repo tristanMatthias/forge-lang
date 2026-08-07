@@ -325,9 +325,9 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
                 _ -> false
             }
             if is_err_return {
-                emit_defers_on_error(ctx, env)
+                emit_defers_on_error(ctx, env)?
             } else {
-                emit_defers(ctx, env)
+                emit_defers(ctx, env)?
             }
             // A lambda body's LLVM fn always returns i64 (the closure ABI —
             // `ctx.fn_type(ctx.i64_type, …)` in emit_lambda_typed); its
@@ -355,7 +355,7 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             if ctx.task_group != null {
                 ctx.call("avra_task_group_await_all", [ctx.task_group])
             }
-            emit_defers(ctx, env)
+            emit_defers(ctx, env)?
             // See the `.Return` arm: a bare `return` inside a lambda body
             // normalizes the `Unknown` closure-ABI ret to `.Int` (i64) so
             // ret_void never reaches the layout mapper's `.Unknown` (§6).
@@ -400,7 +400,7 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             //     emitted the body against a scope where the name is absent.
             //   `env` — OUT of the statement. The block's bindings must not
             //     leak to the enclosing scope.
-            ok_sr(defer_scope_exit(sr.ctx, sr.env, base), env)
+            ok_sr(defer_scope_exit(sr.ctx, sr.env, base)?, env)
         }
         .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _)
         or .NoOp or .TraitDecl(_, _) or .Module(_, _) or .Use(_, _) or .AssocType(_, _) -> ok_sr(ctx, env)
@@ -415,7 +415,7 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             // loop was entered, LIFO (t-vmkc). They stay on the stack:
             // the fall-through path out of the same block still needs
             // its own copy.
-            emit_defers_above(ctx, env, frame.defer_depth)
+            emit_defers_above(ctx, env, frame.defer_depth)?
             ctx.br(frame.exit_bb)
             ok_sr(ctx, env)
         }
@@ -425,7 +425,7 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
                 return err_sr("codegen error: continue outside loop")
             }
             // Same as `break`: the current iteration's scopes are ending.
-            emit_defers_above(ctx, env, frame.defer_depth)
+            emit_defers_above(ctx, env, frame.defer_depth)?
             ctx.br(frame.cond_bb)
             ok_sr(ctx, env)
         }
