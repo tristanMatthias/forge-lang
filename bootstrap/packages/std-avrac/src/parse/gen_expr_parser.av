@@ -807,6 +807,7 @@ fn parse_map_literal(st: PState) -> CapVal {
         k_list.push(capval_to_expr(st, parse_expression(st)))
         if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
             st.report("expected `:` after map key")
+            return CapVal.Node(st.error_node_silent())
         }
         v_list.push(capval_to_expr(st, parse_expression(st)))
         if st.cur().tk == Tk.Comma {
@@ -815,6 +816,7 @@ fn parse_map_literal(st: PState) -> CapVal {
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}` after map")
+        return CapVal.Node(st.error_node_silent())
     }
     CapVal.Node(mk_map_lit(st, sp_start, CapVal.Nodes(k_list), CapVal.Nodes(v_list)))
 }
@@ -1112,12 +1114,14 @@ fn parse_with_suffix(st: PState) -> CapVal {
     let _ = st.advance()
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected `{` after `with`")
+        return CapVal.Node(st.error_node_silent())
     }
-    while st.cur().tk == Tk.Identifier {
+    while lookahead_ok("cur_ident", st) && (st.cur().tk == Tk.Identifier) {
         f_list.push(capval_to_finit(st, parse_field_init(st)))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected field name")
+        return CapVal.Node(st.error_node_silent())
     }
     CapVal.Node(mk_with_suffix(st, sp_start, CapVal.FInits(f_list)))
 }

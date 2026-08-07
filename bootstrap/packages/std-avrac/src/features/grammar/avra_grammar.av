@@ -196,7 +196,7 @@ fn avra_expr_core() -> Grammar {
                    @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
   template_lit = t:TEMPLATE -> MkTemplate(t)
   brace_expr   = @peek(brace_map) map_literal | block_expr
-  map_literal  = "{" ( k:expression ":" v:expression ( "," )? )* "}"
+  map_literal  = "{" ( k:expression @require ":" v:expression ( "," )? )* @require "}"
                  @expect(":", "expected `:` after map key")
                  @expect("}", "expected `}` after map") -> MkMapLit(k, v)
   // t-47hc.33 — the postfix chain, going native one FORM at a time. `@hand(postfix_suffix)`
@@ -289,7 +289,7 @@ fn avra_expr_core() -> Grammar {
   // the message for a token that starts NEITHER (`a[1 2]`).
   index_tail  = ".." e:expression @require "]" @expect("]", "expected `]` after slice") -> e
               | @fallback @require "]" @expect("]", "expected `]` after index") -> MkNone()
-  with_suffix = "with" "{" ( f:field_init )* "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
+  with_suffix = "with" @require "{" ( @peek(cur_ident) f:field_init )* @require "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
   field_init  = n:IDENT ( ":" v:expression )? ( "," )? -> MkFieldInit(n, v)
   variant_ctor = "." @require v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )?
                  @expect("IDENT", "expected a variant name after `.`", F0040) -> mk_enum_ctor(v, a)
