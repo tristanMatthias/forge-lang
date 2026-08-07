@@ -3663,10 +3663,10 @@ fn parse_if_stmt(st: PState) -> CapVal {
     let __bres1 = parse_expression(st)
     if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
         st.set_abort_prop(true)
+        st.set_modes(__modes_1)
         return CapVal.Node(st.error_node_silent())
     }
-    let c = __bres1
-    st.set_modes(__modes_1)
+    let c = __bres1    st.set_modes(__modes_1)
     if !(st.cur().tk == Tk.LeftBrace) {
         st.report_coded("F0010", "expected `{` after if condition")
         st.set_abort_prop(true)
@@ -3712,10 +3712,10 @@ fn parse_while_stmt(st: PState) -> CapVal {
     let __bres1 = parse_expression(st)
     if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
         st.set_abort_prop(true)
+        st.set_modes(__modes_1)
         return CapVal.Node(st.error_node_silent())
     }
-    let c = __bres1
-    st.set_modes(__modes_1)
+    let c = __bres1    st.set_modes(__modes_1)
     if !(st.cur().tk == Tk.LeftBrace) {
         st.report_coded("F0010", "expected `{` after while condition")
         st.set_abort_prop(true)

@@ -1263,6 +1263,37 @@ fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: s
 /// One item. `idx == 0` is the branch's guard token (already matched by the
 /// enclosing `if`/`while`), so it is consumed unconditionally; a later
 /// terminal is consumed defensively (checked), honouring @expect/@recover.
+/// Prefix every ABORT return inside a mode-wrapped body with that wrapper's restore.
+///
+/// The `@cut` markers are hoisted OUTSIDE the wrapper (see the note above) because a
+/// `break` would jump past its own restore. An `@onfail(bail)` / `@require` abort is the
+/// same trap one case further: it is a `return`, it is emitted INSIDE the body, and the
+/// branch rollback deliberately does not restore `st.modes`. Left alone, a failed call
+/// argument returned with `allow_it_sugar` still ON and every later expression in that
+/// parse saw a mode the grammar never granted it.
+///
+/// Textual because the wrapper receives `body` already rendered — the same reason
+/// `cut_marks` is composed here rather than inside emit_item_body. Matching on the exact
+/// emitted abort line keeps it precise: no other emitted statement has that form.
+fn restore_modes_before_aborts(body: string, ind: string, idx: int) -> string {
+    let needle = "return CapVal.Node(st.error_node_silent())"
+    if !body.contains(needle) { return body }
+    mut out = ""
+    for line in body.split("\n") {
+        if line.trim() == needle {
+            let lead = line.substring(0, line.length - line.trim().length)
+            out = out + lead + "st.set_modes(__modes_${idx})\n" + line + "\n"
+        } else {
+            out = out + line + "\n"
+        }
+    }
+    // `split` on a trailing newline yields a final empty piece; the loop re-adds one
+    // newline per piece, so drop the duplicate to keep the emission byte-stable.
+    if out.length > 0 && body.length > 0 && !body.ends_with("\n") { return out.substring(0, out.length - 1) }
+    if out.length > 0 { return out.substring(0, out.length - 1) }
+    out
+}
+
 fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>, abortable: bool, spec_ctx: int, cut_breaks: bool) -> string {
     // `@cut` COMMIT POINT (t-47hc.21): the twin of exec_item's `env.cut = true`.
     // `s_cut` is a `mut` local of the enclosing speculative branch's block, so the
@@ -1326,7 +1357,7 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
         return cut_marks +
             "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.set_modes(modes_with_flag_off(st.modes, \"${item.mode_off}\"))\n" +
-            body +
+            restore_modes_before_aborts(body, ind, idx) +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
     // `@bump(counter)` counter-SET marker: save modes, INCREMENT via
@@ -1335,7 +1366,7 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
         return cut_marks +
             "${ind}let __modes_${idx} = st.modes\n" +
             "${ind}st.set_modes(modes_with_counter_bumped(st.modes, \"${item.mode_bump}\"))\n" +
-            body +
+            restore_modes_before_aborts(body, ind, idx) +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
     // `@on(flag)` mode-SET marker: the SET-ON twin — save modes, set the flag ON via
@@ -1350,7 +1381,7 @@ fn emit_item(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: strin
         return cut_marks +
             "${ind}let __modes_${idx} = st.modes\n" +
             mode_on_set_line(item, ind) +
-            body +
+            restore_modes_before_aborts(body, ind, idx) +
             "${ind}st.set_modes(__modes_${idx})\n"
     }
     cut_marks + body

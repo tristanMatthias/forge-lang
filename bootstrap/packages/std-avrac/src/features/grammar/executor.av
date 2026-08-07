@@ -850,6 +850,14 @@ impl PState {
         self.pos = pos
         self.diags = list_take(self.diags, diags_len)
         self.had_error = err
+        // `abort_prop` is speculative state like the rest of this snapshot, so it unwinds
+        // with them. Left set, a rolled-back branch's abort outlives the branch that
+        // raised it, and the NEXT rule — which may have parsed perfectly — reads it and is
+        // replaced with an error. Cleared unconditionally rather than restored to a
+        // snapshot value, because the flag is armed immediately before each sub-parse
+        // (`gated_abort_arm`) precisely so it reads that sub-parse's outcome and not "has
+        // anything aborted since the start rule reset".
+        self.abort_prop = false
         // `diag_code` is FIRST-WRITER-WINS (report_coded), so a rolled-back
         // speculation used to leave its code behind permanently: the branch that
         // actually reported then rendered under an ABANDONED branch's F-code. Caught

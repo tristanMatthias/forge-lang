@@ -14,6 +14,7 @@
 // "generated fns compile + pass the differential test" gate is the diagnose
 // mode (a full nested compile+run, too heavy for every `bs2 test`).
 
+use @std.avrac.core.{avra_selfhost_read_file}
 use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_parser_source, emit_rule_fn, Grammar, Rule, GNode}
 
 // The canonical §2 expression grammar is the SOURCE-OF-TRUTH `grammar { }`
@@ -335,5 +336,36 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         let g = avra_expr_dispatch_grammar()
         let term = emit_rule_fn(g, rule_named(g, "term"))
         term.contains("while st.cur().tk == Tk.Plus || st.cur().tk == Tk.Minus {")
+    }
+}
+
+spec "t-47hc.5: speculative state unwinds completely, and a mode scope survives an abort" {
+    then "an ABORT return inside a mode wrapper restores the modes first" {
+        // `@cut` markers are hoisted OUTSIDE the mode wrapper because a `break` would jump
+        // past its own restore. An `@onfail(bail)` abort is the same trap one case further
+        // — it is a `return`, emitted INSIDE the body, and the branch rollback deliberately
+        // does not restore `st.modes`. Left alone, a failed call argument returned with
+        // `allow_it_sugar` still ON and every later expression in that parse saw a mode the
+        // grammar never granted it. Asserted on the emitted ORDER, since that is the whole
+        // content of the fix.
+        let src = emit_all()
+        src.contains("st.set_modes(__modes_3)\n                return CapVal.Node(st.error_node_silent())")
+    }
+
+    then "restore_to clears abort_prop — a rolled-back branch cannot abort the NEXT rule" {
+        // `abort_prop` is speculative state like pos / diags / had_error, so it unwinds with
+        // them. Left set, a rolled-back branch's abort outlives the branch that raised it and
+        // the next rule — which may have parsed perfectly — is replaced with an error. Read
+        // off the executor source because the flag is PState-internal: there is no emitted
+        // string for it, and the corpus cannot reach it (no production grammar pairs a
+        // speculative abort with a following rule that reads the flag before its own arm).
+        let src = avra_selfhost_read_file("packages/std-avrac/src/features/grammar/executor.av")
+        // Bounded to the METHOD, not a byte window — a fixed window silently stops
+        // covering the function the moment a comment is added above the line it guards.
+        let at = src.index_of("fn restore_to(self, pos: int, diags_len: int, err: bool) {")
+        let rest = if at < 0 { "" } else { src.substring(at, src.length) }
+        let end = rest.index_of("\n    }\n")
+        let body = if end > 0 { rest.substring(0, end) } else { rest }
+        at >= 0 && body.contains("self.abort_prop = false")
     }
 }
