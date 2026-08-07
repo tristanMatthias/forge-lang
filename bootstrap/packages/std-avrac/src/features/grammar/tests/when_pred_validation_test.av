@@ -299,24 +299,47 @@ spec "t-47hc.32: `@bump` obeys the same POSITION rules as @off/@on" {
     }
 }
 
-// A mode marker on a `@require` item would LEAK the mode. The emitted wrapper is
-// `save; set; <item>; restore`, and a failed `@require` returns early from INSIDE <item>
-// — so the restore never runs and every subsequent parse sees the set mode. Threading
-// cleanup through each emitted return path would mean the executor's `env.abort` and the
-// generated parser's early `return` both have to remember it; rejecting the combination
-// is one rule in one place, and it costs nothing (no grammar wants it).
+// A mode marker on a `@require` item USED to be rejected, because it would LEAK the
+// mode: the emitted wrapper is `save; set; <item>; restore`, a failed `@require`
+// returns early from INSIDE <item>, and the restore never ran. The note here said
+// threading cleanup through each emitted return path "costs nothing to avoid (no
+// grammar wants it)".
+//
+// Both clauses expired (t-47hc.5 Phase 4). The cleanup IS threaded — emit wraps the
+// body in `restore_modes_before_aborts`, and the executor never had the hole because
+// its abort is a flag set on the way OUT, not an early return. And a grammar does want
+// it: `quote type { <type> }` needs `@require` on the type (so a missing one aborts
+// with the hand's message instead of reporting a generic F0040 and then the missing
+// `}` as well) together with `@bump(quote_depth)` (so a splice inside still sees a
+// nonzero depth). Rejecting the pair forced choosing one of the two.
+//
+// The property the rejection was protecting is now under test directly, in
+// `mode_restore_on_abort_test.av`: every abort return inside the wrapper restores
+// first, structurally asserted and demonstrated to fail when the threading is removed.
 
-spec "t-47hc: a mode marker cannot ride a @require item" {
-    // `@require` binds BEFORE the mode markers in item order (`@cut @require ^ @off …`),
-    // so the co-located spelling is `@require @bump(f) <prim>` — one item carrying both.
-    then "@bump on a @require item is rejected" {
-        err_of("r = \"[\" @require @bump(quote_depth) \"]\"").contains("@require")
+spec "t-47hc: a mode marker MAY ride a @require item, with the restore threaded" {
+    // `@require` and the mode markers annotate the same item and their written ORDER is
+    // irrelevant (parse_labeled loops until no marker is consumed), so both spellings
+    // must be accepted — a one-order-only chain is what made the rejected spelling
+    // report `parse_primary`'s generic "expected a rule reference, terminal, …(at `@`)".
+    then "@bump on a @require item is accepted, in EITHER marker order" {
+        !rejects("r = \"[\" @require @bump(quote_depth) \"]\"") &&
+            !rejects("r = \"[\" @bump(quote_depth) @require \"]\"")
     }
-    then "@off is too — the leak pre-dated @bump and is closed for all three" {
-        err_of("r = \"[\" @require @off(allow_struct_lit) \"]\"").contains("@require")
+    then "@off is too — the pair is legal for all three markers" {
+        !rejects("r = \"[\" @require @off(allow_struct_lit) \"]\"") &&
+            !rejects("r = \"[\" @off(allow_struct_lit) @require \"]\"")
     }
     then "@on likewise" {
-        err_of("r = \"[\" @require @on(allow_struct_lit) \"]\"").contains("@require")
+        !rejects("r = \"[\" @require @on(allow_struct_lit) \"]\"") &&
+            !rejects("r = \"[\" @on(allow_struct_lit) @require \"]\"")
+    }
+    then "the OTHER mode-marker rejections still stand — only the @require pair lifted" {
+        // Anti-vacuity: if `rejects` simply stopped detecting rejections the three
+        // assertions above would pass for the wrong reason. A mode marker on a `@hand`
+        // primary is still an error, and so is an unknown flag.
+        rejects("r = @bump(quote_depth) @hand(primary_base)") &&
+            rejects("r = @off(no_such_flag) a:NUMBER")
     }
     then "a @require with NO mode marker is still fine — the rule is the pair, not @require" {
         !rejects("r = \"[\" a:NUMBER @require \"]\"")

@@ -212,8 +212,20 @@ fn MALFORMED_DECL() -> string {
     // graduated, then `fn foo(` until `fn` did (t-47hc.5) — that one really did change
     // the ENCLOSING recovery for every expression-view case wrapped in
     // `fn f() -> int { … }`, which is why it took the statement-body work with it.
-    // `let` is the anchor now: its `paren_expr` lambda recovery is the remaining gap.
-    "let = 5\n"
+    // Then `let = 5`, until `let` graduated too (t-47hc.5 Phase 4).
+    //
+    // With every KEYWORD native (`--parser-frontier` lists none), the form that still
+    // reaches the leaf is no longer a malformed declaration at all — it is the bare
+    // IDENT lead the `@peek(decl_lead)` gate admits: `Foo bar { … }`, a component
+    // INSTANTIATION whose component is not declared. `bare_comp_inst` declines it, and
+    // `decl_lead` still hands it to `decl_hand`. Measured: 3 refusals, all attributed
+    // to the fixture, and a clean parse without the refusal.
+    //
+    // The name is now slightly off — this is not "malformed", it is "not a routed
+    // form" — but it is kept because every reference to it means "the anchor that
+    // still needs the leaf", and renaming it across the file would obscure the lineage
+    // this comment exists to record.
+    "Foo bar { x: 1 }\n"
 }
 
 fn fixture_path(name: string) -> string {
@@ -750,12 +762,38 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         recovery_without_delegate("comp_noname", "component\nfn f() -> int { 1 }") &&
         recovery_without_delegate("comp_nobrace", "component C\nfn f() -> int { 1 }") &&
         recovery_without_delegate("comp_config", "component C { config }\nfn f() -> int { 1 }") &&
+        // `let` GRADUATED (t-47hc.5 Phase 4) — the last KEYWORD off the leaf. Its
+        // malformed forms move here rather than being deleted, same as every keyword
+        // before it, so the frontier's coverage grows instead of thinning. All eight
+        // are the forms the binding specs cover: missing name, missing `=`, missing
+        // initializer, a non-name where the name goes, the empty type annotation on
+        // all three binding keywords, and the destructure list.
+        recovery_without_delegate("let_eq", "let = 5\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("let_bare", "let\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("let_noeq", "let x\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("let_noinit", "let x =\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("let_num", "let 5 = 1\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("let_notype", "let x: = 1\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("mut_notype", "mut x: = 1\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("const_notype", "const X: = 1\nfn f() -> int { 1 }") &&
+        recovery_without_delegate("letdes_bad", "let (a b) = t\nfn f() -> int { 1 }") &&
         // ANTI-VACUITY: negatives alone would also pass if `refused_here` simply
-        // stopped detecting refusals. A SIBLING keyword's malformed form must still
-        // refuse. `enum` held this role, then `impl`, then `component`; all have
-        // converted, so it now points at `let` — RE-POINT it again when that lands,
-        // never delete it. `let` is the LAST keyword on the frontier, so when it
-        // graduates this assertion has no successor and the leaf itself goes.
-        refused_here("decl_hand", "let_still_needs_leaf", "let = 5\nfn f() -> int { 1 }")
+        // stopped detecting refusals, so one form must still refuse. `enum` held this
+        // role, then `impl`, then `component`, then `let` — every one of them a
+        // KEYWORD, and all have converted.
+        //
+        // The successor is NOT a keyword, because none is left. It is the bare-IDENT
+        // lead `@peek(decl_lead)` admits — a component instantiation whose component
+        // is undeclared, which `bare_comp_inst` declines and the gate hands to
+        // `decl_hand`. That is the leaf's remaining production role, and the honest
+        // statement of what deleting it will have to account for.
+        //
+        // Note what this ANCHOR's move corrects: the doc block on BARE_IDENT_COMP_INST
+        // says `decl_hand`'s remaining role is "ERROR RECOVERY, for every declaration
+        // keyword at once", because a `@try` branch rolls back on any report. That
+        // stopped being true as each keyword took a `@cut` — a committed rule owns its
+        // recovery and never rolls back — and `let = 5` refusing ZERO times is the
+        // measurement that says so.
+        refused_here("decl_hand", "bare_inst_still_needs_leaf", "Foo bar { x: 1 }\nfn f() -> int { 1 }")
     }
 }

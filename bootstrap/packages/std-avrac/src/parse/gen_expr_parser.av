@@ -42,8 +42,9 @@ export fn parse_expression(st: PState) -> CapVal {
 fn parse_assignment(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     mut r: CapVal = CapVal.Nil
+    let __bdiag0 = st.diags.length
     let __bres0 = parse_pipe(st)
-    if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+    if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
         return CapVal.Node(st.error_node_silent())
     }
     let l = __bres0
@@ -227,8 +228,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             st.report("expected {")
         }
         while st.cur().tk == Tk.Identifier {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_field_init(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             f_list.push(capval_to_finit(st, __bres0))
@@ -257,8 +259,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -278,8 +281,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -299,8 +303,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -320,8 +325,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -341,8 +347,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -362,8 +369,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -383,8 +391,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -404,8 +413,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -425,8 +435,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -446,8 +457,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -467,8 +479,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -488,8 +501,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -509,8 +523,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -530,8 +545,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -551,8 +567,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -572,8 +589,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -593,8 +611,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -614,8 +633,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -635,8 +655,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -656,8 +677,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -677,8 +699,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -698,8 +721,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -719,8 +743,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -740,8 +765,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_with_suffix(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             s_list.push(capval_to_expr(st, __bres0))
@@ -832,8 +858,9 @@ fn parse_struct_lit_expr(st: PState) -> CapVal {
         st.report("expected {")
     }
     while st.cur().tk == Tk.Identifier {
+        let __bdiag0 = st.diags.length
         let __bres0 = parse_field_init(st)
-        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
             return CapVal.Node(st.error_node_silent())
         }
         f_list.push(capval_to_finit(st, __bres0))
@@ -882,8 +909,9 @@ fn parse_qualified_expr(st: PState) -> CapVal {
     if st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.LeftBrace) {
         lb = CapVal.Tok(st.advance())
         while st.cur().tk == Tk.Identifier {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_field_init(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             f_list.push(capval_to_finit(st, __bres0))
@@ -921,8 +949,9 @@ fn parse_map_literal(st: PState) -> CapVal {
             st.report("expected `:` after map key")
             return CapVal.Node(st.error_node_silent())
         }
+        let __bdiag2 = st.diags.length
         let __bres2 = parse_expression(st)
-        if capval_is_error_expr(st, __bres2) || capval_is_error_stmt(st, __bres2) {
+        if capval_is_error_expr(st, __bres2) || capval_is_error_stmt(st, __bres2) || st.diags.length != __bdiag2 {
             return CapVal.Node(st.error_node_silent())
         }
         v_list.push(capval_to_expr(st, __bres2))
@@ -1017,16 +1046,18 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
         let __modes_3 = st.modes
         st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
         if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && ((st.cur().text == "match")) || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier) {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_call_arg(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 st.set_modes(__modes_3)
                 return CapVal.Node(st.error_node_silent())
             }
             a_list.push(capval_to_expr(st, __bres0))
             while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
                 let _ = st.advance()
+                let __bdiag1 = st.diags.length
                 let __bres1 = parse_call_arg(st)
-                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
                     st.set_modes(__modes_3)
                     return CapVal.Node(st.error_node_silent())
                 }
@@ -1062,15 +1093,17 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
             st.report("expected (")
         }
         if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && ((st.cur().text == "match")) || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier) {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_call_arg(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 return CapVal.Node(st.error_node_silent())
             }
             a_list.push(capval_to_expr(st, __bres0))
             while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
                 let _ = st.advance()
+                let __bdiag1 = st.diags.length
                 let __bres1 = parse_call_arg(st)
-                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
                     return CapVal.Node(st.error_node_silent())
                 }
                 a_list.push(capval_to_expr(st, __bres1))
@@ -1124,16 +1157,18 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
             st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
         }
         if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && ((st.cur().text == "match")) || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier) {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_call_arg(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 st.set_modes(__modes_1)
                 return CapVal.Node(st.error_node_silent())
             }
             a_list.push(capval_to_expr(st, __bres0))
             while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
                 let _ = st.advance()
+                let __bdiag1 = st.diags.length
                 let __bres1 = parse_call_arg(st)
-                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
                     st.set_modes(__modes_1)
                     return CapVal.Node(st.error_node_silent())
                 }
@@ -1242,8 +1277,9 @@ fn parse_with_suffix(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     while st.cur().tk == Tk.Identifier {
+        let __bdiag0 = st.diags.length
         let __bres0 = parse_field_init(st)
-        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
             return CapVal.Node(st.error_node_silent())
         }
         f_list.push(capval_to_finit(st, __bres0))
@@ -1260,8 +1296,9 @@ fn parse_field_init(st: PState) -> CapVal {
     let n = CapVal.Tok(st.advance())
     if st.cur().tk == Tk.Colon {
         let _ = st.advance()
+        let __bdiag1 = st.diags.length
         let __bres1 = parse_expression(st)
-        if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+        if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
             return CapVal.Node(st.error_node_silent())
         }
         v = __bres1
@@ -1328,15 +1365,22 @@ fn parse_quote_type_expr(st: PState) -> CapVal {
         st.report("expected type")
     }
     let lb = if st.cur().tk == Tk.LeftBrace { CapVal.Tok(st.advance()) } else {
-        st.report("expected {")
+        st.report("expected `{` after `quote type`")
+        return CapVal.Node(st.error_node_silent())
         CapVal.Tok(st.cur())
     }
     let __modes_3 = st.modes
     st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
+    if !(tok_starts_type(st.cur())) {
+        st.report("expected a type inside `quote type { ... }`")
+        st.set_modes(__modes_3)
+        return CapVal.Node(st.error_node_silent())
+    }
     let t = parse_type_expr(st)
     st.set_modes(__modes_3)
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}` after the type in `quote type`")
+        return CapVal.Node(st.error_node_silent())
     }
     mk_quote_type(st, sp_start, lb, t)
 }
@@ -1349,11 +1393,17 @@ fn parse_quote_arm_expr(st: PState) -> CapVal {
         st.report("expected arm")
     }
     let lb = if st.cur().tk == Tk.LeftBrace { CapVal.Tok(st.advance()) } else {
-        st.report("expected {")
+        st.report("expected `{` after `quote arm`")
+        return CapVal.Node(st.error_node_silent())
         CapVal.Tok(st.cur())
     }
     let __modes_3 = st.modes
     st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
+    if !(tok_starts_pattern(st.cur())) {
+        st.report("expected `.`, `_`, literal, or type pattern to start pattern")
+        st.set_modes(__modes_3)
+        return CapVal.Node(st.error_node_silent())
+    }
     let p = parse_pattern_or(st)
     st.set_modes(__modes_3)
     if st.cur().text == "if" {
@@ -1361,14 +1411,16 @@ fn parse_quote_arm_expr(st: PState) -> CapVal {
         g = parse_expression(st)
     }
     if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-        st.report("expected ->")
+        st.report("expected `->` after pattern in quote arm")
+        return CapVal.Node(st.error_node_silent())
     }
     let b = parse_expression(st)
     if st.cur().tk == Tk.Comma {
         let _ = st.advance()
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}` after quote arm body")
+        return CapVal.Node(st.error_node_silent())
     }
     mk_quote_arm(st, sp_start, lb, p, g, b)
 }
@@ -1655,15 +1707,17 @@ fn parse_paren_expr(st: PState) -> CapVal {
         let sp_start = st.cur().pos
         mut ps_list: List<ParamEntry> = []
         let _ = st.advance()
+        let __bdiag1 = st.diags.length
         let __bres1 = parse_param(st)
-        if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+        if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
             return CapVal.Node(st.error_node_silent())
         }
         ps_list.push(capval_to_pentry(st, __bres1))
         while st.cur().tk == Tk.Comma {
             let _ = st.advance()
+            let __bdiag1 = st.diags.length
             let __bres1 = parse_param(st)
-            if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+            if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
                 return CapVal.Node(st.error_node_silent())
             }
             ps_list.push(capval_to_pentry(st, __bres1))

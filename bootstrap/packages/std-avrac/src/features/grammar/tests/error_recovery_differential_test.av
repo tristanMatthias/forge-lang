@@ -323,6 +323,16 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("mut y y = 1\nfn f() -> int { 1 }") &&
         agree_all("const\nfn f() -> int { 1 }") &&
         agree_all("const C\nfn f() -> int { 1 }") &&
+        // The EMPTY TYPE ANNOTATION on all three binding keywords. `let x: = 1` was
+        // here; `mut`/`const` were not, and both carried the same defect invisibly —
+        // an un-`@require`d type position let the type view's generic F0040 "expected
+        // expression" stand where the hand reports F0001 "expected type after `:`",
+        // and the binding survived as `(… :<unknown> 1)` instead of aborting. Routing
+        // `let` is what surfaced it; the siblings needed the same fix and now need the
+        // same guard, or the next grammar edit can regress two of the three silently.
+        agree_all("mut x: = 1\nfn f() -> int { 1 }") &&
+        agree_all("const X: = 1\nfn f() -> int { 1 }") &&
+        agree_all("fn g() -> int {\n let a: = 1\n mut b: = 2\n const C: = 3\n return a\n}") &&
         agree_all("let (a b) = t\nfn f() -> int { 1 }") &&
         agree_all("fn f() -> int {\n    let x = )\n    1\n}") &&
         agree_all("fn f(o: int?) -> int {\n    let v = o else { 1 }\n    v\n}") &&
@@ -978,6 +988,11 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("mut y y = 1\nfn f() -> int { 1 }") &&
         agree_bad("const\nfn f() -> int { 1 }") &&
         agree_bad("const C\nfn f() -> int { 1 }") &&
+        // The empty-type-annotation trio (see the F-code spec above): the TREE is the
+        // half that catches "reported the right message and kept the binding anyway".
+        agree_bad("mut x: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("const X: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("fn g() -> int {\n let a: = 1\n mut b: = 2\n const C: = 3\n return a\n}") &&
         agree_bad("let (a b) = t\nfn f() -> int { 1 }") &&
         agree_bad("fn f() -> int {\n    let x = )\n    1\n}") &&
         agree_bad("fn f(o: int?) -> int {\n    let v = o else { 1 }\n    v\n}") &&

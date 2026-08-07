@@ -1499,10 +1499,19 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             // the failed arm and popping it afterwards left two diagnostics behind for
             // a case the hand reports once. Bind the call, decide, then capture.
             // t-myz7 `@onfail(bail)`: the CALLEE owns the message, the caller owns the
-            // control flow. Detected by "did diagnostics grow", which is exactly what
-            // `@require` does for a non-ref item — and deliberately NOT `@require`'s
-            // FIRST check, because that reports for the callee and so replaces its
-            // message. `select { x <- }` must stay the expression view's F0040.
+            // control flow. Detected by the union of "the sub-parse came back an error
+            // node" and "diagnostics grew" — deliberately NOT `@require`'s FIRST check,
+            // because that reports for the callee and so replaces its message.
+            // `select { x <- }` must stay the expression view's F0040.
+            //
+            // The union is the hand's `?`: `parse_let_statement` does `parse_expression()?`
+            // and the hand's expression parser reports and returns `Err` together, so
+            // `let b = x is Foo` kills the whole binding rather than keeping a partial one.
+            // The narrower "error node only" reading was a carve-out for `let a = (1) ->`,
+            // where the expression view reported and still handed back `(group 1)` that the
+            // hand KEEPS; `paren_expr`'s `@peek(paren_lambda_ahead)` removed that input (the
+            // group now parses clean and the dangling `->` is the next statement's F0040),
+            // and with it the last reason to disagree with this policy's own doc.
             if item.onfail == "bail" {
                 let braise = if grammar_has_gate(g) { "${ind}    st.set_abort_prop(true)\n" } else { "" }
                 let bret = braise + "${ind}    return CapVal.Node(st.error_node_silent())\n"
@@ -1523,11 +1532,13 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 // count, so a silent one commits); emitting nothing states the current
                 // answer honestly instead of implying the opposite.
                 let bguard = if bbody == "" { "" } else {
-                    "${ind}if capval_is_error_expr(st, __bres${idx}) || capval_is_error_stmt(st, __bres${idx}) {\n" +
+                    "${ind}if capval_is_error_expr(st, __bres${idx}) || capval_is_error_stmt(st, __bres${idx}) || st.diags.length != __bdiag${idx} {\n" +
                     bbody +
                     "${ind}}\n"
                 }
-                return "${ind}let __bres${idx} = parse_${name}(st)\n" +
+                let bpre = if bbody == "" { "" } else { "${ind}let __bdiag${idx} = st.diags.length\n" }
+                return bpre +
+                    "${ind}let __bres${idx} = parse_${name}(st)\n" +
                     bguard +
                     emit_ref_capture_of(g, item, name, "__bres${idx}", ind, list_labels, opts)
             }

@@ -8,7 +8,7 @@
 // Two nets here: (1) every Peek cond reachable from the production grammars is
 // non-empty and allowlisted; (2) the parse-time rejection actually surfaces via
 // `.error`, which `grammar_checked` (the production unwrap) now enforces.
-use @std.avrac.features.grammar.{Grammar, GNode, GSeq, GItem, GPrim, parse_grammar, grammar_checked, peek_cond_supported, avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar}
+use @std.avrac.features.grammar.{Grammar, GNode, GSeq, GItem, GPrim, parse_grammar, grammar_checked, peek_cond_supported, peek_cond_names, peek_cond_expected_list, avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar}
 
 /// Collect every `@peek` cond reachable in `g` (recursing into groups).
 fn peek_conds(g: Grammar) -> List<string> {
@@ -79,6 +79,45 @@ spec "an unknown @peek cond is a HARD grammar error, not a silent no-op" {
         then "the parse is clean and grammar_checked passes it through" {
             let gp = parse_grammar("r = @peek(kw_let) \"let\"")
             gp.error == "" && grammar_checked(gp).rules.length == 1
+        }
+    }
+}
+
+// The rejection message must be able to name EVERY legal cond. It used to carry a
+// hand-copied second list, and `comma_not_rbrace` was accepted by the validator while
+// absent from the message — so a user who typo'd was told a legal value was illegal.
+// Both readers now share `peek_cond_names`; these specs are what keeps that true, and
+// they fail loudly if anyone reintroduces a parallel copy.
+spec "the unknown-cond diagnostic lists EXACTLY the accepted set" {
+    given "the rejection message for an unknown cond" {
+        then "every accepted cond appears in the `expected:` list" {
+            let msg = parse_grammar("r = @peek(no_such_cond) \"x\"").error
+            mut missing: List<string> = []
+            for c in peek_cond_names() {
+                if !msg.contains(c) { missing.push(c) }
+            }
+            if missing.length > 0 {
+                println("conds accepted but absent from the diagnostic: " + missing.join(", "))
+            }
+            missing.length == 0
+        }
+        then "the list is non-vacuous and every listed name is genuinely accepted" {
+            let names = peek_cond_names()
+            mut all_ok = names.length > 40
+            for c in names {
+                if !peek_cond_supported(c) {
+                    println("listed but NOT accepted: ${c}")
+                    all_ok = false
+                }
+            }
+            all_ok
+        }
+    }
+    given "the joined rendering" {
+        then "peek_cond_expected_list is the comma-joined set, not a stale copy" {
+            let joined = peek_cond_expected_list()
+            joined.contains("comma_not_rbrace") && joined.contains("ident_colon") &&
+                joined.split(", ").length == peek_cond_names().length
         }
     }
 }

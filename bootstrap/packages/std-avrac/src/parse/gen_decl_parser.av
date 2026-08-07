@@ -97,31 +97,6 @@ fn parse_declaration(st: PState) -> CapVal {
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
-    if st.cur().text == "let" {
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_let_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
-    }
-    if st.cur().text == "mut" {
-        return parse_mut_decl(st)
-    }
-    if st.cur().text == "const" {
-        return parse_const_decl(st)
-    }
     if lookahead_ok("let_destructure", st) && (st.cur().text == "let") {
         let s_pos = st.pos
         let s_mark = st.store.mark()
@@ -140,6 +115,15 @@ fn parse_declaration(st: PState) -> CapVal {
         st.restore_hand_state(s_hand)
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "let" {
+        return parse_let_decl(st)
+    }
+    if st.cur().text == "mut" {
+        return parse_mut_decl(st)
+    }
+    if st.cur().text == "const" {
+        return parse_const_decl(st)
     }
     if st.cur().text == "select" {
         return parse_select_decl(st)
@@ -213,7 +197,7 @@ fn parse_export_decl(st: PState) -> CapVal {
             let _ = st.advance()
             if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
             if !s_cut { break }
-            if !(st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || lookahead_ok("decl_table_kw", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component")) {
+            if !(st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || lookahead_ok("decl_table_kw", st) && (st.cur().kind == "IDENT" || st.cur().kind == "DOC" || st.cur().kind == "MODDOC" || st.cur().text == "@" || st.cur().text == "export" || st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "const" || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "spec" || st.cur().text == "parallel" || st.cur().text == "select" || st.cur().text == "component")) {
                 st.report("expected declaration after `export`")
                 if s_cut {
                     st.set_abort_prop(true)
@@ -278,32 +262,6 @@ fn parse_exportable_inner(st: PState) -> CapVal {
     if st.cur().text == "impl" {
         return parse_impl_decl(st)
     }
-    if st.cur().text == "let" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_hand = st.save_hand_state()
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_let_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.restore_hand_state(s_hand)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
-    }
-    if st.cur().text == "mut" {
-        return parse_mut_decl(st)
-    }
-    if st.cur().text == "const" {
-        return parse_const_decl(st)
-    }
     if lookahead_ok("let_destructure", st) && (st.cur().text == "let") {
         tried_spec = true
         let s_pos = st.pos
@@ -323,6 +281,15 @@ fn parse_exportable_inner(st: PState) -> CapVal {
         st.restore_hand_state(s_hand)
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "let" {
+        return parse_let_decl(st)
+    }
+    if st.cur().text == "mut" {
+        return parse_mut_decl(st)
+    }
+    if st.cur().text == "const" {
+        return parse_const_decl(st)
     }
     if st.cur().text == "select" {
         return parse_select_decl(st)
@@ -395,16 +362,18 @@ fn parse_annot(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftParen {
         let _ = st.advance()
         if tok_starts_expr_leaf(st.cur()) {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_call_arg(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
             }
             a_list.push(capval_to_expr(st, __bres0))
             while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
                 let _ = st.advance()
+                let __bdiag1 = st.diags.length
                 let __bres1 = parse_call_arg(st)
-                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
                     st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                 }
@@ -581,7 +550,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
-    if st.cur().text == "let" {
+    if lookahead_ok("let_destructure", st) && (st.cur().text == "let") {
         tried_spec = true
         let s_pos = st.pos
         let s_mark = st.store.mark()
@@ -591,7 +560,7 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         mut s_last: CapVal = CapVal.Nil
-        s_last = parse_let_decl(st)
+        s_last = parse_letdes_decl(st)
         if st.diags.length == s_diags && st.had_error == s_err {
             return s_last
         }
@@ -600,6 +569,9 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.restore_hand_state(s_hand)
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().text == "let" {
+        return parse_let_decl(st)
     }
     if st.cur().text == "mut" {
         tried_spec = true
@@ -641,19 +613,84 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
         st.set_gensym_seq(s_gensym)
         st.restore_postfix_state(s_postfix)
     }
-    if lookahead_ok("let_destructure", st) && (st.cur().text == "let") {
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
+fn parse_let_decl(st: PState) -> CapVal {
+    mut tried_spec = false
+    if st.cur().text == "let" {
         tried_spec = true
         let s_pos = st.pos
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
         let s_err = st.had_error
+        mut s_cut = false
         let s_hand = st.save_hand_state()
         let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
-        mut s_last: CapVal = CapVal.Nil
-        s_last = parse_letdes_decl(st)
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return s_last
+        while true {
+            mut m: CapVal = CapVal.Nil
+            mut ty: CapVal = CapVal.Nil
+            mut e: CapVal = CapVal.Nil
+            mut tmp: CapVal = CapVal.Nil
+            let _ = st.advance()
+            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
+            if !s_cut { break }
+            if st.cur().text == "mut" {
+                m = CapVal.Tok(st.advance())
+            }
+            let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+                st.report_ident("expected variable name")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+                CapVal.Tok(st.cur())
+            }
+            if st.cur().tk == Tk.Colon {
+                let _ = st.advance()
+                if !(tok_starts_type(st.cur())) {
+                    st.report("expected type after `:`")
+                    if s_cut {
+                        st.set_abort_prop(true)
+                    return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                st.set_abort_prop(false)
+                let __rres1 = parse_type_expr(st)
+                if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
+                    if s_cut {
+                        return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                ty = __rres1
+            }
+            if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
+                st.report("expected `=` after variable name")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            let __bdiag5 = st.diags.length
+            let __bres5 = parse_expression(st)
+            if capval_is_error_expr(st, __bres5) || capval_is_error_stmt(st, __bres5) || st.diags.length != __bdiag5 {
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            let init = __bres5
+            if st.cur().text == "else" {
+                let _ = st.advance()
+                e = parse_statement(st)
+                tmp = CapVal.Tok(gensym_token(st, "letelse"))
+            }
+            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
+                return mk_let_binding_g(st, capval_present(m), capval_tok_text(n), ty, capval_present(ty), init, e, capval_present(e), tmp)
+            }
+            break
         }
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
@@ -663,35 +700,6 @@ fn parse_wrapped_inner(st: PState) -> CapVal {
     }
     if tried_spec { return CapVal.Nil }
     CapVal.Node(st.error_node_expected_expr())
-}
-
-fn parse_let_decl(st: PState) -> CapVal {
-    mut m: CapVal = CapVal.Nil
-    mut ty: CapVal = CapVal.Nil
-    mut e: CapVal = CapVal.Nil
-    mut tmp: CapVal = CapVal.Nil
-    let _ = st.advance()
-    if st.cur().text == "mut" {
-        m = CapVal.Tok(st.advance())
-    }
-    let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
-        CapVal.Tok(st.cur())
-    }
-    if st.cur().tk == Tk.Colon {
-        let _ = st.advance()
-        ty = parse_type_expr(st)
-    }
-    if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
-        st.report("expected =")
-    }
-    let init = parse_expression(st)
-    if st.cur().text == "else" {
-        let _ = st.advance()
-        e = parse_statement(st)
-        tmp = CapVal.Tok(gensym_token(st, "letelse"))
-    }
-    mk_let_binding_g(st, capval_present(m), capval_tok_text(n), ty, capval_present(ty), init, e, capval_present(e), tmp)
 }
 
 fn parse_mut_decl(st: PState) -> CapVal {
@@ -723,7 +731,21 @@ fn parse_mut_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Colon {
                 let _ = st.advance()
-                ty = parse_type_expr(st)
+                if !(tok_starts_type(st.cur())) {
+                    st.report("expected type after `:`")
+                    if s_cut {
+                        st.set_abort_prop(true)
+                    return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                st.set_abort_prop(false)
+                let __rres1 = parse_type_expr(st)
+                if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
+                    if s_cut {
+                        return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                ty = __rres1
             }
             if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
                 st.report("expected `=` after variable name")
@@ -732,8 +754,9 @@ fn parse_mut_decl(st: PState) -> CapVal {
                 return CapVal.Node(st.error_node_silent())
                 }
             }
+            let __bdiag4 = st.diags.length
             let __bres4 = parse_expression(st)
-            if capval_is_error_expr(st, __bres4) || capval_is_error_stmt(st, __bres4) {
+            if capval_is_error_expr(st, __bres4) || capval_is_error_stmt(st, __bres4) || st.diags.length != __bdiag4 {
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
@@ -787,7 +810,21 @@ fn parse_const_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Colon {
                 let _ = st.advance()
-                ty = parse_type_expr(st)
+                if !(tok_starts_type(st.cur())) {
+                    st.report("expected type after `:`")
+                    if s_cut {
+                        st.set_abort_prop(true)
+                    return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                st.set_abort_prop(false)
+                let __rres1 = parse_type_expr(st)
+                if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
+                    if s_cut {
+                        return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                ty = __rres1
             }
             if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
                 st.report("expected `=` after constant name")
@@ -796,8 +833,9 @@ fn parse_const_decl(st: PState) -> CapVal {
                 return CapVal.Node(st.error_node_silent())
                 }
             }
+            let __bdiag4 = st.diags.length
             let __bres4 = parse_expression(st)
-            if capval_is_error_expr(st, __bres4) || capval_is_error_stmt(st, __bres4) {
+            if capval_is_error_expr(st, __bres4) || capval_is_error_stmt(st, __bres4) || st.diags.length != __bdiag4 {
                 if s_cut {
                     st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
@@ -849,8 +887,9 @@ fn parse_letdes_decl(st: PState) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
+    let __bdiag6 = st.diags.length
     let __bres6 = parse_expression(st)
-    if capval_is_error_expr(st, __bres6) || capval_is_error_stmt(st, __bres6) {
+    if capval_is_error_expr(st, __bres6) || capval_is_error_stmt(st, __bres6) || st.diags.length != __bdiag6 {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
@@ -998,8 +1037,9 @@ fn parse_select_arm(st: PState) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
+    let __bdiag2 = st.diags.length
     let __bres2 = parse_expression(st)
-    if capval_is_error_expr(st, __bres2) || capval_is_error_stmt(st, __bres2) {
+    if capval_is_error_expr(st, __bres2) || capval_is_error_stmt(st, __bres2) || st.diags.length != __bdiag2 {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
@@ -1729,8 +1769,9 @@ fn parse_comp_inst(st: PState) -> CapVal {
         st.report("expected {")
     }
     while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
+        let __bdiag0 = st.diags.length
         let __bres0 = parse_config_pair(st)
-        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
@@ -1776,8 +1817,9 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
         st.report("expected {")
     }
     while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
+        let __bdiag0 = st.diags.length
         let __bres0 = parse_config_pair(st)
-        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
@@ -1899,8 +1941,9 @@ fn parse_comp_block_item(st: PState) -> CapVal {
             return CapVal.Node(st.error_node_silent())
         }
         while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_config_pair(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
             }
@@ -1943,8 +1986,9 @@ fn parse_comp_block_item(st: PState) -> CapVal {
             return CapVal.Node(st.error_node_silent())
         }
         while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
+            let __bdiag0 = st.diags.length
             let __bres0 = parse_config_pair(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 st.set_abort_prop(true)
                 return CapVal.Node(st.error_node_silent())
             }
@@ -3660,8 +3704,9 @@ fn parse_if_stmt(st: PState) -> CapVal {
     let _ = st.advance()
     let __modes_1 = st.modes
     st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+    let __bdiag1 = st.diags.length
     let __bres1 = parse_expression(st)
-    if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+    if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
         st.set_abort_prop(true)
         st.set_modes(__modes_1)
         return CapVal.Node(st.error_node_silent())
@@ -3710,8 +3755,9 @@ fn parse_while_stmt(st: PState) -> CapVal {
     let _ = st.advance()
     let __modes_1 = st.modes
     st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+    let __bdiag1 = st.diags.length
     let __bres1 = parse_expression(st)
-    if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+    if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
         st.set_abort_prop(true)
         st.set_modes(__modes_1)
         return CapVal.Node(st.error_node_silent())
@@ -3797,8 +3843,9 @@ fn parse_return_stmt(st: PState) -> CapVal {
     let _ = st.advance()
     if lookahead_ok("return_value", st) {
         st.set_abort_prop(false)
+        let __bdiag0 = st.diags.length
         let __bres0 = parse_expression(st)
-        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }

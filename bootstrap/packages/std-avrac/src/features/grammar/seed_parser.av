@@ -535,9 +535,38 @@ fn at_peek_primary(p: GP) -> bool {
     nxt.kind == "NAME" && nxt.text == "peek"
 }
 
-/// The lookahead conditions a `@peek(cond)` marker may name — the single source of
-/// truth for the @peek cond SET, consulted by parse_primary (a typo is rejected at
-/// parse time). Kept in lockstep with executor.lookahead_ok (which maps each name to
+/// The single source of truth for the `@peek(cond)` NAME set. BOTH the validator
+/// below and the "unknown cond" diagnostic in `parse_primary` read this one list —
+/// hand-maintaining a second copy for the message is exactly how `comma_not_rbrace`
+/// came to be accepted-but-unlisted, telling a user with a typo that a legal cond was
+/// illegal. There is no second copy now.
+export fn peek_cond_names() -> List<string> {
+    [
+        "ident_colon", "lparen_ident_colon", "stmt_block", "brace_map", "for_destructure",
+        "match_subjectless", "match_table", "comma_ident", "not_gt", "double_colon",
+        "decl_lead", "if_let", "ident_lbrace", "tilde_ident_lbrace", "ident_lbrace_plain",
+        "ident_lbrace_feature", "ident_template", "ident_plain", "qdot_plain_field",
+        "qdot_method_call", "dot_plain_field", "dot_enum_ctor", "dot_number",
+        "comma_not_rparen", "not_rparen", "not_rbrace", "comma_not_rbracket",
+        "comma_not_rbrace", "quote_arm", "quote_type", "body_marker", "kw_let",
+        "cfg_pair_value", "cfg_pair_eq", "comp_inst_shape", "comp_nested_named",
+        "comp_nested_bare", "comp_nested_raw_named", "comp_nested_raw_bare", "comp_method",
+        "bare_comp_inst", "bare_comp_inst_raw", "always", "decl_table_kw", "return_value",
+        "cur_ident", "paren_lambda_ahead", "list_comp_ahead", "comp_paren_shape",
+        "comp_implements_inst", "kw_implements", "let_destructure", "kw_config", "kw_children"
+    ]
+}
+
+/// The joined, comma-separated rendering of `peek_cond_names` — the `expected: …`
+/// tail of the unknown-cond diagnostic.
+export fn peek_cond_expected_list() -> string {
+    peek_cond_names().join(", ")
+}
+
+/// The lookahead conditions a `@peek(cond)` marker may name — membership in
+/// `peek_cond_names` above, which is the SET's single source of truth. Consulted by
+/// parse_primary (a typo is rejected at parse time).
+/// Kept in lockstep with executor.lookahead_ok (which maps each name to
 /// a token test) and emit.peek_guard (which emits the equivalent generated guard) — a
 /// new cond is added in all three. `ident_colon`: the current token is an IDENT and the
 /// next is `:` — the hand parse_paren_expr's `peek_after_ident_is_colon` (typed lambda).
@@ -576,7 +605,9 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `body` followed by `:` (t-47hc slice A). `kw_let`: the current token is the
     // `let` keyword — comp_field's declared-dispatch gate over `declaration`'s
     // routed let_decl. See executor.lookahead_ok for both.
-    cond == "ident_colon" || cond == "lparen_ident_colon" || cond == "stmt_block" || cond == "brace_map" || cond == "for_destructure" || cond == "match_subjectless" || cond == "match_table" || cond == "comma_ident" || cond == "not_gt" || cond == "double_colon" || cond == "decl_lead" || cond == "if_let" || cond == "ident_lbrace" || cond == "tilde_ident_lbrace" || cond == "ident_lbrace_plain" || cond == "ident_lbrace_feature" || cond == "ident_template" || cond == "ident_plain" || cond == "qdot_plain_field" || cond == "qdot_method_call" || cond == "dot_plain_field" || cond == "dot_enum_ctor" || cond == "dot_number" || cond == "comma_not_rparen" || cond == "not_rparen" || cond == "not_rbrace" || cond == "comma_not_rbracket" || cond == "comma_not_rbrace" || cond == "quote_arm" || cond == "quote_type" || cond == "body_marker" || cond == "kw_let" || cond == "cfg_pair_value" || cond == "cfg_pair_eq" || cond == "comp_inst_shape" || cond == "comp_nested_named" || cond == "comp_nested_bare" || cond == "comp_nested_raw_named" || cond == "comp_nested_raw_bare" || cond == "comp_method" || cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" || cond == "always" || cond == "decl_table_kw" || cond == "return_value" || cond == "cur_ident" || cond == "paren_lambda_ahead" || cond == "list_comp_ahead" || cond == "comp_paren_shape" || cond == "comp_implements_inst" || cond == "kw_implements" || cond == "let_destructure" || cond == "kw_config" || cond == "kw_children"
+    mut ok = false
+    for c in peek_cond_names() { if c == cond { ok = true } }
+    ok
 }
 
 /// The parse-MODE flags a `@off(flag)` marker (GItem.mode_off) may turn off —
@@ -762,16 +793,33 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
                         if prim_is_hand_or_pred(item.prim) {
                             return "`${mk}(${fl})` cannot wrap a `@hand`/`@when`/`@peek`/`@gensym`/`@rawbrace` primary (rule `${rule}`)"
                         }
-                        // A mode marker on a `@require` item would LEAK the set mode: the
-                        // emitted wrapper is `save; set; <item>; restore`, and a failed
-                        // `@require` emits an early `return` from inside <item>, skipping
-                        // the restore. Rather than thread cleanup through every emitted
-                        // return path, reject the combination — it has no use today, and a
-                        // silent mode leak into the rest of the parse is the worse failure.
-                        // (This closes the hole for @off/@on too, where it pre-existed.)
-                        if item.require {
-                            return "`${mk}(${fl})` cannot apply to a `@require` item (rule `${rule}`) — a failed require returns early and would skip the mode restore"
-                        }
+                        // A mode marker on a `@require` item USED to be rejected here: the
+                        // emitted wrapper is `save; set; <item>; restore`, a failed
+                        // `@require` emits an early `return` from inside <item>, and that
+                        // skipped the restore — so the set mode leaked into the rest of the
+                        // parse. The note said "rather than thread cleanup through every
+                        // emitted return path, reject the combination — it has no use
+                        // today".
+                        //
+                        // The cleanup IS threaded now, on both engines, and the combination
+                        // HAS a use. emit wraps the body through `restore_modes_before_aborts`
+                        // (emit.av), which inserts `st.set_modes(__modes_N)` ahead of every
+                        // abort return inside the wrapper; the executor never had the hole,
+                        // because its abort is a FLAG set on the way out (`env.set_abort`)
+                        // rather than an early return, so `exec_item_marked`'s restore always
+                        // runs — and a `@require` on a rule REF checks FIRST *before* calling
+                        // it, so a failure there never entered the wrapper at all.
+                        //
+                        // The use is `quote type { <type> }`: the type position needs
+                        // `@require` to abort with the hand's "expected a type inside
+                        // `quote type { ... }`" instead of reporting a generic F0040 and then
+                        // reporting the missing `}` too, and it needs `@bump(quote_depth)` so
+                        // a splice inside it still sees a nonzero depth. Rejecting the pair
+                        // forced picking one.
+                        //
+                        // Guarded by `mode_restore_on_abort_test.av`, which asserts BOTH the
+                        // emitted restore-before-abort ordering and that a real parse of the
+                        // aborting form leaves `quote_depth` unleaked.
                     }
                     // A structural group is a NESTED sequence: recurse to validate its
                     // markers too (now ALLOWED unless we're inside a fold branch), carrying
@@ -1468,193 +1516,209 @@ fn parse_labeled(p: GP) -> GItem {
     // the emitters' `continue`-heavy item loops free of index arithmetic). A
     // trailing `@cut` has no following item to attach to and is rejected below.
     mut cut = false
-    if at_cut_marker(p) {
-        let _ = p.advance()   // "@"
-        let _ = p.advance()   // "cut"
-        cut = true
-        if !seq_can_continue(p) {
-            p.fail("`@cut` must be followed by an item — it marks the point a `@try` branch commits")
-        }
-    }
-    // t-47hc.21 ABORT: `@require` makes a mismatch on this terminal stop the rule
-    // rather than report-and-continue. Bare marker (no parens) — the message is the
-    // sequence's `@expect`, so diagnostics keep ONE seam.
-    // t-myz7 GATE: `@gate(cond)` is `@peek(cond)` whose cond REPLACES the FIRST
-    // guard rather than narrowing it. Recorded on the item it precedes, exactly as
-    // `@cut` is — the gate sits BETWEEN the guard and the item it admits.
     mut gate = false
-    if at_gate_marker(p) {
-        let _ = p.advance()   // "@"
-        let _ = p.advance()   // "gate"
-        gate = true
-        if !seq_can_continue(p) {
-            p.fail("`@gate(cond)` must be followed by an item — it replaces that item's FIRST guard")
-        }
-    }
     mut require = false
-    if at_require_marker(p) {
-        let _ = p.advance()   // "@"
-        let _ = p.advance()   // "require"
-        require = true
-        if !seq_can_continue(p) {
-            p.fail("`@require` must be followed by an item — it marks a terminal whose absence aborts the rule")
-        }
-    }
-    // t-myz7 NON-ABORTING FAILURE POLICY: `@onfail(policy)` says what this position does
-    // when its sub-parse fails, for the rules whose hand parser RECOVERS where `@require`
-    // and `@gate` abort. STRICT grammar `@` `onfail` `(` NAME `)`, the policy validated
-    // against onfail_policy_supported — an unknown policy is a hard error rather than a
-    // silent fall-through to the aborting default, which would look exactly like the bug
-    // the marker was added to fix.
     mut onfail = ""
     mut onfail_cap = ""
-    if at_onfail_marker(p) {
-        let _ = p.advance()   // "@"
-        let _ = p.advance()   // "onfail"
-        p.expect_punct("(", "expected `(` after `@onfail`")
-        if p.peek().kind == "NAME" {
-            let pol = p.advance().text
-            if onfail_policy_supported(pol) {
-                onfail = pol
-            } else {
-                p.fail("unknown `@onfail` policy `${pol}` (expected skip / close / halt / drop / bail / discard / abort)")
-            }
-        } else {
-            p.fail("expected a policy name in `@onfail(policy)`")
-        }
-        // `@onfail(discard, <label>)` — the one policy that names what it throws away.
-        // Required for `discard` and refused for the rest, both ways round, so the marker
-        // can never read as "discard something unspecified" or carry a capture no code
-        // path will look at.
-        if p.is_punct(",") {
-            let _ = p.advance()
-            if !onfail_policy_takes_capture(onfail) {
-                p.fail("`@onfail(${onfail})` takes no capture — only `discard` names the list it throws away")
-            }
-            if p.peek().kind == "NAME" {
-                onfail_cap = p.advance().text
-            } else {
-                p.fail("expected a capture name in `@onfail(discard, <label>)`")
-            }
-        } else if onfail_policy_takes_capture(onfail) {
-            p.fail("`@onfail(discard)` must name the capture it throws away (`@onfail(discard, tparams)`) — a bracket's closer is not enough to say which list it was collecting")
-        }
-        p.expect_punct(")", "expected `)` to close `@onfail(policy)`")
-        if !seq_can_continue(p) {
-            p.fail("`@onfail(policy)` must be followed by an item — it marks the position whose failure it governs")
-        }
-    }
-    if onfail != "" && require {
-        p.fail("`@require` and `@onfail` are opposite answers to the same question — an item aborts on failure or it recovers, not both")
-    }
-    // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
-    // matches only on the same source line as the previous token (the
-    // postfix-chain cutoff). `^` lexes as a single-char PUNCT here.
     mut sameline = false
-    if p.peek().kind == "PUNCT" && p.peek().text == "^" {
-        let _ = p.advance()
-        sameline = true
-    }
-    // t-47hc mode-SET marker `@off(flag)`: turn a settable ExprModes flag OFF for
-    // this item's sub-parse (the `while foo {` struct-literal disambiguation the
-    // hand parser does with `allow_struct_lit = false`). Distinguished from the
-    // `@hand`/`@when`/`@try` primaries by the second token being `off` (parsed
-    // later as the primary / branch marker). STRICT grammar: `@` `off` `(` NAME `)`
-    // — the parens are required and the flag NAME is validated against
-    // off_flag_supported. The raw NAME is interpolated into emitted source
-    // (modes_with_flag_off(st.modes, "<NAME>")), so a typo or the READ-only
-    // `at_quote_top` predicate must be a hard error here, not a silent no-op that
-    // generates a dead mode-set. Malformed forms (missing `(`/`)`, non-NAME flag)
-    // fail via p.fail rather than being accepted verbatim.
     mut mode_off = ""
-    if at_off_marker(p) {
-        let _ = p.advance()   // "@"
-        let _ = p.advance()   // "off"
-        p.expect_punct("(", "expected `(` after `@off`")
-        if p.peek().kind == "NAME" {
-            let fl = p.advance().text
-            if off_flag_supported(fl) {
-                mode_off = fl
-            } else {
-                p.fail("unknown `@off` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)")
-            }
-        } else {
-            p.fail("expected a flag name in `@off(flag)`")
-        }
-        p.expect_punct(")", "expected `)` to close `@off(flag)`")
-    }
-    // t-47hc mode-SET marker `@on(flag)`: the SET-ON twin of `@off` — turn a settable
-    // ExprModes flag ON for this item's sub-parse (parse_paren_expr re-enables
-    // allow_dot_postfix inside `(...)`). Same STRICT grammar `@` `on` `(` NAME `)`,
-    // validated against on_flag_supported. mode_off and mode_on can't both be set.
     mut mode_on = ""
     mut mode_on_if = ""
-    if at_on_marker(p) {
-        let _ = p.advance()   // "@"
-        let _ = p.advance()   // "on"
-        p.expect_punct("(", "expected `(` after `@on`")
-        if p.peek().kind == "NAME" {
-            let fl = p.advance().text
-            if on_flag_supported(fl) {
-                mode_on = fl
-            } else {
-                p.fail("unknown `@on` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)")
-            }
-        } else {
-            p.fail("expected a flag name in `@on(flag)`")
-        }
-        p.expect_punct(")", "expected `)` to close `@on(flag)`")
-    }
-    // t-47hc.34 CONDITIONAL mode-SET `@on_if(pred, flag)`: set `flag` for this item's
-    // sub-parse ONLY when `pred` holds, then restore. STRICT `@` `on_if` `(` NAME `,`
-    // NAME `)`. Both names are validated, each against the list that already owns it —
-    // the predicate against when_pred_supported (the same list `@when` uses) and the flag
-    // against on_flag_supported (the same list `@on` uses) — so a typo in either half is
-    // a hard grammar-parse error rather than a guard that silently never fires.
-    if at_on_if_marker(p) {
-        // Both markers write `mode_on`, so accepting the pair would silently keep only
-        // the second — a mode that looks gated and is not, or the reverse.
-        if mode_on != "" { p.fail("`@on` and `@on_if` cannot both mark the same item — they set the same flag") }
-        let _ = p.advance()   // "@"
-        let _ = p.advance()   // "on_if"
-        p.expect_punct("(", "expected `(` after `@on_if`")
-        if p.peek().kind == "NAME" {
-            let pr = p.advance().text
-            if when_pred_supported(pr) { mode_on_if = pr }
-            else { p.fail("unknown `@on_if` predicate `${pr}` — it must be a `@when` predicate name") }
-        } else {
-            p.fail("expected a predicate name in `@on_if(pred, flag)`")
-        }
-        p.expect_punct(",", "expected `,` between the predicate and the flag in `@on_if(pred, flag)`")
-        if p.peek().kind == "NAME" {
-            let fl = p.advance().text
-            if on_flag_supported(fl) { mode_on = fl }
-            else { p.fail("unknown `@on_if` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)") }
-        } else {
-            p.fail("expected a flag name in `@on_if(pred, flag)`")
-        }
-        p.expect_punct(")", "expected `)` to close `@on_if(pred, flag)`")
-    }
-    // t-47hc.32 counter-SET marker `@bump(counter)`: increment an ExprModes int cell for
-    // this item's sub-parse, then restore — the hand parse_quote's save/bump/restore
-    // around a quote body. Same STRICT grammar `@` `bump` `(` NAME `)`, validated against
-    // bump_counter_supported (its OWN list: a counter is not a settable bool).
     mut mode_bump = ""
-    if at_bump_marker(p) {
-        let _ = p.advance()   // "@"
-        let _ = p.advance()   // "bump"
-        p.expect_punct("(", "expected `(` after `@bump`")
-        if p.peek().kind == "NAME" {
-            let cn = p.advance().text
-            if bump_counter_supported(cn) {
-                mode_bump = cn
-            } else {
-                p.fail("unknown `@bump` counter `${cn}` (expected quote_depth)")
+    // MARKER ORDER IS IRRELEVANT (t-47hc.5). Each `@`-marker below annotates the item
+    // that follows it, and two of them on one item mean the same thing in either order —
+    // but a straight-line `if` chain accepts only the chain's own order, so
+    // `@bump(quote_depth) @require t:type_expr` failed to parse while
+    // `@require @bump(quote_depth) t:type_expr` succeeded. The rejection surfaced as
+    // `parse_primary`'s generic "expected a rule reference, terminal, …(at `@`)", which
+    // names neither marker and does not hint that ORDER was the problem.
+    //
+    // Looping until a pass consumes nothing makes every permutation parse. The
+    // mutual-exclusion checks below still run once, afterwards, on the collected set —
+    // they are about which markers may COMBINE, which is a different question from the
+    // order they are written in, and only the first has a reason to be a hard error.
+    while true {
+        let __m_before = p.pos
+        if at_cut_marker(p) {
+            let _ = p.advance()   // "@"
+            let _ = p.advance()   // "cut"
+            cut = true
+            if !seq_can_continue(p) {
+                p.fail("`@cut` must be followed by an item — it marks the point a `@try` branch commits")
             }
-        } else {
-            p.fail("expected a counter name in `@bump(counter)`")
         }
-        p.expect_punct(")", "expected `)` to close `@bump(counter)`")
+        // t-47hc.21 ABORT: `@require` makes a mismatch on this terminal stop the rule
+        // rather than report-and-continue. Bare marker (no parens) — the message is the
+        // sequence's `@expect`, so diagnostics keep ONE seam.
+        // t-myz7 GATE: `@gate(cond)` is `@peek(cond)` whose cond REPLACES the FIRST
+        // guard rather than narrowing it. Recorded on the item it precedes, exactly as
+        // `@cut` is — the gate sits BETWEEN the guard and the item it admits.
+        if at_gate_marker(p) {
+            let _ = p.advance()   // "@"
+            let _ = p.advance()   // "gate"
+            gate = true
+            if !seq_can_continue(p) {
+                p.fail("`@gate(cond)` must be followed by an item — it replaces that item's FIRST guard")
+            }
+        }
+        if at_require_marker(p) {
+            let _ = p.advance()   // "@"
+            let _ = p.advance()   // "require"
+            require = true
+            if !seq_can_continue(p) {
+                p.fail("`@require` must be followed by an item — it marks a terminal whose absence aborts the rule")
+            }
+        }
+        // t-myz7 NON-ABORTING FAILURE POLICY: `@onfail(policy)` says what this position does
+        // when its sub-parse fails, for the rules whose hand parser RECOVERS where `@require`
+        // and `@gate` abort. STRICT grammar `@` `onfail` `(` NAME `)`, the policy validated
+        // against onfail_policy_supported — an unknown policy is a hard error rather than a
+        // silent fall-through to the aborting default, which would look exactly like the bug
+        // the marker was added to fix.
+        if at_onfail_marker(p) {
+            let _ = p.advance()   // "@"
+            let _ = p.advance()   // "onfail"
+            p.expect_punct("(", "expected `(` after `@onfail`")
+            if p.peek().kind == "NAME" {
+                let pol = p.advance().text
+                if onfail_policy_supported(pol) {
+                    onfail = pol
+                } else {
+                    p.fail("unknown `@onfail` policy `${pol}` (expected skip / close / halt / drop / bail / discard / abort)")
+                }
+            } else {
+                p.fail("expected a policy name in `@onfail(policy)`")
+            }
+            // `@onfail(discard, <label>)` — the one policy that names what it throws away.
+            // Required for `discard` and refused for the rest, both ways round, so the marker
+            // can never read as "discard something unspecified" or carry a capture no code
+            // path will look at.
+            if p.is_punct(",") {
+                let _ = p.advance()
+                if !onfail_policy_takes_capture(onfail) {
+                    p.fail("`@onfail(${onfail})` takes no capture — only `discard` names the list it throws away")
+                }
+                if p.peek().kind == "NAME" {
+                    onfail_cap = p.advance().text
+                } else {
+                    p.fail("expected a capture name in `@onfail(discard, <label>)`")
+                }
+            } else if onfail_policy_takes_capture(onfail) {
+                p.fail("`@onfail(discard)` must name the capture it throws away (`@onfail(discard, tparams)`) — a bracket's closer is not enough to say which list it was collecting")
+            }
+            p.expect_punct(")", "expected `)` to close `@onfail(policy)`")
+            if !seq_can_continue(p) {
+                p.fail("`@onfail(policy)` must be followed by an item — it marks the position whose failure it governs")
+            }
+        }
+        if onfail != "" && require {
+            p.fail("`@require` and `@onfail` are opposite answers to the same question — an item aborts on failure or it recovers, not both")
+        }
+        // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
+        // matches only on the same source line as the previous token (the
+        // postfix-chain cutoff). `^` lexes as a single-char PUNCT here.
+        if p.peek().kind == "PUNCT" && p.peek().text == "^" {
+            let _ = p.advance()
+            sameline = true
+        }
+        // t-47hc mode-SET marker `@off(flag)`: turn a settable ExprModes flag OFF for
+        // this item's sub-parse (the `while foo {` struct-literal disambiguation the
+        // hand parser does with `allow_struct_lit = false`). Distinguished from the
+        // `@hand`/`@when`/`@try` primaries by the second token being `off` (parsed
+        // later as the primary / branch marker). STRICT grammar: `@` `off` `(` NAME `)`
+        // — the parens are required and the flag NAME is validated against
+        // off_flag_supported. The raw NAME is interpolated into emitted source
+        // (modes_with_flag_off(st.modes, "<NAME>")), so a typo or the READ-only
+        // `at_quote_top` predicate must be a hard error here, not a silent no-op that
+        // generates a dead mode-set. Malformed forms (missing `(`/`)`, non-NAME flag)
+        // fail via p.fail rather than being accepted verbatim.
+        if at_off_marker(p) {
+            let _ = p.advance()   // "@"
+            let _ = p.advance()   // "off"
+            p.expect_punct("(", "expected `(` after `@off`")
+            if p.peek().kind == "NAME" {
+                let fl = p.advance().text
+                if off_flag_supported(fl) {
+                    mode_off = fl
+                } else {
+                    p.fail("unknown `@off` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)")
+                }
+            } else {
+                p.fail("expected a flag name in `@off(flag)`")
+            }
+            p.expect_punct(")", "expected `)` to close `@off(flag)`")
+        }
+        // t-47hc mode-SET marker `@on(flag)`: the SET-ON twin of `@off` — turn a settable
+        // ExprModes flag ON for this item's sub-parse (parse_paren_expr re-enables
+        // allow_dot_postfix inside `(...)`). Same STRICT grammar `@` `on` `(` NAME `)`,
+        // validated against on_flag_supported. mode_off and mode_on can't both be set.
+        if at_on_marker(p) {
+            let _ = p.advance()   // "@"
+            let _ = p.advance()   // "on"
+            p.expect_punct("(", "expected `(` after `@on`")
+            if p.peek().kind == "NAME" {
+                let fl = p.advance().text
+                if on_flag_supported(fl) {
+                    mode_on = fl
+                } else {
+                    p.fail("unknown `@on` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)")
+                }
+            } else {
+                p.fail("expected a flag name in `@on(flag)`")
+            }
+            p.expect_punct(")", "expected `)` to close `@on(flag)`")
+        }
+        // t-47hc.34 CONDITIONAL mode-SET `@on_if(pred, flag)`: set `flag` for this item's
+        // sub-parse ONLY when `pred` holds, then restore. STRICT `@` `on_if` `(` NAME `,`
+        // NAME `)`. Both names are validated, each against the list that already owns it —
+        // the predicate against when_pred_supported (the same list `@when` uses) and the flag
+        // against on_flag_supported (the same list `@on` uses) — so a typo in either half is
+        // a hard grammar-parse error rather than a guard that silently never fires.
+        if at_on_if_marker(p) {
+            // Both markers write `mode_on`, so accepting the pair would silently keep only
+            // the second — a mode that looks gated and is not, or the reverse.
+            if mode_on != "" { p.fail("`@on` and `@on_if` cannot both mark the same item — they set the same flag") }
+            let _ = p.advance()   // "@"
+            let _ = p.advance()   // "on_if"
+            p.expect_punct("(", "expected `(` after `@on_if`")
+            if p.peek().kind == "NAME" {
+                let pr = p.advance().text
+                if when_pred_supported(pr) { mode_on_if = pr }
+                else { p.fail("unknown `@on_if` predicate `${pr}` — it must be a `@when` predicate name") }
+            } else {
+                p.fail("expected a predicate name in `@on_if(pred, flag)`")
+            }
+            p.expect_punct(",", "expected `,` between the predicate and the flag in `@on_if(pred, flag)`")
+            if p.peek().kind == "NAME" {
+                let fl = p.advance().text
+                if on_flag_supported(fl) { mode_on = fl }
+                else { p.fail("unknown `@on_if` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)") }
+            } else {
+                p.fail("expected a flag name in `@on_if(pred, flag)`")
+            }
+            p.expect_punct(")", "expected `)` to close `@on_if(pred, flag)`")
+        }
+        // t-47hc.32 counter-SET marker `@bump(counter)`: increment an ExprModes int cell for
+        // this item's sub-parse, then restore — the hand parse_quote's save/bump/restore
+        // around a quote body. Same STRICT grammar `@` `bump` `(` NAME `)`, validated against
+        // bump_counter_supported (its OWN list: a counter is not a settable bool).
+        if at_bump_marker(p) {
+            let _ = p.advance()   // "@"
+            let _ = p.advance()   // "bump"
+            p.expect_punct("(", "expected `(` after `@bump`")
+            if p.peek().kind == "NAME" {
+                let cn = p.advance().text
+                if bump_counter_supported(cn) {
+                    mode_bump = cn
+                } else {
+                    p.fail("unknown `@bump` counter `${cn}` (expected quote_depth)")
+                }
+            } else {
+                p.fail("expected a counter name in `@bump(counter)`")
+            }
+            p.expect_punct(")", "expected `)` to close `@bump(counter)`")
+        }
+        if p.pos == __m_before { break }
     }
     // Enforce the mutual-exclusion invariant the comments assert: emit_item /
     // exec_item honour mode_off FIRST and would silently drop a co-present
@@ -1917,7 +1981,7 @@ fn parse_primary(p: GP) -> GPrim {
         if p.peek().kind == "NAME" {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
-            else { p.fail("unknown `@peek` cond `${c}` (expected: ident_colon, lparen_ident_colon, stmt_block, brace_map, for_destructure, match_subjectless, match_table, comma_ident, double_colon, decl_lead, if_let, ident_lbrace, tilde_ident_lbrace, ident_lbrace_plain, ident_lbrace_feature, ident_template, ident_plain, qdot_plain_field, qdot_method_call, dot_plain_field, dot_enum_ctor, dot_number, comma_not_rparen, comma_not_rbracket, comma_not_rbrace, quote_arm, quote_type, body_marker, kw_let, cfg_pair_value, cfg_pair_eq, comp_inst_shape, comp_nested_named, comp_nested_bare, comp_nested_raw_named, comp_nested_raw_bare, comp_method, bare_comp_inst, bare_comp_inst_raw, always, decl_table_kw, return_value, not_gt, not_rparen, not_rbrace, cur_ident, paren_lambda_ahead, list_comp_ahead, comp_paren_shape, comp_implements_inst, kw_implements, let_destructure, kw_config, kw_children)") }
+            else { p.fail("unknown `@peek` cond `${c}` (expected: " + peek_cond_expected_list() + ")") }
         }
         else { p.fail("expected a cond name in `@peek(cond)`") }
         p.expect_punct(")", "expected `)` to close `@peek`")

@@ -79,8 +79,15 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // the label, so `let l = parse_pipe(st)` became `let __bres0 = parse_pipe(st)` +
         // guard + `let l = __bres0`. The bail is what stops a FAILED left operand being
         // built on — `if let = x { 1 }` used to consume the `=` and report twice more.
+        //
+        // The guard tests the UNION of "came back an error node" and "diagnostics grew",
+        // which is what the hand's `?` propagates (see emit.av). Pinning the diag half
+        // here is what keeps the policy from quietly narrowing back to error-node-only:
+        // that reading kept a REPORTED-but-valued sub-parse alive, which is how
+        // `let b = x is Foo` survived as a binding where the hand aborts the statement.
+        src.contains("let __bdiag0 = st.diags.length") &&
         src.contains("let __bres0 = parse_pipe(st)") &&
-        src.contains("if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {") &&
+        src.contains("if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {") &&
         src.contains("let l = __bres0") &&
         src.contains("if st.cur().tk == Tk.Equal {") &&
         src.contains("r = parse_assignment(st)") &&
@@ -295,7 +302,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // chain instead of being swallowed by the repetition, which is what let
         // `a with { x: 2` (unclosed) report at all — it previously built `(let b a)` with
         // ZERO diagnostics.
-        src.contains("        while st.cur().text == \"with\" {\n            let __bres0 = parse_with_suffix(st)\n            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {\n                return CapVal.Node(st.error_node_silent())\n            }\n            s_list.push(capval_to_expr(st, __bres0))\n        }") &&
+        src.contains("        while st.cur().text == \"with\" {\n            let __bdiag0 = st.diags.length\n            let __bres0 = parse_with_suffix(st)\n            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {\n                return CapVal.Node(st.error_node_silent())\n            }\n            s_list.push(capval_to_expr(st, __bres0))\n        }") &&
         // t-47hc.17: `with_suffix` is GRAMMAR-NATIVE now (hand parse_with_suffix deleted),
         // so its delegate rule must no longer route through run_hand_expr — it parses the
         // field list itself and folds it via mk_with_suffix. Assert the absence too, so a

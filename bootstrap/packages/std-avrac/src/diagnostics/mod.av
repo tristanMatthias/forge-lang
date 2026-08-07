@@ -524,11 +524,22 @@ export type ErrorDef = { code: string, help: string }
 /// `if cond expr` is the hand's F0010 `ExpectedBlock` and came out F0001 the moment `fn`
 /// routed and the statement body stopped falling back.
 ///
-/// Restricted to the syntax range on purpose. A parser rule reports parse errors; a
-/// typeck or resolve code arriving through this boundary would mean something is wrong
-/// upstream, and answering `null` there says so rather than silently manufacturing one.
-/// `null` is also what an UNCODED diagnostic (`report`, the common case) yields, and the
-/// seam's existing `set_error` default handles both identically.
+/// The set is "codes a PARSER may report", which is the syntax range PLUS the handful of
+/// non-syntax codes the hand parser itself raises. F1203 `LetElseMustDiverge` is the
+/// caught instance: `let_stmt/parser.av` reports it from the parser, so when `let_decl`
+/// went native the builder had to report it too — and a code outside the range answered
+/// `null` here, degrading it to the F0001 default. The message survived and the CODE
+/// silently changed, which is the failure mode this table has to make impossible.
+///
+/// What stays EXCLUDED is a genuine typeck/resolve code arriving through this boundary:
+/// that would mean something is wrong upstream, and `null` says so rather than
+/// manufacturing one. `null` is also what an UNCODED diagnostic (`report`, the common
+/// case) yields, and the seam's `set_error` default handles both identically.
+///
+/// Drift is GUARDED, not trusted: `diagnostics/tests/parser_code_reverse_test.av` reads
+/// the grammar and the executor's own source, extracts every F-code they name, and fails
+/// if any of them is not reversible here — so adding `@expect(…, F1234)` or a
+/// `report_coded("F1234", …)` without an entry below is a red test, never a silent F0001.
 export fn syntax_diag_code(code: string) -> DiagCode? {
     if code == "F0001" { return DiagCode.SyntaxError }
     if code == "F0002" { return DiagCode.UnterminatedString }
@@ -543,6 +554,8 @@ export fn syntax_diag_code(code: string) -> DiagCode? {
     if code == "F0031" { return DiagCode.ExpectedIn }
     if code == "F0040" { return DiagCode.ExpectedExpression }
     if code == "F0041" { return DiagCode.UnexpectedSemicolon }
+    // Non-syntax, but PARSER-reported — see the note above.
+    if code == "F1203" { return DiagCode.LetElseMustDiverge }
     null
 }
 

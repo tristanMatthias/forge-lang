@@ -2963,17 +2963,27 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     // (`select { x <- }` is the expression view's F0040 and nothing more, because
     // `parse_select_arm` returns on a failed channel).
     //
-    // The signal is the sub-parse FAILING — coming back as an error node — and NOT "did it
-    // report", because those are different questions and the hand asks the first: `?`
-    // propagates an `Err`, and an expression that reported and still produced a value is
-    // `Ok`. `let a = (1) ->` is the case that separates them: the expression view reports
-    // about the missing lambda body and hands back `(group 1)`, which the hand KEEPS —
-    // aborting on the report erased the whole binding.
+    // The signal is EITHER the sub-parse failing (an error node) OR its having REPORTED.
+    // That union is what the hand's `?` actually propagates: `parse_let_statement` does
+    // `parse_expression()?`, and the hand's expression parser reports and returns `Err`
+    // together — `x is Foo` (F0001 "expected `.Variant` after `is`") kills the whole
+    // binding on the hand, not just the `is`.
+    //
+    // The narrower "failed only" signal was this policy's original reading, carved out for
+    // `let a = (1) ->`: the expression view reported about the missing lambda body and
+    // still handed back `(group 1)`, which the hand KEEPS. That carve-out is OBSOLETE —
+    // `paren_expr` now gates its lambda branches on `@peek(paren_lambda_ahead)`, so `(1)`
+    // parses as a clean group and the dangling `->` is the NEXT statement's F0040, exactly
+    // as on the hand. With the one input that separated "reported" from "failed" gone, the
+    // union is the hand's rule, and this policy's own doc (ast.GItem.onfail) always said so.
     if item.onfail == "bail" {
+        let bbefore = st.diags.length
         let br = exec_item_marked(g, item, st, env, multi, annots)
         // See the emit twin: both node shapes, because a declaration-view callee fails as
         // a `Stmt.Error` and an expression-view one as an error `Node`.
-        if capval_is_error_expr(st, br) || capval_is_error_stmt(st, br) { env.set_abort(true) }
+        if capval_is_error_expr(st, br) || capval_is_error_stmt(st, br) || st.diags.length != bbefore {
+            env.set_abort(true)
+        }
         return br
     }
     // t-myz7 `@onfail(discard, <label>)`: report the missing closer (exec_primary's
@@ -6099,11 +6109,17 @@ export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
 /// hand's `build_let_else` calls, so the two engines cannot drift in what they lower
 /// to.
 ///
-/// The divergence REPORT is deliberately message-only, carrying no DiagCode: under
-/// `@try` ANY report rolls the branch back, so the hand re-parses the item and owns
-/// the coded `LetElseMustDiverge` diagnostic byte-for-byte (the t-47hc.31
-/// no-code-channel discipline — the native rule never needs a diagnostics channel of
-/// its own).
+/// The divergence REPORT carries the full coded `LetElseMustDiverge` diagnostic —
+/// F1203, the hand's message and its help text verbatim (`let_stmt/parser.av`).
+///
+/// It used to be message-only, and that was correct while `let_decl` sat under a
+/// dispatcher-level `@try` with no cut: ANY report rolled the branch back, the hand
+/// re-parsed the item, and the hand owned the code byte-for-byte (the t-47hc.31
+/// no-code-channel discipline). Routing `let` ends that arrangement — `@try "let"
+/// @cut` commits the branch as soon as the keyword is consumed, so there is no
+/// rollback left to hand the diagnostic off to, and a message-only report simply
+/// DELETED F1203 from the output. Whoever commits the parse owns its diagnostics;
+/// the code channel `report_coded` widened is exactly what that costs to spend.
 ///
 /// `tmp_cv` is the `@gensym(letelse)` mint, already performed AFTER the
 /// else-statement parse (its position in the rule's sequence), which is exactly where
@@ -6124,7 +6140,7 @@ export fn mk_let_binding_g(st: PState, has_mut: bool, name: string, ty_cv: CapVa
             _ -> [else_sid]
         }
         if !stmt_ids_diverge(st.store, else_ids) {
-            st.report("the `else` of a `let … else` must diverge")
+            st.report_coded("F1203", "the `else` of a `let … else` must diverge (`return` / `break` / `continue` / `panic`)")
         }
         init_id = build_let_else_init(st.store, capval_tok_text(tmp_cv), init_id, else_ids)
     }
