@@ -2091,14 +2091,26 @@ fn resolve_const_ref(ctx: NameCtx, name: string) -> string {
     ""
 }
 
-/// Map `rewrite_expr` over a flipped `List<ExprId>` (call args); rewrites
-/// each arg row in place via reexpr.
+/// Map the row rewrite over a flipped `List<ExprId>` (call args, collection
+/// elements).
+///
+/// Goes through `rewrite_expr_id`, NOT `rewrite_expr` — the two are not
+/// interchangeable. `rewrite_expr_id` carries the t-ki3s `EnumCtor` correction,
+/// which needs the row's `ExprId` and so cannot live in `rewrite_expr`. Calling
+/// the inner one here inlined the `reexpr` and skipped that correction, so a
+/// nested `consume(XS.index_of(7))` kept the parser's enum-ctor guess while the
+/// same call at statement level was fixed. It surfaced as
+/// `error[F1000]: XS is not assignable to int` — typeck rejecting an "enum"
+/// that was only ever a local — rather than as the F9999 the top-level form
+/// gave, which is why it did not look like the same bug.
+///
+/// There is exactly one row-rewrite entry point. Keep it that way: any future
+/// per-row work lands in `rewrite_expr_id` and is inherited here for free.
 fn rewrite_expr_list_ids(ctx: NameCtx, ids: List<ExprId>) -> List<ExprId> {
     mut out: List<ExprId> = []
     mut i = 0
     while i < ids.length {
-        let id = ids[i]
-        out.push(ctx.nodes.reexpr(rewrite_expr(ctx, ctx.nodes.exprs.get(id)), id))
+        out.push(rewrite_expr_id(ctx, ids[i]))
         i = i + 1
     }
     out
