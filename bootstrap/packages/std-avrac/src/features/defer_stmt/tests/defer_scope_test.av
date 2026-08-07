@@ -113,6 +113,97 @@ fn scope_block_expr() -> int {
 // while claiming to cover the tail. Mutation testing is what caught that; it is
 // recorded here so the "missing" case is not helpfully re-added.
 
+// ── The deferred body READS A BLOCK-LOCAL BINDING ──────────────────────────
+//
+// Everything above defers `println("literal")`, which needs no environment. So
+// all of it passed while the scope exit was emitting deferred bodies against
+// the WRONG env — the one from BEFORE the block ran, which does not contain the
+// block's own bindings. Caught by CodeRabbit on #1188, after 14 specs and five
+// green CI gates.
+//
+// This is the shape `defer` exists for:
+//
+//     let f = open()
+//     defer close(f)
+//
+// and not one fixture had it. The failure was silent, not loud: the deferred
+// body simply did not appear in the output (`emit_frames_above` discards the
+// emit Result — filed as t-dy1j). So these specs assert the deferred line IS
+// produced, which is exactly what the wrong env suppressed.
+
+/// Fixture: bare block, deferred call reads a binding the block declared.
+fn local_bare() {
+    {
+        let resource = mk_res(1)
+        defer use_res(resource)
+        println("lb-body")
+    }
+    println("lb-after")
+}
+
+/// Fixture: same, in a `while` body — the binding is re-declared per iteration,
+/// so the deferred call must see THAT iteration's value, not a stale one.
+fn local_while() {
+    mut i = 0
+    while i < 2 {
+        let resource = mk_res(i)
+        defer use_res(resource)
+        i = i + 1
+    }
+    println("lw-after")
+}
+
+/// Fixture: same, in an `if` body.
+fn local_if() {
+    if true {
+        let resource = mk_res(9)
+        defer use_res(resource)
+        println("li-body")
+    }
+    println("li-after")
+}
+
+/// Fixture: same, through the block-EXPRESSION path (`emit_block_expr`), which
+/// is a separate scope-exit call site and was wrong in the same way.
+fn local_block_expr() -> int {
+    let v = {
+        let resource = mk_res(5)
+        defer use_res(resource)
+        resource
+    }
+    println("lx-after")
+    v
+}
+
+/// Fixture: `break` out of the block, and the CONTROL for the group.
+///
+/// The break path emits with the live env, so it was always correct — this
+/// spec stays GREEN under the mutation that reds the other four, which is what
+/// localises the defect to the fall-through scope exit rather than to
+/// defer-with-locals in general.
+///
+/// It breaks on the FIRST iteration deliberately. An earlier draft ran two
+/// iterations and broke on the second, so the first iteration exited by
+/// fall-through — and the fixture went red under the mutation along with
+/// everything else, controlling nothing. A control that fails when the subject
+/// fails is not a control.
+fn local_break() {
+    mut i = 0
+    while i < 5 {
+        let resource = mk_res(i)
+        defer use_res(resource)
+        break
+    }
+    println("lk-after")
+}
+
+/// Helper: returns its argument, so the deferred call has a real value to read.
+fn mk_res(n: int) -> int { n }
+
+/// Helper: prints the value it was handed, so a wrong binding is visible as a
+/// wrong NUMBER rather than merely as a missing line.
+fn use_res(n: int) { println("use ${n}") }
+
 /// Fixture: `defer` inside a `match` arm body.
 fn scope_match(x: int) -> int {
     match x {
@@ -312,6 +403,44 @@ spec "t-vmkc: a nested block is a defer scope" {
             let v = scope_return()
             let out = avra_test_capture_stop()
             out == "r-block\nr-fn" && v == 1
+        }
+    }
+    given "the deferred body reads a BLOCK-LOCAL binding (CodeRabbit, #1188)" {
+        then "a bare block's defer sees the binding the block declared" {
+            avra_test_capture_start()
+            local_bare()
+            let out = avra_test_capture_stop()
+            // Was "lb-body\nlb-after" — the deferred line absent entirely,
+            // because the scope exit emitted it against the pre-block env.
+            out == "lb-body\nuse 1\nlb-after"
+        }
+        then "a `while`-body defer sees THIS iteration's binding" {
+            avra_test_capture_start()
+            local_while()
+            let out = avra_test_capture_stop()
+            // The values distinguish "sees the right binding" from "sees a
+            // binding": a stale env would give the same number twice.
+            out == "use 0\nuse 1\nlw-after"
+        }
+        then "an `if`-body defer sees the binding the branch declared" {
+            avra_test_capture_start()
+            local_if()
+            let out = avra_test_capture_stop()
+            out == "li-body\nuse 9\nli-after"
+        }
+        then "a block-EXPRESSION defer sees the binding too" {
+            avra_test_capture_start()
+            let v = local_block_expr()
+            let out = avra_test_capture_stop()
+            out == "use 5\nlx-after" && v == 5
+        }
+        then "`break` already saw it — the control that localises the defect" {
+            avra_test_capture_start()
+            local_break()
+            let out = avra_test_capture_stop()
+            // Breaks on the first iteration, so ONLY the break path runs. This
+            // is the arm that must stay green when the four above go red.
+            out == "use 0\nlk-after"
         }
     }
     given "errdefer in a nested block" {

@@ -392,7 +392,15 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             // ordering is unchanged.
             let base = defer_scope_enter(ctx)
             let sr = emit_stmt_ids(ctx, env, body)?
-            ok_sr(defer_scope_exit(sr.ctx, env, base), env)
+            // TWO different envs, deliberately:
+            //   `sr.env` — INTO the scope exit. A deferred body may name a
+            //     binding the block itself declared (`let f = open()` then
+            //     `defer close(f)` — the primary reason defer exists), and only
+            //     the walker's env has it. Passing the incoming `env` here
+            //     emitted the body against a scope where the name is absent.
+            //   `env` — OUT of the statement. The block's bindings must not
+            //     leak to the enclosing scope.
+            ok_sr(defer_scope_exit(sr.ctx, sr.env, base), env)
         }
         .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _)
         or .NoOp or .TraitDecl(_, _) or .Module(_, _) or .Use(_, _) or .AssocType(_, _) -> ok_sr(ctx, env)
