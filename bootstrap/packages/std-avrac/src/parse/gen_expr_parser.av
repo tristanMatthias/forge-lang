@@ -42,7 +42,11 @@ export fn parse_expression(st: PState) -> CapVal {
 fn parse_assignment(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     mut r: CapVal = CapVal.Nil
-    let l = parse_pipe(st)
+    let __bres0 = parse_pipe(st)
+    if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+        return CapVal.Node(st.error_node_silent())
+    }
+    let l = __bres0
     if st.cur().tk == Tk.Equal {
         let _ = st.advance()
         r = parse_assignment(st)
@@ -223,7 +227,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             st.report("expected {")
         }
         while st.cur().tk == Tk.Identifier {
-            f_list.push(capval_to_finit(st, parse_field_init(st)))
+            let __bres0 = parse_field_init(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            f_list.push(capval_to_finit(st, __bres0))
         }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
             st.report("expected }")
@@ -249,7 +257,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -266,7 +278,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -283,7 +299,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -300,7 +320,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -317,7 +341,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -334,7 +362,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -351,7 +383,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -368,7 +404,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -385,7 +425,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -402,7 +446,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -419,7 +467,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -436,7 +488,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -453,7 +509,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -470,7 +530,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -487,7 +551,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -504,7 +572,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -521,7 +593,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -538,7 +614,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -555,7 +635,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -572,7 +656,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -589,7 +677,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -606,7 +698,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -623,7 +719,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -640,7 +740,11 @@ fn parse_unary_chain(st: PState) -> CapVal {
             p_list.push(capval_to_expr(st, __rep_cv))
         }
         while st.cur().text == "with" {
-            s_list.push(capval_to_expr(st, parse_with_suffix(st)))
+            let __bres0 = parse_with_suffix(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            s_list.push(capval_to_expr(st, __bres0))
         }
         return CapVal.Node(fold_postfix_with_expr(st, sp_start, b, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))
     }
@@ -728,7 +832,11 @@ fn parse_struct_lit_expr(st: PState) -> CapVal {
         st.report("expected {")
     }
     while st.cur().tk == Tk.Identifier {
-        f_list.push(capval_to_finit(st, parse_field_init(st)))
+        let __bres0 = parse_field_init(st)
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        f_list.push(capval_to_finit(st, __bres0))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected }")
@@ -774,7 +882,11 @@ fn parse_qualified_expr(st: PState) -> CapVal {
     if st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.LeftBrace) {
         lb = CapVal.Tok(st.advance())
         while st.cur().tk == Tk.Identifier {
-            f_list.push(capval_to_finit(st, parse_field_init(st)))
+            let __bres0 = parse_field_init(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+                return CapVal.Node(st.error_node_silent())
+            }
+            f_list.push(capval_to_finit(st, __bres0))
         }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
             st.report("expected `}` after struct fields")
@@ -809,7 +921,11 @@ fn parse_map_literal(st: PState) -> CapVal {
             st.report("expected `:` after map key")
             return CapVal.Node(st.error_node_silent())
         }
-        v_list.push(capval_to_expr(st, parse_expression(st)))
+        let __bres2 = parse_expression(st)
+        if capval_is_error_expr(st, __bres2) || capval_is_error_stmt(st, __bres2) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        v_list.push(capval_to_expr(st, __bres2))
         if st.cur().tk == Tk.Comma {
             let _ = st.advance()
         }
@@ -1116,11 +1232,20 @@ fn parse_with_suffix(st: PState) -> CapVal {
         st.report("expected `{` after `with`")
         return CapVal.Node(st.error_node_silent())
     }
-    while lookahead_ok("cur_ident", st) && (st.cur().tk == Tk.Identifier) {
-        f_list.push(capval_to_finit(st, parse_field_init(st)))
+    if !(st.cur().tk == Tk.Identifier) {
+        st.report("expected field name")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    while st.cur().tk == Tk.Identifier {
+        let __bres0 = parse_field_init(st)
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        f_list.push(capval_to_finit(st, __bres0))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected field name")
+        st.report("expected `}` after struct fields")
         return CapVal.Node(st.error_node_silent())
     }
     CapVal.Node(mk_with_suffix(st, sp_start, CapVal.FInits(f_list)))
@@ -1131,7 +1256,11 @@ fn parse_field_init(st: PState) -> CapVal {
     let n = CapVal.Tok(st.advance())
     if st.cur().tk == Tk.Colon {
         let _ = st.advance()
-        v = parse_expression(st)
+        let __bres1 = parse_expression(st)
+        if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        v = __bres1
     }
     if st.cur().tk == Tk.Comma {
         let _ = st.advance()
@@ -1158,7 +1287,8 @@ fn parse_variant_ctor(st: PState) -> CapVal {
             }
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected )")
+            st.report("expected `)` after arguments")
+            return CapVal.Node(st.error_node_silent())
         }
     }
     CapVal.Node(mk_enum_ctor_expr(st, sp_start, v, CapVal.Nodes(a_list)))

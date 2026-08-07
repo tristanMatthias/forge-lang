@@ -74,7 +74,13 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // `assignment = l:null_coalesce ( "=" r:assignment )? -> mk_assign(l, r)`
         // ps3t.6.7 perf: the `=` guard dispatches on the Tk enum (tk_guard), not text.
         let src = emit_all()
-        src.contains("let l = parse_pipe(st)") &&
+        // t-47hc.5: `@onfail(bail)` on the LHS binds a TEMP and error-checks it before
+        // the label, so `let l = parse_pipe(st)` became `let __bres0 = parse_pipe(st)` +
+        // guard + `let l = __bres0`. The bail is what stops a FAILED left operand being
+        // built on — `if let = x { 1 }` used to consume the `=` and report twice more.
+        src.contains("let __bres0 = parse_pipe(st)") &&
+        src.contains("if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {") &&
+        src.contains("let l = __bres0") &&
         src.contains("if st.cur().tk == Tk.Equal {") &&
         src.contains("r = parse_assignment(st)") &&
         src.contains("CapVal.Node(mk_assign_expr(st, sp_start, l, r))")
@@ -284,20 +290,27 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         //     restricting transparency to `name = @hand(f)` — pin BOTH halves so neither a
         //     dropped guard nor a spurious one slips through.
         src.contains("            let __rep_before = st.pos\n            let __rep_cv = parse_postfix_suffix(st)\n            if st.pos == __rep_before { break }\n            p_list.push(capval_to_expr(st, __rep_cv))") &&
-        src.contains("        while st.cur().text == \"with\" {\n            s_list.push(capval_to_expr(st, parse_with_suffix(st)))\n        }") &&
+        // Same `@onfail(bail)` shape on the `with` element: a FAILED suffix now ends the
+        // chain instead of being swallowed by the repetition, which is what let
+        // `a with { x: 2` (unclosed) report at all — it previously built `(let b a)` with
+        // ZERO diagnostics.
+        src.contains("        while st.cur().text == \"with\" {\n            let __bres0 = parse_with_suffix(st)\n            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) {\n                return CapVal.Node(st.error_node_silent())\n            }\n            s_list.push(capval_to_expr(st, __bres0))\n        }") &&
         // t-47hc.17: `with_suffix` is GRAMMAR-NATIVE now (hand parse_with_suffix deleted),
         // so its delegate rule must no longer route through run_hand_expr — it parses the
         // field list itself and folds it via mk_with_suffix. Assert the absence too, so a
         // regression back to the @hand leaf fails loudly here.
         !src.contains("run_hand_expr(\"with_suffix\"") &&
-        src.contains("f_list.push(capval_to_finit(st, parse_field_init(st)))") &&
+        // `@onfail(bail)` on the field element binds a temp and error-checks it, so the
+        // direct-call form became `let __bres<N> = parse_field_init(st)` + guard + push.
+        // That bail is what makes `T { x: }` abort the literal the way the hand does.
+        src.contains("f_list.push(capval_to_finit(st, __bres") &&
         src.contains("CapVal.Node(mk_with_suffix(st, sp_start, CapVal.FInits(f_list)))") &&
         // The two field-list diagnostics reproduce the hand exactly: the `{` message, and
         // `expected field name` on the closer — which covers BOTH a junk token and EOF,
         // because the hand's own `expected \`}\` after with fields` was unreachable.
         src.contains("st.report(\"expected `{` after `with`\")") &&
         src.contains("st.report(\"expected field name\")") &&
-        src.contains("s_list.push(capval_to_expr(st, parse_with_suffix(st)))") &&
+        src.contains("s_list.push(capval_to_expr(st, __bres") &&
         src.contains("CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))") &&
         // ORDERING. This used to pin each guarded branch as preceding the
         // `@hand(primary_base)` fallback, because that tail matched ANYTHING and would

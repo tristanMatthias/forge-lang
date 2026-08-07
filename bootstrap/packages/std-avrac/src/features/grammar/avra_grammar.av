@@ -41,7 +41,7 @@ use features.generics.{avra_generics_grammar}
 /// because it has NO context overload — it is logical `Not` at every quote depth.
 /// Phase 3a-4 gives the grammar the POSTFIX CHAIN + the `with` postfix: `unary`'s
 /// non-prefix branch is
-/// `base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )*
+/// `base:@hand(primary_base) ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )*
 ///  -> fold_postfix_with(base, p, s)`. The grammar OWNS the postfix loop as
 /// `( postfix_suffix )*`: each `postfix_suffix` (→ `parse_postfix_suffix`) runs ONE
 /// hand `postfix_step` over the base threaded on PState (`postfix_base`), so the 8
@@ -68,7 +68,7 @@ use features.generics.{avra_generics_grammar}
 /// `postfix_suffix` and `with_suffix` are each a single delegate rule around their
 /// stateful hand step; every base references those rules, so the remaining frontier is
 /// represented once instead of duplicated across all 19 FIRST-disjoint primary
-/// alternatives. Both loops stay `( p:postfix_suffix )* ( s:with_suffix )*` at every
+/// alternatives. Both loops stay `( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )*` at every
 /// base, so the shape is unchanged — only the duplication is gone, and nativizing
 /// either step is now a ONE-LINE edit to its delegate rule instead of 19 edits.
 /// `Tk.Float` projects to the `NUMBER` kind (its lexeme keeps the dot), so the `NUMBER`
@@ -89,7 +89,15 @@ use features.generics.{avra_generics_grammar}
 fn avra_expr_core() -> Grammar {
     let gp = grammar {
   expression    = assignment
-  assignment    = l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
+  // `@onfail(bail)` on the LHS is the exact mirror of the hand's
+  // `let left = self.parse_pipe()?` (parse/mod.av:1673). Without it a FAILED left operand
+  // was still built on: `if let = x { 1 }` reported the missing binding name, then
+  // `assignment` consumed the `=`, parsed the rest of the fn body as an RHS ("expected
+  // }"), and `mk_assign_expr` added "invalid assignment target" on top — three
+  // diagnostics where the hand emits one. `bail` keys on the sub-parse FAILING, not on it
+  // reporting, which is required: `let a = (1) ->` reports and still yields `(group 1)`,
+  // a value the hand keeps.
+  assignment    = @onfail(bail) l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
   pipe          = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)
   pipe_arg      = @on(allow_it_sugar) logic_or
   null_coalesce = l:logic_or ( op:("??") r:logic_or )* -> fold_nullish(l, op, r)
@@ -110,32 +118,32 @@ fn avra_expr_core() -> Grammar {
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
   unary      = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
              | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
-             | @when(in_quote_body) @peek(tilde_ident_lbrace) @when(allow_struct_lit) "~" n:IDENT "{" ( f:field_init )* "}" -> MkSpliceStruct(n, f)
+             | @when(in_quote_body) @peek(tilde_ident_lbrace) @when(allow_struct_lit) "~" n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkSpliceStruct(n, f)
              | @when(in_quote_body) "~" t:unary -> MkSplice(t)
-             | b:NUMBER ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | b:STRING ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | b:BOOL ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | b:("null" | "none") ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | base:variant_ctor ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:match_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:if_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:spawn_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:channel_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:isolated_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:when_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(quote_arm) base:quote_arm_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(quote_type) base:quote_type_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:quote_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:list_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:brace_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:qualified_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:paren_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:template_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_lbrace_feature) base:grammar_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_lbrace_feature) base:table_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:NUMBER ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:STRING ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:BOOL ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:("null" | "none") ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | base:variant_ctor ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:match_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:if_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:spawn_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:channel_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:isolated_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:when_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(quote_arm) base:quote_arm_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(quote_type) base:quote_type_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:quote_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:list_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:brace_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:qualified_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:paren_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:template_lit ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_lbrace_feature) base:grammar_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_lbrace_feature) base:table_lit ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
   // t-myz7 — the `grammar { … }` feature block, native. This is `@rawbrace`'s canonical
   // consumer (ast.av:322 gives this exact rule as the marker's example): the body is NOT
   // Avra syntax, so it is captured verbatim and handed to the runtime engine as a string.
@@ -183,20 +191,22 @@ fn avra_expr_core() -> Grammar {
   // cross-line `+`/`-` while cell_mode is set, so the last cell of a multi-column row
   // could otherwise take the NEXT row's leading sign as a binary operand.
   table_row  = @on(cell_mode) v:bitxor ( ^"|" ^@on(cell_mode) v:bitxor )* -> MkTableRow(v)
-  struct_lit_expr = n:IDENT "{" ( f:field_init )* "}" -> MkStructLit(n, f)
+  struct_lit_expr = n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkStructLit(n, f)
   tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
   // The segment name after `::` is `@require`d: unrequired it reported a bare
   // "expected IDENT" and PARSED ON, so `@pkg::mod::name` — where `mod` is a keyword, not
   // an identifier — left the cursor on `mod` for the declaration dispatch to pick up and
   // added "expected module name after `mod`" on top of the hand's single message.
   qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" @require s:IDENT )+
-                   ( @when(allow_struct_lit) lb:"{" ( f:field_init )* "}" )?
+                   ( @when(allow_struct_lit) lb:"{" ( @onfail(bail) f:field_init )* "}" )?
                    @expect("IDENT", "expected identifier after `::` in qualified reference")
                    @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
                    @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
   template_lit = t:TEMPLATE -> MkTemplate(t)
   brace_expr   = @peek(brace_map) map_literal | block_expr
-  map_literal  = "{" ( k:expression @require ":" v:expression ( "," )? )* @require "}"
+  // The VALUE propagates, like `field_init`'s: `{ "a": , … }` built a map entry over an
+  // error node where the hand aborts the literal and its enclosing fn.
+  map_literal  = "{" ( k:expression @require ":" @onfail(bail) v:expression ( "," )? )* @require "}"
                  @expect(":", "expected `:` after map key")
                  @expect("}", "expected `}` after map") -> MkMapLit(k, v)
   // t-47hc.33 — the postfix chain, going native one FORM at a time. `@hand(postfix_suffix)`
@@ -289,10 +299,24 @@ fn avra_expr_core() -> Grammar {
   // the message for a token that starts NEITHER (`a[1 2]`).
   index_tail  = ".." e:expression @require "]" @expect("]", "expected `]` after slice") -> e
               | @fallback @require "]" @expect("]", "expected `]` after index") -> MkNone()
-  with_suffix = "with" @require "{" ( @peek(cur_ident) f:field_init )* @require "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
-  field_init  = n:IDENT ( ":" v:expression )? ( "," )? -> MkFieldInit(n, v)
-  variant_ctor = "." @require v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )?
-                 @expect("IDENT", "expected a variant name after `.`", F0040) -> mk_enum_ctor(v, a)
+  // At least ONE field: the hand's `parse_field_init_list` opens with
+  // `consume_identifier("expected field name")?`, so `a with { 1 }` is an ERROR there.
+  // A `@peek`-gated `*` made it optional instead — the loop took zero iterations, `with`
+  // succeeded with no overrides, and `{ 1 }` fell out as a separate block statement with
+  // NO diagnostic at all. A zero-match `+` fails the rule, which is exactly the hand's
+  // behaviour.
+  with_suffix = "with" @require "{" ( @onfail(bail) f:field_init )+ @require "}" @expect("{", "expected `{` after `with`") @expect("+", "expected field name") @expect("}", "expected `}` after struct fields") -> MkWithSuffix(f)
+  // The VALUE propagates, mirroring `parse_expression()?` in the hand's
+  // `parse_field_init_list` (features/struct_decl/parser.av:154) — a failed value aborts
+  // the whole literal. Unrequired, `T { x: }` built `(struct T (x=(error)))`, a literal
+  // asserting a field was initialised, instead of taking out the literal, the binding and
+  // the enclosing fn as the hand does. The NAME cannot carry `@require`: it is the
+  // sequence's leading item and therefore the FIRST-set guard, which the DSL rejects
+  // outright — and it needs no guard, since the rule is only entered when that FIRST holds.
+  field_init  = n:IDENT ( ":" @onfail(bail) v:expression )? ( "," )? -> MkFieldInit(n, v)
+  variant_ctor = "." @require v:IDENT ( "(" ( a:expression ( "," a:expression )* )? @require ")" )?
+                 @expect("IDENT", "expected a variant name after `.`", F0040)
+                 @expect(")", "expected `)` after arguments") -> mk_enum_ctor(v, a)
   channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
   // t-bwjg — `quote { … }` and the block-bodied kinds. `quote type { <type> }` and
   // ALL THREE quote shapes are native now: this rule owns the block-bodied kinds, while
@@ -695,10 +719,10 @@ fn avra_decl_edge_grammar() -> Grammar {
   // sub-parse FAILING, not reporting — `let a = (1) ->` reports and still yields a value
   // the hand keeps), and `letdes_decl` dispatched FIRST under `@peek(let_destructure)`.
   let_decl   = "let" ( m:"mut" )? n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkLetBinding(m, n, ty, init, e, tmp)
-  mut_decl   = @try "mut" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )?
+  mut_decl   = @try "mut" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
                @expect("IDENT", "expected variable name")
                @expect("=", "expected `=` after variable name") -> MkMutBinding(n, ty, init, e, tmp)
-  const_decl = @try "const" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" init:expression
+  const_decl = @try "const" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" @onfail(bail) init:expression
                @expect("IDENT", "expected constant name")
                @expect("=", "expected `=` after constant name") -> MkConstBinding(n, ty, init)
   // `let (a, b, …) = init` — the destructure binding, completing the binding

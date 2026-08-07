@@ -732,7 +732,14 @@ fn parse_mut_decl(st: PState) -> CapVal {
                 return CapVal.Node(st.error_node_silent())
                 }
             }
-            let init = parse_expression(st)
+            let __bres4 = parse_expression(st)
+            if capval_is_error_expr(st, __bres4) || capval_is_error_stmt(st, __bres4) {
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            let init = __bres4
             if st.cur().text == "else" {
                 let _ = st.advance()
                 e = parse_statement(st)
@@ -789,7 +796,14 @@ fn parse_const_decl(st: PState) -> CapVal {
                 return CapVal.Node(st.error_node_silent())
                 }
             }
-            let init = parse_expression(st)
+            let __bres4 = parse_expression(st)
+            if capval_is_error_expr(st, __bres4) || capval_is_error_stmt(st, __bres4) {
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            let init = __bres4
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
                 return mk_const_binding_g(st, capval_tok_text(n), ty, capval_present(ty), init)
             }

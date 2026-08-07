@@ -6851,6 +6851,13 @@ export fn mk_primary_fail(st: PState) -> ExprId {
 }
 
 export fn mk_list_lit(st: PState, sp_start: int, acap: CapVal) -> ExprId {
+    // A FAILED ELEMENT makes the whole literal a failure, mirroring the hand's
+    // `parse_list_elements`, whose `parse_expression()?` propagates: `[1,,2]` built
+    // `(list (1, (error), 2))` where the hand yields one `(error)`. Checked here rather
+    // than at each element site so both engines share the one rule.
+    for __e in capval_to_node_list(acap) {
+        if expr_id_is_error(st, __e) { return st.error_node_silent() }
+    }
     st.store.add_expr(Expr.ListLit(capval_to_node_list(acap)), byte_span(sp_start, st.cur().pos), [])
 }
 
@@ -7289,6 +7296,12 @@ export fn fold_with_expr(st: PState, sp_start: int, baseCap: CapVal, suffixesCap
 /// does (sp_start = the chain start; sp_start < 0 = the interpreter's span-free
 /// oracle path, like the sibling folds).
 export fn fold_postfix_with_expr(st: PState, sp_start: int, baseCap: CapVal, pCap: CapVal, sCap: CapVal) -> ExprId {
+    // A FAILED BASE makes the whole postfix chain a failure — the same collapse
+    // `mk_binary` performs for a failed operand. `.(1)` (a variant ctor with no name)
+    // built `(call (error) (1))`, a tree claiming a call happened on something that never
+    // parsed; the hand's `parse_postfix` reads its base with `?` and propagates. No-op on
+    // valid programs, which contain no error nodes.
+    if expr_id_is_error(st, capval_to_expr(st, baseCap)) { return st.error_node_silent() }
     let ps = capval_nodes(pCap)
     mut acc = if ps.length == 0 { capval_to_expr(st, baseCap) } else { ps[ps.length - 1] }
     for s in capval_nodes(sCap) {
