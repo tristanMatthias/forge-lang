@@ -7,6 +7,7 @@ use core.{ValueType}
 use codegen.{emit_expr, emit_stmt}
 use features.match_expr.{emit_match_expr}
 use features.if_stmt.{narrow_env_for_is}
+use features.defer_stmt.{defer_scope_enter, defer_scope_exit}
 use core.{avra_covmap_next_branch_id}
 use features.error_propagation.{Result}
 use core.{avra_tag_as_result}
@@ -37,7 +38,17 @@ fn err_br(msg: string) -> Result<BlockResult, string> {
 /// is a `.Expr`; everything else (return, let, while, ...) yields
 /// i64 0. Non-tail statements run for their side effects.
 export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>) -> Result<EmitValue, string> {
-    emit_block_loop(ctx, env, stmts, ctx.i64(0), .Unknown)
+    // A block EXPRESSION is a defer scope too (t-vmkc) — this is the
+    // path a `match` arm body, an `if`-in-value-position branch, and a
+    // `let v = { … }` all take. The statement-position blocks are
+    // scoped by `emit_stmt`'s `.Block` arm instead.
+    let base = defer_scope_enter(ctx)
+    let br = emit_block_loop_scoped(ctx, env, stmts, ctx.i64(0), .Unknown)?
+    // `br.env`, not `env` — a deferred body may name a binding this block
+    // declared, and only the walker's env carries it. See the twin comment in
+    // `emit_stmt`'s `.Block` arm.
+    defer_scope_exit(br.ctx, br.env, base)
+    ok_emit(br.value, br.ty)
 }
 
 /// Emit a statement as a value-producing expression. For `.Expr`,
@@ -45,22 +56,57 @@ export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>) 
 /// Anything else falls back to plain `emit_stmt` and inherits the
 /// caller's `last_val` / `last_ty`.
 export fn emit_stmt_as_value(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
+    let br = emit_stmt_as_value_scoped(ctx, env, stmt, last_val, last_ty)?
+    ok_emit(br.value, br.ty)
+}
+
+/// `emit_stmt_as_value` without the statement's `Ctx` thrown away, so
+/// `emit_block_loop_scoped` can hand a complete ctx to the block's
+/// defer-scope exit (t-vmkc). Only the `_` arm can carry a change —
+/// the value-producing arms return the caller's ctx unchanged.
+///
+/// HONEST SCOPE: no currently-compilable program depends on this. The
+/// shape that would — a block expression whose TAIL statement is a
+/// `defer` — has no value type and is rejected by the layout-boundary
+/// ICE before the defer matters (t-oy2p; `let v = { …; while false {} }`
+/// fails the same way, so it is not a `defer` problem). It is threaded
+/// anyway because a shared helper silently dropping ctx is the exact
+/// bug t-vmkc was, and leaving one instance of it behind invites the
+/// next one. Do not read the absence of a spec for it as an oversight:
+/// `defer_scope_test.av` records why it would be a spec that cannot
+/// fail.
+///
+/// Distinct from `emit_stmt_as_value_ctx`, which additionally emits a
+/// `cov_line()` the plain path does not. Keep them separate: routing
+/// this through that one would add a coverage counter to every block
+/// expression and change emitted IR everywhere.
+fn emit_stmt_as_value_scoped(ctx: Ctx, env: List<VarBinding>, stmt: Stmt, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
     // Unwrap `Annotated` for dispatch so a documented (`///`) / `@…`-annotated
     // tail expression/if still yields its VALUE — a raw match would fall through
     // to `_` and lose it (returning the block's default `i64 0`/`.Unknown`, which
     // then ICEs at the layout boundary). Twin of `check_block_stmts`' tail unwrap;
     // a no-op for the common unannotated tail, so IR stays byte-identical there.
     match stmt_unwrap(ctx.nodes, stmt) {
-        .Expr(e) -> ctx.emit(env, ctx.nodes.exprs.get(e))
-        .Block(body) -> emit_block_expr(ctx, env, body)
-        .Match(subject, arms) -> emit_match_expr(ctx, env, ctx.nodes.exprs.get(subject), arms)
+        .Expr(e) -> {
+            let r = ctx.emit(env, ctx.nodes.exprs.get(e))?
+            ok_br(r.value, r.ty, ctx, env)
+        }
+        .Block(body) -> {
+            let r = emit_block_expr(ctx, env, body)?
+            ok_br(r.value, r.ty, ctx, env)
+        }
+        .Match(subject, arms) -> {
+            let r = emit_match_expr(ctx, env, ctx.nodes.exprs.get(subject), arms)?
+            ok_br(r.value, r.ty, ctx, env)
+        }
         .If(condition, then_branch, else_branch) -> {
             let else_s: Stmt? = if else_branch != null { ctx.nodes.stmts.get(else_branch!) } else { null }
-            emit_stmt_if_as_value(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.stmts.get(then_branch), else_s)
+            let r = emit_stmt_if_as_value(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.stmts.get(then_branch), else_s)?
+            ok_br(r.value, r.ty, ctx, env)
         }
         _ -> {
             let sr = emit_stmt(ctx, env, stmt)?
-            ok_emit(last_val, last_ty)
+            ok_br(last_val, last_ty, sr.ctx, sr.env)
         }
     }
 }
@@ -170,14 +216,24 @@ export fn emit_stmt_if_as_value(ctx: Ctx, env: List<VarBinding>, condition: Expr
 /// `emit_stmt_as_value` so the block produces a value. Tracks
 /// `source_line` for accurate diagnostics and coverage.
 export fn emit_block_loop(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>, last_val: ptr, last_ty: ValueType) -> Result<EmitValue, string> {
-    if stmts.length == 0 { return ok_emit(last_val, last_ty) }
+    let br = emit_block_loop_scoped(ctx, env, stmts, last_val, last_ty)?
+    ok_emit(br.value, br.ty)
+}
+
+/// `emit_block_loop` with the final `Ctx` returned instead of dropped,
+/// so `emit_block_expr` can close the block's defer scope (t-vmkc).
+/// Identical walk and identical emission — the plain `emit_block_loop`
+/// above is now a thin unwrap of this, which is what keeps the two
+/// from drifting.
+export fn emit_block_loop_scoped(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>, last_val: ptr, last_ty: ValueType) -> Result<BlockResult, string> {
+    if stmts.length == 0 { return ok_br(last_val, last_ty, ctx, env) }
     mut cur_ctx = ctx
     mut cur_env = env
     mut i = 0
     let last = stmts.length - 1
     while i < last {
         // Dead code past a terminator: skip — see emit_stmt_ids (t-83ja).
-        if cur_ctx.has_terminator() { return ok_emit(last_val, last_ty) }
+        if cur_ctx.has_terminator() { return ok_br(last_val, last_ty, cur_ctx, cur_env) }
         let sid = stmts[i]
         let pos = cur_ctx.nodes.stmt_pos(sid)
         let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
@@ -186,11 +242,11 @@ export fn emit_block_loop(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>, 
         cur_env = sr.env
         i = i + 1
     }
-    if cur_ctx.has_terminator() { return ok_emit(last_val, last_ty) }
+    if cur_ctx.has_terminator() { return ok_br(last_val, last_ty, cur_ctx, cur_env) }
     let sid = stmts[last]
     let pos = cur_ctx.nodes.stmt_pos(sid)
     let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
-    emit_stmt_as_value(line_ctx, cur_env, cur_ctx.nodes.stmts.get(sid), last_val, last_ty)
+    emit_stmt_as_value_scoped(line_ctx, cur_env, cur_ctx.nodes.stmts.get(sid), last_val, last_ty)
 }
 
 /// `emit_block_loop` but returns BlockResult so callers see the

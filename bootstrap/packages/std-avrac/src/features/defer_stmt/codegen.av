@@ -24,6 +24,100 @@ export fn emit_defers_on_error(ctx: Ctx, env: List<VarBinding>) {
     emit_stack_filtered(ctx, env, ctx.defers, true)
 }
 
+/// Depth to hand back to `defer_scope_exit` when leaving this scope.
+/// A nested block is a defer SCOPE: entries pushed above this mark
+/// belong to the block and run when the block ends, not when the
+/// function does (t-vmkc).
+export fn defer_scope_enter(ctx: Ctx) -> int {
+    ctx.defers.length
+}
+
+/// Close a nested defer scope: run the `defer` bodies this block
+/// registered (LIFO, innermost-last-declared first) and drop them, so
+/// the function-exit walk can't run them a second time.
+///
+/// `base` is the depth from `defer_scope_enter`. Three rules:
+///
+///   - `Frame` (defer) at index >= base — EMIT, then drop. The block
+///     is ending, so this is the scope exit the spec (Axis 9.4) names.
+///   - `ErrFrame` (errdefer) at index >= base — drop WITHOUT emitting.
+///     Reaching the end of the block IS the no-error path. An error
+///     leaving the block goes through `return`, which emits the whole
+///     stack via `emit_defers_on_error` while these entries are still
+///     on it.
+///   - `Release` (RC) — KEPT, at any depth. RC locals are still
+///     reclaimed at function exit exactly as before. Moving them to
+///     block exit is the right eventual semantics and a much larger
+///     blast radius (every ptr-typed block local in every program);
+///     it is tracked separately as t-0ks0, and deliberately NOT
+///     bundled here so this change stays byte-identical for programs
+///     that use no `defer`.
+///
+/// No-ops when the current basic block already has a terminator: an
+/// early `return`/`break`/`continue` has branched away and already
+/// emitted what it owed, so anything appended here would be both
+/// unreachable and a second terminator's worth of garbage (t-83ja).
+export fn defer_scope_exit(ctx: Ctx, env: List<VarBinding>, base: int) -> Ctx {
+    if ctx.defers.length <= base { return ctx }
+    if !ctx.has_terminator() {
+        emit_frames_above(ctx, env, base, false)
+    }
+    ctx.with_defers(defers_without_frames_above(ctx.defers, base))
+}
+
+/// Emit the `defer` bodies above `base` WITHOUT popping them — the
+/// `break` / `continue` path. Those jump out of one or more block
+/// scopes, so the scopes' defers must run at the jump; but the
+/// fall-through path out of the same block still needs its own copy,
+/// so the entries stay on the stack for `defer_scope_exit` to emit
+/// on that other path.
+///
+/// `errdefer` is skipped: leaving a loop via `break` is a normal exit,
+/// not an error one.
+export fn emit_defers_above(ctx: Ctx, env: List<VarBinding>, base: int) {
+    emit_frames_above(ctx, env, base, false)
+}
+
+/// LIFO worker for the two scope-exit entry points above. Walks
+/// tail-to-head down to `base`, running only `Frame` (and `ErrFrame`
+/// when `is_error`) — `Release` entries belong to the function-exit
+/// walk and are stepped over.
+fn emit_frames_above(ctx: Ctx, env: List<VarBinding>, base: int, is_error: int) {
+    mut i = ctx.defers.length - 1
+    while i >= base {
+        match ctx.defers[i] {
+            .Frame(body) -> ctx.emit(env, ctx.nodes.exprs.get(body))
+            .ErrFrame(body) -> {
+                if is_error { ctx.emit(env, ctx.nodes.exprs.get(body)) }
+            }
+            .Release(_, _, _) -> {}
+        }
+        i = i - 1
+    }
+}
+
+/// Rebuild the defer stack with this scope's `Frame`/`ErrFrame`
+/// entries removed, preserving the relative order of everything that
+/// stays. Entries below `base` belong to enclosing scopes and are
+/// copied through untouched.
+fn defers_without_frames_above(stack: List<DeferEntry>, base: int) -> List<DeferEntry> {
+    mut out: List<DeferEntry> = []
+    mut i = 0
+    while i < stack.length {
+        let keep = if i < base {
+            true
+        } else {
+            match stack[i] {
+                .Release(_, _, _) -> true
+                _ -> false
+            }
+        }
+        if keep { out.push(stack[i]) }
+        i = i + 1
+    }
+    out
+}
+
 /// LIFO worker shared by `emit_defers` and `emit_defers_on_error`.
 /// Walks the List<DeferEntry> tail-to-head — push appended so the
 /// most-recently-declared entry sits at the largest index.
