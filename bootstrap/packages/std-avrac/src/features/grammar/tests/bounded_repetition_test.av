@@ -198,3 +198,50 @@ spec "t-47hc.28: a bound that could not mean anything is rejected at grammar-par
         perr("r = ( h:NUMBER )+ ( c:NUMBER )*{#h").contains("expected `}`")
     }
 }
+
+// t-47hc.5 Phase 4 — the two `+` zero-match paths where emit and the EXECUTOR had
+// drifted. Neither shape occurs in a production grammar today (`paren_expr` is the only
+// rule carrying both a `@cut` and a `+`, and they sit in different branches; nothing uses
+// a bounded `+{#cap}`), which is exactly why they need specs: an emit/executor divergence
+// no current input reaches is the shape this codebase has shipped for months before
+// (`exec_node`'s missing unguarded tail, t-zrn3). Both assertions run against synthetic
+// grammars, so they cannot go vacuous when the production grammar changes.
+spec "t-47hc.5: a zero-match `+` aborts past a `@cut`, and a bounded one stays silent" {
+    given "a `+` inside a `@try` branch that has already COMMITTED via `@cut`" {
+        then "the zero-match report is followed by a cut-guarded abort" {
+            // Uncommitted, the report IS the rollback signal and an early return would
+            // skip the frame's restore — so no abort is emitted. Past the `@cut` neither
+            // objection holds: nothing is left to roll back to.
+            let src = emit_rule("r = @try \"a\" @cut ( p:NUMBER )+ | \"b\"", "r")
+            let has_report = src.contains("expected at least one repetition")
+            let has_guarded_abort = src.contains("if s_cut {") &&
+                src.contains("st.set_abort_prop(true)") &&
+                src.contains("return CapVal.Node(st.error_node_silent())")
+            if !(has_report && has_guarded_abort) { println("emitted rule:\n" + src) }
+            has_report && has_guarded_abort
+        }
+        then "CONTROL: an UNCOMMITTED speculative `+` still emits the report and NO abort" {
+            // The byte-identity guarantee for eq_tail's `( op r )+` and the tuple rest.
+            let src = emit_rule("r = @try \"a\" ( p:NUMBER )+ | \"b\"", "r")
+            src.contains("expected at least one repetition") &&
+                !src.contains("st.set_abort_prop(true)")
+        }
+    }
+
+    given "a BOUNDED `+{#cap}` whose capture may be empty" {
+        then "the zero-match check is guarded by the bound being non-empty" {
+            // The executor guards both its report and its abort with
+            // `item_bound_cap(item, env) != 0`, so a `+{#h}` with an empty `h` takes zero
+            // iterations silently. Emit had no counterpart and reported regardless.
+            let src = emit_rule("r = ( h:NUMBER )* ( c:NUMBER )+{#h}", "r")
+            let guarded = src.contains("h_list.length != 0 && !(")
+            if !guarded { println("emitted rule:\n" + src) }
+            guarded
+        }
+        then "CONTROL: an UNBOUNDED `+` has no such guard — it is required unconditionally" {
+            let src = emit_rule("r = ( h:NUMBER )* ( c:NUMBER )+", "r")
+            !src.contains("_list.length != 0 && !(") &&
+                src.contains("expected at least one repetition")
+        }
+    }
+}

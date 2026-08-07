@@ -2391,14 +2391,29 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // the DECLARATION dispatch on the `mod` keyword and added "expected module name after
     // `mod`" on top.
     //
-    // The abort is emitted only OUTSIDE a speculative frame. Inside one the report is
-    // already the rollback signal (the commit-guard reads st.diags), and an early `return`
-    // there would skip the frame's restore — so the two speculative `+` sites (eq_tail's
-    // `( op r )+` and the tuple rest) stay byte-identical.
-    let req_abort = if spec_ctx == spec_none() {
-        "${ind}    st.set_abort_prop(true)\n${ind}    return CapVal.Node(st.error_node_silent())\n"
-    } else { "" }
-    let req = match item.rep { .Plus -> "${ind}if !(${same_line_wrap(item, node_first_guard(g, inner, []))}) {\n${ind}    st.report(\"${req_msg}\")\n${req_abort}${ind}}\n"  _ -> "" }
+    // The abort is emitted OUTSIDE a speculative frame, and inside a COMMITTED one under
+    // `if s_cut`. In an uncommitted speculative frame the report is already the rollback
+    // signal (the commit-guard reads st.diags) and an early `return` would skip the
+    // frame's restore — so the two such `+` sites (eq_tail's `( op r )+` and the tuple
+    // rest) stay byte-identical. Past a `@cut` neither objection holds: the frame is
+    // committed, so nothing is left to roll back to and the restore is not owed. Same
+    // three-way split `@onfail(bail)` makes a few hundred lines up, for the same reason.
+    //
+    // Unreachable in today's grammars (`paren_expr` is the only rule with both a `@cut`
+    // and a `+`, and they are in different branches) — emitted anyway, because an
+    // emit/executor divergence that no current input reaches is the shape this codebase
+    // has repeatedly shipped for months (exec_node's missing unguarded tail, t-zrn3).
+    let req_abort_body = "${ind}    st.set_abort_prop(true)\n${ind}    return CapVal.Node(st.error_node_silent())\n"
+    let req_abort = if spec_ctx == spec_none() { req_abort_body }
+        else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${req_abort_body}${ind}    }\n" }
+        else { "" }
+    // A BOUNDED `+{#cap}` whose capture is EMPTY takes zero iterations by design, so the
+    // zero-match report does not apply — the executor says exactly this with
+    // `item_bound_cap(item, env) != 0` guarding both its report and its abort, and the
+    // emitter had no counterpart. `{#cap}` bounds against a LIST capture
+    // (validate_bounds rejects a scalar), which emit renders as `<cap>_list`.
+    let req_bound_guard = if item.bound == "" { "" } else { "${item.bound}_list.length != 0 && " }
+    let req = match item.rep { .Plus -> "${ind}if ${req_bound_guard}!(${same_line_wrap(item, node_first_guard(g, inner, []))}) {\n${ind}    st.report(\"${req_msg}\")\n${req_abort}${ind}}\n"  _ -> "" }
             // The bound pieces are empty strings when unbounded, so splicing them into
             // this multi-line shape leaves the generated text byte-identical.
             if group_is_single_hand(g, inner) {
