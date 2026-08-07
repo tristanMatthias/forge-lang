@@ -60,6 +60,14 @@ spec "t-rkle: the LOCAL live delta is exact and isolation-proof" {
             // The property the global counter cannot offer. This runs inside a
             // shard alongside sibling units; if their allocations could reach
             // this counter, this arm would be the flaky one.
+            //
+            // SCOPE OF THE CLAIM, stated because it is narrower than it looks:
+            // what this pins is ISOLATION and SIGNAL — that the reading is the
+            // calling thread's alone, and that it moves by the expected amount.
+            // It does NOT establish that the counter tracks LIVENESS, i.e. that
+            // a dropped object brings it back down. See the open note below;
+            // for stranded objects the two are indistinguishable, which is
+            // exactly why this arm is written with objects held alive.
             let warm = strand(10)
             let before = avra_rc_live_delta_local()
             let held = strand(100)
@@ -80,13 +88,20 @@ spec "t-rkle: the LOCAL live delta is exact and isolation-proof" {
             let after = avra_rc_live_delta_local()
             held.length == 50 && after - before == 50
         }
-        then "the counter goes DOWN — a dropped LIST scope returns to its start" {
-            // The NEGATIVE control, and the arm that makes the others mean
-            // something: a counter that only ever increased would satisfy every
-            // arm above while being useless for detecting a leak.
+        then "a bare LIST scope does not move the counter AT ALL — and that is not a control" {
+            // Kept, but explicitly NOT as the negative control it looks like.
             //
-            // A bare `List` local is the shape that demonstrably reclaims, so
-            // it is what this control uses.
+            // A `List` never reaches this counter: `avra_array_new` allocates
+            // through `avra_arr_xmalloc`, not `avra_rc_alloc`, so `t_rc_allocs`
+            // is never bumped. Confirmed in the IR — a loop building a list
+            // emits `avra_array_new`/`avra_array_push` and NO rc calls.
+            //
+            // So `delta == 0` here says "lists are invisible to this counter",
+            // NOT "the list was reclaimed". An earlier draft of this file used
+            // exactly this arm as proof that the counter can go DOWN, which it
+            // cannot support — a guard that passes because nothing was measured
+            // is the defect this whole area keeps producing. It is documented
+            // here so the next reader does not mistake it for one.
             let before = avra_rc_live_delta_local()
             mut i = 0
             while i < 100 {
@@ -125,6 +140,20 @@ spec "t-rkle: the LOCAL live delta is exact and isolation-proof" {
             //
             // Tracked as t-0ks0 item 4. This arm asserts nothing so that the
             // file cannot quietly bless either answer.
+            //
+            // AND THERE IS A CONTRADICTION TO RESOLVE BEFORE ANYONE ACTS ON THE
+            // ABOVE. `with_expr/tests/with_ptr_field_override_leak_test.av`
+            // asserts `avra_rc_live_delta_local() == before` after a call that
+            // builds several structs — i.e. that the delta DOES return to
+            // baseline — and it passes in the suite today. Measured here, no
+            // RC-allocated shape returns to baseline in a loop: struct +100,
+            // tuple +100, enum ctor +200, dynamic string +200 per 100
+            // iterations.
+            //
+            // Both readings cannot be right about the same counter. Until that
+            // is reconciled, do not conclude "structs leak" from the numbers
+            // above OR "structs are fine" from that test — the discriminator
+            // between those two shapes is unknown, and finding it is the work.
             true
         }
     }
