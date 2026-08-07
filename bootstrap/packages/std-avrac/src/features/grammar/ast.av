@@ -344,6 +344,33 @@ export type GItem = {
 /// The failure POLICIES `@onfail(p)` may name — the single source of truth shared by
 /// seed_parser's validation, emit and the executor, so a policy cannot be spelled in
 /// the grammar that only one engine understands. See `GItem.onfail`.
+/// The body of ONE emitted rule fn, sliced out of a generated parser source by its
+/// `fn parse_<rule>(st: PState) -> CapVal` header. Empty when the header is absent.
+///
+/// Exists because every structural assertion over emitted source needs it and NONE of
+/// them can be trusted without it: `index_of`/`contains` search the whole file, and the
+/// emitter renders byte-identical scaffolding (`mut s_cut = false`,
+/// `st.store.truncate_to_mark(s_mark)`, `run_hand_stmt("decl_hand"`) into dozens of
+/// rules. A file-wide check therefore passes off some OTHER rule's copy and cannot fail
+/// for the rule it names — the vacuity class these guards exist to prevent. One shared
+/// slicer so the tests cannot each re-derive it slightly differently.
+export fn emitted_rule_body(src: string, head: string) -> string {
+    let at = src.index_of(head)
+    if at < 0 { return "" }
+    let rest = src.substring(at, src.length)
+    let end = rest.index_of("\n}\n")
+    if end > 0 { rest.substring(0, end) } else { rest }
+}
+
+/// True iff the emitted rule named by `head` carries the `@try` scaffolding — a commit
+/// flag, a node-store truncate, and a cursor/diagnostic rollback — within ITS OWN body.
+export fn emitted_rule_speculates(src: string, head: string) -> bool {
+    let rule = emitted_rule_body(src, head)
+    rule.contains("mut s_cut = false") &&
+        rule.contains("st.store.truncate_to_mark(s_mark)") &&
+        rule.contains("st.restore_to(s_pos, s_diags, s_err)")
+}
+
 export fn onfail_policy_supported(p: string) -> bool {
     p == "skip" || p == "close" || p == "drop" || p == "discard" || p == "bail" || p == "halt" || p == "abort"
 }

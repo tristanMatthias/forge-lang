@@ -8,6 +8,7 @@
 // (select_stmt/tests/select_arm_missing_arrow_test.av pins that fix itself).
 
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{emitted_rule_speculates}
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
@@ -31,22 +32,10 @@ fn clean_all_paths(name: string, src: string) -> bool {
         clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
 }
 
-/// True iff the emitted rule fn identified by `head` carries the `@try` scaffolding:
-/// a commit flag, a node-store truncate, and a cursor/diagnostic rollback.
-///
-/// Scoped to that ONE rule's body. `index_of` finds the first match in the whole
-/// file, and every other speculative branch emits byte-identical rollback lines, so
-/// a file-wide `contains` would pass regardless of what this rule lowered to.
+/// Thin wrapper over the SHARED `emitted_rule_speculates` (ast.av) — the slicing and
+/// the scaffolding strings live there so this file and its sibling cannot drift apart.
 fn rule_speculates(head: string) -> bool {
-    let src = decl_src()
-    let at = src.index_of(head)
-    if at < 0 { return false }
-    let body = src.substring(at, src.length)
-    let end = body.index_of("\n}\n")
-    let rule = if end > 0 { body.substring(0, end) } else { body }
-    rule.contains("mut s_cut = false") &&
-        rule.contains("st.store.truncate_to_mark(s_mark)") &&
-        rule.contains("st.restore_to(s_pos, s_diags, s_err)")
+    emitted_rule_speculates(decl_src(), head)
 }
 
 /// A malformed fixture must report `needle` on EVERY native path, not just the

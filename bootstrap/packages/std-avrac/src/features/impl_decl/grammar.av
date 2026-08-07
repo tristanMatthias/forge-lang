@@ -57,10 +57,11 @@ export fn avra_impl_decl_grammar() -> Grammar {
   // which is what the hand does: `impl F { fn m( }` is "expected parameter name", not
   // "expected `)`". The gate is what lets the loop be entered on a token the parameter's
   // own FIRST refuses (EOF, `}`), and the gated FIRST re-check is what reports for it.
-  impl_method   = @try "fn" @cut @require imname:IDENT @require "(" ( @peek(not_rparen) @gate imparams:param ( @peek(comma_not_rparen) "," imparams:param )* ( "," )? )? @require ")" ( "->" imret:type_expr )? @require "{" imbody:body_item* @require "}"
+  impl_method   = @try "fn" @cut @require imname:IDENT @require "(" ( @peek(not_rparen) @gate imparams:param ( @peek(comma_not_rparen) "," imparams:param )* ( "," )? )? @require ")" ( "->" @require imret:type_expr )? @require "{" imbody:body_item* @require "}"
                   @expect("IDENT", "expected method name")
                   @expect("(", "expected `(` after method name")
                   @expect(")", "expected `)` after method parameters")
+                  @expect("type_expr", "expected return type after `->`")
                   @expect("{", "expected `{` for method body")
                   @expect("}", "expected `}` after method body") -> MkMethod(imname, imparams, imret, imbody)
     }

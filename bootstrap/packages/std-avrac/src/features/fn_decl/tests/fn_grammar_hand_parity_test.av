@@ -20,6 +20,7 @@
 // `MkExport` has the identical gap and is still executor-only. It is what the `export`
 // WRAPPING increment will spend, so it needs the same treatment then.
 
+use @std.avrac.features.grammar.{emitted_rule_body}
 use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source, avra_decl_dispatch_grammar, emit_parser_source_ex}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
@@ -113,15 +114,25 @@ spec "t-47hc slice 10.13: `fn` and `extern` are routed onto the production path"
         // the cut — and decl_flip_dispatch_test fails the build on exactly that pairing,
         // which is why the `@cut` and the bare dispatch had to land in ONE step.
         let src = decl_src()
-        !src.contains("s_last = parse_fn_decl(st)") &&
+        let fn_rule = emitted_rule_body(src, "fn parse_fn_decl(st: PState) -> CapVal")
+        let ext_rule = emitted_rule_body(src, "fn parse_extern_decl(st: PState) -> CapVal")
+        fn_rule != "" && ext_rule != "" &&
+            !src.contains("s_last = parse_fn_decl(st)") &&
             !src.contains("s_last = parse_extern_decl(st)") &&
             src.contains("return parse_fn_decl(st)") &&
             src.contains("return parse_extern_decl(st)") &&
-            // The rollback scaffold has not disappeared from the file — it moved INSIDE
-            // each rule, which is what makes "not my keyword" still roll back while a
-            // committed failure does not.
-            src.contains("st.store.truncate_to_mark(s_mark)") &&
-            src.contains("st.restore_hand_state(s_hand)")
+            // The rollback scaffold moved INSIDE each rule, so it is asserted THERE —
+            // a whole-file `contains` matches any of the dozen other speculative rules
+            // that emit the same lines and could not fail for these two. The `s_cut`
+            // flag is asserted here as well, which the two sibling parity specs already
+            // do and this one omitted: without it the rule commits nowhere and its own
+            // `@expect` wording is unreachable.
+            fn_rule.contains("mut s_cut = false") &&
+            fn_rule.contains("st.store.truncate_to_mark(s_mark)") &&
+            fn_rule.contains("st.restore_hand_state(s_hand)") &&
+            ext_rule.contains("mut s_cut = false") &&
+            ext_rule.contains("st.store.truncate_to_mark(s_mark)") &&
+            ext_rule.contains("st.restore_hand_state(s_hand)")
     }
 
     then "the parameter list crosses the view boundary as ParamEntry, not ExprId" {

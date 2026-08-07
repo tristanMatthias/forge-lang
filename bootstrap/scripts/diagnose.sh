@@ -5167,6 +5167,7 @@ mode_parser_probe() {
   cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
   [ -x "$BS2" ] || die "parser probe: no bs2 at $BS2 (run make build-quick)"
   parser_probe_fixture "$@"; local fix="$PARSER_PROBE_FIXTURE"
+  # shellcheck disable=SC2086  # $1 is a `VAR=x VAR=y` list; env needs it SPLIT.
   _pp_run() { env $1 "$BS2" check "$fix" 2>&1 | sed 's/.\[[0-9;]*m//g' | grep -oE 'error.F[0-9]+.: .*' | tr '\n' '|'; }
   printf 'src : %s\n' "$(tr '\n' ' ' < "$fix")"
   printf 'hand: %s\n' "$(_pp_run "$PARSER_MODE_HAND")"
@@ -5186,8 +5187,11 @@ mode_parser_tree() {
   parser_probe_fixture "$@"; local fix="$PARSER_PROBE_FIXTURE"
   # `--recover` is required, not cosmetic: plain `program` stops at the diagnostics,
   # so on the invalid input this mode exists for it prints errors and NO tree.
+  # shellcheck disable=SC2086  # $1 is a `VAR=x VAR=y` list; env needs it SPLIT.
   _pt_run() { env $1 "$BS2" program --recover "$fix" 2>/dev/null | sed 's/.\[[0-9;]*m//g'; }
-  _pt_errs() { printf '%s' "$1" | grep -oc '(error)' || true; }
+  # `-c` counts matching LINES and suppresses `-o`, so the `-o` was inert; the label
+  # below says "err rows", which is the line count — keep the unit, drop the dead flag.
+  _pt_errs() { printf '%s' "$1" | grep -c '(error)' || true; }
   local h e x
   h=$(_pt_run "$PARSER_MODE_HAND"); e=$(_pt_run "$PARSER_MODE_EMIT"); x=$(_pt_run "$PARSER_MODE_EXEC")
   printf 'src : %s\n' "$(tr '\n' ' ' < "$fix")"

@@ -25,7 +25,6 @@ use features.grammar.{dispatch_has_tail}
 use features.grammar.{rule_first_expect_msg, gated_ref_of, GatedRef}
 use features.grammar.{grammar_has_gate, rule_first_is_ident, rule_first_literal}
 use features.grammar.{rule_result_kind, gprim_ref_name}
-use features.grammar.{rule_first_expect_msg}
 // The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
 use core.{tk_is_field_name}
 use core.{tk_keyword_str, lookup_decl_parser}
@@ -4267,11 +4266,18 @@ fn handle_missing(st: PState, expected: string, annots: List<GAnnot>) {
     // The F-CODE travels with the message (t-47hc.5) — same annotation, same lookup, so
     // a position cannot end up with one rule's wording under another's code.
     mut code = ""
+    // FIRST match wins, matching emit's `expect_for` (ast.av), which returns on the first
+    // hit. Taking the LAST one made the two engines disagree whenever a branch AND its
+    // enclosing rule both declare `@expect` for the same token: `annots_or` orders them
+    // inner-first, so emit reported the branch's wording and the interpreter reported the
+    // rule's. Invisible on valid input, which is why it needs the shared rule stated here.
+    mut found = false
     for a in annots {
         match a {
             .Expect(tok, m, c) -> {
-                if tok == expected { msg = m
-                                     code = c }
+                if tok == expected && !found { msg = m
+                                               code = c
+                                               found = true }
             }
             _ -> {}
         }

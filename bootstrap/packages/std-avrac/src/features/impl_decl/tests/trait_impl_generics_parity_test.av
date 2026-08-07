@@ -89,10 +89,21 @@ spec "t-47hc slice 10.7: `impl` accepts type params AND type arguments" {
 /// hand on invalid input) and stopped being so the moment `impl` committed. A pinned
 /// hand-vs-native divergence has to measure the hand.
 fn hand_only_program(src: string) -> string {
+    // EVERY routing field is pinned off, not just the declaration ones. `parser_new`
+    // reads the flip/static fields from the environment and defaults them ON, so a
+    // helper that names only some of them still ran generated TYPE and PATTERN parsers
+    // inside the hand parse — which makes it not a hand-only oracle, and any parity
+    // spec built on it partly compares a parser against itself. `decl_static` stays true
+    // only because `decl_flip = false` already takes that path out of play.
     mut p = parser_new(src)
     p.decl_flip = false
-    p.decl_static = true
+    p.decl_static = false
     p.no_static_fallback = false
+    p.type_flip = false
+    p.type_static = false
+    p.pat_flip = false
+    p.pat_static = false
+    p.stmt_flip = false
     p.expr_flip = false
     p.expr_static = false
     let r = p.parse_file_program()

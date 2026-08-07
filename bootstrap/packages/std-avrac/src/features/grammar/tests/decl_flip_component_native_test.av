@@ -11,6 +11,7 @@
 // header and fall back byte-for-byte.
 
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{emitted_rule_body}
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
@@ -54,10 +55,18 @@ spec "t-47hc slice A: the component definition is emitted as a native rule" {
         // by LOOKAHEAD — and a FIRST/FIRST guard rightly flags four branches that all
         // start with the same literal. The peeks live on `comp_header`'s branches,
         // where that guard can see them.
+        // BOTH offsets are read out of the DISPATCHER's own body. `comp_header` is
+        // referenced from three rules and `decl_hand` from two, so whole-file `index_of`
+        // could land the two in different functions and the ordering claim would then say
+        // nothing about dispatch. The negative is `parse_comp_header` — the branch whose
+        // speculation matters — not `parse_component_decl`, which `comp_header` alone
+        // reaches and so could never appear here whatever the routing.
         let src = decl_src()
-        let comp_at = src.index_of("parse_comp_header(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        !src.contains("s_last = parse_component_decl(st)") &&
+        let disp = emitted_rule_body(src, "fn parse_declaration(st: PState) -> CapVal")
+        let comp_at = disp.index_of("parse_comp_header(st)")
+        let hand_at = disp.index_of("run_hand_stmt(\"decl_hand\"")
+        disp != "" &&
+            !disp.contains("s_last = parse_comp_header(st)") &&
             src.contains("fn parse_comp_header(st: PState) -> CapVal") &&
             src.contains("fn parse_comp_paren_decl(st: PState) -> CapVal") &&
             comp_at >= 0 && hand_at >= 0 && comp_at < hand_at

@@ -1476,10 +1476,22 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 // a declaration-view callee hands its failure back as a `Stmt.Error`
                 // (`SNode`), an expression-view one as an error `Node`, and a policy that
                 // sees only the second is blind wherever the callee builds statements.
-                return "${ind}let __bres = parse_${name}(st)\n" +
+                // A non-abortable frame gets NO guard, rather than an empty one. Both
+                // `capval_is_error_*` are pure, so `if cond { }` was dead code that READ
+                // as a check — the generic-call argument site emitted exactly that, and it
+                // is how "this branch validates its arguments" became true of three of the
+                // four argument sites and false of the fourth without either shape
+                // changing. Whether a speculative frame SHOULD unwind on a silent error
+                // node is a live question (`@try` keys its rollback on the diagnostic
+                // count, so a silent one commits); emitting nothing states the current
+                // answer honestly instead of implying the opposite.
+                let bguard = if bbody == "" { "" } else {
                     "${ind}if capval_is_error_expr(st, __bres) || capval_is_error_stmt(st, __bres) {\n" +
                     bbody +
-                    "${ind}}\n" +
+                    "${ind}}\n"
+                }
+                return "${ind}let __bres = parse_${name}(st)\n" +
+                    bguard +
                     emit_ref_capture_of(g, item, name, "__bres", ind, list_labels, opts)
             }
             // A GATED element's result is inspected BEFORE it is captured, because
@@ -2231,6 +2243,12 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bo
         "${ind}    let __lc = st.store.lines.to_linecol(__sp)\n" +
         "${ind}    st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })\n" +
         "${ind}    ${label}_list.push(__sid)\n" +
+        // The NO-PROGRESS break, and the reason `__before_i` is captured at the top of
+        // the body. A child that SUCCEEDS without consuming a token would otherwise spin
+        // this `while true` forever; `exec_stmt_list_repeat` ends with the same test, so
+        // omitting it here also split the two engines. It sits on the success path only —
+        // the failure arm above already resyncs or returns, both of which move or end.
+        "${ind}    if st.pos == __before_i { break }\n" +
         "${ind}}\n" +
         "${ind}if __any_err { st.note_had_error() }\n"
 }

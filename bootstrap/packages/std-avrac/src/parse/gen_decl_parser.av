@@ -888,6 +888,7 @@ fn parse_parallel_decl(st: PState) -> CapVal {
                 let __lc = st.store.lines.to_linecol(__sp)
                 st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
                 body_list.push(__sid)
+                if st.pos == __before_i { break }
             }
             if __any_err { st.note_had_error() }
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1019,6 +1020,7 @@ fn parse_select_arm(st: PState) -> CapVal {
         let __lc = st.store.lines.to_linecol(__sp)
         st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
         body_list.push(__sid)
+        if st.pos == __before_i { break }
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1083,6 +1085,7 @@ fn parse_spec_decl(st: PState) -> CapVal {
                 let __lc = st.store.lines.to_linecol(__sp)
                 st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
                 body_list.push(__sid)
+                if st.pos == __before_i { break }
             }
             if __any_err { st.note_had_error() }
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1171,6 +1174,7 @@ fn parse_given_blk(st: PState) -> CapVal {
                 let __lc = st.store.lines.to_linecol(__sp)
                 st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
                 body_list.push(__sid)
+                if st.pos == __before_i { break }
             }
             if __any_err { st.note_had_error() }
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1252,6 +1256,7 @@ fn parse_then_blk(st: PState) -> CapVal {
                 let __lc = st.store.lines.to_linecol(__sp)
                 st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
                 body_list.push(__sid)
+                if st.pos == __before_i { break }
             }
             if __any_err { st.note_had_error() }
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1496,6 +1501,7 @@ fn parse_comp_paren_decl(st: PState) -> CapVal {
         let __lc = st.store.lines.to_linecol(__sp)
         st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
         pbody_list.push(__sid)
+        if st.pos == __before_i { break }
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1622,6 +1628,7 @@ fn parse_component_decl(st: PState) -> CapVal {
         let __lc = st.store.lines.to_linecol(__sp)
         st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
         body_list.push(__sid)
+        if st.pos == __before_i { break }
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1727,6 +1734,7 @@ fn parse_comp_inst(st: PState) -> CapVal {
         let __lc = st.store.lines.to_linecol(__sp)
         st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
         body_list.push(__sid)
+        if st.pos == __before_i { break }
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1773,6 +1781,7 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
         let __lc = st.store.lines.to_linecol(__sp)
         st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
         body_list.push(__sid)
+        if st.pos == __before_i { break }
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1895,6 +1904,7 @@ fn parse_comp_block_item(st: PState) -> CapVal {
             let __lc = st.store.lines.to_linecol(__sp)
             st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
             body_list.push(__sid)
+            if st.pos == __before_i { break }
         }
         if __any_err { st.note_had_error() }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1938,6 +1948,7 @@ fn parse_comp_block_item(st: PState) -> CapVal {
             let __lc = st.store.lines.to_linecol(__sp)
             st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
             body_list.push(__sid)
+            if st.pos == __before_i { break }
         }
         if __any_err { st.note_had_error() }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -1990,6 +2001,7 @@ fn parse_comp_block_item(st: PState) -> CapVal {
             let __lc = st.store.lines.to_linecol(__sp)
             st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
             mb_list.push(__sid)
+            if st.pos == __before_i { break }
         }
         if __any_err { st.note_had_error() }
         if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -2767,6 +2779,7 @@ fn parse_fn_decl(st: PState) -> CapVal {
                 let __lc = st.store.lines.to_linecol(__sp)
                 st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
                 body_list.push(__sid)
+                if st.pos == __before_i { break }
             }
             if __any_err { st.note_had_error() }
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -3133,6 +3146,7 @@ fn parse_method_member(st: PState) -> CapVal {
                     let __lc = st.store.lines.to_linecol(__sp)
                     st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
                     tmbody_list.push(__sid)
+                    if st.pos == __before_i { break }
                 }
                 if __any_err { st.note_had_error() }
                 if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -3422,7 +3436,21 @@ fn parse_impl_method(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Arrow {
                 let _ = st.advance()
-                imret = parse_type_expr(st)
+                if !(tok_starts_type(st.cur())) {
+                    st.report("expected return type after `->`")
+                    if s_cut {
+                        st.set_abort_prop(true)
+                    return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                st.set_abort_prop(false)
+                let __rres = parse_type_expr(st)
+                if st.abort_prop || capval_is_error_expr(st, __rres) || capval_is_error_stmt(st, __rres) {
+                    if s_cut {
+                        return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                imret = __rres
             }
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
                 st.report("expected `{` for method body")
@@ -3456,6 +3484,7 @@ fn parse_impl_method(st: PState) -> CapVal {
                 let __lc = st.store.lines.to_linecol(__sp)
                 st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
                 imbody_list.push(__sid)
+                if st.pos == __before_i { break }
             }
             if __any_err { st.note_had_error() }
             if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -3545,6 +3574,7 @@ fn parse_block(st: PState) -> CapVal {
         let __lc = st.store.lines.to_linecol(__sp)
         st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
         stmts_list.push(__sid)
+        if st.pos == __before_i { break }
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
@@ -3581,6 +3611,7 @@ fn parse_stmt_block(st: PState) -> CapVal {
         let __lc = st.store.lines.to_linecol(__sp)
         st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
         stmts_list.push(__sid)
+        if st.pos == __before_i { break }
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {

@@ -381,16 +381,24 @@ fn avra_expr_core() -> Grammar {
                  @expect("]", "expected `]` after list") -> MkListLit(a)
   list_comp    = b:expression "for" v:IDENT "in" c:expression ( "if" f:expression )? -> MkListComp(b, v, c, f)
   paren_expr   = @peek(lparen_ident_colon) "(" ps:param ( "," ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
-               // `->` is NOT a commit point (t-47hc.5). `let a = (1) ->` with no body must
-               // come back as `(group 1)` with the `->` left for the caller to report —
-               // the hand's `try_lambda_body()` returning null — and a `@cut` here made it
-               // `(lambda (_) (error))` instead. The fix is a FIRST gate, not a bare
-               // rollback: `@require` tests whether a body can START and aborts into the
-               // `@try` when it cannot, so the group branch answers. Dropping the `@cut`
-               // with no gate also works semantically but reparses every parenthesised
-               // group through the lambda branch first — on the giant parenthesised
-               // conditions in `gen_expr_parser.av` that is exponential, and it took the
-               // compiler to a 12GB F4014 while merely parsing its own generated parser.
+               // KNOWN DIVERGENCE, deliberately left in place (t-47hc.5). `let a = (1) ->`
+               // with no body comes back from the hand as `(group 1)` — `try_lambda_body()`
+               // returns null and the `->` is left for the caller to report — while this
+               // `@cut` commits and yields `(lambda (_) (error))`. It is why `let` is still
+               // under `@try` in the dispatcher rather than routed.
+               //
+               // The `@cut` STAYS until a non-speculative fix exists, because both obvious
+               // repairs are the same trap. Dropping it, and gating with
+               // `@require lb:lambda_body`, each make this branch parse a lambda body
+               // speculatively and unwind afterwards: inside a `@try` the emitted
+               // `@require` reports without aborting (emit.av's `abortable` guard), so the
+               // callee runs anyway. With `lambda_body`'s FIRST being `{` or ANY
+               // expression, every parenthesised group then parses the whole remaining
+               // expression before unwinding, and nesting multiplies it — measured
+               // 25/65/160/636ms at 10/12/14 `(a == N) ||` terms against a flat ~24ms, and
+               // a 12GB F4014 while the compiler merely parsed its own
+               // `gen_expr_parser.av`, whose emitted FIRST-set conditions are exactly that
+               // shape. The fix this needs decides by lookahead WITHOUT parsing.
                | @try "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
                | "(" ( @on(allow_dot_postfix) e:expression )? @require ")"

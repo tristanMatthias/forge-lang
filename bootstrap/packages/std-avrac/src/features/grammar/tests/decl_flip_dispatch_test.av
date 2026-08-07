@@ -340,7 +340,7 @@ fn declared_expect(rule: string, key: string) -> string {
                     for b in branches {
                         for a in b.annots {
                             match a {
-                                .Expect(tok, msg) -> { if tok == key { return msg } }
+                                .Expect(tok, msg, _) -> { if tok == key { return msg } }
                                 _ -> {}
                             }
                         }
@@ -538,7 +538,7 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // in the recovery spec below), so keeping it here would have been a guard that
         // cannot fail — the precise vacuity this half exists to prevent. `fn` stays,
         // for the statement-body reason recorded on MALFORMED_DECL.
-        !native_without_delegate("malformed_impl", MALFORMED_DECL()) &&
+        !native_without_delegate("malformed_let", MALFORMED_DECL()) &&
         !native_without_delegate("malformed_type", "type Foo = {\n") &&
         !native_without_delegate("malformed_component", "component C {\n") &&
         !native_without_delegate("malformed_fn", "fn foo(\n") &&

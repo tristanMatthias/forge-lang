@@ -1517,7 +1517,7 @@ fn parse_labeled(p: GP) -> GItem {
             if onfail_policy_supported(pol) {
                 onfail = pol
             } else {
-                p.fail("unknown `@onfail` policy `${pol}` (expected skip / close / drop / discard / bail)")
+                p.fail("unknown `@onfail` policy `${pol}` (expected skip / close / halt / drop / bail / discard / abort)")
             }
         } else {
             p.fail("expected a policy name in `@onfail(policy)`")

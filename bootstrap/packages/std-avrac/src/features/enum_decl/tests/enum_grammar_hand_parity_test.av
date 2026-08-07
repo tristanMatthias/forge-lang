@@ -21,6 +21,7 @@
 // `tparam` lives in features/generics, not here: fn / type / enum / trait / impl all take
 // the same `<T, U: Bound>` list, so it is shared sub-structure the way `field` is.
 
+use @std.avrac.features.grammar.{emitted_rule_body}
 use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, avra_decl_dispatch_grammar, emit_parser_source_ex}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
@@ -110,12 +111,17 @@ spec "t-47hc slice 10.11: `enum` is routed onto the production path, COMMITTED" 
     // above still passed. A missing `s_cut` would mean the rule commits nowhere and its
     // own `@expect` messages are unreachable.
     then "the branch is COMMITTED — the dispatcher calls it directly, the rule owns the rollback" {
+        // The three rollback strings are scoped to THIS rule's emitted body. They are
+        // byte-identical in every speculative rule the emitter renders, so a whole-file
+        // `contains` passed off `parse_mut_decl`'s or `parse_const_decl`'s copy and could
+        // not fail for enum_decl — the missing-`s_cut` case the note above claims to catch.
         let src = decl_src()
+        let rule = emitted_rule_body(src, "fn parse_enum_decl(st: PState) -> CapVal")
         src.contains("return parse_enum_decl(st)") &&
             !src.contains("s_last = parse_enum_decl(st)") &&
-            src.contains("mut s_cut = false") &&
-            src.contains("st.store.truncate_to_mark(s_mark)") &&
-            src.contains("st.restore_hand_state(s_hand)")
+            rule.contains("mut s_cut = false") &&
+            rule.contains("st.store.truncate_to_mark(s_mark)") &&
+            rule.contains("st.restore_hand_state(s_hand)")
     }
 
     then "the variant list lowers to the SHARED cores, not an executor-only build" {
