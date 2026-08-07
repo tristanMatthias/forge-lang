@@ -75,12 +75,26 @@ spec "the leak counter has signal where it is permitted to run (t-0ks0)" {
                 // turns it red with nothing wrong in the diff (t-0ks0 found it
                 // exactly that way).
                 //
-                // The guard keeps its teeth. What it exists to catch is a
-                // counter that is BLIND to a whole allocation class — which
-                // reads as delta=0, or as a delta short of the 100 stranded
-                // objects. Both still fail. Only the unobservable upper bound
-                // is dropped, and sibling allocations can only ever push the
-                // delta UP, never hide a miss.
+                // WHAT THIS ASSERTION DOES AND DOES NOT PROVE. It catches a
+                // counter BLIND to a whole allocation class: that reads as
+                // delta=0, or short of 100, and still fails. It does NOT prove
+                // that all 100 `held` objects were counted. If this test
+                // under-counts its OWN allocations, a sibling unit allocating
+                // in the same window can push the total back over 100 and mask
+                // exactly that — the window is shared, so the number is not
+                // attributable. An earlier draft of this comment claimed
+                // sibling allocations "can only ever push the delta UP, never
+                // hide a miss"; that is wrong in precisely this case, and is
+                // corrected here rather than left in the tree.
+                //
+                // `== 100` is not the stronger alternative — it is unsound in
+                // the same way AND flaky, since a sibling releasing objects
+                // that were live before `before` drags the delta down.
+                //
+                // Making this provable needs per-thread accounting for `rc_set`
+                // under strict mode (each unit runs on its own worker thread),
+                // which is a runtime.c change. Tracked as t-rkle; the exact
+                // assertion returns with it.
                 warm.length == 10 && held.length == 100 && after - before >= 100
             }
         }

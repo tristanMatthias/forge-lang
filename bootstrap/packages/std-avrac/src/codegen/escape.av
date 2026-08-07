@@ -60,8 +60,25 @@ export fn analyze_releasable(store: NodeStore, body: List<StmtId>, fresh: ptr, t
 /// Requires at least one `.FieldAccess`; a bare `.Ident` tail keeps the
 /// existing treatment (it hands the local ITSELF back, which is a different
 /// question and not one this predicate should answer).
+/// Strip redundant parentheses. `Expr.Grouping` is a real node the parser
+/// keeps, not a formatting artifact, so any predicate that asks "what SHAPE is
+/// this expression" must look through it or answer about the parens instead of
+/// the expression. Recursive — `((h))` is still `h`.
+fn peel_grouping(store: NodeStore, expr: Expr) -> Expr {
+    match expr {
+        .Grouping(inner) -> peel_grouping(store, store.exprs.get(inner))
+        _ -> expr
+    }
+}
+
 fn is_field_chain_on_local(store: NodeStore, expr: Expr) -> bool {
     match expr {
+        // Parens are not an operation — `(h).n` reads the same field as `h.n`
+        // and contains no call. The parser DOES keep a node for them
+        // (`Expr.Grouping`, parse/mod.av), so a predicate that does not unwrap
+        // it silently answers "not a field chain" and the base is pinned alive.
+        // Measured: `(h).n` emitted 0 releases where `h.n` emitted 1.
+        .Grouping(inner) -> is_field_chain_on_local(store, store.exprs.get(inner))
         .FieldAccess(obj, _) -> chain_root_is_local(store, store.exprs.get(obj))
         _ -> false
     }
@@ -69,6 +86,7 @@ fn is_field_chain_on_local(store: NodeStore, expr: Expr) -> bool {
 
 fn chain_root_is_local(store: NodeStore, expr: Expr) -> bool {
     match expr {
+        .Grouping(inner) -> chain_root_is_local(store, store.exprs.get(inner))
         .Ident(_) -> true
         .FieldAccess(obj, _) -> chain_root_is_local(store, store.exprs.get(obj))
         _ -> false
@@ -176,6 +194,14 @@ fn remove_field_root_calls(store: NodeStore, expr: Expr, set: List<string>) -> L
 /// chain matters.
 fn remove_field_root_mode(store: NodeStore, expr: Expr, set: List<string>, calls: bool) -> List<string> {
     match expr {
+        // Parens are transparent here too, and this is the arm where missing
+        // them is a DOUBLE FREE rather than a leak: `fn g() -> string { let h =
+        // H { … }  (h.s) }` hands the caller a pointer INTO `h`, so `h` must be
+        // removed from the releasable set. Without this the `Grouping` node fell
+        // to the catch-all, nothing was removed, and `h` was released at scope
+        // exit while the caller still read `h.s`. Pre-dates t-0ks0; caught by
+        // the boundary arm in return_ownership_test rather than by review.
+        .Grouping(inner) -> remove_field_root_mode(store, store.exprs.get(inner), set, calls)
         .FieldAccess(obj, _) -> remove_field_root_mode(store, store.exprs.get(obj), set, calls)
         .Ident(name) -> releasable_remove(set, name)
         // A returned COMPOSITE carries its parts out of the frame too, so
@@ -457,7 +483,14 @@ fn remove_escaped_expr(store: NodeStore, expr: Expr, set: List<string>, fresh: p
     match expr {
         // Field access is safe — reading a field doesn't escape the struct
         .FieldAccess(obj, _) -> {
-            let obj_expr = store.exprs.get(obj)
+            // PEEL PARENS FIRST. `(h).n` is the same read as `h.n`, but the
+            // parser keeps an `Expr.Grouping` node, so matching the base
+            // directly missed the `.Ident` case: the base fell to the nested
+            // branch, hit the `.Ident` arm below as a bare use, and was
+            // REMOVED from the releasable set. Measured: `(h).n` emitted no
+            // release where `h.n` emitted one. Pre-dates t-0ks0 — the parens
+            // hid the base from the "reading a field is safe" rule.
+            let obj_expr = peel_grouping(store, store.exprs.get(obj))
             match obj_expr {
                 .Ident(_) -> set  // p.x is safe — don't remove p
                 _ -> remove_escaped_expr(store, obj_expr, set, fresh)  // nested: (expr).field
