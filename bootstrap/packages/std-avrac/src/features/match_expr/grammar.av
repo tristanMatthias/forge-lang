@@ -65,7 +65,12 @@ export fn avra_match_arm_grammar() -> Grammar {
     let gp = grammar {
   match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
-  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:arm_body -> MkArm(p, g, b)
+  // t-47hc.4.3 — the SPLICE arm comes first, gated on `@when(in_quote_body)` exactly as
+  // the hand gates it (`self.check(Tk.Tilde) && self.quote_depth > 0`). Outside a quote a
+  // leading `~` is not an arm at all and must fall through to `pattern_or`, which reports.
+  // The trailing `","?` is the hand's too — it consumes a separator after the splice.
+  match_arm     = @when(in_quote_body) "~" t:unary ( "," )? -> MkSpliceArm(t)
+                | p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:arm_body -> MkArm(p, g, b)
   // `MatchArm.body_id` is an ExprId and `return` is a STATEMENT, so the hand bridges the
   // two by wrapping: `Expr.Block([Stmt.Return(v)])`. With the body as `expression` alone,
   // every `-> return v` in the compiler fell through to `@hand(decl_hand)` — 17 of the 22

@@ -3,7 +3,7 @@
 // This is the PRODUCTION type parser under AVRA_PARSER_TYPE_STATIC=1 (t-47hc.4.4
 // Phase 3d); parse/tests/gen_type_parser_regen_test.av asserts it equals
 // emit_type_parser_file() so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, lookahead_ok, fold_type_union, mk_named_type, mk_qualified_type, mk_paren_type, mk_fn_type, mk_dyn_type}
+use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, lookahead_ok, fold_type_union, mk_named_type, mk_splice_type, mk_qualified_type, mk_paren_type, mk_fn_type, mk_dyn_type}
 use core.{TypeExpr, Tk}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -17,7 +17,23 @@ export fn parse_type_expr(st: PState) -> CapVal {
     fold_type_union(st, l, r_list)
 }
 
+fn parse_splice_type(st: PState) -> CapVal {
+    mut opt: CapVal = CapVal.Nil
+    let _ = st.advance()
+    let sn = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report_ident("expected IDENT")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.Question {
+        opt = CapVal.Tok(st.advance())
+    }
+    mk_splice_type(capval_tok_text(sn), capval_present(opt))
+}
+
 fn parse_type_atom(st: PState) -> CapVal {
+    if st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) {
+        return parse_splice_type(st)
+    }
     if st.cur().tk == Tk.At {
         return parse_qualified_type(st)
     }
@@ -85,7 +101,7 @@ fn parse_fn_type(st: PState) -> CapVal {
     let _ = st.advance()
     if st.cur().tk == Tk.LeftParen {
         lp = CapVal.Tok(st.advance())
-        if st.cur().tk == Tk.At || st.cur().text == "fn" || st.cur().text == "dyn" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Identifier {
+        if st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.At || st.cur().text == "fn" || st.cur().text == "dyn" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Identifier {
             p_list.push(capval_to_texpr(st, parse_type_expr(st)))
             while st.cur().tk == Tk.Comma {
                 let _ = st.advance()
@@ -128,7 +144,7 @@ fn parse_list_type(st: PState) -> CapVal {
 fn parse_paren_type(st: PState) -> CapVal {
     mut t_list: List<TypeExpr> = []
     let _ = st.advance()
-    if st.cur().tk == Tk.At || st.cur().text == "fn" || st.cur().text == "dyn" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Identifier {
+    if st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.At || st.cur().text == "fn" || st.cur().text == "dyn" || st.cur().tk == Tk.LeftBracket || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Identifier {
         t_list.push(capval_to_texpr(st, parse_type_expr(st)))
         while st.cur().tk == Tk.Comma {
             let _ = st.advance()

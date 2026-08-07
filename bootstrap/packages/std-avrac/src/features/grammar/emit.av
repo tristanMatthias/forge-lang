@@ -2680,6 +2680,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // reconstructs the flat dotted name. A single-segment name is a one-element
         // list, joined to itself. (ps3t.6.7 — was `capval_tok_text(name)`, undefined
         // once the dotted star made `name` a list label.)
+        "MkSpliceType" -> "mk_splice_type(capval_tok_text(${args[0]}), capval_present(${args[1]}))"
         "MkNamed" -> "mk_named_type(capval_tok_text(CapVal.Toks(${args[0]}_list)), ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
         "MkQualified" -> "mk_qualified_type(${args[0]}_list, ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
         "TyList" -> "CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, ${args[0]})))"
@@ -2739,6 +2740,7 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkEnumCtorSuffix" -> "CapVal.Node(mk_enum_ctor_suffix(st, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
         "MkCatchSuffix" -> "CapVal.Node(mk_catch_suffix(st, ${args[0]}, ${args[1]}, CapVal.SNodes(${args[2]}_list)))"
         "MkArmReturn" -> "mk_arm_return(st, sp_start, ${args[0]})"
+        "MkSpliceArm" -> "mk_splice_arm(st, ${args[0]})"
         "MkArm" -> "mk_arm(st, ${args[0]}, ${args[1]}, ${args[2]})"
         "MkMatch" -> "mk_match(st, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         // t-47hc.29 — every table capture is a LIST: the value-column headers (`Toks`),

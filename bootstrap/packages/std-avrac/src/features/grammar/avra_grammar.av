@@ -1477,7 +1477,21 @@ export fn avra_decl_dispatch_grammar() -> Grammar {
 export fn avra_type_grammar() -> Grammar {
     let gp = grammar {
   type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
-  type_atom  = qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
+  // t-47hc.4.3 — `~var` in TYPE position, as its own atom rather than a widened
+  // `named_type`. The hand routes it through `consume_name_or_splice`, which yields the
+  // ordinary name string PREFIXED with `~` for the quote lowerer to read back; this
+  // builds the same `TypeExpr.Named("~var")`.
+  //
+  // An atom, not a wider `named_type`, because `named_type`'s name slot is a REPEATED
+  // capture (the dotted path) and its accumulator type is inferred from the first item —
+  // leading with a rule reference silently redeclared it `List<ExprId>` and the generated
+  // parser then pushed a Token into it. A splice is a single name with no dotted tail, so
+  // it has no business in that list.
+  //
+  // `@when(in_quote_body)` keeps `~` a parse error outside a quote, so valid input is
+  // untouched. Placed BEFORE `named_type` because `~` starts no other atom.
+  splice_type = @when(in_quote_body) "~" sn:IDENT ( opt:"?" )? -> MkSpliceType(sn, opt)
+  type_atom  = splice_type | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
   qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
   fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
   dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)
@@ -1499,7 +1513,21 @@ export fn avra_type_grammar() -> Grammar {
 export fn avra_type_flip_grammar() -> Grammar {
     let gp = grammar {
   type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
-  type_atom  = qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
+  // t-47hc.4.3 — `~var` in TYPE position, as its own atom rather than a widened
+  // `named_type`. The hand routes it through `consume_name_or_splice`, which yields the
+  // ordinary name string PREFIXED with `~` for the quote lowerer to read back; this
+  // builds the same `TypeExpr.Named("~var")`.
+  //
+  // An atom, not a wider `named_type`, because `named_type`'s name slot is a REPEATED
+  // capture (the dotted path) and its accumulator type is inferred from the first item —
+  // leading with a rule reference silently redeclared it `List<ExprId>` and the generated
+  // parser then pushed a Token into it. A splice is a single name with no dotted tail, so
+  // it has no business in that list.
+  //
+  // `@when(in_quote_body)` keeps `~` a parse error outside a quote, so valid input is
+  // untouched. Placed BEFORE `named_type` because `~` starts no other atom.
+  splice_type = @when(in_quote_body) "~" sn:IDENT ( opt:"?" )? -> MkSpliceType(sn, opt)
+  type_atom  = splice_type | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
   qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
   fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
   dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)

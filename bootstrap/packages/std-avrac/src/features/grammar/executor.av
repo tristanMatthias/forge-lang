@@ -5033,6 +5033,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    mk_named_type / mk_paren_type / mk_fn_type), so apply_build and the
         //    generated static type parser build byte-identical trees. ──
         "TyUnion" if args.length == 2 -> fold_type_union(st, env.get(args[0]), capval_to_texpr_list(env.get(args[1])))
+        "MkSpliceType" if args.length == 2 -> mk_splice_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])))
         "MkNamed" if args.length == 3 -> mk_named_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
         "MkQualified" if args.length == 3 -> mk_qualified_type(capval_toks(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
         "TyList" if args.length == 1 -> CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
@@ -5056,6 +5057,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkErrdefer" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, env.get(args[0])))))
         // ── Match statement builds (target: Stmt, ps3t.6.5.4) ──
         "MkArmReturn" if args.length == 1 -> mk_arm_return(st, 0 - 1, env.get(args[0]))
+        "MkSpliceArm" if args.length == 1 -> mk_splice_arm(st, env.get(args[0]))
         "MkArm" if args.length == 3 -> {
             // `pattern ( "if" guard )? "->" body` — one match arm. MatchArm carries
             // the boxed Pattern (read back from the arena — render_match_arm renders
@@ -5366,6 +5368,17 @@ export fn fold_type_union(st: PState, l: CapVal, rs: List<TypeExpr>) -> CapVal {
 /// build's core. `has_gen` ⇒ `Generic(nm, gen_args)`, else `Named(nm)`; an
 /// `is_opt` wrap makes it `Optional`. Mirrors parse_type_atom's identifier
 /// branch.
+/// `~var` in TYPE position (t-47hc.4.3). The hand's `consume_name_or_splice` encodes a
+/// name-slot splice by PREFIXING the name with `~` and carrying it as an ordinary name
+/// string, which the quote lowerer reads back out — so this must produce exactly
+/// `TypeExpr.Named("~var")` rather than a new TypeExpr kind, or the lowerer sees a plain
+/// type it cannot resolve at expansion time.
+export fn mk_splice_type(name: string, is_opt: bool) -> CapVal {
+    mut base = TypeExpr.Named("~" + name)
+    if is_opt { base = TypeExpr.Optional(base) }
+    CapVal.TExpr(base)
+}
+
 export fn mk_named_type(nm: string, has_gen: bool, gen_args: List<TypeExpr>, is_opt: bool) -> CapVal {
     mut base = if has_gen { TypeExpr.Generic(nm, gen_args) } else { TypeExpr.Named(nm) }
     if is_opt { base = TypeExpr.Optional(base) }
@@ -6586,6 +6599,27 @@ export fn mk_use_pkg(st: PState, pkg: List<Token>, segs: List<Token>, names: Lis
 }
 
 /// Generated-parser twin of the `MkArm` executor build.
+/// `~target` in MATCH-ARM position (t-47hc.4.3) — splices a `List<MatchArm>` value into
+/// the surrounding match body at expansion time. Legal only inside a quote body, which is
+/// the `@when(in_quote_body)` on the rule; the marker has no meaning outside one.
+///
+/// The ENCODING is the hand's, verbatim (features/match_expr/parser.av): a SENTINEL arm
+/// whose pattern is `TypePattern("__quote_splice_arms__", "")` and whose body is the
+/// splice expression. The quote lowerer (`construct_match_arm_list`) recognises that exact
+/// type name and emits `list_concat` over the segments between sentinels — so this must
+/// produce the same shape rather than a new node kind, or the lowerer silently treats the
+/// arm as an ordinary one.
+///
+/// It had no native rule at all until the `@hand(decl_hand)` deletion: a `match` inside a
+/// `quote stmts { … }` rolled the whole item back to the hand, so the gap was invisible.
+export fn mk_splice_arm(st: PState, target_cv: CapVal) -> CapVal {
+    let target_id = capval_to_expr(st, target_cv)
+    let sentinel_pat = Pattern.TypePattern("__quote_splice_arms__", "")
+    let pat_id = st.store.pats.add_leaf(sentinel_pat)
+    let splice_id = st.store.exprs.add_leaf(Expr.Splice(target_id))
+    CapVal.Arm(MatchArm { pattern: sentinel_pat, pattern_id: pat_id, guard_id: none, body_id: splice_id })
+}
+
 export fn mk_arm(st: PState, pat_cv: CapVal, guard_cv: CapVal, body_cv: CapVal) -> CapVal {
     let pat_id = capval_to_pat(st, pat_cv)
     let guard = if capval_present(guard_cv) { capval_to_expr(st, guard_cv) } else { null }
