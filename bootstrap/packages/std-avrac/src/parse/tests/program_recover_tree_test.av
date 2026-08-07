@@ -1,0 +1,75 @@
+// WHY: t-47hc.5 — `bs2 program` could not show the RECOVERY tree.
+//
+// `cmd_program` ran through `parse_or_fail`, which stops at the diagnostics. So on
+// invalid input — the only input whose tree is interesting — `program` printed errors
+// and no tree at all, and the shape a parser BUILDS while recovering was observable
+// only from inside `error_recovery_differential_test` (whose `rtree_at` drives
+// `parser_new` in-process). Comparing what the hand and a native rule build therefore
+// meant reading trees out of a failing spec's output.
+//
+// That gap is load-bearing for the routing work, because the diagnostics and the tree
+// are INDEPENDENT oracles: `let a = (1) ->` reports the same F0040 on every path and
+// still comes back as `(group 1)` from the hand and `(lambda (_) (error))` from a rule
+// that commits after `->`. A message-only probe calls that agreement and routes the
+// keyword on evidence that never looked at the disagreement.
+//
+// `--recover` renders the tree anyway. Guarded here rather than left to the shell
+// probe (`diagnose.sh --parser-tree`) so the flag cannot silently regress to the
+// fail-fast path — which would look exactly like "the trees agree".
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+fn write_fixture(name: string, src: string) -> string {
+    let path = "/tmp/avra_program_recover_${name}.av"
+    let _ = avra_selfhost_write_file(path, src)
+    path
+}
+
+// stdout only — the diagnostic COUNT goes to stderr precisely so the tree stays
+// clean to diff, and this asserts that separation holds.
+fn tree_of(name: string, src: string) -> string {
+    avra_shell_exec("./build/bs2 program --recover '${write_fixture(name, src)}' 2>/dev/null")
+}
+
+fn stderr_of(name: string, src: string) -> string {
+    avra_shell_exec("./build/bs2 program --recover '${write_fixture(name, src)}' 2>&1 >/dev/null")
+}
+
+fn plain_stdout(name: string, src: string) -> string {
+    avra_shell_exec("./build/bs2 program '${write_fixture(name, src)}' 2>/dev/null")
+}
+
+spec "t-47hc.5: `program --recover` renders the recovery tree for invalid input" {
+    then "an invalid program yields a TREE, where plain `program` yields none" {
+        let src = "let a = (1) ->\n"
+        // The blocker case itself: the binding survives with a `(group 1)` initializer
+        // and the stray `->` becomes its own error row. Asserting the SHAPE (not just
+        // non-emptiness) is what makes this fail if `--recover` regresses to fail-fast.
+        tree_of("blocker", src).contains("(let a") &&
+            tree_of("blocker", src).contains("(group 1)") &&
+            !tree_of("blocker", src).contains("error[") &&
+            plain_stdout("blocker_plain", src).trim() == ""
+    }
+
+    then "the diagnostic count goes to stderr, keeping stdout diffable" {
+        let src = "let a = (1) ->\n"
+        stderr_of("counted", src).contains("1 error(s)") &&
+            !tree_of("counted", src).contains("error(s)")
+    }
+
+    then "a VALID program renders the same tree with and without the flag" {
+        // `--recover` changes only the fail-fast, never the parse — so on input that
+        // never trips a diagnostic the two paths must be indistinguishable.
+        let src = "let a = 1\n"
+        tree_of("valid", src).trim() == plain_stdout("valid_plain", src).trim() &&
+            tree_of("valid", src).contains("(let a")
+    }
+
+    then "a source that parses to NOTHING says so instead of printing an empty tree" {
+        // The `ids: null` arm. Distinguishing "no statements" from "empty output" is
+        // what keeps a silent drop visible.
+        let src = ")\n"
+        tree_of("nostmt", src).contains("no tree") ||
+            tree_of("nostmt", src).trim() != ""
+    }
+}

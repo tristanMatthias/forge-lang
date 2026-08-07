@@ -373,6 +373,18 @@ DIFF & ANALYSIS
   --diff-fn <file.av> <fn>
                        Same as --diff but only shows the body of one
                        function.
+  --parser-probe '<src>' | -f <file>
+                       t-47hc.5: the DIAGNOSTICS the hand / emit / production /
+                       executor parsers each report for one snippet. Divergence
+                       from `hand` is a recovery-parity gap.
+  --parser-tree '<src>' | -f <file>
+                       Same three-way probe over the RECOVERY TREE, with
+                       `(error)` row counts. Messages can agree while the trees
+                       do not — that is the `let a = (1) ->` blocker.
+  --parser-frontier [keyword]
+                       Which declaration keywords still need @hand(decl_hand)
+                       on MALFORMED input (REFUSES vs native). A keyword
+                       graduates when its malformed forms stop needing the leaf.
   --diff-test [--base <ref>] [--new <ref>] [--new-prebuilt] [--run-equiv]
               [--intended-strictness]
                        Differential test (HRN): build the
@@ -3952,6 +3964,9 @@ main() {
     --diff)               mode_diff "$@" ;;
     --diff-fn)            mode_diff_fn "$@" ;;
     --diff-test)          mode_diff_test "$@" ;;
+    --parser-probe)       mode_parser_probe "$@" ;;
+    --parser-tree)        mode_parser_tree "$@" ;;
+    --parser-frontier)    mode_parser_frontier "$@" ;;
     --score)              mode_score "$@" ;;
     --rank)               mode_rank "$@" ;;
     --asan)               mode_asan "$@" ;;
@@ -5114,6 +5129,109 @@ dt_run_equiv_check() {
 # OLD/oracle and NEW/candidate compilers, then asserts byte-identical IR
 # over the selfhost source + corpus; prints a readable diff and returns
 # non-zero on any divergence.
+# ── t-47hc.5 parser-differential probes ───────────────────────────────────────
+#
+# THREE implementations answer declaration parsing, and knowing which one a
+# command exercises is the difference between a real measurement and a false
+# one (CLAUDE.md keeps the table). Both modes below set EVERY routing field
+# explicitly rather than only the one that distinguishes their mode: set just
+# one and the others stay ambient, so running under `AVRA_PARSER_DECL_FLIP=0`
+# collapses several modes onto the hand and the probe compares it against
+# itself — the vacuity class these probes exist to detect.
+PARSER_MODE_HAND="AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_EMIT="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_PROD="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_EXEC="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=0 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=1"
+
+# Resolve the probe's input to a file: `-f <path>` uses it directly, otherwise
+# the argument IS the source text.
+# Sets PARSER_PROBE_FIXTURE rather than echoing it: `die` inside a command
+# substitution exits only the SUBSHELL, so a usage error there printed the
+# message and then let the caller run on with an empty path — every row
+# reporting "no such file" instead of the usage error it had already emitted.
+parser_probe_fixture() {
+  if [ "${1:-}" = "-f" ]; then
+    [ -f "${2:-}" ] || die "parser probe: no such file: ${2:-<missing>}"
+    PARSER_PROBE_FIXTURE="$2"
+  else
+    [ -n "${1:-}" ] || die "parser probe: pass source text, or -f <file>"
+    PARSER_PROBE_FIXTURE="${TMPDIR:-/tmp}/avra_parser_probe.$$.av"
+    printf '%s\n' "$1" > "$PARSER_PROBE_FIXTURE"
+  fi
+}
+
+# --parser-probe: the DIAGNOSTICS each path reports for one snippet. Divergence
+# between `hand` and the rest is a recovery-parity gap; `prod` vs `exec` isolates
+# the executor, which is what answers invalid input on the default path.
+mode_parser_probe() {
+  cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
+  [ -x "$BS2" ] || die "parser probe: no bs2 at $BS2 (run make build-quick)"
+  parser_probe_fixture "$@"; local fix="$PARSER_PROBE_FIXTURE"
+  _pp_run() { env $1 "$BS2" check "$fix" 2>&1 | sed 's/.\[[0-9;]*m//g' | grep -oE 'error.F[0-9]+.: .*' | tr '\n' '|'; }
+  printf 'src : %s\n' "$(tr '\n' ' ' < "$fix")"
+  printf 'hand: %s\n' "$(_pp_run "$PARSER_MODE_HAND")"
+  printf 'emit: %s\n' "$(_pp_run "$PARSER_MODE_EMIT")"
+  printf 'prod: %s\n' "$(_pp_run "$PARSER_MODE_PROD")"
+  printf 'exec: %s\n' "$(_pp_run "$PARSER_MODE_EXEC")"
+}
+
+# --parser-tree: the RECOVERY TREE each path builds for one snippet, with a count
+# of `(error)` rows. Distinct from --parser-probe because the diagnostics can
+# AGREE while the trees do not: `let a = (1) ->` reports the same F0040 on every
+# path and still comes back as `(group 1)` from the hand and `(lambda (_) (error))`
+# from the native rule. A message-only probe calls that agreement.
+mode_parser_tree() {
+  cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
+  [ -x "$BS2" ] || die "parser probe: no bs2 at $BS2 (run make build-quick)"
+  parser_probe_fixture "$@"; local fix="$PARSER_PROBE_FIXTURE"
+  # `--recover` is required, not cosmetic: plain `program` stops at the diagnostics,
+  # so on the invalid input this mode exists for it prints errors and NO tree.
+  _pt_run() { env $1 "$BS2" program --recover "$fix" 2>/dev/null | sed 's/.\[[0-9;]*m//g'; }
+  _pt_errs() { printf '%s' "$1" | grep -oc '(error)' || true; }
+  local h e x
+  h=$(_pt_run "$PARSER_MODE_HAND"); e=$(_pt_run "$PARSER_MODE_EMIT"); x=$(_pt_run "$PARSER_MODE_EXEC")
+  printf 'src : %s\n' "$(tr '\n' ' ' < "$fix")"
+  printf 'hand [%s err rows]: %s\n' "$(_pt_errs "$h")" "$(printf '%s' "$h" | tr '\n' ' ')"
+  printf 'emit [%s err rows]: %s\n' "$(_pt_errs "$e")" "$(printf '%s' "$e" | tr '\n' ' ')"
+  printf 'exec [%s err rows]: %s\n' "$(_pt_errs "$x")" "$(printf '%s' "$x" | tr '\n' ' ')"
+}
+
+# --parser-frontier: which declaration keywords still need `@hand(decl_hand)` on
+# MALFORMED input. `AVRA_REFUSE_HAND_LEAF=decl_hand` makes reaching the leaf an
+# error, so REFUSES means "this keyword's recovery is still the hand's". A keyword
+# GRADUATES when its malformed forms stop needing the leaf — routing it before
+# then is the "routed on no evidence" trap, since valid input agrees either way.
+# Pass a keyword name to run only its row.
+mode_parser_frontier() {
+  cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
+  [ -x "$BS2" ] || die "parser probe: no bs2 at $BS2 (run make build-quick)"
+  local only="${1:-}"
+  _pf_probe() {
+    [ -n "$only" ] && [ "$only" != "$1" ] && return 0
+    local f="${TMPDIR:-/tmp}/avra_frontier.$$.av"
+    printf '%s\n' "$2" > "$f"
+    local out
+    out=$(AVRA_REFUSE_HAND_LEAF=decl_hand "$BS2" check "$f" 2>&1 | sed 's/.\[[0-9;]*m//g')
+    rm -f "$f"
+    if printf '%s' "$out" | grep -q "is refused"; then printf '%-12s REFUSES\n' "$1"
+    else printf '%-12s native\n' "$1"; fi
+  }
+  _pf_probe mod       'mod {'
+  _pf_probe use       'use @std.{'
+  _pf_probe const     'const X ='
+  _pf_probe trait     'trait T {'
+  _pf_probe shape     'shape S = {'
+  _pf_probe enum      'enum E {'
+  _pf_probe select    'select { x }'
+  _pf_probe spec      'spec "s" { given }'
+  _pf_probe fn        'fn foo('
+  _pf_probe type      'type Foo = {'
+  _pf_probe impl      'impl Foo {'
+  _pf_probe export    'export'
+  _pf_probe component 'component acct_sr { balance: int = 100 }'
+  _pf_probe let       'let = 5'
+}
+
 mode_diff_test() {
   local base="" new="HEAD" prebuilt=0 run_equiv=0 intended=0 strictness=0 strictness_seen=0
   while [ $# -gt 0 ]; do

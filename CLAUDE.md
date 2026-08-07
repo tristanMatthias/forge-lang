@@ -427,6 +427,28 @@ is the difference between a real measurement and a false one:
 | `AVRA_PARSER_DECL_STATIC=0` | the grammar EXECUTOR (interpreter) |
 | *(none)* | **production**: static → `had_error` → re-parse the item with the EXECUTOR |
 
+Don't set these by hand — three `diagnose.sh` modes drive all four paths with EVERY
+routing field pinned (set only the one field that names your mode and the rest stay
+ambient, so a run under `AVRA_PARSER_DECL_FLIP=0` collapses several modes onto the hand
+and the probe compares it against itself):
+
+```bash
+bash scripts/diagnose.sh --parser-probe 'let a = (1) ->'   # the DIAGNOSTICS, all four paths
+bash scripts/diagnose.sh --parser-tree  'let a = (1) ->'   # the RECOVERY TREE + (error) row counts
+bash scripts/diagnose.sh --parser-frontier [keyword]       # which keywords still need @hand(decl_hand)
+```
+
+**Run `--parser-tree` as well as `--parser-probe`, always — they are INDEPENDENT
+oracles and the tree is the one that catches routing bugs.** `let a = (1) ->` reports
+the same F0040 on all four paths and still comes back `(group 1)` from the hand and
+`(lambda (_) (error))` from a rule that commits after `->`. A message-only probe calls
+that agreement. `--parser-tree` needs `bs2 program --recover` (t-47hc.5): plain
+`program` runs through `parse_or_fail` and stops at the diagnostics, so for invalid
+input — the only input whose tree is interesting — it printed errors and NO tree, which
+is why recovery trees used to be observable only from inside
+`error_recovery_differential_test`'s in-process `rtree_at`. Guard:
+`parse/tests/program_recover_tree_test.av`.
+
 Both recovery oracles disable the fallback, so between them they measure **emit
 and nothing else** — while on any invalid input the DEFAULT path is answered by
 the EXECUTOR. An executor-only divergence is therefore invisible to them, which is
