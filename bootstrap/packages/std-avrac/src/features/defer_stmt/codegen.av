@@ -7,12 +7,52 @@
 use core.{VarBinding}
 use codegen.{Ctx, DeferEntry}
 use codegen.{emit_rc_release_typed}
+use features.error_propagation.{Result}
+use core.{avra_tag_as_result}
+
+// EVERY EMITTER HERE PROPAGATES (t-dy1j).
+//
+// These functions used to call `ctx.emit(env, body)` and throw the `Result`
+// away. `ctx.emit` returns `Result<EmitValue, string>`, so a deferred body that
+// could not be emitted was dropped on the floor: no diagnostic, no F-code, no
+// non-zero exit. The deferred call simply did not appear in the output and the
+// program ran as though the `defer` were not written.
+//
+// That is not hypothetical. It concealed a live bug for a full PR cycle
+// (#1188): the block scope-exit passed the wrong environment, so
+//
+//     { let f = open()
+//       defer close(f) }        // `f` absent from the env used to emit this
+//
+// failed to emit and vanished. It survived 14 specs written specifically for
+// defer scoping, five green CI gates, and a byte-identical diff-test — and was
+// caught by review rather than by any instrument. Had the Result propagated, it
+// would have been a hard compile error on the first fixture that deferred
+// anything referencing a local.
+//
+// So: no `ctx.emit` result is discarded in this file. A deferred body that
+// cannot be emitted is now a compile failure, which is the honest outcome.
+
+/// `Result.Ok` for the unit-returning emitters below. They produce no value;
+/// the `Result` exists solely so an emit failure cannot be swallowed.
+fn ok_unit() -> Result<int, string> {
+    let r = Result.Ok(0)
+    avra_tag_as_result(r)
+    r
+}
+
+/// `Result.Ok` for `defer_scope_exit`, which returns the popped `Ctx`.
+fn ok_ctx(c: Ctx) -> Result<Ctx, string> {
+    let r = Result.Ok(c)
+    avra_tag_as_result(r)
+    r
+}
 
 /// Emit scope-exit cleanup for a normal return. Walks the defer
 /// list in LIFO order, running every `Frame` (defer body) and
 /// `Release` (RC drop) entry — but skipping `ErrFrame` (errdefer)
 /// entries which only fire on error returns.
-export fn emit_defers(ctx: Ctx, env: List<VarBinding>) {
+export fn emit_defers(ctx: Ctx, env: List<VarBinding>) -> Result<int, string> {
     emit_stack_filtered(ctx, env, ctx.defers, false)
 }
 
@@ -20,7 +60,7 @@ export fn emit_defers(ctx: Ctx, env: List<VarBinding>) {
 /// list in LIFO order running every entry (Frame + ErrFrame +
 /// Release) — `errdefer` is the only kind that this path activates
 /// beyond what `emit_defers` does.
-export fn emit_defers_on_error(ctx: Ctx, env: List<VarBinding>) {
+export fn emit_defers_on_error(ctx: Ctx, env: List<VarBinding>) -> Result<int, string> {
     emit_stack_filtered(ctx, env, ctx.defers, true)
 }
 
@@ -57,12 +97,12 @@ export fn defer_scope_enter(ctx: Ctx) -> int {
 /// early `return`/`break`/`continue` has branched away and already
 /// emitted what it owed, so anything appended here would be both
 /// unreachable and a second terminator's worth of garbage (t-83ja).
-export fn defer_scope_exit(ctx: Ctx, env: List<VarBinding>, base: int) -> Ctx {
-    if ctx.defers.length <= base { return ctx }
+export fn defer_scope_exit(ctx: Ctx, env: List<VarBinding>, base: int) -> Result<Ctx, string> {
+    if ctx.defers.length <= base { return ok_ctx(ctx) }
     if !ctx.has_terminator() {
-        emit_frames_above(ctx, env, base, false)
+        emit_frames_above(ctx, env, base, false)?
     }
-    ctx.with_defers(defers_without_frames_above(ctx.defers, base))
+    ok_ctx(ctx.with_defers(defers_without_frames_above(ctx.defers, base)))
 }
 
 /// Emit the `defer` bodies above `base` WITHOUT popping them — the
@@ -74,7 +114,7 @@ export fn defer_scope_exit(ctx: Ctx, env: List<VarBinding>, base: int) -> Ctx {
 ///
 /// `errdefer` is skipped: leaving a loop via `break` is a normal exit,
 /// not an error one.
-export fn emit_defers_above(ctx: Ctx, env: List<VarBinding>, base: int) {
+export fn emit_defers_above(ctx: Ctx, env: List<VarBinding>, base: int) -> Result<int, string> {
     emit_frames_above(ctx, env, base, false)
 }
 
@@ -82,18 +122,21 @@ export fn emit_defers_above(ctx: Ctx, env: List<VarBinding>, base: int) {
 /// tail-to-head down to `base`, running only `Frame` (and `ErrFrame`
 /// when `is_error`) — `Release` entries belong to the function-exit
 /// walk and are stepped over.
-fn emit_frames_above(ctx: Ctx, env: List<VarBinding>, base: int, is_error: int) {
+fn emit_frames_above(ctx: Ctx, env: List<VarBinding>, base: int, is_error: int) -> Result<int, string> {
     mut i = ctx.defers.length - 1
     while i >= base {
         match ctx.defers[i] {
-            .Frame(body) -> ctx.emit(env, ctx.nodes.exprs.get(body))
+            .Frame(body) -> {
+                ctx.emit(env, ctx.nodes.exprs.get(body))?
+            }
             .ErrFrame(body) -> {
-                if is_error { ctx.emit(env, ctx.nodes.exprs.get(body)) }
+                if is_error { ctx.emit(env, ctx.nodes.exprs.get(body))? }
             }
             .Release(_, _, _) -> {}
         }
         i = i - 1
     }
+    ok_unit()
 }
 
 /// Rebuild the defer stack with this scope's `Frame`/`ErrFrame`
@@ -121,17 +164,17 @@ fn defers_without_frames_above(stack: List<DeferEntry>, base: int) -> List<Defer
 /// LIFO worker shared by `emit_defers` and `emit_defers_on_error`.
 /// Walks the List<DeferEntry> tail-to-head — push appended so the
 /// most-recently-declared entry sits at the largest index.
-fn emit_stack_filtered(ctx: Ctx, env: List<VarBinding>, stack: List<DeferEntry>, is_error: int) {
+fn emit_stack_filtered(ctx: Ctx, env: List<VarBinding>, stack: List<DeferEntry>, is_error: int) -> Result<int, string> {
     mut i = stack.length - 1
     while i >= 0 {
         match stack[i] {
             .Frame(body) -> {
                 // defer always runs (body is an arena ExprId — F4d)
-                ctx.emit(env, ctx.nodes.exprs.get(body))
+                ctx.emit(env, ctx.nodes.exprs.get(body))?
             }
             .ErrFrame(body) -> {
                 // errdefer only runs on error path
-                if is_error { ctx.emit(env, ctx.nodes.exprs.get(body)) }
+                if is_error { ctx.emit(env, ctx.nodes.exprs.get(body))? }
             }
             .Release(name, alloca, ty) -> {
                 // RC release — load and release the value
@@ -141,4 +184,5 @@ fn emit_stack_filtered(ctx: Ctx, env: List<VarBinding>, stack: List<DeferEntry>,
         }
         i = i - 1
     }
+    ok_unit()
 }

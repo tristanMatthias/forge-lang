@@ -47,7 +47,7 @@ export fn emit_block_expr(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtId>) 
     // `br.env`, not `env` — a deferred body may name a binding this block
     // declared, and only the walker's env carries it. See the twin comment in
     // `emit_stmt`'s `.Block` arm.
-    defer_scope_exit(br.ctx, br.env, base)
+    defer_scope_exit(br.ctx, br.env, base)?
     ok_emit(br.value, br.ty)
 }
 
