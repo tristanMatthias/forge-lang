@@ -66,7 +66,7 @@ fn emit_for_inner(ctx: Ctx, env: List<VarBinding>, variable: string, start: Expr
     // list_push_copy snapshots ctx.loops then appends — see
     // while_stmt for rationale.
     ctx.position(body_bb)
-    let body_ctx_base = ctx.with_loops(list_push_copy(ctx.loops, LoopStackFrame { cond_bb: incr_bb, exit_bb }))
+    let body_ctx_base = ctx.with_loops(list_push_copy(ctx.loops, LoopStackFrame { cond_bb: incr_bb, exit_bb, defer_depth: ctx.defers.length }))
     // If arena is active, pass it to the body context so arena_alloc is used
     let body_ctx = if use_arena {
         body_ctx_base with { arena_ptr: arena_val }
@@ -182,7 +182,7 @@ fn emit_for_in_inner(ctx: Ctx, env: List<VarBinding>, variable: string, collecti
     }
     ctx.store(elem, elem_alloca)
 
-    let body_ctx_base = ctx.with_loops(list_push_copy(ctx.loops, LoopStackFrame { cond_bb: incr_bb, exit_bb }))
+    let body_ctx_base = ctx.with_loops(list_push_copy(ctx.loops, LoopStackFrame { cond_bb: incr_bb, exit_bb, defer_depth: ctx.defers.length }))
     let body_ctx = if use_arena {
         body_ctx_base with { arena_ptr: arena_val }
     } else {

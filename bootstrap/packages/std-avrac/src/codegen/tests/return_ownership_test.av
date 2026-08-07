@@ -23,6 +23,7 @@
 
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{stmt_unwrap}
+use @std.avrac.codegen.{vtype_is_ptr_type}
 use @std.avrac.codegen.{analyze_return_ownership, analyze_releasable, analyze_return_ownership_set}
 
 /// Sentinel injected when a fixture fails to parse. See `not_fresh`.
@@ -76,7 +77,9 @@ fn releasables_of(src: string, fname: string) -> List<string> {
             .Function(n, _, _, ret, body) -> {
                 if n == fname {
                     let tail_yields = match ret { .Void -> false, _ -> true }
-                    return analyze_releasable(p.store, body, fresh, tail_yields)
+                    // Mirror fn_decl/codegen.av exactly: the DECLARED return
+                    // type decides whether the result can reach a local.
+                    return analyze_releasable(p.store, body, fresh, tail_yields, vtype_is_ptr_type(ret))
                 }
             }
             _ -> {}
@@ -377,5 +380,83 @@ spec "a body the analysis cannot SEE is never fresh (t-k6lm)" {
         // Denying an empty body must not decay into denying everything: this
         // is the arm that fails if the guard is written too wide.
         is_fresh("type B2 = { v: int }\nfn mk_b2() -> B2 { B2 { v: 1 } }\n", "mk_b2")
+    }
+}
+
+// ── A SCALAR result does not pin its base alive (t-0ks0) ─────────────────────
+//
+// `remove_returned_field_roots` drops the base of any field read in escape
+// position, because `__release` is recursive and a RETURNED `g.grammar` is the
+// very value the caller was handed. True — when the result can still reach the
+// base. When the fn returns an `int`, it cannot, and a pure field chain has no
+// call in it that could have retained anything, so the base was being pinned
+// for nothing.
+//
+// That is most uses of a struct, which is why it read as "struct locals are
+// never released": measured with a strict-mode probe, 150 of 150 locals leaked,
+// against a positive control of 150 deliberately stranded (the counter is blind
+// outside AVRA_RC_STRICT=1 — see rc_live_count_signal_test).
+//
+// The middle arm is the one that matters. Relaxing this is the DOUBLE-FREE
+// direction, so the boundary has to be pinned, not just the win.
+const OKS0: string = "type H = { n: int, s: string }\n"
+
+spec "a scalar result does not pin its base alive (t-0ks0)" {
+    then "a pure field chain yielding a SCALAR leaves the base releasable" {
+        is_releasable(OKS0 + "fn f() -> int { let h = H { n: 1, s: \"x\" }\n h.n }\n", "f", "h")
+    }
+    then "a field handed back as a POINTER still suppresses — the safety boundary" {
+        // `h.s` IS the returned string. Releasing `h` recursively frees it,
+        // and the caller reads freed memory. This arm must never flip.
+        not_releasable(OKS0 + "fn g() -> string { let h = H { n: 1, s: \"x\" }\n h.s }\n", "g", "h")
+    }
+    then "a local the tail never touches is releasable — the control" {
+        is_releasable(OKS0 + "fn k() -> int { let h = H { n: 1, s: \"x\" }\n 0 }\n", "k", "h")
+    }
+    then "an explicit `return` of a scalar field chain behaves the same" {
+        is_releasable(OKS0 + "fn r() -> int { let h = H { n: 1, s: \"x\" }\n return h.n }\n", "r", "h")
+    }
+}
+
+// ── Review findings on #1181 (t-0ks0) ────────────────────────────────────────
+//
+// Two gaps CodeRabbit raised on the scalar-result relaxation. Both are pinned
+// here because both are boundaries: one says the relaxation must reach FURTHER
+// than it did, the other says it must NOT reach further than it does.
+const OKS0_KEEP: string = "type H = { n: int, s: string }\nfn keep(s: string) -> int { s.length }\n"
+
+spec "parens are transparent to the scalar-result relaxation (t-0ks0)" {
+    then "a grouped BASE `(h).n` releases, exactly as `h.n` does" {
+        // `Expr.Grouping` is a real node, so matching the base shape directly
+        // missed the `.Ident` case and the parens hid `h` from the
+        // "reading a field is safe" rule in `remove_escaped_expr`. Measured
+        // before the fix: `(h).n` emitted no release, `h.n` emitted one.
+        is_releasable(OKS0 + "fn f() -> int { let h = H { n: 1, s: \"x\" }\n (h).n }\n", "f", "h")
+    }
+    then "a grouped WHOLE chain `(h.n)` releases too" {
+        is_releasable(OKS0 + "fn f() -> int { let h = H { n: 1, s: \"x\" }\n (h.n) }\n", "f", "h")
+    }
+    then "doubled parens are still transparent" {
+        is_releasable(OKS0 + "fn f() -> int { let h = H { n: 1, s: \"x\" }\n ((h)).n }\n", "f", "h")
+    }
+    then "parens do NOT smuggle a pointer result past the boundary" {
+        // The safety arm, wrapped in the thing that just became transparent:
+        // `(h.s)` still hands the caller a pointer into `h`, so `h` must stay
+        // suppressed. Peeling parens must not peel away the aliasing check.
+        not_releasable(OKS0 + "fn g() -> string { let h = H { n: 1, s: \"x\" }\n (h.s) }\n", "g", "h")
+    }
+}
+
+spec "a CALL taking a field keeps the base pinned, even for a scalar result (t-0ks0)" {
+    then "`keep(h.s) -> int` leaves `h` NOT releasable" {
+        // The scalar result cannot alias `h`, but the CALLEE may have retained
+        // `h.s` — the `pass_db_new` shape that `remove_field_root_calls` exists
+        // for. A scalar return type is therefore NOT sufficient on its own; the
+        // chain must also be call-free. This is the arm that fails if the
+        // relaxation is ever widened to "any scalar-returning tail".
+        not_releasable(OKS0_KEEP + "fn f() -> int { let h = H { n: 1, s: \"x\" }\n keep(h.s) }\n", "f", "h")
+    }
+    then "the same call in an explicit `return` is also pinned" {
+        not_releasable(OKS0_KEEP + "fn r() -> int { let h = H { n: 1, s: \"x\" }\n return keep(h.s) }\n", "r", "h")
     }
 }

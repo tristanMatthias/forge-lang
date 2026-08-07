@@ -534,7 +534,7 @@ fn codegen_program(stmts: List<StmtId>, debug_null_checks: bool, coverage: bool,
     // in a function-body block. Reposition it back at main's entry
     // before emitting top-level statements.
     ctx.position(entry)
-    ctx.rc_releasable = analyze_releasable(store, stmts, ctx.rc_fresh_fns, false)
+    ctx.rc_releasable = analyze_releasable(store, stmts, ctx.rc_fresh_fns, false, false)
     let initial: List<VarBinding> = []
     match emit_top_level(ctx, initial, stmts) {
         .Ok(_) -> {}
@@ -764,7 +764,7 @@ export fn emit_wrapper_module(stmts: List<StmtId>, type_reg: TypeRegistry, store
     let user_main = dc.user_main
     // NO emit_function_bodies — user fns are per-fn units (declare-only here).
     ctx.position(entry)
-    ctx.rc_releasable = analyze_releasable(store, stmts, ctx.rc_fresh_fns, false)
+    ctx.rc_releasable = analyze_releasable(store, stmts, ctx.rc_fresh_fns, false, false)
     let initial: List<VarBinding> = []
     match emit_top_level(ctx, initial, stmts) {
         .Ok(_) -> {}

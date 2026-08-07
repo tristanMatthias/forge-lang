@@ -1361,6 +1361,41 @@ export fn resolve_names(ids: List<StmtId>, store: NodeStore) -> NameResolveResul
 /// Rewrite an expression row: resolve, qualify, re-allocate (fresh
 /// row inherits the original's span).
 fn rewrite_expr_id(ctx: NameCtx, id: ExprId) -> ExprId {
+    // t-ki3s: undo the parser's SPELLING guess about `Upper.field(args)`.
+    //
+    // `Foo.Bar(args)` is genuinely ambiguous — an enum construction, or a
+    // method call on a value named `Foo` — and which one it is depends on what
+    // `Foo` RESOLVES to. The parser cannot know that, so it guesses from case
+    // (`p_starts_with_upper`, parse/mod.av) and commits to `Expr.EnumCtor`.
+    // For an uppercase VALUE the guess is wrong, and codegen died on it:
+    // `mut XS: List<int> = []` + `XS.push(1)` reached `emit_enum_ctor` and
+    // reported `error[F9999]: undefined enum type \`XS\`` — an ICE naming a
+    // construct the program never contained. PascalCase locals hit it too.
+    //
+    // This pass is where the question can actually be answered, so answer it:
+    // a head that names a local binding means the program wrote a METHOD CALL,
+    // which is `Call(FieldAccess(Ident(name), variant), args)` (there is no
+    // MethodCall variant — that IS the shape the parser's own else-branch
+    // builds). `scope_has(ctx.locals, …)` is the same check `rewrite_ident`
+    // makes first, so a local shadowing an enum type resolves lexically, which
+    // matches the zo1a shadowing rule.
+    //
+    // Fixed HERE rather than in `rewrite_expr`'s `.EnumCtor` arm because the
+    // two synthesised children need a span and `reexpr` takes it from `id`,
+    // which only this function has. Fixing it in codegen instead would leave
+    // the wrong node in the AST for typeck, the walkers and fmt.
+    match ctx.nodes.exprs.get(id) {
+        .EnumCtor(tn, variant, args) -> {
+            if tn != "" && scope_has(ctx.locals, tn) {
+                // The head is a local, so `rewrite_ident` would return it
+                // unchanged (its local check comes first) — emit it bare.
+                let obj = ctx.nodes.reexpr(Expr.Ident(tn), id)
+                let callee = ctx.nodes.reexpr(Expr.FieldAccess(obj, variant), id)
+                return ctx.nodes.reexpr(Expr.Call(callee, rewrite_expr_list_ids(ctx, args)), id)
+            }
+        }
+        _ -> {}
+    }
     ctx.nodes.reexpr(rewrite_expr(ctx, ctx.nodes.exprs.get(id)), id)
 }
 
@@ -2056,14 +2091,26 @@ fn resolve_const_ref(ctx: NameCtx, name: string) -> string {
     ""
 }
 
-/// Map `rewrite_expr` over a flipped `List<ExprId>` (call args); rewrites
-/// each arg row in place via reexpr.
+/// Map the row rewrite over a flipped `List<ExprId>` (call args, collection
+/// elements).
+///
+/// Goes through `rewrite_expr_id`, NOT `rewrite_expr` — the two are not
+/// interchangeable. `rewrite_expr_id` carries the t-ki3s `EnumCtor` correction,
+/// which needs the row's `ExprId` and so cannot live in `rewrite_expr`. Calling
+/// the inner one here inlined the `reexpr` and skipped that correction, so a
+/// nested `consume(XS.index_of(7))` kept the parser's enum-ctor guess while the
+/// same call at statement level was fixed. It surfaced as
+/// `error[F1000]: XS is not assignable to int` — typeck rejecting an "enum"
+/// that was only ever a local — rather than as the F9999 the top-level form
+/// gave, which is why it did not look like the same bug.
+///
+/// There is exactly one row-rewrite entry point. Keep it that way: any future
+/// per-row work lands in `rewrite_expr_id` and is inherited here for free.
 fn rewrite_expr_list_ids(ctx: NameCtx, ids: List<ExprId>) -> List<ExprId> {
     mut out: List<ExprId> = []
     mut i = 0
     while i < ids.length {
-        let id = ids[i]
-        out.push(ctx.nodes.reexpr(rewrite_expr(ctx, ctx.nodes.exprs.get(id)), id))
+        out.push(rewrite_expr_id(ctx, ids[i]))
         i = i + 1
     }
     out
