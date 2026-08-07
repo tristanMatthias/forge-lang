@@ -408,6 +408,17 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("component C { config { x } }\nfn f() -> int { 1 }") &&
         agree_all("component C { config { x: } }\nfn f() -> int { 1 }") &&
         agree_all("component C { children { x } }\nfn f() -> int { 1 }") &&
+        // A NON-IDENT entry takes a different path from the three above: `x` is an
+        // IDENT so the `@peek(not_rbrace) @gate` admits it and `config_entry` fails
+        // inside, where `5` is declined by the gate itself. The gated element ABORTS,
+        // and that is the hand's behaviour here — `parse_component_decl` propagates,
+        // leaving the two stray `}`s for the caller (F0001 then F0013 F0013). It is
+        // deliberately NOT `select`'s `@onfail(close)`: the two hand parsers disagree,
+        // which is the whole reason the policy is per-rule and stated rather than
+        // inferred (see GItem.onfail). Pinned because the resemblance to `select_decl`
+        // invites exactly that inference — it has been proposed on review twice.
+        agree_all("component C { config { 5 } }\nfn f() -> int { 1 }") &&
+        agree_all("component C { children { 5 } }\nfn f() -> int { 1 }") &&
         agree_all("component C { body: int }\nfn f() -> int { 1 }") &&
         agree_all("component C { let x }\nfn f() -> int { 1 }") &&
         agree_all("component C inst\nfn f() -> int { 1 }") &&
@@ -1050,6 +1061,10 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("component C { config { x } }\nfn f() -> int { 1 }") &&
         agree_bad("component C { config { x: } }\nfn f() -> int { 1 }") &&
         agree_bad("component C { children { x } }\nfn f() -> int { 1 }") &&
+        // The TREE half of the non-IDENT entry (see the F-code spec above) — the half
+        // that catches "reported the right sequence and recovered somewhere else".
+        agree_bad("component C { config { 5 } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { children { 5 } }\nfn f() -> int { 1 }") &&
         agree_bad("component C { body: int }\nfn f() -> int { 1 }") &&
         agree_bad("component C { let x }\nfn f() -> int { 1 }") &&
         agree_bad("component C inst\nfn f() -> int { 1 }") &&
