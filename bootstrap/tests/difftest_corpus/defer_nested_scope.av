@@ -1,0 +1,164 @@
+// WHY: diff-test corpus — the NESTED-BLOCK defer scope machinery (t-vmkc).
+//
+// `defer_lifo.av` covers `defer` at function top level. That is the one shape
+// that always worked, and it kept passing throughout the period when a `defer`
+// in any nested block was silently dropped — so it is not coverage for this
+// path at all.
+//
+// What this file pins, one distinct emitter each:
+//
+//   defer_scope_enter/exit          the block's own scope exit
+//   LoopStackFrame.defer_depth      break / continue unwinding before the jump
+//   emit_block_expr's scope exit    the block-EXPRESSION path
+//   the walker env threaded to      a deferred body that READS a block-local
+//     defer_scope_exit                binding (the #1188 review finding)
+//
+// Every function prints, so a divergence shows up as an ordering or arity
+// change in the emitted calls rather than only as a register diff.
+
+/// Per-iteration scope exit: the body block ends each time round the loop, so
+/// the deferred call runs twice, interleaved with the body's own output.
+fn while_body() {
+    mut i = 0
+    while i < 2 {
+        defer println("w-defer")
+        println("w-body")
+        i = i + 1
+    }
+    println("w-after")
+}
+
+/// `for` has its own emitter (two, in fact — the range form here and the
+/// `for x in coll` form), each building its own loop frame.
+fn for_body() {
+    for j in 0..2 {
+        defer println("f-defer")
+        println("f-body")
+    }
+    println("f-after")
+}
+
+/// Branch scope exit.
+fn if_body() {
+    if true {
+        defer println("i-defer")
+        println("i-body")
+    }
+    println("i-after")
+}
+
+/// Bare block. This one always FIRED — it just fired at function exit, after
+/// `b-after`, because the `.Block` arm propagated its ctx outward instead of
+/// closing a scope. The IR difference is ordering, not presence.
+fn bare_block() {
+    {
+        defer println("b-defer")
+        println("b-body")
+    }
+    println("b-after")
+}
+
+/// Block used as an expression — reaches the scope exit through
+/// `emit_block_expr`, a separate call site from the statement path.
+fn block_expr() -> int {
+    let v = {
+        defer println("x-defer")
+        println("x-body")
+        7
+    }
+    println("x-after")
+    v
+}
+
+/// Nested scopes compose: the inner block's defer at the inner exit, the
+/// outer's at the outer. The second iteration skips the `if`, so only the
+/// outer fires — the asymmetry is what shows the two scopes are tracked
+/// separately rather than pooled.
+fn composed() {
+    mut i = 0
+    while i < 2 {
+        defer println("c-while")
+        if i == 0 {
+            defer println("c-if")
+            println("c-if-body")
+        }
+        i = i + 1
+    }
+    println("c-after")
+}
+
+/// `break` skips the block's fall-through scope exit, so the jump itself has
+/// to emit the pending defers. Iteration 1 leaves by fall-through, iteration 2
+/// by the break path — one line each, from two different emitters.
+fn break_path() {
+    mut i = 0
+    while i < 5 {
+        defer println("k-defer")
+        if i == 1 { break }
+        i = i + 1
+    }
+    println("k-after")
+}
+
+/// `continue` ends the current iteration and owes it its defers too.
+fn continue_path() {
+    mut i = 0
+    while i < 3 {
+        defer println("n-defer")
+        i = i + 1
+        if i == 2 { continue }
+        println("n-tail")
+    }
+    println("n-after")
+}
+
+/// `return` from inside a nested block unwinds block AND function scopes in
+/// one LIFO walk.
+fn return_path() -> int {
+    defer println("r-fn")
+    if true {
+        defer println("r-block")
+        return 1
+    }
+    0
+}
+
+/// Helper: gives the deferred call a real value to read.
+fn mk(n: int) -> int { n }
+
+/// Helper: prints what it was handed. Taking the parameter through to the
+/// output is what makes the emitted IR depend on WHICH binding the deferred
+/// body resolved to — a helper that ignored `n` would emit the same call
+/// regardless, and the file would not cover the env threading it claims to.
+fn use_it(n: int) { println("use " + string(n)) }
+
+/// The deferred body reads a binding the BLOCK declared. This is the shape
+/// `defer` exists for, and the one that regressed in #1188's first commit —
+/// the scope exit emitted against the pre-block env, where the name is absent.
+/// Re-declared per iteration, so each deferred call must see its own.
+fn reads_block_local() {
+    mut i = 0
+    while i < 2 {
+        let resource = mk(i)
+        defer use_it(resource)
+        i = i + 1
+    }
+    {
+        let held = mk(9)
+        defer use_it(held)
+    }
+    println("l-after")
+}
+
+fn main() {
+    while_body()
+    for_body()
+    if_body()
+    bare_block()
+    println(string(block_expr()))
+    composed()
+    break_path()
+    continue_path()
+    println(string(return_path()))
+    reads_block_local()
+}
