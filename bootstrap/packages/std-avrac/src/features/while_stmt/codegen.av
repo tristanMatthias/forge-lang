@@ -36,8 +36,12 @@ fn emit_while_inner(ctx: Ctx, env: List<VarBinding>, condition: Expr, body: Stmt
     // untouched (list_push_copy snapshots before appending, so the
     // heap-shared list the caller passed in isn't mutated and the
     // frame doesn't leak out of this scope).
+    // `defer_depth` is the defer-stack depth on entry, so a `break` /
+    // `continue` inside the body can run the body's defers before it
+    // jumps (t-vmkc). The body block itself runs them on the
+    // fall-through path via its own `.Block` scope exit.
     ctx.position(body_bb)
-    let body_cg = ctx.with_loops(list_push_copy(ctx.loops, LoopStackFrame { cond_bb, exit_bb }))
+    let body_cg = ctx.with_loops(list_push_copy(ctx.loops, LoopStackFrame { cond_bb, exit_bb, defer_depth: ctx.defers.length }))
     let body_sr = emit_stmt(body_cg, env, body)?
     ctx.br_if_open(cond_bb)
 

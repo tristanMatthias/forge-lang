@@ -1,0 +1,334 @@
+// t-vmkc: a `defer` in a NESTED block must run at that block's exit.
+//
+// It did not. It was accepted, then silently dropped — no error, no warning,
+// no output. `defer` worked only at the top level of a function body, which is
+// the one shape `defer_test.av` covered, so the suite was green throughout.
+//
+// The mechanism was `Ctx` threading. `defer` does nothing but push onto
+// `ctx.defers` and return the new `Ctx`; several block emitters discarded that
+// returned value (`emit_while_inner` and `emit_if` both ended `ok_sr(ctx, env)`
+// with the ORIGINAL ctx, `emit_block_loop` dropped it, `emit_stmt_as_value`'s
+// `_` arm dropped it). A dropped ctx is a dropped registration.
+//
+// Every shape below was measured broken before the fix, and they were NOT all
+// broken the same way — which is why this file enumerates them rather than
+// testing "defer works":
+//
+//   while / for / if body, match arm, block expression  → never ran at all
+//   bare `{ … }` block                                  → ran, but at FUNCTION
+//                                                         exit, so after the
+//                                                         statements following
+//                                                         the block
+//   break / continue out of a loop body                 → never ran
+//
+// The last two are the ones a "does the defer fire?" assertion would pass. The
+// specs here pin ORDER, not just presence, so wrong-scope is a failure.
+
+/// Fixture: `defer` inside a `while` body. Scope exit is the END OF THE BODY,
+/// so it runs once PER ITERATION — not once at loop exit, and not at function
+/// exit. Interleaving with the loop's own output is the assertion that
+/// distinguishes those three.
+fn scope_while() {
+    mut i = 0
+    while i < 2 {
+        defer println("w-defer")
+        println("w-body")
+        i = i + 1
+    }
+    println("w-after")
+}
+
+/// Fixture: `defer` inside an `if` body — runs when the branch ends, before
+/// anything after the `if`.
+fn scope_if() {
+    if true {
+        defer println("i-defer")
+        println("i-body")
+    }
+    println("i-after")
+}
+
+/// Fixture: `defer` inside a `for` body. Same per-iteration rule as `while`;
+/// separate because `for` has its own emitter (and two of them — the range
+/// form and the `for x in coll` form both build their own loop frames).
+fn scope_for() {
+    for j in 0..2 {
+        defer println("f-defer")
+        println("f-body")
+    }
+    println("f-after")
+}
+
+/// Fixture: bare `{ … }` block. The REGRESSION-SHAPED one: this always ran, so
+/// a presence check passed — but it ran at function exit, i.e. AFTER
+/// `b-after`. The assertion is the order.
+fn scope_bare() {
+    {
+        defer println("b-defer")
+        println("b-body")
+    }
+    println("b-after")
+}
+
+/// Fixture: block used as an EXPRESSION. Reaches the emitter through
+/// `emit_block_expr` rather than the statement path, and the deferred
+/// statement is not the tail — the literal `7` is.
+fn scope_block_expr() -> int {
+    let v = {
+        defer println("x-defer")
+        println("x-body")
+        7
+    }
+    println("x-after")
+    v
+}
+
+// NO FIXTURE HERE for "a `defer` as the block expression's TAIL statement",
+// and the omission is deliberate.
+//
+// `emit_stmt_as_value`'s fallback arm dropped the statement's ctx, the same way
+// the walker did, so it looks like it needs its own case. It is threaded now
+// (`emit_stmt_as_value_scoped`) — but NO currently-compilable program reaches
+// it, so a spec claiming to cover it would be a spec that cannot fail.
+//
+// Measured: mutating that arm back to the dropping form leaves this file
+// fully green. The reason is that the shape which would exercise it,
+//
+//     let v = {
+//         println("body")
+//         defer println("tail")   // ← block's value comes from here
+//     }
+//
+// has no value type, and codegen ICEs on it before the defer matters:
+//
+//     error[F9999]: under-determined type at the layout boundary
+//
+// That is not about `defer` — `let v = { println("x"); while false {} }` ICEs
+// identically. Binding a block whose tail is a non-value statement should be a
+// clean type error, not an ICE; filed separately as t-oy2p.
+//
+// The first draft of this file DID have a `scope_tail_defer` fixture, and it
+// passed both with and without the fix, because its tail was `0` and the defer
+// sat one line above it — i.e. it silently duplicated `scope_block_expr` below
+// while claiming to cover the tail. Mutation testing is what caught that; it is
+// recorded here so the "missing" case is not helpfully re-added.
+
+/// Fixture: `defer` inside a `match` arm body.
+fn scope_match(x: int) -> int {
+    match x {
+        1 -> {
+            defer println("m-defer")
+            println("m-body")
+            0
+        }
+        _ -> 0
+    }
+}
+
+/// Fixture: LIFO holds WITHIN a nested scope, exactly as at function level.
+fn scope_lifo() {
+    if true {
+        defer println("l-first-declared")
+        defer println("l-second")
+        defer println("l-last-declared")
+        println("l-body")
+    }
+    println("l-after")
+}
+
+/// Fixture: nested scopes compose — the inner block's defer runs at the INNER
+/// exit, the outer's at the outer. On the second iteration the `if` is skipped,
+/// so only the outer defer runs; that asymmetry is what proves the two scopes
+/// are tracked separately rather than pooled.
+fn scope_compose() {
+    mut i = 0
+    while i < 2 {
+        defer println("c-while")
+        if i == 0 {
+            defer println("c-if")
+            println("c-if-body")
+        }
+        i = i + 1
+    }
+    println("c-after")
+}
+
+/// Fixture: `break` jumps out of the body and skips its scope exit, so the
+/// jump itself has to run the pending defers. Iteration 1 exits normally
+/// (defer via the block's own scope exit); iteration 2 breaks (defer via the
+/// break path) — one line each, from two different code paths.
+fn scope_break() {
+    mut i = 0
+    while i < 5 {
+        defer println("k-defer")
+        if i == 1 { break }
+        i = i + 1
+    }
+    println("k-after")
+}
+
+/// Fixture: `continue` ends the current iteration, so it owes that iteration's
+/// defers too.
+fn scope_continue() {
+    mut i = 0
+    while i < 3 {
+        defer println("n-defer")
+        i = i + 1
+        if i == 2 { continue }
+        println("n-tail")
+    }
+    println("n-after")
+}
+
+/// Fixture: `return` from inside a nested block unwinds EVERYTHING pending —
+/// the block's defer and the function's — in LIFO order across both scopes.
+fn scope_return() -> int {
+    defer println("r-fn")
+    if true {
+        defer println("r-block")
+        return 1
+    }
+    0
+}
+
+/// Fixture: `errdefer` in a nested block, exited NORMALLY. It must NOT run:
+/// reaching the end of the block is the no-error path. The plain `defer`
+/// alongside it is the positive control — without it, a spec asserting "no
+/// errdefer output" would also pass if the whole scope mechanism were dead.
+fn scope_errdefer_normal() -> Result<int, string> {
+    if true {
+        errdefer println("e-errdefer-MUST-NOT-RUN")
+        defer println("e-defer")
+    }
+    println("e-after")
+    Result.Ok(1)
+}
+
+/// Fixture: `errdefer` in a nested block, exited by an ERROR return. It must
+/// run — the entry is still on the stack at the `return`, which emits the
+/// whole stack through the error path.
+fn scope_errdefer_error() -> Result<int, string> {
+    if true {
+        errdefer println("g-errdefer")
+        return Result.Err("boom")
+    }
+    Result.Ok(1)
+}
+
+/// Fixture: function-level `defer`, unchanged by any of this. Kept here rather
+/// than left to `defer_test.av` so that a regression in the ONE shape that
+/// already worked shows up in the same file as the fix.
+fn scope_fn_level() {
+    defer println("z-defer")
+    println("z-body")
+}
+
+spec "t-vmkc: a nested block is a defer scope" {
+    given "loop bodies" {
+        then "a `while`-body defer runs at the end of EVERY iteration" {
+            avra_test_capture_start()
+            scope_while()
+            let out = avra_test_capture_stop()
+            // Not "w-body w-body w-defer" (once at loop exit) and not
+            // "w-body w-body w-after w-defer" (once at function exit).
+            out == "w-body\nw-defer\nw-body\nw-defer\nw-after"
+        }
+        then "a `for`-body defer runs at the end of EVERY iteration" {
+            avra_test_capture_start()
+            scope_for()
+            let out = avra_test_capture_stop()
+            out == "f-body\nf-defer\nf-body\nf-defer\nf-after"
+        }
+    }
+    given "conditional and bare blocks" {
+        then "an `if`-body defer runs at the branch's exit" {
+            avra_test_capture_start()
+            scope_if()
+            let out = avra_test_capture_stop()
+            out == "i-body\ni-defer\ni-after"
+        }
+        then "a bare-block defer runs at the BLOCK's exit, not the function's" {
+            avra_test_capture_start()
+            scope_bare()
+            let out = avra_test_capture_stop()
+            // Before the fix this was "b-body\nb-after\nb-defer" — the defer
+            // fired, just one scope too late. Order is the whole assertion.
+            out == "b-body\nb-defer\nb-after"
+        }
+    }
+    given "blocks in expression position" {
+        then "a block-expression defer runs at the block's exit" {
+            avra_test_capture_start()
+            let v = scope_block_expr()
+            let out = avra_test_capture_stop()
+            out == "x-body\nx-defer\nx-after" && v == 7
+        }
+        then "a `match`-arm defer runs at the arm's exit" {
+            avra_test_capture_start()
+            let v = scope_match(1)
+            let out = avra_test_capture_stop()
+            out == "m-body\nm-defer" && v == 0
+        }
+    }
+    given "ordering" {
+        then "LIFO holds within a nested scope" {
+            avra_test_capture_start()
+            scope_lifo()
+            let out = avra_test_capture_stop()
+            out == "l-body\nl-last-declared\nl-second\nl-first-declared\nl-after"
+        }
+        then "nested scopes compose innermost-first" {
+            avra_test_capture_start()
+            scope_compose()
+            let out = avra_test_capture_stop()
+            // i=0 runs both scopes' defers, inner first; i=1 skips the `if`
+            // entirely, so only the while-body defer fires.
+            out == "c-if-body\nc-if\nc-while\nc-while\nc-after"
+        }
+        then "function-level defer ordering is unchanged" {
+            avra_test_capture_start()
+            scope_fn_level()
+            let out = avra_test_capture_stop()
+            out == "z-body\nz-defer"
+        }
+    }
+    given "jumps out of the block" {
+        then "`break` runs the pending defers before it jumps" {
+            avra_test_capture_start()
+            scope_break()
+            let out = avra_test_capture_stop()
+            // Two lines from two DIFFERENT paths: iteration 1 falls through
+            // (block scope exit), iteration 2 breaks (the break path).
+            out == "k-defer\nk-defer\nk-after"
+        }
+        then "`continue` runs the iteration's defers before it jumps" {
+            avra_test_capture_start()
+            scope_continue()
+            let out = avra_test_capture_stop()
+            out == "n-tail\nn-defer\nn-defer\nn-tail\nn-defer\nn-after"
+        }
+        then "`return` unwinds block AND function scopes, LIFO" {
+            avra_test_capture_start()
+            let v = scope_return()
+            let out = avra_test_capture_stop()
+            out == "r-block\nr-fn" && v == 1
+        }
+    }
+    given "errdefer in a nested block" {
+        then "a normal block exit does NOT run it" {
+            avra_test_capture_start()
+            let r = scope_errdefer_normal()
+            let out = avra_test_capture_stop()
+            // `e-defer` is the positive control: it proves the scope exit ran
+            // at all, so the absent errdefer line means "correctly skipped"
+            // rather than "nothing happened".
+            out == "e-defer\ne-after"
+        }
+        then "an error return DOES run it" {
+            avra_test_capture_start()
+            let r = scope_errdefer_error()
+            let out = avra_test_capture_stop()
+            out == "g-errdefer"
+        }
+    }
+}

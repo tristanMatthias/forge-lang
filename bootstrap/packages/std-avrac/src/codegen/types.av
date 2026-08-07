@@ -489,7 +489,12 @@ export type TopLevelVarMeta = { name: string, llvm_global: ptr, ty: ValueType }
 /// `break` jumps to `exit_bb`, `continue` jumps to `cond_bb`. Backed
 /// by `List<LoopStackFrame>`; the innermost loop is the LAST element
 /// (LIFO via append-and-walk-backwards).
-export type LoopStackFrame = { cond_bb: ptr, exit_bb: ptr }
+///
+/// `defer_depth` is `ctx.defers.length` at loop entry. Jumping out of
+/// the body skips the block's own scope exit, so `break`/`continue`
+/// use it to run the defers registered inside the loop before they
+/// branch (t-vmkc).
+export type LoopStackFrame = { cond_bb: ptr, exit_bb: ptr, defer_depth: int }
 
 /// LIFO stack of deferred actions running at scope exit. Three
 /// kinds interleave in a single list so they observe the same
@@ -736,10 +741,13 @@ export fn toplevel_lookup(reg: List<TopLevelVarMeta>, name: string) -> TopLevelL
 /// @field found — 1 when at least one loop frame is active.
 /// @field cond_bb — block to branch to for `continue`.
 /// @field exit_bb — block to branch to for `break`.
+/// @field defer_depth — defer-stack depth at loop entry; `break` /
+///        `continue` run every `defer` above it before branching.
 export type LoopFrame = {
     found: int,
     cond_bb: ptr,
     exit_bb: ptr,
+    defer_depth: int,
 }
 
 /// Peek at the innermost loop frame. `found = 0` means the stack is
@@ -748,10 +756,10 @@ export type LoopFrame = {
 export fn loops_top(stack: List<LoopStackFrame>) -> LoopFrame {
     if stack.length == 0 {
         let n: ptr = null
-        return LoopFrame { found: false, cond_bb: n, exit_bb: n }
+        return LoopFrame { found: false, cond_bb: n, exit_bb: n, defer_depth: 0 }
     }
     let top = stack[stack.length - 1]
-    LoopFrame { found: true, cond_bb: top.cond_bb, exit_bb: top.exit_bb }
+    LoopFrame { found: true, cond_bb: top.cond_bb, exit_bb: top.exit_bb, defer_depth: top.defer_depth }
 }
 
 // ── LLVM type mapping ──

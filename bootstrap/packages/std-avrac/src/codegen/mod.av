@@ -11,6 +11,7 @@ use core.{Expr, Pattern, Stmt, ValueType, VarBinding, env_extend, env_lookup, fi
 use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg, emit_lambda_typed, emit_expected}
 use features.defer_stmt.{emit_defers, emit_defers_on_error}
+use features.defer_stmt.{defer_scope_enter, defer_scope_exit, emit_defers_above}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_optional_coerce}
 use features.fn_decl.{emit_function_bodies}
@@ -379,8 +380,19 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             emit_if(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.stmts.get(then_branch), else_s)
         }
         .Block(body) -> {
+            // A nested block is a DEFER SCOPE (t-vmkc). This is the one
+            // caller of `emit_stmt_ids`, and every nested block reaches
+            // it — a bare `{ … }`, and the bodies of `while` / `for` /
+            // `if`, which the parser wraps in a `Stmt.Block`. So scoping
+            // here covers all of them, and covers them once.
+            //
+            // It also does not touch the FUNCTION body, which walks its
+            // statements through `emit_block_loop_ctx` and keeps its
+            // existing function-exit `emit_defers` — so top-level defer
+            // ordering is unchanged.
+            let base = defer_scope_enter(ctx)
             let sr = emit_stmt_ids(ctx, env, body)?
-            ok_sr(sr.ctx, env)
+            ok_sr(defer_scope_exit(sr.ctx, env, base), env)
         }
         .TypeDecl(_, _, _) or .NewtypeDecl(_, _) or .UnionAliasDecl(_, _) or .ShapeDecl(_, _) or .EnumDecl(_, _, _) or .Impl(_, _) or .ExternFn(_, _, _)
         or .NoOp or .TraitDecl(_, _) or .Module(_, _) or .Use(_, _) or .AssocType(_, _) -> ok_sr(ctx, env)
@@ -390,6 +402,12 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             if !frame.found {
                 return err_sr("codegen error: break outside loop")
             }
+            // Jumping out skips the enclosing blocks' scope exits, so
+            // run their defers here — every one registered since the
+            // loop was entered, LIFO (t-vmkc). They stay on the stack:
+            // the fall-through path out of the same block still needs
+            // its own copy.
+            emit_defers_above(ctx, env, frame.defer_depth)
             ctx.br(frame.exit_bb)
             ok_sr(ctx, env)
         }
@@ -398,6 +416,8 @@ export fn emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtR
             if !frame.found {
                 return err_sr("codegen error: continue outside loop")
             }
+            // Same as `break`: the current iteration's scopes are ending.
+            emit_defers_above(ctx, env, frame.defer_depth)
             ctx.br(frame.cond_bb)
             ok_sr(ctx, env)
         }
