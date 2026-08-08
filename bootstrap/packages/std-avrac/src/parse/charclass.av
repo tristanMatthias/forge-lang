@@ -3,13 +3,15 @@
 // raw BYTES (int), read through `avra_bytes_byte` — NO per-character string
 // allocation, which is the Phase-0 spike's #1 finding: the hand lexer's
 // `char_at` (parse/lexer.av) materialises a 1-char STRING for every character.
-// A generated DFA scanner will classify each byte with `char_class` and index
-// the source with `byte_at`, both allocation-free.
+// The generated scanners classify each byte with `char_class` and index the
+// source with `byte_at`, both allocation-free.
 //
-// This is cross-validated against the hand lexer's own `p_is_*` predicates
+// This is cross-validated against the `p_is_*` string predicates
 // (charclass_test.av) so the byte-based classes provably agree with the
-// string-based ones the current lexer uses — the equivalence the DFA scanner's
-// byte-identity will rest on. Unused in production yet, so byte-identical.
+// string-based ones — the equivalence the scanners' byte-identity rests on.
+// IN PRODUCTION: `advance_token` (parse/lexer.av) dispatches its lead byte
+// through `cc_is_digit` / `cc_is_ident_start`, and the generated run scanners
+// (parse/gen_run_scanner.av) loop on `cc_is_ident_cont` / `cc_is_*_digit`.
 //
 // Extern decls are re-declared here (the established pattern — see core/ast.av:
 // "an extern decl is just a reference to the C symbol, not a definition").

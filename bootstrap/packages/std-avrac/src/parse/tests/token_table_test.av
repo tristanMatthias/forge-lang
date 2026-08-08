@@ -2,12 +2,11 @@
 // (token_table.av) is FAITHFUL to the hand lexer, THROUGH the same `lex_dump`
 // oracle the byte-scanner uses. Every `LitRule { spelling, tk }` must satisfy:
 // lexing `spelling` alone yields EXACTLY the token `tk` (then Eof) — so the
-// generator (a later slice) can compile these rules into a maximal-munch scanner
-// and trust each `">>" = Shr` binding is the hand lexer's actual behaviour, not a
-// transcription guess. This is the miniature of the same byte-identity contract
-// scan_subset_test.av holds, but for the SOURCE-OF-TRUTH table rather than a
-// generated scanner: get the table right here, and the generator is provably
-// correct by construction.
+// generator (emit_lex.av) can compile these rules into a maximal-munch scanner
+// and trust each `">>" = Shr` binding is the lexer's actual behaviour, not a
+// transcription guess. This holds the byte-identity contract for the
+// SOURCE-OF-TRUTH table rather than for a generated scanner: get the table right
+// here, and the generator is provably correct by construction.
 use @std.avrac.parse.{operator_rules, lex_dump, OPERATOR_RULE_COUNT}
 use @std.avrac.core.{tk_name}
 

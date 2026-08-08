@@ -34,6 +34,7 @@ use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report,
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
 // symbol; sibling modules declare it identically — extern decls are per-file).
 extern fn avra_process_env_get(name: string) -> string
+extern fn avra_selfhost_append_file(path: string, content: string) -> int
 // A byte view of the source string, built once per Parser (see the `source_bytes`
 // field) so the generated operator scanner reads raw bytes allocation-free.
 extern fn avra_bytes_from_string(s: string) -> bytes
@@ -758,6 +759,53 @@ export fn p_keyword_kind(text: string) -> Tk {
     classify_keyword(avra_bytes_from_string(text), 0, text.length)
 }
 
+/// t-47hc.5 — the HAND-FALLBACK probe. The expression / statement / type
+/// dispatchers each end in `self.parse_<family>_hand(...)`, reached when the
+/// grammar path REPORTED (the declaration family has no such tail: its hand
+/// parser is deleted and the DSL path is unconditional). That tail is the last
+/// piece of the hand parser on the production path, and it is INVISIBLE on valid
+/// input by construction — the grammar succeeds, so the tail never runs and no
+/// green build can tell you whether it is load-bearing.
+///
+/// `AVRA_REFUSE_HAND_FALLBACK` makes it visible: set it to `*` (or a
+/// comma-separated family list — `expr`, `stmt`, `type`) and every fall-through
+/// prints a `[hand-fallback]` line naming the family and the byte offset. It
+/// does NOT change parse behaviour — the fall-through still happens — so it is
+/// safe to run over the whole compiler and the difftest corpus in one pass and
+/// grep the result. A run with ZERO lines is the evidence that deleting the tail
+/// changes nothing on that input set.
+export fn hand_fallback_refused(family: string) -> bool {
+    let want = avra_process_env_get("AVRA_REFUSE_HAND_FALLBACK")
+    if want == "" { return false }
+    if want == "*" { return true }
+    // Comma-separated allowlist; compare whole names so `expr` can't match `expression`.
+    for part in want.split(",") {
+        if part.trim() == family { return true }
+    }
+    false
+}
+
+/// Report one hand-fallback fall-through (see `hand_fallback_refused`). Kept
+/// beside the predicate so the marker text lives in ONE place — the three
+/// dispatchers call this, they never format the line themselves.
+///
+/// TWO sinks, because the two things worth measuring are reached differently.
+/// stderr serves the SHELL probe — `AVRA_REFUSE_HAND_FALLBACK='*' bs2 check f.av`,
+/// which measures the production front end and is what the corpus sweeps count.
+/// But the tails are also reachable IN-PROCESS, by a caller that drives
+/// `parser_new` + `parse_file_program` with the family flags off (rtree_at in
+/// error_recovery_differential_test is the live example), and such a caller cannot
+/// read its own stderr. `AVRA_REFUSE_HAND_FALLBACK_LOG` names a file the marker is
+/// APPENDED to as well, so an in-process control can witness the probe firing and
+/// prove it is not blind — the failure mode this whole instrument exists to avoid.
+export fn note_hand_fallback(family: string, file: string, byte: int) {
+    if !hand_fallback_refused(family) { return }
+    let line = "[hand-fallback] ${family} at ${file}:${byte}"
+    eprintln(line)
+    let log = avra_process_env_get("AVRA_REFUSE_HAND_FALLBACK_LOG")
+    if log != "" { let _ = avra_selfhost_append_file(log, line + "\n") }
+}
+
 /// Construct a Parser positioned on the first token of `source`.
 /// All mode flags default to permissive; feature parsers may flip
 /// them transiently for context-sensitive parses.
@@ -1398,6 +1446,7 @@ impl Parser {
                 return .Ok(dsl.stmt)
             }
             // DSL parse error → fall through to the authoritative hand parser.
+            note_hand_fallback("stmt", self.file, self.current_start)
         }
         self.parse_statement_hand()
     }
@@ -1406,6 +1455,7 @@ impl Parser {
     /// fallback when the statement flip is off or errors. (Was the body of
     /// parse_statement.)
     fn parse_statement_hand(self) -> Result<StmtId, string> {
+        note_hand_fallback("stmt-hand", self.file, self.current_start)
         // qsqm: a bare map literal at statement position — a function's
         // implicit-return `{"k": v}` — must not be swallowed as a block.
         // is_stmt_map_literal fires only on a string-keyed `{ "str": ... }`; a
@@ -1483,6 +1533,7 @@ impl Parser {
                 return .Ok(dsl.expr)
             }
             // DSL parse error → fall through to the authoritative hand parser.
+            note_hand_fallback("expr", self.file, self.current_start)
         }
         self.parse_expression_hand()
     }
@@ -1490,6 +1541,7 @@ impl Parser {
     /// The hand-written expression parser: the swap-in oracle, and the fallback
     /// when the DSL flip is off or errors. (Was the body of parse_expression.)
     fn parse_expression_hand(self) -> Result<ExprId, string> {
+        note_hand_fallback("expr-hand", self.file, self.current_start)
         self.parse_assignment()
     }
 
@@ -3128,6 +3180,7 @@ impl Parser {
                 return .Ok(dsl.te)
             }
             // DSL parse error → fall through to the authoritative hand parser.
+            note_hand_fallback("type", self.file, self.current_start)
         }
         self.parse_type_expr_hand(message)
     }
@@ -3135,6 +3188,7 @@ impl Parser {
     // The hand-written type-expression parser: the swap-in oracle, and the
     // fallback when the DSL flip is off or errors.
     fn parse_type_expr_hand(self, message: string) -> Result<TypeExpr, string> {
+        note_hand_fallback("type-hand", self.file, self.current_start)
         let base = self.parse_type_atom(message)?
         // Union: A | B | C — lowest precedence in type position
         if self.check(Tk.Pipe) {
