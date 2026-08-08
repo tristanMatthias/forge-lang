@@ -12,12 +12,12 @@
 // local's, so `string(local)` / `local + local` stop type-checking.
 // Fixing the qualifier to track in-body bindings makes the local win.
 
+use @std.avrac.test_runner.{write_fixture}
 extern fn avra_shell_exec(cmd: string) -> string
 
 fn compile_capture(source: string) -> string {
     let path = "/tmp/avra_zo1a_shadow_test.av"
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    write_fixture(path, source)
     avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
 }
 

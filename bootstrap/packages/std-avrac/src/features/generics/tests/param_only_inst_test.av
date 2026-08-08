@@ -9,12 +9,12 @@
 // resolve-as-query dispatcher, the compiler's first in-package
 // cross-module engine instantiation).
 
+use @std.avrac.test_runner.{write_fixture}
 extern fn avra_shell_exec(cmd: string) -> string
 
 fn compile_capture(tag: string, source: string) -> string {
     let path = "/tmp/avra_param_inst_${tag}.av"
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    write_fixture(path, source)
     avra_shell_exec("./build/bs2 compile '${path}' 2>&1 || true")
 }
 

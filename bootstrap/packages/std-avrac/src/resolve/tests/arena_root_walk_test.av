@@ -10,6 +10,7 @@
 // The selfhost fixed point + diff-test prove IR equality on clean input; these
 // specs are the error-path guard that clean compiles never exercise.
 
+use @std.avrac.test_runner.{write_fixture}
 extern fn avra_shell_exec(cmd: string) -> string
 
 // Captures the compiler's stdout+stderr AND its exit status (appended as
@@ -18,8 +19,7 @@ extern fn avra_shell_exec(cmd: string) -> string
 // would otherwise slip past a substring-only check.
 fn compile_capture(source: string) -> string {
     let path = "/tmp/avra_arena_root_walk_test.av"
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    write_fixture(path, source)
     avra_shell_exec("./build/bs2 compile '${path}' 2>&1; echo __AVRA_STATUS:$?")
 }
 

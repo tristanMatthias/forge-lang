@@ -578,15 +578,33 @@ export fn cached_fixture_expand(fixture_path: string) -> string {
     cached_fixture_capture(fixture_path, "./build/bs2 expand '${fixture_path}' 2>&1 || true", "expand")
 }
 
-/// Write `source` to `path` via a single-quoted heredoc, escaping
-/// any single quotes in the body so they don't terminate the
-/// surrounding shell quote. Returns nothing — pure side effect.
-/// Used by spec tests that hand-roll their own bs2-invocation
-/// commands (cmd-specific exit-code tests, warning-cap tests) and
-/// don't want the cached_fixture_run wrapper.
+/// Write `source` to `path` via a QUOTED heredoc. Returns nothing —
+/// pure side effect. Used by spec tests that hand-roll their own
+/// bs2-invocation commands (cmd-specific exit-code tests, warning-cap
+/// tests) and don't want the cached_fixture_run wrapper.
+///
+/// The body is written VERBATIM, and must be: this writes fixture
+/// SOURCE, so any transformation on the way in is corruption.
+///
+/// It used to `.replace("'", "'\\''")` first, on the stated reasoning
+/// that a single quote would otherwise terminate the surrounding shell
+/// quote. That reasoning does not apply to the construct actually used
+/// here. The delimiter is QUOTED (`<<'EOF'`), which is precisely the
+/// form that disables every expansion and quote rule inside the body —
+/// a `'` in there is ordinary text and cannot terminate anything. So
+/// the escape was never protecting the heredoc; it just wrote the
+/// escape sequence itself into the file, and any fixture containing an
+/// apostrophe came out mangled:
+///
+///     write_fixture(p, "it's fine")   ->   file contains: it'\''s fine
+///
+/// Round-trip is now exact (`write_fixture_roundtrip_test`).
+///
+/// The one real hazard of a heredoc is a body line equal to the
+/// delimiter, which would end it early. `EOF` is a plausible line in
+/// fixture source; the delimiter below is not.
 export fn write_fixture(path: string, source: string) {
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    avra_shell_exec("cat > '${path}' <<'__AVRA_FIXTURE_EOF__'\n${source}\n__AVRA_FIXTURE_EOF__")
 }
 
 /// Convenience: write `source` to `path`, then run it through
