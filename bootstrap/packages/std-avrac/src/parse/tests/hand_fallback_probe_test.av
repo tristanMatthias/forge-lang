@@ -48,6 +48,7 @@ use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{avra_process_env_set}
 
 extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_selfhost_write_file(path: string, content: string) -> int
 
 /// A VALID program touching all three families: a type annotation (`type`), a
@@ -75,13 +76,35 @@ fn write_fixture(name: string, src: string) -> string {
     path
 }
 
+/// Sentinel for "the probe command did not do what it was asked to" — returned
+/// instead of a marker count, so it fails BOTH an `== 0` and a `> 0` assertion.
+/// A count is only meaningful if the compile it came from actually happened.
+const PROBE_DID_NOT_RUN = -1
+
 /// Count `[hand-fallback]` lines from a `bs2 <cmd>` of `src` under `env`.
 /// Diagnostics from the fixture itself are irrelevant — only the marker is counted,
 /// so an invalid fixture (which SHOULD produce errors) measures the same thing a
 /// valid one does.
-fn fallback_lines_cmd(env: string, cmd: string, name: string, src: string) -> int {
+///
+/// `want_ok` says whether the command is expected to SUCCEED, and it is what keeps
+/// the zero-assertions from passing vacuously: counting alone cannot distinguish
+/// "the generated parser answered everything" from "`./build/bs2` was missing, or
+/// died before it reached the parser" — both yield zero markers. So the status is
+/// checked first and a mismatch returns the sentinel. Output goes through a
+/// per-fixture log because `avra_shell_exec_status` yields the status, not the text.
+fn fallback_lines_cmd(env: string, cmd: string, name: string, src: string, want_ok: bool) -> int {
     let path = write_fixture(name, src)
-    let out = avra_shell_exec("${env} ./build/bs2 ${cmd} '${path}' 2>&1")
+    let log = "build/_handfb_out_${name}.txt"
+    let status = avra_shell_exec_status("${env} ./build/bs2 ${cmd} '${path}' > '${log}' 2>&1")
+    if want_ok != (status == 0) { return PROBE_DID_NOT_RUN }
+    let out = avra_shell_exec("cat '${log}' 2>/dev/null")
+    // A NON-zero status is not by itself evidence the compiler ran: a missing or
+    // unrunnable `./build/bs2` also exits non-zero, which would let every
+    // `want_ok: false` fixture match its expected status and then count zero
+    // markers. Require a rendered diagnostic, which only the compiler emits.
+    // (The `want_ok: true` side needs no such witness — nothing but bs2 itself
+    // reaching the end of a successful compile can exit 0 here.)
+    if !want_ok && !out.contains("error[F") { return PROBE_DID_NOT_RUN }
     mut n = 0
     for line in out.split("\n") {
         if line.contains("[hand-fallback]") { n = n + 1 }
@@ -90,15 +113,15 @@ fn fallback_lines_cmd(env: string, cmd: string, name: string, src: string) -> in
 }
 
 /// The whole-program front end — what `build` / `run` / `check` all go through.
-fn fallback_lines(env: string, name: string, src: string) -> int {
-    fallback_lines_cmd(env, "check", name, src)
+fn fallback_lines(env: string, name: string, src: string, want_ok: bool) -> int {
+    fallback_lines_cmd(env, "check", name, src, want_ok)
 }
 
 /// The EXPRESSION-only front end (`bs2 expr`, and `bs2 eval` alongside it): the
 /// one production command that reaches `parse_expression`, via
 /// `parse_expr_or_fail` -> `parse_expression_source` -> `parse_file_expression`.
-fn expr_cmd_fallbacks(name: string, src: string) -> int {
-    fallback_lines_cmd("AVRA_REFUSE_HAND_FALLBACK='*'", "expr", name, src)
+fn expr_cmd_fallbacks(name: string, src: string, want_ok: bool) -> int {
+    fallback_lines_cmd("AVRA_REFUSE_HAND_FALLBACK='*'", "expr", name, src, want_ok)
 }
 
 /// Drive the EXPRESSION dispatcher in-process and count the marker lines the probe
@@ -142,20 +165,20 @@ spec "t-47hc.5: the hand family tails are UNREACHABLE through the production fro
     }
 
     then "a valid program reaches no hand family tail" {
-        fallback_lines("AVRA_REFUSE_HAND_FALLBACK='*'", "valid", valid_src()) == 0
+        fallback_lines("AVRA_REFUSE_HAND_FALLBACK='*'", "valid", valid_src(), true) == 0
     }
 
     // The interesting half: on INVALID input the grammar reports, and the tail is
     // exactly what used to answer. If routing ever regresses so the grammar cannot
     // recover on its own, this is where it shows up.
     then "an invalid program reaches no hand family tail either" {
-        fallback_lines("AVRA_REFUSE_HAND_FALLBACK='*'", "invalid", invalid_src()) == 0
+        fallback_lines("AVRA_REFUSE_HAND_FALLBACK='*'", "invalid", invalid_src(), false) == 0
     }
 
     // Scoping: the marker must be attributable per family, not a single global
     // flag. Naming one family must not report another's.
     then "the allowlist form is scoped — naming only `type` reports no expr/stmt" {
-        fallback_lines("AVRA_REFUSE_HAND_FALLBACK='type'", "scoped", valid_src()) == 0
+        fallback_lines("AVRA_REFUSE_HAND_FALLBACK='type'", "scoped", valid_src(), true) == 0
     }
 }
 
@@ -180,16 +203,16 @@ spec "t-47hc.5: `bs2 expr` — the grammar owns VALID input; the tail owns recov
     // hand parser would be invisible everywhere else, because the two agree on
     // valid input by construction. Here it is a red test.
     then "no valid expression form falls back to the hand ladder" {
-        expr_cmd_fallbacks("e_arith",  "1 + 2 * 3 - 4 / 5\n") == 0 &&
-        expr_cmd_fallbacks("e_chain",  "a?.b ?? c\n") == 0 &&
-        expr_cmd_fallbacks("e_pipe",   "x |> f |> g\n") == 0 &&
-        expr_cmd_fallbacks("e_lambda", "(x) -> x + 1\n") == 0 &&
-        expr_cmd_fallbacks("e_match",  "match v { .A -> 1, _ -> 2 }\n") == 0 &&
-        expr_cmd_fallbacks("e_struct", "Foo { x: 1, y: 2 }\n") == 0 &&
-        expr_cmd_fallbacks("e_post",   "a.b.c(1)[2]\n") == 0 &&
-        expr_cmd_fallbacks("e_isvar",  "a is .Some\n") == 0 &&
-        expr_cmd_fallbacks("e_in",     "x in [1, 2]\n") == 0 &&
-        expr_cmd_fallbacks("e_generic", "f<int>(3)\n") == 0
+        expr_cmd_fallbacks("e_arith", "1 + 2 * 3 - 4 / 5\n", true) == 0 &&
+        expr_cmd_fallbacks("e_chain", "a?.b ?? c\n", true) == 0 &&
+        expr_cmd_fallbacks("e_pipe", "x |> f |> g\n", true) == 0 &&
+        expr_cmd_fallbacks("e_lambda", "(x) -> x + 1\n", true) == 0 &&
+        expr_cmd_fallbacks("e_match", "match v { .A -> 1, _ -> 2 }\n", true) == 0 &&
+        expr_cmd_fallbacks("e_struct", "Foo { x: 1, y: 2 }\n", true) == 0 &&
+        expr_cmd_fallbacks("e_post", "a.b.c(1)[2]\n", true) == 0 &&
+        expr_cmd_fallbacks("e_isvar", "a is .Some\n", true) == 0 &&
+        expr_cmd_fallbacks("e_in", "x in [1, 2]\n", true) == 0 &&
+        expr_cmd_fallbacks("e_generic", "f<int>(3)\n", true) == 0
     }
 
     // The vacuity control for the row above, and the honest record of the gap: on
@@ -197,9 +220,9 @@ spec "t-47hc.5: `bs2 expr` — the grammar owns VALID input; the tail owns recov
     // the expression view has learned to recover and the tail is deletable — so a
     // red here is good news, and the fix is to delete the tail, not the assertion.
     then "malformed expressions DO still reach the tail (the remaining gap)" {
-        expr_cmd_fallbacks("e_bad_trail", "1 +\n") > 0 &&
-        expr_cmd_fallbacks("e_bad_open",  "f(\n") > 0 &&
-        expr_cmd_fallbacks("e_bad_lead",  "* 3\n") > 0
+        expr_cmd_fallbacks("e_bad_trail", "1 +\n", false) > 0 &&
+        expr_cmd_fallbacks("e_bad_open", "f(\n", false) > 0 &&
+        expr_cmd_fallbacks("e_bad_lead", "* 3\n", false) > 0
     }
 }
 

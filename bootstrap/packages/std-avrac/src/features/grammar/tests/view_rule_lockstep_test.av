@@ -40,13 +40,21 @@ fn rules_that_must_match() -> List<string> {
 
 /// Every right-hand side for `name`, in file order. A rule line is `  <name> = <body>`
 /// at exactly two spaces of indent — the grammar's own layout for a production.
+///
+/// The body is taken VERBATIM, with no trim. Views align their `=` to different
+/// columns (`param        =` in one, `param       =` in another), but that padding
+/// sits BEFORE the `=` and so never reaches the substring — every extracted body
+/// starts with the single space that follows the `=`. Normalising here would buy
+/// nothing against the alignment that actually varies, and would cost the one
+/// difference this test exists to catch: a trailing space on one copy, which is
+/// invisible on the page and is exactly how two "identical" rules drift apart.
 fn bodies_of(src: string, name: string) -> List<string> {
     mut out: List<string> = []
     let head = "  " + name + " "
     for line in src.split("\n") {
         if line.starts_with(head) {
             let eq = line.index_of("=")
-            if eq >= 0 { out.push(line.substring(eq + 1, line.length).trim()) }
+            if eq >= 0 { out.push(line.substring(eq + 1, line.length)) }
         }
     }
     out
