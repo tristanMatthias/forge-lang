@@ -56,13 +56,28 @@ fn cov_mk_pkg(slug: string) -> string {
 /// `bs2 build --lib [--coverage] --explain` inside `dir`. The env strip keeps
 /// the probe hermetic under the test runner's own metadata-mode environment.
 fn cov_build(dir: string, coverage: bool) -> string {
+    let cov_flag = if coverage { " --coverage" } else { "" }
+    cov_build_flags(dir, cov_flag)
+}
+
+/// `bs2 build --lib <extra> --explain` inside `dir`.
+///
+/// The env strip is deliberate and matches the sibling probe
+/// (libbuild_bare_root_test): these fixtures build a throwaway package that
+/// has no dependencies, so the runner's ambient `AVRA_USE_METADATA` /
+/// `AVRA_LIB_OBJS` describe the REPO's producers, not this package's. Letting
+/// them through would make the probe's behaviour depend on whatever the
+/// surrounding suite happens to have set — the opposite of what a build probe
+/// needs. The metadata path is exercised explicitly instead, by the
+/// `--emit_metadata --coverage` spec below, which is the shape
+/// `std_prebuild_cmd` actually runs.
+fn cov_build_flags(dir: string, extra: string) -> string {
     let repo = avra_shell_exec("pwd")
     let bs2 = "${repo}/build/bs2"
-    let cov_flag = if coverage { " --coverage" } else { "" }
     let log_path = "${dir}/build_probe.log"
     let _ = avra_shell_exec_status(
         "cd '${dir}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_COMPILER " +
-        "AVRA_LIB_PKG_ROOT='@std::${slug_of(dir)}' '${bs2}' build --lib${cov_flag} --explain > '${log_path}' 2>&1")
+        "AVRA_LIB_PKG_ROOT='@std::${slug_of(dir)}' '${bs2}' build --lib${extra} --explain > '${log_path}' 2>&1")
     avra_selfhost_read_file(log_path)
 }
 
@@ -97,12 +112,36 @@ fn cov_slot_files(dir: string) -> string {
         "ls build/cache/$fp*/ 2>/dev/null | tr '\\n' ' '")
 }
 
+/// A rejected invocation's exit status and output. `status` is the point —
+/// "rejected" means the build did not happen, which output text alone cannot
+/// establish.
+type CovReject = { status: int, out: string }
+
+fn cov_reject(dir: string, argv: string) -> CovReject {
+    let repo = avra_shell_exec("pwd")
+    let log_path = "${dir}/reject_probe.log"
+    let status = avra_shell_exec_status(
+        "cd '${dir}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_COMPILER " +
+        "'${repo}/build/bs2' ${argv} > '${log_path}' 2>&1")
+    CovReject { status: status, out: avra_selfhost_read_file(log_path) }
+}
+
 fn cov_covmap_present(dir: string) -> bool {
     avra_selfhost_read_file("${dir}/src/lib.av.covmap.tsv") != ""
 }
 
 fn cov_rm_covmap(dir: string) {
     let _ = avra_shell_exec("rm -f '${dir}/src/lib.av.covmap.tsv'")
+}
+
+/// Delete the CACHED covmap from the slot the last build reported, leaving the
+/// IR intact — an instrumented slot that can no longer serve an instrumented
+/// build. Same fp extraction as cov_slot_files.
+fn cov_rm_slot_covmap(dir: string) {
+    let _ = avra_shell_exec(
+        "cd '${dir}' && fp=$(grep -oE '^(rebuild|cached) [0-9a-f]+' build_probe.log " +
+        "| head -1 | grep -oE '[0-9a-f]{6,}') && " +
+        "rm -f build/cache/$fp*/unit.covmap.tsv")
 }
 
 fn cov_cleanup(dir: string) {
@@ -165,6 +204,39 @@ spec "`bs2 build --lib --coverage` instruments the library producer" {
         stale && plain_slot.contains("unit.ll") && !plain_slot.contains("unit.covmap.tsv")
     }
 
+    // A slot whose IR is intact but whose covmap is gone cannot serve an
+    // instrumented build, so it must not be REPORTED as a hit. This is the
+    // completeness half of the rule: the restore is folded into the same
+    // `installed` gate as the IR, so failing it demotes to an honest Miss and
+    // the rebuild re-emits the map. Warning-and-proceeding would hand the
+    // caller counters with nothing to interpret them by.
+    then "a coverage hit whose SLOT lost its covmap demotes to a rebuild" {
+        let dir = cov_mk_pkg("slotgone")
+        let first = cov_build(dir, true)
+        cov_rm_slot_covmap(dir)
+        cov_rm_covmap(dir)
+        let second = cov_build(dir, true)
+        let restored = cov_covmap_present(dir)
+        cov_cleanup(dir)
+        // `rebuild`, not `cached` — the demotion is the whole point.
+        first.contains("rebuild ") && second.contains("rebuild ") && restored
+    }
+
+    // The PRODUCER shape. `std_prebuild_cmd` runs `--lib --emit_metadata`, so
+    // `--lib --coverage` alone is not the command this feature exists to
+    // serve: instrumentation has to survive alongside metadata emission, and
+    // both artifacts have to land in the one slot.
+    then "an instrumented build with --emit_metadata carries BOTH the covmap and the metadata" {
+        let dir = cov_mk_pkg("meta")
+        let log = cov_build_flags(dir, " --coverage --emit_metadata")
+        let ir = avra_selfhost_read_file("${dir}/src/lib.av.ll")
+        let slot = cov_slot_files(dir)
+        let map = cov_covmap_present(dir)
+        cov_cleanup(dir)
+        log.contains("rebuild ") && ir.contains("instrprof.increment") && map
+            && slot.contains("unit.covmap.tsv") && slot.contains("metadata.bin")
+    }
+
     then "a coverage slot DOES carry the covmap" {
         let dir = cov_mk_pkg("slotmap")
         let _log = cov_build(dir, true)
@@ -176,13 +248,29 @@ spec "`bs2 build --lib --coverage` instruments the library producer" {
     // `--coverage` on a [bin] would need the clang_rt profile runtime on the
     // link line, which link_unit_executable does not pass — so it is rejected
     // up front rather than emitting an artifact that cannot link.
+    // The STATUS is asserted, not just the text: a command that printed the
+    // right message and exited 0 would satisfy an output-only assertion, and
+    // "rejected" means the build did not happen.
     then "--coverage without --lib is rejected, naming the command that does it" {
         let dir = cov_mk_pkg("nolib")
-        let repo = avra_shell_exec("pwd")
-        let out = avra_shell_exec(
-            "cd '${dir}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_COMPILER " +
-            "'${repo}/build/bs2' build --coverage 2>&1")
+        let rej = cov_reject(dir, "build --coverage")
         cov_cleanup(dir)
-        out.contains("requires --lib") && out.contains("bs2 test -c")
+        rej.status != 0 && rej.out.contains("requires --lib") && rej.out.contains("bs2 test -c")
+    }
+
+    // `--per_module` returns before build_executable, so the facade's own
+    // check never runs on that path: this exited 0 having emitted units with
+    // no instrumentation whatsoever. The rule lives in one predicate now
+    // (`coverage_request_error`), applied by the CLI before the dispatch.
+    then "--coverage with --per_module is rejected rather than silently uninstrumented" {
+        let dir = cov_mk_pkg("permod")
+        let rej = cov_reject(dir, "build --lib --coverage --per_module")
+        let units_written = avra_selfhost_read_file("${dir}/build/per_mod") != ""
+            || rej.out.contains("per-module units written")
+        cov_cleanup(dir)
+        // Both halves matter: a non-zero status AND no evidence the dispatch
+        // ran anyway. Before the fix this printed "per-module units written
+        // to …" and exited 0.
+        rej.status != 0 && rej.out.contains("--per_module") && !units_written
     }
 }

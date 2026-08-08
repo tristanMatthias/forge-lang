@@ -231,21 +231,35 @@ export fn build_ir(req: BuildRequest, run: fn(string, string, int) -> int) -> Bu
     // artifact. (Same class as the compile-cache read gate.)
     mut outcome = decide_build(inputs)
     match outcome {
-        .Hit(_, cached_ll) -> {
+        .Hit(hit_fp, cached_ll) -> {
             // Consuming a Hit validates the slot and materialises the
             // artifact atomically; either failing demotes to an honest Miss.
             // A LIBRARY's IR is a product (the metadata fast-path lowers it to
             // a producer object, and the lib contract tests pin it), so it is
             // installed beside the source. A BINARY's is an intermediate — the
             // cache holds it — so no ~60MB copy lands next to the user.
-            let installed = if prefer_lib {
+            let ll_installed = if prefer_lib {
                 avra_file_size(cached_ll) > 0
                     && avra_shell_exec_status(atomic_cp_cmd(cached_ll, "${entry_path}.ll", avra_getpid())) == 0
             } else {
                 avra_file_size(cached_ll) > 0
             }
+            // i7gw.1: the covmap is part of what an instrumented slot must
+            // deliver, so it is validated HERE — with the IR — rather than
+            // reported later. A hit runs no codegen, so an absent or
+            // unrestorable map would otherwise hand the caller counters with
+            // nothing to interpret them by, or leave a STALE source-adjacent
+            // map from an earlier build in place. Demoting to a Miss is the
+            // recovery that fits: the rebuild re-runs codegen, which writes
+            // the map directly.
+            let installed = ll_installed && restore_covmap_on_hit(want_coverage, project_dir, hit_fp, entry_path)
             if !installed {
-                eprintln("[build-cache] stale-read miss — slot emptied or uninstallable mid-read; rebuilding")
+                // Only when the IR is what failed: restore_covmap_on_hit
+                // reports its own cause, and printing both would name the
+                // wrong one first.
+                if !ll_installed {
+                    eprintln("[build-cache] stale-read miss — slot emptied or uninstallable mid-read; rebuilding")
+                }
                 outcome = match decide_build(inputs) {
                     .Hit(fp2, _) -> BuildOutcome.Miss(fp2, "", "slot emptied mid-read")
                     .Miss(fp2, pk, reason) -> BuildOutcome.Miss(fp2, pk, reason)
@@ -276,27 +290,6 @@ export fn build_ir(req: BuildRequest, run: fn(string, string, int) -> int) -> Bu
                     if size_str != "" && size_str != "0" {
                         mirror_source_meta(cached_meta, entry_path)
                     }
-                }
-            }
-            // i7gw.1: restore the coverage map. A hit runs no codegen, so
-            // without this the source-adjacent TSV that consumers read is
-            // whatever an earlier run happened to leave there — or nothing.
-            // Verified before the fix: `rm` the TSV, rebuild, and the build
-            // says `1 hits / 0 misses` with the map still gone.
-            if want_coverage {
-                let cached_covmap = entry_covmap_path(cache_for(project_dir), fp)
-                let body = avra_selfhost_read_file(cached_covmap)
-                if body == "" {
-                    // An instrumented slot with no map is not usable AS an
-                    // instrumented build, whatever cache_has says. Report it
-                    // rather than returning an object whose counters nothing
-                    // can interpret — silence here is the exact failure this
-                    // ticket is about.
-                    eprintln("[build-cache] coverage hit ${fp_short(fp)} has no ${cached_covmap} — " +
-                             "the slot predates covmap caching or was damaged; " +
-                             "`bs2 cache prune` and rebuild to re-instrument")
-                } else if avra_selfhost_write_file(source_covmap_path(entry_path), body) == 0 {
-                    eprintln("[build-cache] could not restore covmap to ${source_covmap_path(entry_path)}")
                 }
             }
             if req.timings {
@@ -536,20 +529,16 @@ export fn build_ir(req: BuildRequest, run: fn(string, string, int) -> int) -> Bu
 /// compiler nor llc/cc. A `library` request has no entry point to link and
 /// returns the IR report unchanged.
 export fn build_executable(req: BuildRequest, run: fn(string, string, int) -> int) -> BuildReport {
-    // i7gw.1: `--coverage` is a LIBRARY-target flag. An instrumented binary
-    // needs the clang_rt profile runtime on the link line
-    // (`coverage_runtime_args`), which `link_unit_executable` below does not
-    // pass — so linking one here fails with undefined `__llvm_profile_*`
-    // symbols. Reject up front and name the command that does build
-    // instrumented binaries, rather than emitting an artifact that cannot
-    // link. (Same discipline as build_binary_cgu's coverage rejection.)
+    // i7gw.1: reject an incoherent coverage request before doing any work,
+    // rather than emitting an artifact that cannot link. (Same discipline as
+    // build_binary_cgu's coverage rejection.) The rule lives in
+    // `coverage_request_error` because the CLI must apply it earlier too —
+    // `--per_module` returns before this function is ever reached.
     //
     // Gated on `req.coverage` — the new flag — not on the manifest profile,
     // so this changes nothing for a `[profile]` that already set coverage.
-    if req.coverage && !req.library {
-        return build_failed("error: bs2 build --coverage requires --lib (instrumented library producers). " +
-                            "For an instrumented test binary use `bs2 test -c`.")
-    }
+    let cov_err = coverage_request_error(req.coverage, req.library, false)
+    if cov_err != "" { return build_failed(cov_err) }
     let built = build_ir(req, run)
     if !built.ok { return built }
     if req.library { return built }
@@ -788,6 +777,62 @@ fn run_compile_quiet(cmd: string) -> int {
 /// silent — the build succeeds and the map is simply never captured.
 export fn source_covmap_path(entry_path: string) -> string {
     "${entry_path}.covmap.tsv"
+}
+
+/// i7gw.1: put a cached coverage map back beside the source on a cache HIT,
+/// which runs no codegen and so re-emits nothing. Returns whether the slot is
+/// USABLE as an instrumented build — the caller folds this into the same
+/// `installed` gate as the IR, so a false demotes to an honest Miss and the
+/// rebuild regenerates the map.
+///
+/// `true` for a non-coverage build: there is nothing to restore, and a plain
+/// slot legitimately has no map.
+fn restore_covmap_on_hit(want_coverage: bool, project_dir: string,
+                         fp: Fingerprint, entry_path: string) -> bool {
+    if !want_coverage { return true }
+    let body = avra_selfhost_read_file(entry_covmap_path(cache_for(project_dir), fp))
+    if body == "" {
+        // An instrumented slot with no map cannot serve an instrumented build,
+        // whatever cache_has says about its IR. Reported rather than silently
+        // tolerated, because proceeding would hand back counters nothing can
+        // interpret — the exact failure i7gw.1 exists to remove.
+        eprintln("[build-cache] coverage hit ${fp_short(fp)} has no cached covmap — rebuilding to re-instrument")
+        return false
+    }
+    if avra_selfhost_write_file(source_covmap_path(entry_path), body) == 0 {
+        eprintln("[build-cache] could not restore covmap to ${source_covmap_path(entry_path)} — rebuilding")
+        return false
+    }
+    true
+}
+
+/// i7gw.1: the one place that decides whether a coverage REQUEST is coherent.
+/// Returns "" when it is, or the user-facing error when it is not.
+///
+/// Centralised because two callers must agree and they are reached on
+/// different paths: `build_executable` (the exported API) and the CLI, which
+/// dispatches `--per_module` and returns BEFORE ever calling it. A rule
+/// written only in the facade therefore does not cover `--per_module`, which
+/// is how `bs2 build --lib --coverage --per_module` came to exit 0 having
+/// emitted entirely uninstrumented units.
+///
+///   * not `--lib` — an instrumented binary needs the clang_rt profile runtime
+///     on the link line, which `link_unit_executable` does not pass, so it
+///     fails on undefined `__llvm_profile_*`.
+///   * `--per_module` — `pre_build_subdir_units` builds its own compile
+///     commands and passes no `--coverage`, so the request would be silently
+///     dropped. Rejected until that path instruments and handles its maps.
+export fn coverage_request_error(coverage: bool, library: bool, per_module: bool) -> string {
+    if !coverage { return "" }
+    if per_module {
+        return "error: bs2 build --coverage is not supported with --per_module " +
+               "(the per-module dispatch emits uninstrumented units and handles no coverage maps)."
+    }
+    if !library {
+        return "error: bs2 build --coverage requires --lib (instrumented library producers). " +
+               "For an instrumented test binary use `bs2 test -c`."
+    }
+    ""
 }
 
 /// Mirror a path-keyed `metadata.bin` into the source-keyed meta slot the

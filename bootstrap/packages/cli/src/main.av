@@ -97,6 +97,7 @@ use @std.avrac.build.{
     LinkOptions, default_link_options, link_objects,
     BuildRequest, BuildReport, build_request, build_ir, build_executable, link_unit_executable,
     build_report_empty, unit_name_for, BuildOutput, DepTally, no_deps, is_library_target,
+    coverage_request_error,
     resolve_compiler_path, runtime_objects_dir, remove_entry_ll_if_unchanged,
     cache_summary_line, build_event_json, count_path_deps, write_timings_html,
     extract_unit_metadata, extract_per_file_metadata, collect_source_files,
@@ -1574,6 +1575,16 @@ fn run_build_command(args: BuildArgs) -> BuildReport {
     maybe_auto_gc(project_dir)
     let manifest = load_manifest("${project_dir}/")
     let compiler_path = resolve_compiler_path(project_dir)
+
+    // i7gw.1: validate the coverage request FIRST — before the --per_module
+    // dispatch below, which returns without ever reaching build_executable's
+    // copy of this check. Without it, `bs2 build --lib --coverage
+    // --per_module` exited 0 having emitted units with no instrumentation at
+    // all (measured), which is the silent-under-measurement failure this work
+    // exists to remove. Also before the path-dep pre-build, so an incoherent
+    // request costs no compiles.
+    let cov_err = coverage_request_error(args.coverage, args.lib, args.per_module)
+    if cov_err != "" { fail(cov_err) }
 
     // A BARE `bs2 build --lib` must run under the same AVRA_LIB_PKG_ROOT
     // the suite prebuild exports for this package (std_prebuild_cmd /
