@@ -2189,6 +2189,9 @@ fn make_test_inputs(project_dir: string, test_paths: List<string>, unit_name: st
         overflow_checks: true,
         coverage: false,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+        // Test shards link the @std producer objects; they never ask the
+        // child for a metadata sidecar themselves.
+        emit_metadata: false,
         // Test units carry no dep_fps: `sources` already rolls the whole
         // @std universe in (append_shared_sources), so dep content is
         // keyed there.
@@ -4168,6 +4171,12 @@ fn cmd_compile(args: CliResult) -> int {
             overflow_checks: true,
             coverage: false,
             lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+            // Always false in practice today — `cache_eligible` above already
+            // excludes `--emit_metadata` from the compile cache outright, which
+            // is why t-rnpw's shared-slot defect was confined to `build --lib`.
+            // Threaded through as the real value anyway, so making metadata
+            // compiles cache-eligible later cannot silently reintroduce it.
+            emit_metadata: emit_metadata,
             dep_fps: if compile_full_fp == "" { [] } else { [compile_full_fp] },
         }
         let mut compile_publish_fp: Fingerprint? = null

@@ -91,6 +91,12 @@ export type BuildInputs = {
     // `.ll` (e.g. a whole-program "" build, or a mistyped root, poisons the
     // lib slot). "" for whole-program builds.
     lib_pkg_root: string,
+    // t-rnpw: whether this build passes `--emit_metadata` to the child. Like
+    // `lib_pkg_root` above it selects WHICH symbols are emitted — without it
+    // the unit is whole-program and defines `main`, with it it is
+    // package-scoped and does not — so the two shapes are different artifacts
+    // and must not share a slot.
+    emit_metadata: bool,
     // pdme.1: transitive dep fingerprints. For bin/lib/compile units this
     // is the entry package's dep-aware full fingerprint
     // (package_full_fingerprint — folds every transitive dep's source in),
@@ -154,6 +160,7 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
         profile_key,
         inputs.target_triple,
         inputs.lib_pkg_root,
+        inputs.emit_metadata,
         inputs.dep_fps,
     )
 
@@ -213,6 +220,15 @@ fn miss_reason(c: Cache, inputs: BuildInputs, compiler_hash: string, profile_key
     let prev_lib_root = read_field(prior, "lib_root:")
     if prev_lib_root != "" && prev_lib_root != inputs.lib_pkg_root {
         return "library root changed (" + prev_lib_root + " → " + inputs.lib_pkg_root + ")"
+    }
+    // t-rnpw. Named explicitly: without this the metadata axis fell through to
+    // the catch-all "no specific axis matched — check transitive deps", which
+    // sends the reader hunting through dependencies for a flag they passed on
+    // the command line.
+    let prev_meta = read_field(prior, "emit_metadata:")
+    let cur_meta = if inputs.emit_metadata { "1" } else { "0" }
+    if prev_meta != "" && prev_meta != cur_meta {
+        return "metadata emission changed (emit_metadata=" + prev_meta + " → " + cur_meta + ")"
     }
     // Entry-digest check FIRST (pdme.5 attribution fix): the dep-fp
     // axis folds the package's own full fingerprint (pdme.1), so an
@@ -356,6 +372,7 @@ fn write_last_inputs(c: Cache, inputs: BuildInputs, fp: Fingerprint) -> bool {
         + "profile:" + profile_key + "\n"
         + "target:" + inputs.target_triple + "\n"
         + "lib_root:" + inputs.lib_pkg_root + "\n"
+        + "emit_metadata:" + (if inputs.emit_metadata { "1" } else { "0" }) + "\n"
         + "deps:" + inputs.dep_fps.join(",") + "\n"
         + "kind:" + inputs.kind + "\n"
         + "src_count:" + string(inputs.sources.length) + "\n"

@@ -61,6 +61,9 @@ spec "fingerprint: end-to-end via bs2 run" {
     then "PROBE lib_root_sensitive — different lib roots diverge" {
         run_fixture().contains("PROBE lib_root_sensitive: ok")
     }
+    then "PROBE emit_metadata_sensitive — metadata and plain shapes diverge" {
+        run_fixture().contains("PROBE emit_metadata_sensitive: ok")
+    }
     then "no probe failed" {
         !run_fixture().contains(": FAIL")
     }

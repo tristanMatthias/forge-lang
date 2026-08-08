@@ -83,6 +83,7 @@ export fn fp_for_unit(
     profile_key: string,
     target_triple: string,
     lib_root: string,
+    emit_metadata: bool,
     dep_fps: List<string>,
 ) -> Fingerprint {
     // Compose a canonical input. Each section is prefixed with its
@@ -99,6 +100,17 @@ export fn fp_for_unit(
     // input: the same sources under root A vs B (or "" whole-program) yield
     // different objects and must not share a cache slot.
     composed = composed + "lib_root:" + lib_root + "\n"
+    // t-rnpw: `--emit_metadata` is the SAME class of axis as lib_root one step
+    // over — it changes which symbols the unit emits. Without it the build is
+    // whole-program and DEFINES `main`; with it the unit is package-scoped and
+    // does not. Sharing one slot let a stray `bs2 build --lib` republish a
+    // whole-program object under the key a metadata consumer reads, and every
+    // shard then linked two `main`s (`ld.lld: error: duplicate symbol: main`)
+    // — a whole-suite outage from one build. Re-running the correct
+    // `--emit_metadata` build did NOT repair it: that was a hit on the
+    // poisoned slot.
+    let meta = if emit_metadata { "1" } else { "0" }
+    composed = composed + "emit_metadata:" + meta + "\n"
 
     composed = composed + "sources:\n"
     composed = composed + each_with_count(sources, "src")

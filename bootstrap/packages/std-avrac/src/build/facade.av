@@ -208,6 +208,7 @@ export fn build_ir(req: BuildRequest, run: fn(string, string, int) -> int) -> Bu
         overflow_checks: profile.overflow_checks,
         coverage: want_coverage,
         lib_pkg_root: avra_process_env_get("AVRA_LIB_PKG_ROOT"),
+        emit_metadata: req.emit_metadata,
         dep_fps: if full_fp == "" { [] } else { [full_fp] },
     }
 

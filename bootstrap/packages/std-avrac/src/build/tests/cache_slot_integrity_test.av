@@ -22,14 +22,24 @@ use @std.avrac.build.{
     entry_metadata_path, entry_bin_path, entry_manifest_path,
 }
 use @std.avrac.build.fingerprint.{Fingerprint}
-use @std.avrac.core.{avra_selfhost_write_file, avra_mkdir_p, avra_selfhost_file_exists, avra_file_size, avra_shell_exec}
+use @std.avrac.core.{avra_selfhost_write_file, avra_mkdir_p, avra_selfhost_file_exists, avra_file_size, avra_shell_exec, avra_getpid}
 
 fn mk_fp(hex: string) -> Fingerprint {
     Fingerprint { hex: hex }
 }
 
+/// Per-PID scratch root. The path used to be a FIXED
+/// `/tmp/avra_kaux_cache_test_<slug>`, which this fixture then `rm -rf`s
+/// on entry — so any second `bs2 test` process reaching the same spec
+/// deleted the first one's slot between its setup and its assertion. That
+/// surfaced as a one-off `a valid COMPLETE slot materialises the object at
+/// the canonical path` FAIL that passed 15/15 in isolation and on the very
+/// next batched re-run: a state leak, not a code defect. Same discipline as
+/// every sibling fixture (libbuild_bare_root_test, and the per-pid shard
+/// log dirs from t-5vze) — concurrent and nested runs must not share
+/// mutable scratch.
 fn mk_cache(slug: string) -> Cache {
-    let root = "/tmp/avra_kaux_cache_test_${slug}"
+    let root = "/tmp/avra_kaux_cache_test_${slug}_${string(avra_getpid())}"
     avra_shell_exec("rm -rf '${root}'")
     let c = cache_for(root)
     let _ = cache_init(c)
