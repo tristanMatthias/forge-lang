@@ -628,6 +628,7 @@ type BuildArgs = {
     lib: bool,
     emit_metadata: bool,
     per_module: bool,
+    coverage: bool,
     entry: string,
     output: string,
 }
@@ -739,7 +740,17 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
     let path_count = count_path_deps(deps)
     if path_count == 0 { return pre_dep_outcome_empty() }
     let project_dir = avra_process_env_get("PWD")
-    let plan_shape = "deps=${string(path_count)};emit_metadata=1"
+    // i7gw.1: the dep closure inherits instrumentation. `@std/avrac` has three
+    // path-deps (lsp, json, crypto) and `@std/test` depends on it, so building
+    // the root instrumented while its deps stay plain would produce exactly the
+    // silent under-measurement this work exists to remove — a coverage report
+    // whose denominator quietly excludes whatever the deps contributed.
+    //
+    // In `plan_shape` too: an instrumented compile has a different memory
+    // profile, so it must not share the admission governor's learned prior with
+    // the plain build of the same dep set.
+    let cov_shape = if args.coverage { ";coverage=1" } else { "" }
+    let plan_shape = "deps=${string(path_count)};emit_metadata=1${cov_shape}"
     // TTY-aware split (5gvp): pipe-redirected stdout takes the
     // pure-Avra worker pool path so CI logs stay byte-identical to
     // before. An interactive terminal gets a multi-line progress bar
@@ -755,7 +766,7 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
         let paths_file = "/tmp/avra_pre_deps.${string(avra_getpid())}.list"
         avra_shell_exec("rm -f ${paths_file}")
         write_dep_paths(deps, paths_file)
-        let out = run_pre_deps_with_progress(paths_file, compiler_path, path_count, project_dir, plan_shape)
+        let out = run_pre_deps_with_progress(paths_file, compiler_path, path_count, project_dir, plan_shape, args.coverage)
         avra_shell_exec("rm -f ${paths_file}")
         return out
     }
@@ -768,7 +779,7 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
     // output stays inspectable instead of vanishing into /dev/null.
     let log_dir = "${project_dir}/build/pre_deps.${string(avra_getpid())}"
     avra_shell_exec("rm -rf '${log_dir}' && mkdir -p '${log_dir}'")
-    let cmds = build_pre_dep_cmds(deps, compiler_path, log_dir)
+    let cmds = build_pre_dep_cmds(deps, compiler_path, log_dir, args.coverage)
     let rc = run_build_resource_pool(cmds, project_dir, compiler_path, "build-path-dependency", plan_shape)
     if rc != 0 {
         eprintln("pre-build failed — per-dep logs: ${log_dir}/")
@@ -791,7 +802,8 @@ fn pre_build_path_deps(deps: List<Dep>, compiler_path: string, args: BuildArgs) 
 // build's AVRA_LIB_PKG_ROOT would mis-bucket every dep fn as
 // foreign and produce a 3-define truncated .ll; we override
 // per-dep here.
-fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string, log_dir: string) -> List<string> {
+fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string, log_dir: string, coverage: bool) -> List<string> {
+    let cov_flag = if coverage { " --coverage" } else { "" }
     mut cmds: List<string> = []
     mut i = 0
     while i < deps.length {
@@ -808,7 +820,7 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string, log_dir: string) -
             // --explain so the log carries the hit/miss line + miss
             // attribution the parent's tally reads back (pdme.5).
             let log_path = "${log_dir}/${slug_of_path(dep.path)}.log"
-            cmds.push("cd \"${dep.path}\" && ${env_prefix}\"${compiler_path}\" build --lib --emit_metadata --explain > \"${log_path}\" 2>&1")
+            cmds.push("cd \"${dep.path}\" && ${env_prefix}\"${compiler_path}\" build --lib${cov_flag} --emit_metadata --explain > \"${log_path}\" 2>&1")
         }
         i = i + 1
     }
@@ -1354,7 +1366,8 @@ fn count_lines(s: string) -> int {
 // e20h Phase 2 unification: the TTY child uses the exact same generic Avra
 // resource pool as the non-TTY path. Markers let the parent render progress;
 // they do not become a second scheduler with independent width policy.
-fn run_pre_deps_with_progress(paths_file: string, compiler_path: string, total: int, project_dir: string, plan_shape: string) -> PreDepOutcome {
+fn run_pre_deps_with_progress(paths_file: string, compiler_path: string, total: int, project_dir: string, plan_shape: string, coverage: bool) -> PreDepOutcome {
+    let cov_flag = if coverage { " --coverage" } else { "" }
     let marker_dir = progress_marker_dir()
     avra_shell_exec("rm -rf ${marker_dir} && mkdir -p ${marker_dir}")
     let dep_paths = read_paths_file_lines(paths_file)
@@ -1364,7 +1377,7 @@ fn run_pre_deps_with_progress(paths_file: string, compiler_path: string, total: 
         // Per-job log file makes failures inspectable after the run —
         // dump_failed_logs walks `${marker_dir}/*.log`. --explain so the
         // log carries the hit/miss attribution the tally reads (pdme.5).
-        cmds.push("(cd \"${path}\" && \"${compiler_path}\" build --lib --emit_metadata --explain) > \"${marker_dir}/${slug}.log\" 2>&1")
+        cmds.push("(cd \"${path}\" && \"${compiler_path}\" build --lib${cov_flag} --emit_metadata --explain) > \"${marker_dir}/${slug}.log\" 2>&1")
     }
     // Spawn the pool in the background so the foreground can render
     // the TTY progress bar against the marker files. The child is an internal
@@ -1631,6 +1644,7 @@ fn run_build_command(args: BuildArgs) -> BuildReport {
         library: args.lib,
         emit_metadata: args.emit_metadata,
         timings: args.timings,
+        coverage: args.coverage,
         mode: mode,
         deps: DepTally { hits: pre.hits, misses: pre.misses, detail: pre.detail },
     }, run_with_progress)
@@ -2471,7 +2485,7 @@ fn run_test_shard_command(paths: List<string>, args: TestArgs) {
             }
             tsh = shard_phase_ms("shard:compile_unit(assemble+frontend+backend)", tsh)
             let staging_id = "${inputs.unit_name}.${fp_short(fp)}"
-            let _ = record_build_result(inputs, fp, "", "", "", built, "", staging_id)
+            let _ = record_build_result(inputs, fp, "", "", "", built, "", "", staging_id)
             tsh = shard_phase_ms("shard:publish_binary_to_cache", tsh)
             // Publish copies the staging bin into the cache slot, so
             // the local `_test_<shard>.{bin,o}` aren't load-bearing
@@ -3436,7 +3450,7 @@ fn check_test_cache_or_miss(inputs: BuildInputs) -> Fingerprint? {
 /// binary is still on disk and the user can re-run.
 fn publish_test_binary(inputs: BuildInputs, fp: Fingerprint, bin_path: string) {
     let staging_id = "${inputs.unit_name}.${fp_short(fp)}"
-    let pr = record_build_result(inputs, fp, "", "", "", bin_path, "", staging_id)
+    let pr = record_build_result(inputs, fp, "", "", "", bin_path, "", "", staging_id)
     if !pr.success {
         eprintln("[test-cache] publish failed: ${pr.error}")
     } else {
@@ -4419,7 +4433,7 @@ fn cmd_compile(args: CliResult) -> int {
             let fp = compile_publish_fp!
             let ll_content = read_file(output)
             let staging_id = "compile.${fp_short(fp)}"
-            let pr = record_build_result(compile_inputs, fp, ll_content, output, "", "", compile_diag, staging_id)
+            let pr = record_build_result(compile_inputs, fp, ll_content, output, "", "", compile_diag, "", staging_id)
             if pr.success {
                 eprintln("[compile-cache] published ${fp_short(fp)}")
             } else {
@@ -4504,6 +4518,7 @@ cli avra {
         flag json { description "Emit build diagnostics as JSON, one event per line (for tooling)", alias "--message-format=json" }
         flag timings { description "Print per-phase timing information" }
         flag lib { description "Build the manifest's [lib] target instead of [bin]" }
+        flag coverage { short "-c", description "Instrument the library producer for coverage (requires --lib); lands in its own cache slot" }
         flag emit_metadata { description "Emit a .meta.bin sidecar describing the unit's public surface" }
         flag per_module { description "g2eo Phase B: dispatch one bs2 compile per src/ subdirectory in parallel via pool_run; each subdir produces its own .ll + .meta.bin under build/per_mod/. Experimental, opt-in." }
         option output { short "-o", description "Write the native executable here (default: the source basename minus .av, in the cwd). Ignored for --lib / --per_module." }
@@ -4517,6 +4532,7 @@ cli avra {
                 lib: lib,
                 emit_metadata: emit_metadata,
                 per_module: per_module,
+                coverage: coverage,
                 entry: file,
                 output: output,
             })

@@ -1,0 +1,188 @@
+// WHY: i7gw.1 — the `@std/*` producer objects a sharded test run links are
+// built by `bs2 build --lib`, and nothing could ask that build to instrument:
+// `profile.coverage` was reachable only by editing a manifest. An
+// uninstrumented producer carries no counters and contributes no covmap rows,
+// so a shard measures only the code it compiled itself — and the headline
+// percentage goes UP while covering strictly less. That is the worst failure a
+// reporting tool has, because it survives review on the number alone.
+//
+// `bs2 build --lib --coverage` is the missing request. These specs pin the four
+// properties that make it trustworthy, each with a distinct mutation:
+//
+//   1. it actually instruments (and a plain build of the same source does not)
+//   2. instrumented and plain occupy DIFFERENT cache slots
+//   3. a cache HIT restores the covmap
+//   4. a PLAIN build never publishes a covmap into its slot
+//
+// (3) and (4) are the two bugs this work found by measurement rather than by
+// reading, and both were silent:
+//
+//   * Codegen writes the map to `<source>.covmap.tsv`. A hit runs no codegen,
+//     so before the slot carried the map, deleting the TSV and rebuilding
+//     reported `cached … 1 hits / 0 misses` with the map still gone — an
+//     object full of counters and nothing to interpret them by.
+//   * That same path is SHARED by the plain and instrumented builds of one
+//     entry, and a plain build does not remove it. Capturing it
+//     unconditionally therefore published a previous coverage build's map into
+//     the PLAIN slot: measured, both slots held a unit.covmap.tsv. Since
+//     presence is how a consumer tells an instrumented producer from a plain
+//     one, that made a plain slot claim instrumentation it did not have.
+//
+// Raw avra_shell_exec probes only — never the fixture-stdout cache.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_write_file, avra_selfhost_read_file,
+    avra_getpid,
+}
+
+/// Materialise a throwaway [lib] package at `<base>/packages/std-<slug>/`.
+/// The body carries a branch so the instrumented build allocates more than a
+/// bare fn_entry counter — a single straight-line fn would still produce a
+/// covmap, but a branchy one exercises the branch counters too.
+fn cov_mk_pkg(slug: string) -> string {
+    let base = "/tmp/avra_libcov_${slug}_${string(avra_getpid())}"
+    let dir = "${base}/packages/std-${slug}"
+    let _ = avra_shell_exec("rm -rf '${base}' && mkdir -p '${dir}/src'")
+    let _ = avra_selfhost_write_file("${dir}/avra.toml",
+        "[package]\nname = \"@std/${slug}\"\nversion = \"0.0.1\"\n\n[lib]\nname = \"std-${slug}\"\npath = \"src/lib.av\"\n")
+    let _ = avra_selfhost_write_file("${dir}/src/lib.av",
+        "export fn cov_${slug}(n: int) -> int {\n" +
+        "    if n > 0 { n + 1 } else { 0 - n }\n" +
+        "}\n")
+    dir
+}
+
+/// `bs2 build --lib [--coverage] --explain` inside `dir`. The env strip keeps
+/// the probe hermetic under the test runner's own metadata-mode environment.
+fn cov_build(dir: string, coverage: bool) -> string {
+    let repo = avra_shell_exec("pwd")
+    let bs2 = "${repo}/build/bs2"
+    let cov_flag = if coverage { " --coverage" } else { "" }
+    let log_path = "${dir}/build_probe.log"
+    let _ = avra_shell_exec_status(
+        "cd '${dir}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_COMPILER " +
+        "AVRA_LIB_PKG_ROOT='@std::${slug_of(dir)}' '${bs2}' build --lib${cov_flag} --explain > '${log_path}' 2>&1")
+    avra_selfhost_read_file(log_path)
+}
+
+/// `packages/std-foo` → `foo`. The root must be explicit and stable across the
+/// plain and instrumented builds, or the two differ on the ROOT axis of the
+/// fingerprint and spec 2 would pass for the wrong reason.
+fn slug_of(dir: string) -> string {
+    let marker = "/packages/std-"
+    let idx = dir.index_of(marker)
+    if idx < 0 { return "" }
+    dir.substring(idx + marker.length, dir.length)
+}
+
+/// The files in the BUILD-cache slot the last build reported, space-separated.
+///
+/// The fp is taken from the `--explain` verdict line (`rebuild <fp> — …` /
+/// `cached <fp> — …`) and nothing else. Matching the first hex run in the log
+/// instead looked right and silently read the WRONG CACHE: the child compile
+/// tees its own `[compile-cache] published <fp>` line into this log first, and
+/// that is a different namespace whose entries are published with no covmap at
+/// all. A helper pointed there reports "no covmap in the slot" unconditionally
+/// — which is exactly the answer the leak spec below wants to hear, so the
+/// spec passed under a mutation that reintroduced the leak. Only the mutation
+/// run found it; the clean run had looked green throughout.
+///
+/// `$fp` is deliberately brace-less: `${fp}` would be Avra interpolation, not
+/// shell expansion.
+fn cov_slot_files(dir: string) -> string {
+    avra_shell_exec(
+        "cd '${dir}' && fp=$(grep -oE '^(rebuild|cached) [0-9a-f]+' build_probe.log " +
+        "| head -1 | grep -oE '[0-9a-f]{6,}') && " +
+        "ls build/cache/$fp*/ 2>/dev/null | tr '\\n' ' '")
+}
+
+fn cov_covmap_present(dir: string) -> bool {
+    avra_selfhost_read_file("${dir}/src/lib.av.covmap.tsv") != ""
+}
+
+fn cov_rm_covmap(dir: string) {
+    let _ = avra_shell_exec("rm -f '${dir}/src/lib.av.covmap.tsv'")
+}
+
+fn cov_cleanup(dir: string) {
+    let _ = avra_shell_exec("rm -rf \"$(dirname \"$(dirname '${dir}')\")\"")
+}
+
+spec "`bs2 build --lib --coverage` instruments the library producer" {
+    then "a coverage build emits instrprof calls and a covmap; a plain one emits neither" {
+        let dir = cov_mk_pkg("insta")
+        let _cov_log = cov_build(dir, true)
+        let cov_ir = avra_selfhost_read_file("${dir}/src/lib.av.ll")
+        let cov_map = cov_covmap_present(dir)
+        // The plain build overwrites the shared `<entry>.ll`, so read the
+        // instrumented IR BEFORE it runs.
+        cov_rm_covmap(dir)
+        let _plain_log = cov_build(dir, false)
+        let plain_ir = avra_selfhost_read_file("${dir}/src/lib.av.ll")
+        let plain_map = cov_covmap_present(dir)
+        cov_cleanup(dir)
+        cov_ir.contains("instrprof.increment") && cov_map
+            && !plain_ir.contains("instrprof.increment") && !plain_map
+    }
+
+    then "instrumented and plain builds occupy different cache slots" {
+        // The miss reason names the axis, so this asserts the fingerprint
+        // genuinely separates them rather than merely observing two builds.
+        let dir = cov_mk_pkg("slots")
+        let cov_log = cov_build(dir, true)
+        let plain_log = cov_build(dir, false)
+        cov_cleanup(dir)
+        cov_log.contains("rebuild ")
+            && plain_log.contains("rebuild ")
+            && plain_log.contains("profile flags changed")
+    }
+
+    // The first silent bug. Without the slot copy this reports a clean
+    // `cached … 1 hits / 0 misses` and leaves the covmap deleted.
+    then "a cache HIT restores the covmap codegen did not re-emit" {
+        let dir = cov_mk_pkg("hit")
+        let first = cov_build(dir, true)
+        cov_rm_covmap(dir)
+        let second = cov_build(dir, true)
+        let restored = cov_covmap_present(dir)
+        cov_cleanup(dir)
+        first.contains("rebuild ") && second.contains("cached ") && restored
+    }
+
+    // The second. A stale TSV from the coverage build sits next to the source
+    // when the plain build runs; capturing it unconditionally published it into
+    // the plain slot, which is how a plain producer came to look instrumented.
+    then "a PLAIN build publishes no covmap, even with a stale one beside the source" {
+        let dir = cov_mk_pkg("noleak")
+        let _cov_log = cov_build(dir, true)
+        let stale = cov_covmap_present(dir)   // the coverage build left it there
+        let _plain_log = cov_build(dir, false)
+        let plain_slot = cov_slot_files(dir)
+        cov_cleanup(dir)
+        // `stale` is the precondition: if the TSV were absent the spec could
+        // pass without exercising the leak at all.
+        stale && plain_slot.contains("unit.ll") && !plain_slot.contains("unit.covmap.tsv")
+    }
+
+    then "a coverage slot DOES carry the covmap" {
+        let dir = cov_mk_pkg("slotmap")
+        let _log = cov_build(dir, true)
+        let slot = cov_slot_files(dir)
+        cov_cleanup(dir)
+        slot.contains("unit.covmap.tsv")
+    }
+
+    // `--coverage` on a [bin] would need the clang_rt profile runtime on the
+    // link line, which link_unit_executable does not pass — so it is rejected
+    // up front rather than emitting an artifact that cannot link.
+    then "--coverage without --lib is rejected, naming the command that does it" {
+        let dir = cov_mk_pkg("nolib")
+        let repo = avra_shell_exec("pwd")
+        let out = avra_shell_exec(
+            "cd '${dir}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_COMPILER " +
+            "'${repo}/build/bs2' build --coverage 2>&1")
+        cov_cleanup(dir)
+        out.contains("requires --lib") && out.contains("bs2 test -c")
+    }
+}

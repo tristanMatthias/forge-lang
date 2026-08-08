@@ -100,6 +100,24 @@ export fn entry_metadata_path(c: Cache, fp: Fingerprint) -> string {
 export fn entry_diag_path(c: Cache, fp: Fingerprint) -> string {
     entry_dir_for(c, fp) + "/unit.diag"
 }
+/// i7gw.1: the coverage map a `--coverage` build's codegen wrote. Codegen
+/// names it `<source>.covmap.tsv`, next to the source — which means a cache
+/// HIT (no codegen runs) leaves the consumer with an object full of counters
+/// and no map to interpret them by. Measured before this existed: delete the
+/// TSV, rebuild, and the build reports `cached … 1 hits / 0 misses` while the
+/// covmap stays gone. The report then silently loses that producer's rows —
+/// the same "denominator quietly shrinks" failure i7gw.1 exists to prevent,
+/// one layer down.
+///
+/// So the covmap is a slot artifact, staged inside cache_publish's atomic
+/// rename and mirrored back out on a hit. Written ONLY when non-empty:
+/// presence is the signal that a slot is instrumented, so a plain build must
+/// not leave a 0-byte one (unlike unit.diag, where "" is a meaningful "no
+/// diagnostics"). Every coverage build emits at least the `# file=` header,
+/// so non-empty and instrumented coincide.
+export fn entry_covmap_path(c: Cache, fp: Fingerprint) -> string {
+    entry_dir_for(c, fp) + "/unit.covmap.tsv"
+}
 
 /// Read a cached compile's diagnostics (j568). "" when the slot
 /// predates j568 (no unit.diag) or the compile emitted none — both
@@ -236,6 +254,7 @@ export fn cache_publish(
     o_path_src: string,         // path to the .o file produced by llc
     metadata_content: string,
     diag_content: string,       // j568: captured compile diagnostics ("" = none)
+    covmap_content: string,     // i7gw.1: coverage map ("" = not an instrumented build)
     staging_id: string,
 ) -> PublishResult {
     // jg3p: reject empty ll_content up-front. Observed bug: a killed
@@ -293,6 +312,17 @@ export fn cache_publish(
     let staged_diag = staging + "/unit.diag"
     if avra_selfhost_write_file(staged_diag, diag_content) == 0 {
         return PublishResult { success: false, error: "write failed: " + staged_diag }
+    }
+    // i7gw.1: the covmap rides the SAME atomic rename, for the same reason
+    // unit.diag does — a slot must never be observable with unit.ll present
+    // and its covmap missing, or a concurrent reader sees an instrumented
+    // object it cannot interpret. Staged only when there is one to stage:
+    // presence distinguishes an instrumented slot from a plain one.
+    if covmap_content != "" {
+        let staged_covmap = staging + "/unit.covmap.tsv"
+        if avra_selfhost_write_file(staged_covmap, covmap_content) == 0 {
+            return PublishResult { success: false, error: "write failed: " + staged_covmap }
+        }
     }
 
     let final_dir = entry_dir_for(c, fp)
