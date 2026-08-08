@@ -1207,7 +1207,7 @@ fn parse_postfix_suffix(st: PState) -> CapVal {
         mut ta_list: List<TypeExpr> = []
         mut a_list: List<ExprId> = []
         let _ = st.advance()
-        if tok_starts_type(st.cur()) {
+        if (st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur())) {
             ta_list.push(capval_to_texpr(st, parse_type_expr(st)))
             while st.cur().tk == Tk.Comma {
                 let _ = st.advance()
@@ -1381,7 +1381,7 @@ fn parse_quote_type_expr(st: PState) -> CapVal {
     }
     let __modes_3 = st.modes
     st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
-    if !(tok_starts_type(st.cur())) {
+    if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
         st.report("expected a type inside `quote type { ... }`")
         st.set_modes(__modes_3)
         return CapVal.Node(st.error_node_silent())
@@ -1553,7 +1553,7 @@ fn parse_match_expr(st: PState) -> CapVal {
             st.report("expected `{` after match subject")
             return CapVal.Node(st.error_node_silent())
         }
-        while tok_starts_pattern(st.cur()) {
+        while (st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_pattern(st.cur())) {
             arms_list.push(capval_to_arm(st, parse_match_arm(st)))
             if st.cur().tk == Tk.Comma { let _ = st.advance() }
         }
@@ -1863,7 +1863,7 @@ fn parse_param(st: PState) -> CapVal {
     let pname = CapVal.Tok(st.advance())
     if st.cur().tk == Tk.Colon {
         let _ = st.advance()
-        if !(tok_starts_type(st.cur())) {
+        if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
             st.report("expected parameter type after `:`")
             return CapVal.Node(st.error_node_silent())
         }

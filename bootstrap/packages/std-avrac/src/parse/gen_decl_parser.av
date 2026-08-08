@@ -522,7 +522,7 @@ fn parse_let_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Colon {
                 let _ = st.advance()
-                if !(tok_starts_type(st.cur())) {
+                if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
                     st.report("expected type after `:`")
                     if s_cut {
                         st.set_abort_prop(true)
@@ -603,7 +603,7 @@ fn parse_mut_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Colon {
                 let _ = st.advance()
-                if !(tok_starts_type(st.cur())) {
+                if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
                     st.report("expected type after `:`")
                     if s_cut {
                         st.set_abort_prop(true)
@@ -682,7 +682,7 @@ fn parse_const_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Colon {
                 let _ = st.advance()
-                if !(tok_starts_type(st.cur())) {
+                if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
                     st.report("expected type after `:`")
                     if s_cut {
                         st.set_abort_prop(true)
@@ -1579,7 +1579,7 @@ fn parse_config_entry(st: PState) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    if !(tok_starts_type(st.cur())) {
+    if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
         st.report("expected config type")
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
@@ -1611,7 +1611,7 @@ fn parse_children_slot(st: PState) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    if !(tok_starts_type(st.cur())) {
+    if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
         st.report("expected slot type")
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
@@ -1970,7 +1970,7 @@ fn parse_comp_field(st: PState) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    if !(tok_starts_type(st.cur())) {
+    if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
         st.report("expected field type")
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
@@ -2209,7 +2209,7 @@ fn parse_type_decl(st: PState) -> CapVal {
                 return CapVal.Node(st.error_node_silent())
                 }
             }
-            if st.cur().tk == Tk.LeftBrace || tok_starts_type(st.cur()) {
+            if st.cur().tk == Tk.LeftBrace || (st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur())) {
                 if st.cur().tk == Tk.LeftBrace {
                     let _ = st.advance()
                     while lookahead_ok("not_rbrace", st) {
@@ -2238,7 +2238,7 @@ fn parse_type_decl(st: PState) -> CapVal {
                         return CapVal.Node(st.error_node_silent())
                         }
                     }
-                } else if tok_starts_type(st.cur()) {
+                } else if (st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur())) {
                     talias = parse_type_expr(st)
                     if st.cur().text == "without" || st.cur().text == "only" {
                         top = CapVal.Tok(st.advance())
@@ -2371,7 +2371,7 @@ fn parse_field(st: PState) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    if !(tok_starts_type(st.cur())) {
+    if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
         st.report("expected field type")
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
@@ -2658,7 +2658,7 @@ fn parse_fn_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Arrow {
                 let _ = st.advance()
-                if !(tok_starts_type(st.cur())) {
+                if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
                     st.report("expected return type after `->`")
                     if s_cut {
                         st.set_abort_prop(true)
@@ -2838,7 +2838,7 @@ fn parse_extern_decl(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Arrow {
                 let _ = st.advance()
-                if !(tok_starts_type(st.cur())) {
+                if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
                     st.report("expected return type after `->`")
                     if s_cut {
                         st.set_abort_prop(true)
@@ -3156,7 +3156,7 @@ fn parse_impl_decl(st: PState) -> CapVal {
             let itn = __rres2
             if st.cur().tk == Tk.Less {
                 let _ = st.advance()
-                if tok_starts_type(st.cur()) {
+                if (st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur())) {
                     let _ = parse_type_expr(st)
                     while st.cur().tk == Tk.Comma {
                         let _ = st.advance()
@@ -3186,7 +3186,7 @@ fn parse_impl_decl(st: PState) -> CapVal {
                 ifortn = __rres1
                 if st.cur().tk == Tk.Less {
                     let _ = st.advance()
-                    if tok_starts_type(st.cur()) {
+                    if (st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur())) {
                         let _ = parse_type_expr(st)
                         while st.cur().tk == Tk.Comma {
                             let _ = st.advance()
@@ -3295,7 +3295,7 @@ fn parse_impl_assoc(st: PState) -> CapVal {
                 return CapVal.Node(st.error_node_silent())
                 }
             }
-            if !(tok_starts_type(st.cur())) {
+            if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
                 st.report("expected type after `=`")
                 if s_cut {
                     st.set_abort_prop(true)
@@ -3391,7 +3391,7 @@ fn parse_impl_method(st: PState) -> CapVal {
             }
             if st.cur().tk == Tk.Arrow {
                 let _ = st.advance()
-                if !(tok_starts_type(st.cur())) {
+                if !((st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))) {
                     st.report("expected return type after `->`")
                     if s_cut {
                         st.set_abort_prop(true)

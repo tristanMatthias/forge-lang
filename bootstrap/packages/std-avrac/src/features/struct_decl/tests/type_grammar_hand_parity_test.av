@@ -124,9 +124,23 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" 
         // t-myz7.1 in the emitted output: a single guard admitting either form, with the
         // alias branch as an `else if` INSIDE it. Two adjacent `if`s here would mean the
         // alias group is still tried after the brace form completed, which is the bug.
-        let src = decl_src()
-        src.contains("if st.cur().tk == Tk.LeftBrace || tok_starts_type(st.cur()) {") &&
-            src.contains("} else if tok_starts_type(st.cur()) {")
+        // t-47hc.4.3 — asserted on the SHAPE, not on the FIRST-set text. This used to pin
+        // the guard verbatim (`… || tok_starts_type(st.cur()) {`), so widening `type_expr`'s
+        // declared FIRST for the quote-splice `~` turned it red without anything about the
+        // exclusivity it exists to protect having changed. A guard that fails on an
+        // unrelated edit trains people to update it without reading it.
+        //
+        // Bounded to the rule's OWN body: `LeftBrace ||` and `} else if` both appear in
+        // several emitted rules, so a whole-file `contains` proves nothing about this one.
+        let rule = emitted_rule_body(decl_src(), "fn parse_type_decl(st: PState) -> CapVal")
+        rule != "" &&
+            // ONE opener admitting either form — the brace test is the left disjunct...
+            rule.contains("if st.cur().tk == Tk.LeftBrace || ") &&
+            // ...and the alias form is an `else if` INSIDE it. Two adjacent `if`s would mean
+            // the alias group is still tried after the brace form completed — the bug.
+            rule.contains("} else if ") &&
+            // and the alias branch tests the TYPE first, whatever that expands to today
+            rule.contains("tok_starts_type(st.cur())")
     }
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
