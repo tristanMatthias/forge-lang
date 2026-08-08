@@ -38,6 +38,12 @@
 // The ladder survives only under `parse_file_expression` (the expression-only
 // entry the control uses) and under `@hand` leaves, of which the production
 // grammars have none.
+//
+// `parse_file_expression` IS a production entry, though — `bs2 expr` and
+// `bs2 eval` reach it — so the tail is not dead weight yet, and the third spec
+// draws that boundary exactly: over 53 expression forms, every VALID one is
+// answered by the generated parser and the 19 that fall through are all
+// MALFORMED. What remains is therefore error RECOVERY for one entry, not parsing.
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{avra_process_env_set}
 
@@ -69,18 +75,30 @@ fn write_fixture(name: string, src: string) -> string {
     path
 }
 
-/// Count `[hand-fallback]` lines from a `bs2 check` of `src` under `env`.
+/// Count `[hand-fallback]` lines from a `bs2 <cmd>` of `src` under `env`.
 /// Diagnostics from the fixture itself are irrelevant — only the marker is counted,
 /// so an invalid fixture (which SHOULD produce errors) measures the same thing a
 /// valid one does.
-fn fallback_lines(env: string, name: string, src: string) -> int {
+fn fallback_lines_cmd(env: string, cmd: string, name: string, src: string) -> int {
     let path = write_fixture(name, src)
-    let out = avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1")
+    let out = avra_shell_exec("${env} ./build/bs2 ${cmd} '${path}' 2>&1")
     mut n = 0
     for line in out.split("\n") {
         if line.contains("[hand-fallback]") { n = n + 1 }
     }
     n
+}
+
+/// The whole-program front end — what `build` / `run` / `check` all go through.
+fn fallback_lines(env: string, name: string, src: string) -> int {
+    fallback_lines_cmd(env, "check", name, src)
+}
+
+/// The EXPRESSION-only front end (`bs2 expr`, and `bs2 eval` alongside it): the
+/// one production command that reaches `parse_expression`, via
+/// `parse_expr_or_fail` -> `parse_expression_source` -> `parse_file_expression`.
+fn expr_cmd_fallbacks(name: string, src: string) -> int {
+    fallback_lines_cmd("AVRA_REFUSE_HAND_FALLBACK='*'", "expr", name, src)
 }
 
 /// Drive the EXPRESSION dispatcher in-process and count the marker lines the probe
@@ -138,6 +156,50 @@ spec "t-47hc.5: the hand family tails are UNREACHABLE through the production fro
     // flag. Naming one family must not report another's.
     then "the allowlist form is scoped — naming only `type` reports no expr/stmt" {
         fallback_lines("AVRA_REFUSE_HAND_FALLBACK='type'", "scoped", valid_src()) == 0
+    }
+}
+
+// `bs2 expr` / `bs2 eval` are the ONLY production commands that reach the
+// expression ladder, and they draw the boundary the whole-program sweep cannot
+// see. Measured over 53 expression forms: every VALID one is answered by the
+// generated parser, and the 19 that fall through are all MALFORMED — including
+// three (`a is Foo`, `spawn f()`, `dyn T`) that look valid and are not, since the
+// hand parser rejects them too (`is` takes a `.Variant`, `spawn` takes a block,
+// and `dyn T` is a type rather than an expression).
+//
+// So the expression tail is not dead weight yet: it owns error RECOVERY for this
+// entry. That is the remaining work, and stating it as a measurement rather than
+// an impression is the point — the tail can be deleted once the expression view
+// recovers on its own, and not before.
+spec "t-47hc.5: `bs2 expr` — the grammar owns VALID input; the tail owns recovery" {
+    given "the expression-only front end is probed directly" {
+        true
+    }
+
+    // The guard: a routing regression that pushed valid expressions back onto the
+    // hand parser would be invisible everywhere else, because the two agree on
+    // valid input by construction. Here it is a red test.
+    then "no valid expression form falls back to the hand ladder" {
+        expr_cmd_fallbacks("e_arith",  "1 + 2 * 3 - 4 / 5\n") == 0 &&
+        expr_cmd_fallbacks("e_chain",  "a?.b ?? c\n") == 0 &&
+        expr_cmd_fallbacks("e_pipe",   "x |> f |> g\n") == 0 &&
+        expr_cmd_fallbacks("e_lambda", "(x) -> x + 1\n") == 0 &&
+        expr_cmd_fallbacks("e_match",  "match v { .A -> 1, _ -> 2 }\n") == 0 &&
+        expr_cmd_fallbacks("e_struct", "Foo { x: 1, y: 2 }\n") == 0 &&
+        expr_cmd_fallbacks("e_post",   "a.b.c(1)[2]\n") == 0 &&
+        expr_cmd_fallbacks("e_isvar",  "a is .Some\n") == 0 &&
+        expr_cmd_fallbacks("e_in",     "x in [1, 2]\n") == 0 &&
+        expr_cmd_fallbacks("e_generic", "f<int>(3)\n") == 0
+    }
+
+    // The vacuity control for the row above, and the honest record of the gap: on
+    // MALFORMED input this entry still reaches the tail. If this ever returns 0,
+    // the expression view has learned to recover and the tail is deletable — so a
+    // red here is good news, and the fix is to delete the tail, not the assertion.
+    then "malformed expressions DO still reach the tail (the remaining gap)" {
+        expr_cmd_fallbacks("e_bad_trail", "1 +\n") > 0 &&
+        expr_cmd_fallbacks("e_bad_open",  "f(\n") > 0 &&
+        expr_cmd_fallbacks("e_bad_lead",  "* 3\n") > 0
     }
 }
 
