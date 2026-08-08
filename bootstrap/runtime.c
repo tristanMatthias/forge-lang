@@ -5347,15 +5347,87 @@ static char avra_cgroup_v1_mem_dir[PATH_MAX];
 // Find the legacy memory controller's hierarchy root and mount point. Unlike
 // v2 there is one mount per controller, so the fstype alone is not enough —
 // the `memory` controller must appear in the mount's super options.
-static int avra_cgroup_v1_mem_mount(char* root, size_t root_cap, char* mount, size_t mount_cap) {
-    int fd = open("/proc/self/mountinfo", O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return 0;
-    char buf[65536];
-    ssize_t n;
-    do { n = read(fd, buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
+// mountinfo escapes space, tab, newline and backslash in the root and
+// mount-point fields as three-digit octal (`\040` for a space). Decoding is
+// not cosmetic: an undecoded `\040` makes the assembled path fail to open, so
+// the controller would read as absent — the same silent "no limit" answer this
+// whole path exists to eliminate.
+static void avra_mountinfo_unescape(const char* src, size_t len, char* out, size_t cap) {
+    size_t o = 0;
+    for (size_t i = 0; i < len && o + 1 < cap; i++) {
+        if (src[i] == '\\' && i + 3 < len
+            && src[i + 1] >= '0' && src[i + 1] <= '3'
+            && src[i + 2] >= '0' && src[i + 2] <= '7'
+            && src[i + 3] >= '0' && src[i + 3] <= '7') {
+            out[o++] = (char)(((src[i + 1] - '0') << 6)
+                            | ((src[i + 2] - '0') << 3)
+                            |  (src[i + 3] - '0'));
+            i += 3;
+        } else {
+            out[o++] = src[i];
+        }
+    }
+    out[o] = '\0';
+}
+
+// Copy the nth (1-based) space-delimited mountinfo field, unescaped, bounded
+// by the caller's capacity. Replaces an `sscanf("%1023s")` whose width was a
+// hardcoded literal that no longer matched its PATH_MAX buffer — a width
+// cannot be derived from PATH_MAX by macro (a stringified `(PATH_MAX-1)` is
+// not a valid conversion width), so the field is walked explicitly instead.
+static int avra_mountinfo_field(const char* line, int n, char* out, size_t cap) {
+    const char* p = line;
+    for (int i = 1; i < n; i++) {
+        while (*p != '\0' && *p != ' ') p++;
+        while (*p == ' ') p++;
+        if (*p == '\0') return 0;
+    }
+    size_t len = 0;
+    while (p[len] != '\0' && p[len] != ' ') len++;
+    if (len == 0 || cap == 0) return 0;
+    avra_mountinfo_unescape(p, len, out, cap);
+    return 1;
+}
+
+// Read a whole /proc file into a heap buffer. mountinfo is a seq_file: a
+// single read() returns only what fits, so on a host with many mounts the
+// `memory` line can sit past the first bufferful or be split across two. The
+// old single-read version answered "no v1 memory controller" in that case and
+// fell back to a default mount path — restoring the exact silent-host-memory
+// defect this change removes, but only on busy hosts.
+static char* avra_read_proc_file(const char* path) {
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return NULL;
+    size_t cap = 65536, len = 0;
+    char* buf = (char*)malloc(cap);
+    if (buf == NULL) { close(fd); return NULL; }
+    for (;;) {
+        if (len + 1 >= cap) {
+            size_t next = cap * 2;
+            char* grown = (char*)realloc(buf, next);
+            if (grown == NULL) { free(buf); close(fd); return NULL; }
+            buf = grown;
+            cap = next;
+        }
+        ssize_t n = read(fd, buf + len, cap - len - 1);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            free(buf);
+            close(fd);
+            return NULL;
+        }
+        if (n == 0) break;
+        len += (size_t)n;
+    }
     close(fd);
-    if (n <= 0) return 0;
-    buf[n] = '\0';
+    buf[len] = '\0';
+    return buf;
+}
+
+static int avra_cgroup_v1_mem_mount(char* root, size_t root_cap, char* mount, size_t mount_cap) {
+    char* buf = avra_read_proc_file("/proc/self/mountinfo");
+    if (buf == NULL) return 0;
+    int found = 0;
     char* line = buf;
     while (line && *line) {
         char* eol = strchr(line, '\n');
@@ -5372,18 +5444,18 @@ static int avra_cgroup_v1_mem_mount(char* root, size_t root_cap, char* mount, si
             size_t opts_len = 0;
             while (p[opts_len] != '\0' && p[opts_len] != ' ') opts_len++;
             if (avra_csv_has_token(p, opts_len, "memory")) {
-                char found_root[PATH_MAX];
-                char found_mount[PATH_MAX];
-                if (sscanf(line, "%*s %*s %*s %1023s %1023s", found_root, found_mount) == 2) {
-                    snprintf(root, root_cap, "%s", found_root);
-                    snprintf(mount, mount_cap, "%s", found_mount);
-                    return 1;
+                // Fields 4 and 5 are the hierarchy root and the mount point.
+                if (avra_mountinfo_field(line, 4, root, root_cap)
+                    && avra_mountinfo_field(line, 5, mount, mount_cap)) {
+                    found = 1;
+                    break;
                 }
             }
         }
         line = eol ? eol + 1 : NULL;
     }
-    return 0;
+    free(buf);
+    return found;
 }
 
 // Locate this process's v1 memory cgroup from the "N:memory:/path" line.
@@ -5457,8 +5529,14 @@ static int64_t avra_cgroup_v1_mem_bytes(const char* name) {
     if (!(*q >= '0' && *q <= '9')) return 0;
     int64_t out = 0;
     while (*q >= '0' && *q <= '9') {
-        if (out > INT64_MAX / 10) return 0;
-        out = out * 10 + (*q - '0');
+        // Guard the ADD as well as the multiply: at out == INT64_MAX/10 the
+        // multiply is still safe but the final digit can carry past the max,
+        // and signed overflow is UB rather than a wrapped value we could
+        // detect afterwards. Kernel values never reach here; a malformed or
+        // future file value can.
+        int digit = *q - '0';
+        if (out > (INT64_MAX - digit) / 10) return 0;
+        out = out * 10 + digit;
         q++;
     }
     return out;
@@ -5481,6 +5559,17 @@ static int64_t avra_cgroup_v1_memory_current_kb(void) {
 // falling back to v1. Both figures come from the SAME hierarchy by
 // construction: pairing a v2 limit with a v1 usage would compute headroom
 // across two different accounting domains. 0/0 means no finite limit.
+// Limit-only sibling: which hierarchy answers is decided the same way, so the
+// two cannot disagree about WHICH limit is in force. Callers that need only
+// the ceiling (capacity, scope kind) use this and skip a usage-file read they
+// would discard — resource_snapshot() calls capacity, available and scope in
+// sequence on every sample.
+static int64_t avra_cgroup_memory_limit_kb(void) {
+    int64_t limit = avra_cgroup_v2_memory_limit_kb();
+    if (limit > 0) return limit;
+    return avra_cgroup_v1_memory_limit_kb();
+}
+
 static void avra_cgroup_memory_kb(int64_t* limit_kb, int64_t* current_kb) {
     int64_t limit = avra_cgroup_v2_memory_limit_kb();
     if (limit > 0) {
@@ -5616,9 +5705,7 @@ static int64_t avra_macos_memory_available_kb(void) {
 // cap wins over host RAM; otherwise the host capacity is the honest scope.
 int64_t avra_resource_memory_capacity_mb(void) {
 #ifdef __linux__
-    int64_t cgroup, cgroup_used;
-    avra_cgroup_memory_kb(&cgroup, &cgroup_used);
-    (void)cgroup_used;
+    int64_t cgroup = avra_cgroup_memory_limit_kb();
     if (cgroup > 0) return cgroup / 1024;
     int64_t host = avra_mem_total_kb();
     return host > 0 ? host / 1024 : -1;
@@ -5677,9 +5764,7 @@ int64_t avra_resource_pressure_level(void) {
 // 0 unknown, 1 host, 2 finite cgroup.
 int64_t avra_resource_scope_kind(void) {
 #ifdef __linux__
-    int64_t limit, current;
-    avra_cgroup_memory_kb(&limit, &current);
-    (void)current;
+    int64_t limit = avra_cgroup_memory_limit_kb();
     if (limit > 0) return 2;
     return avra_mem_total_kb() > 0 ? 1 : 0;
 #elif defined(__APPLE__)

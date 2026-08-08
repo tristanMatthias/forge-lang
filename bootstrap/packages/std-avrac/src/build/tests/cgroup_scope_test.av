@@ -98,9 +98,18 @@ run_in() {
 }
 
 # v2: a single unified hierarchy, the process's group is the '0::' line.
-if [ -f /sys/fs/cgroup/cgroup.controls ]; then
+# The marker file is `cgroup.controllers`. It was written `cgroup.controls`
+# here, which exists nowhere — so this branch never ran on ANY host, every v2
+# machine fell through to the v1 branch below, and there the v2 `0::/path`
+# line has an empty controller field so the awk matched nothing and the whole
+# constrained case reported UNAVAILABLE. A skip that reads as a pass.
+if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
   rel=$(awk -F: '$1 == \"0\" { print $3 }' /proc/self/cgroup)
-  dir=/sys/fs/cgroup$rel/$name
+  parent=/sys/fs/cgroup$rel
+  dir=$parent/$name
+  # A v2 child exposes memory.max only once the PARENT delegates the
+  # controller; without this the write below fails and the branch skips.
+  echo +memory > \"$parent/cgroup.subtree_control\" 2>/dev/null
   if mkdir -p \"$dir\" 2>/dev/null && echo $limit_bytes > \"$dir/memory.max\" 2>/dev/null; then
     run_in \"$dir\"
     reap \"$dir\"
@@ -145,6 +154,25 @@ fn probe_value(out: string, key: string) -> int {
     if digits == "" { return -1 } else { int(digits) }
 }
 
+/// The BOX's physical total in MB, straight from /proc/meminfo — deliberately
+/// NOT routed through the sampler under test. The sampler answers "what can
+/// THIS process use", which is the enclosing cgroup limit when one is finite;
+/// using it as the "host" side of a probe-vs-host comparison would make the
+/// comparison degenerate exactly on the constrained runners this change is
+/// about. Returns -1 when unreadable, which callers treat as "cannot
+/// discriminate" rather than as a failure.
+fn host_total_mb() -> int {
+    let raw = avra_shell_exec("awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || true")
+    mut digits = ""
+    mut i = 0
+    while i < raw.length {
+        let ch = raw[i]
+        if ch >= "0" && ch <= "9" { digits = digits + ch } else { i = raw.length }
+        i = i + 1
+    }
+    if digits == "" { return -1 } else { int(digits) / 1024 }
+}
+
 spec "the resource sampler reports the scope's memory, not the box's (t-kdyj.9)" {
     given "no cgroup limit on the test process itself" {
         then "capacity and available are positive and self-consistent" {
@@ -180,8 +208,14 @@ spec "the resource sampler reports the scope's memory, not the box's (t-kdyj.9)"
             let built = avra_shell_exec_status(
                 "bash scripts/diagnose.sh --slot-exec ./build/bs2 build '${src}' -o '${bin}' > '${bin}.build.log' 2>&1")
             if built != 0 {
-                println("[cgroup_scope] SKIP — could not build the probe; see ${bin}.build.log")
-                true
+                // NOT a skip. An unavailable cgroup is a property of the box;
+                // a three-line probe failing to compile, llc or link is a
+                // regression in this repository, and skipping it would let a
+                // real breakage report green while silently retiring the whole
+                // constrained case below.
+                println("[cgroup_scope] FAIL — could not build the probe:")
+                println(avra_selfhost_read_file("${bin}.build.log"))
+                false
             } else {
                 let limit_mb = 512
                 let out = run_in_limited_cgroup(bin, limit_mb, "${bin}.run.log")
@@ -194,7 +228,14 @@ spec "the resource sampler reports the scope's memory, not the box's (t-kdyj.9)"
                     let cap = probe_value(out, "capacity_mb")
                     let avail = probe_value(out, "available_mb")
                     let kind = probe_value(out, "scope_kind")
-                    let host_mb = avra_resource_memory_capacity_mb()
+                    // The BOX's total, read straight from /proc/meminfo — NOT
+                    // avra_resource_memory_capacity_mb(), which reports the
+                    // TEST process's own scope and, after this very change,
+                    // collapses to the enclosing cgroup limit whenever that is
+                    // finite. Asserting against it would fail on a CI runner
+                    // capped at or below 512MB — reporting an environment
+                    // property as a code defect.
+                    let host_mb = host_total_mb()
 
                     // The three claims that fail on the pre-fix sampler, which
                     // reported 16075 / 15125 / 1 for this exact setup:
@@ -203,11 +244,17 @@ spec "the resource sampler reports the scope's memory, not the box's (t-kdyj.9)"
                     //      budgets against, and the one that was 31x wrong,
                     //   3. the scope is reported as a finite cgroup.
                     // (1) alone would be satisfiable by a lucky small box, so
-                    // (3) carries the "we actually saw the cgroup" claim.
+                    // (3) carries the "we actually saw the cgroup" claim, and
+                    // the host comparison below only DISCRIMINATES on a box
+                    // bigger than the limit — so it is asserted only there.
+                    let host_discriminates = host_mb > limit_mb
+                    if !host_discriminates {
+                        println("[cgroup_scope] note — host total ${string(host_mb)}MB <= ${string(limit_mb)}MB; the probe-vs-host comparison cannot discriminate on this box and is not asserted")
+                    }
                     cap == limit_mb
                         && avail > 0 && avail <= limit_mb
                         && kind == SCOPE_CGROUP
-                        && host_mb > limit_mb
+                        && (!host_discriminates || cap < host_mb)
                         // The probe cgroup must be gone. Without this the test
                         // leaked one group per run: `rmdir` raced the kernel
                         // detaching the exec'd task, returned EBUSY, and the
