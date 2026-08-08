@@ -54,11 +54,11 @@ fn mode_env(mode: string) -> string {
     // native that was harmless (no native table rule existed, so the expression path
     // fell through to `@hand(primary_base)` -> `parse_table_literal` anyway); once the
     // rule landed it would mean the table assertions compare native against native.
-    if mode == "hand" { return "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
-    if mode == "emit" { return "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
+    if mode == "hand" { return "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
+    if mode == "emit" { return "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
     // production — the static parser, then the INTERPRETER re-parse on `had_error`
     // (t-zrn3): the path users actually run, and the one the other two are blind to.
-    "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+    "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
 }
 
 /// The full diagnostic MESSAGES, not merely their F-codes (t-myz7, the `table` slice).
@@ -750,7 +750,6 @@ fn rtree_at(mode: string, source: string) -> string {
     let f = mode_flags(mode)
     p.decl_flip = f.decl_flip
     p.decl_static = f.decl_static
-    p.no_static_fallback = f.no_static_fallback
     p.expr_flip = f.expr_flip
     p.expr_static = f.expr_static
     let r = p.parse_file_program()
@@ -790,16 +789,16 @@ fn rtree_at(mode: string, source: string) -> string {
 ///   hand — both off, so the gate is false and `parse_expression_hand` runs
 ///   emit — expr_static on: the generated static parser
 ///   exec — expr_flip on + expr_static off: the Grammar-tree interpreter
-type RouteFlags = { decl_flip: bool, decl_static: bool, no_static_fallback: bool, expr_flip: bool, expr_static: bool }
+type RouteFlags = { decl_flip: bool, decl_static: bool, expr_flip: bool, expr_static: bool }
 
 fn mode_flags(mode: string) -> RouteFlags {
     if mode == "hand" {
-        return RouteFlags { decl_flip: false, decl_static: true, no_static_fallback: false, expr_flip: false, expr_static: false }
+        return RouteFlags { decl_flip: false, decl_static: true, expr_flip: false, expr_static: false }
     }
     if mode == "emit" {
-        return RouteFlags { decl_flip: true, decl_static: true, no_static_fallback: true, expr_flip: false, expr_static: true }
+        return RouteFlags { decl_flip: true, decl_static: true, expr_flip: false, expr_static: true }
     }
-    RouteFlags { decl_flip: true, decl_static: false, no_static_fallback: false, expr_flip: true, expr_static: false }
+    RouteFlags { decl_flip: true, decl_static: false, expr_flip: true, expr_static: false }
 }
 
 
@@ -950,7 +949,6 @@ fn poslist(static_raw: bool, source: string) -> string {
     let f = mode_flags(if static_raw { "emit" } else { "hand" })
     p.decl_flip = f.decl_flip
     p.decl_static = f.decl_static
-    p.no_static_fallback = f.no_static_fallback
     p.expr_flip = f.expr_flip
     p.expr_static = f.expr_static
     let r = p.parse_file_program()
@@ -970,7 +968,6 @@ fn rdiags(static_raw: bool, source: string) -> int {
     let f = mode_flags(if static_raw { "emit" } else { "hand" })
     p.decl_flip = f.decl_flip
     p.decl_static = f.decl_static
-    p.no_static_fallback = f.no_static_fallback
     p.expr_flip = f.expr_flip
     p.expr_static = f.expr_static
     let r = p.parse_file_program()
@@ -1185,7 +1182,7 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
     // They are ROUTED now — `comp_block_item` carries all four arms (raw-named,
     // raw-bare, nested-named, nested-bare, method shorthand) with `declaration` as the
     // honest unguarded tail. Measured: the four forms compile with BOTH production
-    // leaves refused (`AVRA_REFUSE_HAND_LEAF='*' AVRA_NO_STATIC_FALLBACK=1`), 0 refusals.
+    // leaves refused (`AVRA_REFUSE_HAND_LEAF='*'`), 0 refusals.
     //
     // The assertions stay exactly as they are. They were written as a
     // declined-vs-hand parity check and they now serve as the routed-vs-hand parity

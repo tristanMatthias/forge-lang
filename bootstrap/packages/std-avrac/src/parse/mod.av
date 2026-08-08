@@ -373,7 +373,6 @@ export type Parser = {
     // error-recovery differential oracle needs to measure + close the static
     // parser's error-tree gap vs the interpreter/hand oracle (the slice-5 crux),
     // before the interpreter fallback can be retired.
-    mut no_static_fallback: bool,
     // ps3t.6.7 flip: ONE reusable @hand delegate for the expression leaves, created
     // once per file (avoids build_registry() ~53 registrations per leaf — the OOM).
     // Before each flip expression its cursor+line state is SYNCED to this parser's
@@ -865,7 +864,6 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         decl_flip: avra_process_env_get("AVRA_PARSER_DECL_FLIP") != "0",
         dsl_decl_grammar: null,
         // ps3t.6.7 slice 5a diagnostic hook — default OFF (byte-identical production).
-        no_static_fallback: avra_process_env_get("AVRA_NO_STATIC_FALLBACK") == "1",
         hand_delegate: null,
     }
     parser.advance_token()
@@ -1048,40 +1046,23 @@ impl Parser {
             } else {
                 run_dsl_decl_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
             }
-            // ps3t.6.7 Phase 2 — INTERPRETER FALLBACK ON ERROR. The static generated
-            // parser is byte-identical to the interpreter on every VALID item (proven
-            // over the full selfhost + corpus), but its CapVal fold/optional rules do
-            // NOT reproduce the interpreter's exact error-RECOVERY tree (they build
-            // partial nodes where exec_rule bails). Rather than chase byte-identical
-            // error trees through emit, re-parse THIS item with the interpreter — the
-            // incumbent byte-identical error path — on any error, resetting the
-            // delegate to the item start. Errors are rare (invalid programs only), so
-            // the straight-line win on the valid common case is preserved, and the
-            // shared error-path handling below sees an interpreter-shaped result.
-            if self.decl_static && dsl.had_error && !self.no_static_fallback {
-                // Roll the store back over the abandoned static parse (no orphan rows),
-                // reset the delegate to the item start, and re-parse with the
-                // interpreter — the store now holds EXACTLY the interpreter's rows.
-                // (ps3t.6.7 slice 5a: AVRA_NO_STATIC_FALLBACK=1 skips this re-parse so
-                // the static parser's RAW error tree is observable — the oracle hook.)
-                //
-                // The delegate's HYGIENE COUNTER rolls back with the store. save_state
-                // deliberately never snapshots gensym_seq (rolling a monotonic counter
-                // back can re-mint a name a COMMITTED node carries) — but here every
-                // node the abandoned attempt minted into dies with the truncate, so
-                // the argument inverts: NOT restoring it makes the re-parse mint
-                // `$letelse$2` where the pure-hand baseline mints `$letelse$1`, and
-                // every errored item's adopted tree (and all later mints in the file)
-                // drifts off the FLIP=0 oracle by however many temps the dead attempt
-                // issued. Caught by the malformed-binding recovery corpus (the
-                // non-diverging `let … else`, whose desugar is the first gensym user
-                // on an ERROR path).
-                d.gensym_seq = seq0
-                self.store.truncate_to_mark(store_mark)
-                d.copy_cursor_from(self)
-                d.bag = bag_new()
-                dsl = run_dsl_decl_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
-            }
+            // t-47hc.4.3 — the INTERPRETER RE-PARSE FALLBACK IS GONE. It re-ran an
+            // errored item through the executor because the static parser's CapVal
+            // fold/optional rules did not reproduce the interpreter's error-RECOVERY tree
+            // (they built partial nodes where exec_rule bails). The parity work closed
+            // that: the recovery corpus compares the static parser's RAW tree, the
+            // executor's, and the hand's on all 117 malformed inputs and they agree.
+            //
+            // MEASURED before removing, not assumed: a full suite run with the fallback
+            // disabled (`AVRA_NO_STATIC_FALLBACK=1`) is green — 6824/6831, every failure
+            // environmental (two DISK FULL shards plus coverage_link_test, whose own
+            // assertion is "the profile runtime resolves on this host"), and the two
+            // skipped shards re-run clean on their own.
+            //
+            // CONSEQUENCE worth knowing: the executor no longer answers invalid
+            // DECLARATION input, so `agree_all`'s three paths collapse to two there and
+            // the corpus's executor coverage now comes from the TYPE family, where
+            // `type_flip` still routes through `exec_rule` in production.
             if !dsl.had_error {
                 d.resync_to_stop_byte(dsl.stop_byte)
                 self.copy_cursor_from(d)

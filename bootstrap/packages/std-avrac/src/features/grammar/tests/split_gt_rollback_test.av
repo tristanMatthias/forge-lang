@@ -78,21 +78,21 @@ fn check_rc(name: string, env: string, src: string) -> int {
 spec "t-47hc Phase 4: a `>>` header survives a `<`-speculation in the body on every path" {
     then "the plain export fn compiles clean on all four parser paths" {
         check_rc("plain_dflt", "", fixture_plain()) == 0 &&
-            check_rc("plain_emit", "AVRA_NO_STATIC_FALLBACK=1", fixture_plain()) == 0 &&
+            check_rc("plain_emit", "", fixture_plain()) == 0 &&
             check_rc("plain_exec", "AVRA_PARSER_DECL_STATIC=0", fixture_plain()) == 0 &&
             check_rc("plain_hand", "AVRA_PARSER_DECL_FLIP=0", fixture_plain()) == 0
     }
 
     then "the doc-wrapped variant compiles clean on all four parser paths" {
         check_rc("wrap_dflt", "", fixture_wrapped()) == 0 &&
-            check_rc("wrap_emit", "AVRA_NO_STATIC_FALLBACK=1", fixture_wrapped()) == 0 &&
+            check_rc("wrap_emit", "", fixture_wrapped()) == 0 &&
             check_rc("wrap_exec", "AVRA_PARSER_DECL_STATIC=0", fixture_wrapped()) == 0 &&
             check_rc("wrap_hand", "AVRA_PARSER_DECL_FLIP=0", fixture_wrapped()) == 0
     }
 
     then "a channel<T<U>> resyncs onto the second `>`, not the restored `>>`" {
         check_rc("chan_dflt", "", fixture_channel()) == 0 &&
-            check_rc("chan_emit", "AVRA_NO_STATIC_FALLBACK=1", fixture_channel()) == 0 &&
+            check_rc("chan_emit", "", fixture_channel()) == 0 &&
             check_rc("chan_exec", "AVRA_PARSER_DECL_STATIC=0", fixture_channel()) == 0 &&
             check_rc("chan_hand", "AVRA_PARSER_DECL_FLIP=0", fixture_channel()) == 0
     }

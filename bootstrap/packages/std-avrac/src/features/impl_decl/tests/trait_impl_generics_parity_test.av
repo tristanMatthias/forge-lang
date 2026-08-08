@@ -98,7 +98,6 @@ fn hand_only_program(src: string) -> string {
     mut p = parser_new(src)
     p.decl_flip = false
     p.decl_static = false
-    p.no_static_fallback = false
     p.type_flip = false
     p.type_static = false
     p.pat_flip = false

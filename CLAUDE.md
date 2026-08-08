@@ -423,9 +423,24 @@ is the difference between a real measurement and a false one:
 | env | which parser |
 |---|---|
 | `AVRA_PARSER_DECL_FLIP=0` | the HAND parser — the oracle |
-| `AVRA_NO_STATIC_FALLBACK=1` | the EMIT-generated static parser, raw |
 | `AVRA_PARSER_DECL_STATIC=0` | the grammar EXECUTOR (interpreter) |
-| *(none)* | **production**: static → `had_error` → re-parse the item with the EXECUTOR |
+| *(none)* | **production**: the EMIT-generated static parser |
+
+**The interpreter re-parse fallback is DELETED (t-47hc.4.3), and with it
+`AVRA_NO_STATIC_FALLBACK`.** Production used to be "static → `had_error` → re-parse the
+item with the EXECUTOR", because the static parser's CapVal fold/optional rules did not
+reproduce the interpreter's error-RECOVERY tree. The parity work closed that gap and the
+recovery corpus measures it on all 117 malformed inputs. Removal was MEASURED first: a
+full suite with the fallback disabled was green (6824/6831, every failure environmental),
+including a targeted re-run of the two shards that had been skipped for disk.
+
+Two consequences to know. **The executor no longer answers invalid DECLARATION input**, so
+`agree_all`'s three paths collapse to two there; the corpus's executor coverage now comes
+from the TYPE family, where `type_flip` still routes through `exec_rule` in production —
+which is also why the t-47hc rule about never bolting behaviour onto `exec_*` still
+stands. And `--parser-probe`'s EMIT and PROD rows now name the same engine and print
+identically; they are kept separate on purpose, so a reintroduced fallback shows up as a
+divergence between them rather than hiding behind a collapsed row.
 
 Don't set these by hand — three `diagnose.sh` modes drive all four paths with EVERY
 routing field pinned (set only the one field that names your mode and the rest stay

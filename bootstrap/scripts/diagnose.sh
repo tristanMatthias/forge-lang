@@ -5138,10 +5138,16 @@ dt_run_equiv_check() {
 # one and the others stay ambient, so running under `AVRA_PARSER_DECL_FLIP=0`
 # collapses several modes onto the hand and the probe compares it against
 # itself — the vacuity class these probes exist to detect.
-PARSER_MODE_HAND="AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_EMIT="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_PROD="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_EXEC="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=0 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=1"
+# t-47hc.4.3 — `AVRA_NO_STATIC_FALLBACK` is GONE from these strings because the thing it
+# switched off no longer exists: the interpreter re-parse fallback is deleted, so the
+# static generated parser IS the production declaration path. EMIT and PROD therefore
+# name the same engine now and the probe prints two identical rows for them — kept
+# separate deliberately, so that if a fallback is ever reintroduced the probe shows it
+# rather than hiding it behind a collapsed row.
+PARSER_MODE_HAND="AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_EMIT="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_PROD="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_EXEC="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=1"
 
 # Resolve the probe's input to a file: `-f <path>` uses it directly, otherwise
 # the argument IS the source text.
