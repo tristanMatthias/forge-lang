@@ -222,8 +222,15 @@ die()  { err "$*"; exit 1; }
 # $STAT_MTIME deliberately.
 if stat -c %Y . >/dev/null 2>&1; then
   STAT_MTIME="stat -c %Y"
+  # Same probe, same platform split, but emitting `<mtime> <path>` so a
+  # reporter can NAME the file it found. Kept beside $STAT_MTIME rather than
+  # derived from it: the two spellings differ in the name token as well
+  # (%n vs %N), so deriving one from the other would re-hardcode the very
+  # portability assumption the probe above exists to remove.
+  STAT_MTIME_NAME="stat -c %Y %n"
 else
   STAT_MTIME="stat -f %m"
+  STAT_MTIME_NAME="stat -f %m %N"
 fi
 
 # The C LINK INPUTS count as sources (t-drl0). Every binary this gates — bs2,
@@ -258,9 +265,26 @@ source_newer_than() {
 # both predicates below — a second copy of this find is how the two would
 # silently start disagreeing about what counts as a source.
 newest_source_mtime() {
-  { find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -not -name '*_test.av' -exec $STAT_MTIME {} + 2>/dev/null
-    $STAT_MTIME "$RUNTIME_C" "$BOOTSTRAP_DIR/llvm_wrapper.c" 2>/dev/null
-  } | sort -rn | head -1
+  compiler_source_paths | tr '\n' '\0' | xargs -0 $STAT_MTIME 2>/dev/null | sort -rn | head -1
+}
+
+# ONE definition of "what counts as a compiler source", emitted as PATHS so
+# both the mtime predicates and the reporter below derive from the same set.
+# The warning above about a second copy of this find is why this is a function
+# and not two inlined copies: newest_source_mtime answers "is anything newer"
+# and newest_source_entry answers "which file, and when" — if those ever
+# disagreed about the source set, the reporter would name a file that is not
+# the one that actually made the binary stale, which is worse than silence.
+compiler_source_paths() {
+  find "$CLI_SRC_DIR" "$LIB_SRC_DIR" -name '*.av' -not -name '*_test.av' -print 2>/dev/null
+  printf '%s\n' "$RUNTIME_C" "$BOOTSTRAP_DIR/llvm_wrapper.c"
+}
+
+# `<mtime> <path>` of the newest source. Display-side sibling of
+# newest_source_mtime; the STALENESS DECISION stays with the predicates, so a
+# quirk here can only ever mis-name a file, never mis-classify a tree.
+newest_source_entry() {
+  compiler_source_paths | tr '\n' '\0' | xargs -0 $STAT_MTIME_NAME 2>/dev/null | sort -rn | head -1
 }
 
 # STRICT sibling of source_newer_than (`-gt`, not `-ge`): true only when a
@@ -2585,6 +2609,42 @@ mode_bs2_stale_check() {
     exit 0
   fi
   echo "fresh"
+}
+
+# t-kdyj.10: the OPERATOR-FACING half of the staleness question. Prints one
+# line naming both paths and both timestamps when build/bs2 genuinely predates
+# a compiler source, and NOTHING otherwise. Always rc 0 — this reports, it does
+# not gate, and a reporter that can fail a caller is a reporter that callers
+# learn to ignore.
+#
+# Deliberately a SEPARATE mode rather than extra output on --bs2-stale-check:
+# that probe's contract is one word, and suite_bs2_guard_test matches it with
+# `contains("tie")`, so folding a PATH into its output would make any source
+# file whose name happens to contain `tie` silently satisfy the guard.
+#
+# Why this exists at all: a rebase rewrites working-tree mtimes even when the
+# resulting content is byte-identical, so `bs2` reads as stale and the suite
+# reds with two failures that name nothing about rebasing (the guard firing,
+# correctly, plus a fixture that shells out to the same binary). The
+# information was already in the tree; only the output lacked it.
+mode_bs2_stale_report() {
+  [ -x "$BS2" ] || return 0
+  source_strictly_newer_than "$BS2" || return 0
+  local entry newest_mt newest_path bs2_mt
+  entry=$(newest_source_entry) || return 0
+  [ -n "$entry" ] || return 0
+  newest_mt=${entry%% *}
+  newest_path=${entry#* }
+  bs2_mt=$($STAT_MTIME "$BS2" 2>/dev/null) || return 0
+  echo "[stale] $BS2 ($(fmt_epoch "$bs2_mt")) predates $newest_path ($(fmt_epoch "$newest_mt")) — rebuild before trusting this run"
+}
+
+# Epoch → local HH:MM:SS, falling back to the raw epoch wherever neither date
+# spelling lands. A timestamp nobody can read is not worth failing over.
+fmt_epoch() {
+  date -d "@$1" '+%H:%M:%S' 2>/dev/null \
+    || date -r "$1" '+%H:%M:%S' 2>/dev/null \
+    || echo "$1"
 }
 
 # rcsf.3: run the spec suite under AVRA_RC_STRICT=1. Strict mode lives in
