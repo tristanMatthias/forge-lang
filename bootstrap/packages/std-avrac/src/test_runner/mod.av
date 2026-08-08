@@ -578,41 +578,44 @@ export fn cached_fixture_expand(fixture_path: string) -> string {
     cached_fixture_capture(fixture_path, "./build/bs2 expand '${fixture_path}' 2>&1 || true", "expand")
 }
 
-/// Write `source` to `path` via a QUOTED heredoc. Returns nothing —
-/// pure side effect. Used by spec tests that hand-roll their own
-/// bs2-invocation commands (cmd-specific exit-code tests, warning-cap
-/// tests) and don't want the cached_fixture_run wrapper.
+/// Write `source` to `path`, byte for byte. Returns nothing — pure side
+/// effect. Used by spec tests that hand-roll their own bs2-invocation
+/// commands (cmd-specific exit-code tests, warning-cap tests) and don't
+/// want the cached_fixture_run wrapper.
 ///
 /// The body is written VERBATIM, and must be: this writes fixture
-/// SOURCE, so any transformation on the way in is corruption.
+/// SOURCE, so any transformation on the way in is corruption. Note that
+/// means EXACTLY `source` — no trailing newline is appended, because the
+/// caller did not ask for one.
 ///
-/// It used to `.replace("'", "'\\''")` first, on the stated reasoning
-/// that a single quote would otherwise terminate the surrounding shell
-/// quote. That reasoning does not apply to the construct actually used
-/// here. The delimiter is QUOTED (`<<'EOF'`), which is precisely the
-/// form that disables every expansion and quote rule inside the body —
-/// a `'` in there is ordinary text and cannot terminate anything. So
-/// the escape was never protecting the heredoc; it just wrote the
-/// escape sequence itself into the file, and any fixture containing an
-/// apostrophe came out mangled:
+/// **Not shell-mediated, deliberately.** This used to be a `cat` heredoc,
+/// and every bug it had came from that:
 ///
-///     write_fixture(p, "it's fine")   ->   file contains: it'\''s fine
+///   1. It escaped single quotes (`.replace("'", "'\\''")`) on the stated
+///      reasoning that a `'` would terminate the surrounding shell quote.
+///      The delimiter was QUOTED (`<<'EOF'`) — precisely the form that
+///      disables every quote rule inside the body — so the escape
+///      protected nothing and wrote itself into the file. Any fixture with
+///      an apostrophe came out mangled:
+///          write_fixture(p, "it's fine")  ->  file: it'\''s fine
+///   2. A heredoc ends at a body line equal to its delimiter. Moving off
+///      `EOF` to something implausible shrank that risk but did not remove
+///      it — the body is arbitrary caller data, so ANY fixed delimiter can
+///      collide, and the escape hatch would silently TRUNCATE the fixture.
 ///
-/// Round-trip is now exact (`write_fixture_roundtrip_test`).
-///
-/// The one real hazard of a heredoc is a body line equal to the
-/// delimiter, which would end it early. `EOF` is a plausible line in
-/// fixture source; the delimiter below is not.
+/// A direct atomic write has neither failure mode: there is no shell to
+/// quote for and no terminator to collide with, so the whole class is gone
+/// rather than made unlikely. Pinned by `write_fixture_roundtrip_test`,
+/// which still covers the shell-hazard characters so that reintroducing a
+/// shell-mediated writer goes red.
 export fn write_fixture(path: string, source: string) {
-    avra_shell_exec("cat > '${path}' <<'__AVRA_FIXTURE_EOF__'\n${source}\n__AVRA_FIXTURE_EOF__")
+    let _ = avra_selfhost_write_file(path, source)
 }
 
 /// Convenience: write `source` to `path`, then run it through
-/// `cached_fixture_run`. Centralises the heredoc dance every
-/// fixture-style spec test used to inline. Single-quoted single
-/// quotes in the source are escaped via the standard sh trick
-/// `'\''` so source strings containing quotes don't break the
-/// surrounding heredoc.
+/// `cached_fixture_run`. Centralises the write-then-run dance every
+/// fixture-style spec test used to inline. The source reaches the file
+/// unmodified — see `write_fixture`.
 export fn write_fixture_and_run(path: string, source: string) -> string {
     write_fixture(path, source)
     cached_fixture_capture_src(path, source, fixture_run_cmd(path), "run")

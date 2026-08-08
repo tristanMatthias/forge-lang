@@ -1,36 +1,49 @@
 // WHY: `write_fixture` writes fixture SOURCE, so it must round-trip exactly.
 // Any transformation on the way in is corruption, and corruption here is
 // especially expensive: the fixture is the thing under test, so a mangled body
-// makes the compiler look wrong.
+// makes the compiler look wrong rather than announcing itself as a fixture bug.
 //
-// It used to escape single quotes (`.replace("'", "'\\''")`) before handing the
-// body to a heredoc, on the stated reasoning that a `'` would otherwise
-// terminate the surrounding shell quote. The delimiter is QUOTED (`<<'EOF'`),
-// which is exactly the form that disables every expansion and quote rule inside
-// the body — so the escape protected nothing and simply wrote itself into the
-// file:
+// The writer is a direct atomic write now. It used to be a `cat` heredoc, and
+// both of its bugs came from that:
 //
-//     write_fixture(p, "it's fine")   ->   file contains: it'\''s fine
+//   1. It escaped single quotes (`.replace("'", "'\\''")`) on the stated
+//      reasoning that a `'` would terminate the surrounding shell quote. The
+//      delimiter was QUOTED (`<<'EOF'`) — exactly the form that disables every
+//      quote rule inside the body — so the escape protected nothing and wrote
+//      itself into the file:
 //
-// Anything with an apostrophe was affected: a fixture whose Avra source used a
-// char literal, and every prose comment with a contraction in it.
+//          write_fixture(p, "it's fine")  ->  file contains: it'\''s fine
 //
-// This file pins round-trip fidelity for the characters that a shell-mediated
-// writer is most likely to mangle. Each case asserts EQUALITY, not `contains` —
+//      Anything with an apostrophe was affected: a char literal in a fixture,
+//      and every prose comment with a contraction in it.
+//
+//   2. A heredoc ends at a body line equal to its delimiter. The fix for (1)
+//      moved the delimiter off `EOF` to shrink that risk — but the body is
+//      arbitrary caller data, so ANY fixed delimiter can collide, and the
+//      result is a SILENTLY TRUNCATED fixture. Worse, this file's own guard
+//      covered a body containing `EOF`, i.e. the delimiter it had already
+//      moved away FROM, leaving the live one untested (caught in review).
+//
+// A direct write has neither failure mode — no shell to quote for, no
+// terminator to collide with. The class is gone, not made unlikely.
+//
+// These cases therefore pass by construction today. They stay because they are
+// the regression guard against REINTRODUCING a shell-mediated writer, which is
+// the realistic way this comes back. Each asserts EQUALITY, never `contains` —
 // `contains` would accept a body with extra text spliced around it, which is
 // one of the shapes being guarded against.
 
 use @std.avrac.core.{avra_selfhost_read_file, avra_getpid}
 use @std.avrac.test_runner.{write_fixture}
 
-/// Write `body`, read it back, and compare exactly. `write_fixture` terminates
-/// the heredoc with a newline, so the file carries one more than the body did;
-/// that single trailing newline is the writer's own framing and the only
-/// difference tolerated here.
+/// Write `body`, read it back, and compare EXACTLY — no tolerance at all.
+/// `write_fixture` writes the bytes it was given and appends nothing, so a
+/// trailing newline the caller did not supply is as much a corruption as a
+/// mangled quote.
 fn roundtrips(slot: string, body: string) -> bool {
     let path = "/tmp/avra_wf_roundtrip_${avra_getpid()}_${slot}.txt"
     write_fixture(path, body)
-    avra_selfhost_read_file(path) == body + "\n"
+    avra_selfhost_read_file(path) == body
 }
 
 spec "write_fixture round-trips its body verbatim" {
@@ -52,16 +65,21 @@ spec "write_fixture round-trips its body verbatim" {
             roundtrips("dquote", "println(\"hello\")")
         }
         then "backslashes survive unexpanded" {
-            // A quoted heredoc must not process escapes. If it did, `\n` here
-            // would become a newline and `\\` a single backslash.
+            // Backslashes must survive as written. Being precise about what
+            // an UNQUOTED heredoc would actually do here, since an earlier
+            // version of this comment overstated it: `\n` stays literal
+            // either way — backslash only escapes $, `, \\ and newline — so
+            // it is the `\\` that collapses to a single backslash. That
+            // narrower difference is what this case detects.
             roundtrips("backslash", "a\\nb \\\\ c\\t")
         }
         then "shell metacharacters are not expanded" {
-            // `$HOME`, backticks and `$(...)` would all expand in an UNquoted
-            // heredoc. This is the assertion that fails if someone ever drops
-            // the quotes from the delimiter.
+            // `$HOME`, backticks and `$(...)` all expand in an UNquoted
+            // heredoc, and none of them mean anything to a direct write. This
+            // is the case that reds if a shell-mediated writer comes back
+            // without a quoted delimiter.
             // (No `${...}` here: that is Avra's OWN interpolation syntax, so it
-            // would be substituted in this source before the shell ever saw it.)
+            // would be substituted in this source before any writer saw it.)
             roundtrips("shellmeta", "$HOME `whoami` $(id -u) $$ &")
         }
         then "a mix of everything survives" {
@@ -69,12 +87,21 @@ spec "write_fixture round-trips its body verbatim" {
         }
     }
 
-    given "a body that could collide with the heredoc delimiter" {
+    given "a body that would collide with a heredoc delimiter" {
+        // The writer is delimiter-free now, so these hold by construction.
+        // They stay because they are the regression guard for REINTRODUCING a
+        // shell-mediated writer, and that is the failure they would catch:
+        // a heredoc truncates at a body line equal to its delimiter, losing
+        // the tail SILENTLY.
         then "a line reading exactly `EOF` does not truncate the body" {
-            // `EOF` is a plausible line in fixture source, which is why the
-            // delimiter is not `EOF`. Were it, this body would be cut at the
-            // second line and the tail lost silently.
             roundtrips("eof", "before\nEOF\nafter")
+        }
+        then "a line reading exactly `__AVRA_FIXTURE_EOF__` does not truncate" {
+            // The delimiter the heredoc version actually used. Its own test
+            // only ever covered `EOF` — so it asserted the safety of the
+            // delimiter it had ALREADY moved away from, and left the live one
+            // uncovered. Caught in review of #1192.
+            roundtrips("own_delim", "before\n__AVRA_FIXTURE_EOF__\nafter")
         }
     }
 
@@ -93,16 +120,39 @@ spec "write_fixture round-trips its body verbatim" {
     }
 }
 
-// ## MUTATION RECORD — measured, both properties pinned independently
+// ## MUTATION RECORD — measured against the CURRENT (direct-write) writer
 //
-//   restore the single-quote escape    7/11   RED: squote, apostrophe, many, mixed
-//   unquote the heredoc delimiter      8/11   RED: backslash, shellmeta, mixed
+// The middle column is the PASS tally, in the form the runner prints
+// ("8/12 tests passed ... (4 failed)") — not a count of affected cases. Passes
+// plus the RED list always sum to 12. Spelled out because the bare figure next
+// to a RED list was misread in review.
 //
-// The two red sets are almost disjoint, which is the point: the escape defect
-// and the expansion defect are separate properties, and neither mutation can
-// be repaired by a fix aimed at the other. `mixed` appears in both only
-// because it deliberately contains an apostrophe AND a `$HOME`.
+//   mutation                                   passed  red
+//   M1  restore the single-quote escape          8/12  squote, apostrophe,
+//                                                      many, mixed
+//   M2  reintroduce the shell heredoc writer     0/12  everything
+//   M3  direct write, but append "\n"            0/12  everything
 //
-// Every case with a single quote in its body reds under the first mutation,
-// and only those — which is what identifies the escape as the whole defect
-// rather than one symptom of a broader writing problem.
+// **M1 is the only one that discriminates, and the record says so rather than
+// claiming three independent confirmations.** It changes exactly one thing and
+// reds exactly the four bodies containing a single quote — which is what
+// identifies the escape as the whole defect rather than one symptom of a
+// broader writing problem.
+//
+// M2 and M3 both read 0/12, and M3 is why that is uninformative: appending a
+// single trailing newline is on its own enough to red every case, because the
+// contract here is EXACT bytes. So M2's 0/12 is explained by the heredoc's
+// newline alone and demonstrates nothing about its quote or delimiter
+// behaviour. Two identical zeroes from different mutations is the signature of
+// an instrument that has stopped discriminating, not of two confirmations.
+//
+// That is a real limit of this file, stated rather than papered over: with an
+// exact-bytes contract, no mutation that also changes framing can isolate the
+// quote or delimiter properties. Those two are pinned instead by (a) M1 above
+// for quoting, and (b) the heredoc-era measurements recorded on t-ome0, taken
+// when the writer still had a delimiter to collide with.
+//
+// The contract stays exact. Loosening it to tolerate a trailing newline would
+// make M2/M3 discriminate, at the cost of accepting a writer that appends
+// bytes the caller never asked for — which is the same class of defect this
+// file exists to catch.
