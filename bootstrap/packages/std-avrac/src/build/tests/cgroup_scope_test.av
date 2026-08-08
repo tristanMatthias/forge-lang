@@ -1,0 +1,295 @@
+// WHY: the resource sampler must report the memory the process can actually
+// have, not the box's (t-kdyj.9).
+//
+// `avra_resource_memory_available_mb()` is what the shard-pool admission
+// governor budgets against and what the F4014 compiler ceiling derives from.
+// It took `min(host MemAvailable, cgroup headroom)` — but only ever asked the
+// **v2** unified hierarchy (`memory.max` / `memory.current`). On a host running
+// the **legacy v1** hierarchies those files do not exist, every cgroup probe
+// returned "no limit", and the sampler silently answered with the BOX's memory
+// while the kernel enforced the cgroup.
+//
+// Measured on this host (cgroup v1), a process inside a real 512MB group:
+//
+//            capacity_mb   available_mb   scope_kind
+//   v1 blind      16075          15125       1 (host)
+//   v1 seeing       512            511       2 (finite cgroup)
+//
+// A 31x overestimate of spendable memory. The governor would admit ~8 shards
+// at its ~1.8GB estimate against 512MB of real budget, and the `[admission]`
+// lines would report healthy headroom right up to the moment the OOM killer
+// reaped them. This is the same lying-input defect as t-6flr, one level down:
+// there the lie was the build mode, here it is the available bytes.
+//
+// ## What runs where, stated plainly
+//
+// The constrained case needs to CREATE a limited cgroup, which requires write
+// access to the cgroup filesystem. Where that is not available the spec says
+// so and skips, rather than passing vacuously. **A skipped run is not
+// evidence** — read the printed reason. The unconstrained assertions below run
+// everywhere and are not skippable.
+//
+// Both layouts are handled, so the constrained case runs wherever either is
+// writable rather than only on the v1 host that motivated the fix.
+
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_getpid}
+use @std.avrac.test_runner.{write_fixture}
+
+extern fn avra_resource_memory_capacity_mb() -> int
+extern fn avra_resource_memory_available_mb() -> int
+extern fn avra_resource_scope_kind() -> int
+
+/// Scope kinds reported by `avra_resource_scope_kind()`.
+const SCOPE_UNKNOWN = 0
+const SCOPE_HOST = 1
+const SCOPE_CGROUP = 2
+
+/// The probe program: prints what the sampler reports, one key per line. Built
+/// once and then executed inside the limited cgroup, because the sampler must
+/// be read from a process that is actually a MEMBER of that cgroup — reading
+/// it from the test process would only ever describe the test process.
+fn probe_source() -> string {
+    "extern fn avra_resource_memory_capacity_mb() -> int
+extern fn avra_resource_memory_available_mb() -> int
+extern fn avra_resource_scope_kind() -> int
+
+fn main() {
+    println(\"capacity_mb=\" + string(avra_resource_memory_capacity_mb()))
+    println(\"available_mb=\" + string(avra_resource_memory_available_mb()))
+    println(\"scope_kind=\" + string(avra_resource_scope_kind()))
+}
+"
+}
+
+/// Create a child cgroup with `limit_mb`, run `bin` inside it, and capture its
+/// output. Handles v2 (`memory.max`) and v1 (`memory.limit_in_bytes`); prints
+/// `__AVRA_CGROUP_UNAVAILABLE__` when neither can be set up, so an
+/// unsupported environment is distinguishable from a wrong answer.
+///
+/// The child cgroup is created UNDER this process's own group, which is what
+/// makes it permissible without any privilege the test does not already have.
+fn run_in_limited_cgroup(bin: string, limit_mb: int, log: string) -> string {
+    // `${...}` is Avra's interpolation, so anything in that form is
+    // substituted here and anything written `$x` is a genuine shell variable.
+    // The two inputs from Avra are bound to shell variables up front rather
+    // than spliced into the middle of a quoting dance further down.
+    let script = "set -u
+limit_bytes=$(( ${limit_mb} * 1024 * 1024 ))
+bin=\"${bin}\"
+name=avra_scope_probe_$$
+
+# Removing the group can lose a race with the kernel: the probe has exited and
+# the group reads empty, but the exec'd task has not finished being detached,
+# so rmdir returns EBUSY. Observed leaving a stray group behind on every run.
+# Retry briefly rather than discarding the failure.
+reap() {
+  i=0
+  while [ $i -lt 50 ]; do
+    rmdir \"$1\" 2>/dev/null && return 0
+    [ -d \"$1\" ] || return 0
+    i=$(( i + 1 ))
+    sleep 0.1
+  done
+  echo __AVRA_CGROUP_LEAKED__
+}
+
+run_in() {
+  sh -c 'echo $$ > '\"$1\"'/cgroup.procs && exec '\"$bin\" 2>&1
+}
+
+# v2: a single unified hierarchy, the process's group is the '0::' line.
+# The marker file is `cgroup.controllers`. It was written `cgroup.controls`
+# here, which exists nowhere — so this branch never ran on ANY host, every v2
+# machine fell through to the v1 branch below, and there the v2 `0::/path`
+# line has an empty controller field so the awk matched nothing and the whole
+# constrained case reported UNAVAILABLE. A skip that reads as a pass.
+if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+  rel=$(awk -F: '$1 == \"0\" { print $3 }' /proc/self/cgroup)
+  parent=/sys/fs/cgroup$rel
+  dir=$parent/$name
+  # A v2 child exposes memory.max only once the PARENT delegates the
+  # controller; without this the write below fails and the branch skips.
+  echo +memory > \"$parent/cgroup.subtree_control\" 2>/dev/null
+  if mkdir -p \"$dir\" 2>/dev/null && echo $limit_bytes > \"$dir/memory.max\" 2>/dev/null; then
+    run_in \"$dir\"
+    reap \"$dir\"
+    exit 0
+  fi
+  reap \"$dir\"
+fi
+
+# v1: one mount per controller; find the memory controller's path.
+rel=$(awk -F: '$2 ~ /(^|,)memory(,|$)/ { print $3 }' /proc/self/cgroup)
+if [ -n \"$rel\" ] && [ -d /sys/fs/cgroup/memory ]; then
+  dir=/sys/fs/cgroup/memory$rel/$name
+  if mkdir -p \"$dir\" 2>/dev/null && echo $limit_bytes > \"$dir/memory.limit_in_bytes\" 2>/dev/null; then
+    run_in \"$dir\"
+    reap \"$dir\"
+    exit 0
+  fi
+  reap \"$dir\"
+fi
+
+echo __AVRA_CGROUP_UNAVAILABLE__
+"
+    let script_path = "/tmp/avra_cgroup_scope_${avra_getpid()}.sh"
+    write_fixture(script_path, script)
+    let _ = avra_shell_exec_status("sh '${script_path}' > '${log}' 2>&1")
+    avra_selfhost_read_file(log)
+}
+
+/// Pull `key=<int>` out of the probe's output. -1 when absent, which fails
+/// every assertion below rather than silently reading as 0.
+fn probe_value(out: string, key: string) -> int {
+    let marker = "${key}="
+    if !out.contains(marker) { return -1 }
+    mut rest = out.split(marker)[1]
+    mut digits = ""
+    mut i = 0
+    while i < rest.length {
+        let ch = rest[i]
+        if ch >= "0" && ch <= "9" { digits = digits + ch } else { i = rest.length }
+        i = i + 1
+    }
+    if digits == "" { return -1 } else { int(digits) }
+}
+
+/// The BOX's physical total in MB, straight from /proc/meminfo — deliberately
+/// NOT routed through the sampler under test. The sampler answers "what can
+/// THIS process use", which is the enclosing cgroup limit when one is finite;
+/// using it as the "host" side of a probe-vs-host comparison would make the
+/// comparison degenerate exactly on the constrained runners this change is
+/// about. Returns -1 when unreadable, which callers treat as "cannot
+/// discriminate" rather than as a failure.
+fn host_total_mb() -> int {
+    let raw = avra_shell_exec("awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || true")
+    mut digits = ""
+    mut i = 0
+    while i < raw.length {
+        let ch = raw[i]
+        if ch >= "0" && ch <= "9" { digits = digits + ch } else { i = raw.length }
+        i = i + 1
+    }
+    if digits == "" { return -1 } else { int(digits) / 1024 }
+}
+
+spec "the resource sampler reports the scope's memory, not the box's (t-kdyj.9)" {
+    given "no cgroup limit on the test process itself" {
+        then "capacity and available are positive and self-consistent" {
+            let cap = avra_resource_memory_capacity_mb()
+            let avail = avra_resource_memory_available_mb()
+            // Available can never exceed capacity — the one invariant that
+            // holds whether the scope is the host or a finite cgroup, and the
+            // one a mismatched limit/usage PAIR would break. `avra_cgroup_
+            // memory_kb` takes both figures from the same hierarchy for
+            // exactly this reason; pairing a v2 limit with a v1 usage would
+            // compute headroom across two accounting domains.
+            cap > 0 && avail > 0 && avail <= cap
+        }
+        then "the scope kind is a value the sampler defines" {
+            let kind = avra_resource_scope_kind()
+            kind == SCOPE_HOST || kind == SCOPE_CGROUP
+        }
+    }
+
+    given "a process inside a real, limited cgroup" {
+        then "the sampler reports the CGROUP's limit, not the box's memory" {
+            let bin = "/tmp/avra_cgroup_probe_${avra_getpid()}"
+            let src = "${bin}.av"
+            write_fixture(src, probe_source())
+            // Slot-capped (diagnose.sh --slot-exec). This is a real `bs2 build`
+            // — compile, llc, link — fired from inside the shard fan-out, so
+            // uncapped it stacks on top of every other unit's heavy work. Left
+            // uncapped it reded a SIBLING in the same batch
+            // (cache_slot_integrity_test's llc materialisation), which passes
+            // both standalone and paired with this file: the collision only
+            // appears at full batch width. The slot is the same bound the
+            // no-metadata fixture checks already take.
+            let built = avra_shell_exec_status(
+                "bash scripts/diagnose.sh --slot-exec ./build/bs2 build '${src}' -o '${bin}' > '${bin}.build.log' 2>&1")
+            if built != 0 {
+                // NOT a skip. An unavailable cgroup is a property of the box;
+                // a three-line probe failing to compile, llc or link is a
+                // regression in this repository, and skipping it would let a
+                // real breakage report green while silently retiring the whole
+                // constrained case below.
+                println("[cgroup_scope] FAIL — could not build the probe:")
+                println(avra_selfhost_read_file("${bin}.build.log"))
+                false
+            } else {
+                let limit_mb = 512
+                let out = run_in_limited_cgroup(bin, limit_mb, "${bin}.run.log")
+                if out.contains("__AVRA_CGROUP_UNAVAILABLE__") {
+                    // Not a pass in substance. Named so a skipped CI run is
+                    // visible in the log rather than reading as a green guard.
+                    println("[cgroup_scope] SKIP — no writable cgroup available; the constrained case did not run")
+                    true
+                } else {
+                    let cap = probe_value(out, "capacity_mb")
+                    let avail = probe_value(out, "available_mb")
+                    let kind = probe_value(out, "scope_kind")
+                    // The BOX's total, read straight from /proc/meminfo — NOT
+                    // avra_resource_memory_capacity_mb(), which reports the
+                    // TEST process's own scope and, after this very change,
+                    // collapses to the enclosing cgroup limit whenever that is
+                    // finite. Asserting against it would fail on a CI runner
+                    // capped at or below 512MB — reporting an environment
+                    // property as a code defect.
+                    let host_mb = host_total_mb()
+
+                    // The three claims that fail on the pre-fix sampler, which
+                    // reported 16075 / 15125 / 1 for this exact setup:
+                    //   1. capacity IS the limit,
+                    //   2. available fits inside it — the number the governor
+                    //      budgets against, and the one that was 31x wrong,
+                    //   3. the scope is reported as a finite cgroup.
+                    // (1) alone would be satisfiable by a lucky small box, so
+                    // (3) carries the "we actually saw the cgroup" claim, and
+                    // the host comparison below only DISCRIMINATES on a box
+                    // bigger than the limit — so it is asserted only there.
+                    let host_discriminates = host_mb > limit_mb
+                    if !host_discriminates {
+                        println("[cgroup_scope] note — host total ${string(host_mb)}MB <= ${string(limit_mb)}MB; the probe-vs-host comparison cannot discriminate on this box and is not asserted")
+                    }
+                    cap == limit_mb
+                        && avail > 0 && avail <= limit_mb
+                        && kind == SCOPE_CGROUP
+                        && (!host_discriminates || cap < host_mb)
+                        // The probe cgroup must be gone. Without this the test
+                        // leaked one group per run: `rmdir` raced the kernel
+                        // detaching the exec'd task, returned EBUSY, and the
+                        // failure went to /dev/null. Silent resource leaks in
+                        // a test are exactly what the suite should not ship.
+                        && !out.contains("__AVRA_CGROUP_LEAKED__")
+                }
+            }
+        }
+    }
+}
+
+// ## MUTATION RECORD
+//
+// Disabling the v1 lookup (`avra_cgroup_v1_memory_limit_kb` returning 0 —
+// exactly the pre-fix state) and rebuilding turns the constrained case RED and
+// leaves the two unconstrained ones green, which is right: those describe the
+// TEST process, which is not a member of the limited group.
+//
+// Inside the SAME real 512MB v1 cgroup, same probe binary, one rebuild apart:
+//
+//   v1 lookup disabled   capacity_mb=16075  available_mb=15125  scope_kind=1
+//   v1 lookup enabled    capacity_mb=512    available_mb=511    scope_kind=2
+//
+// A 31x overestimate of spendable memory. At the governor's ~1800MB per-shard
+// estimate that is ~8 shards admitted against 512MB of real budget.
+//
+// ## The cleanup assertion earned its place immediately
+//
+// The first green run of this spec left a stray cgroup behind, and would have
+// done so on every run: `rmdir` races the kernel detaching the exec'd task and
+// returns EBUSY, and the failure was going to /dev/null. The group reads empty
+// and removes cleanly a moment later, so nothing about it looked wrong.
+//
+// `reap()` now retries, and `__AVRA_CGROUP_LEAKED__` makes a genuine leak fail
+// the test rather than pass quietly — a test that leaks a kernel resource per
+// run is not something the suite should ship, and this one only surfaced
+// because the leftover directory was checked by hand after a PASS.
