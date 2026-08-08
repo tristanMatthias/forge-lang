@@ -66,7 +66,7 @@ use @std.avrac.test_runner.{
     new_only_diagnostics, render_strictness_delta, delta_is_strictness,
 }
 use @std.test.libmode.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd, SHARD_RESERVE_MB}
-use @std.avrac.coverage.{render_coverage}
+use @std.avrac.coverage.{render_coverage, merge_covmaps}
 use @std.avrac.build.{llvm_prefix_dir}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
@@ -3448,25 +3448,84 @@ fn publish_test_binary(inputs: BuildInputs, fp: Fingerprint, bin_path: string) {
 /// at v1), run with LLVM_PROFILE_FILE set, merge the raw profile via
 /// `llvm-profdata`, dump per-function counts as text, and render the
 /// coverage report via the Avra-side coverage::render_coverage.
+/// Partition the accepted set for the coverage run, mirroring plan_shards'
+/// stride partition so a coverage shard's membership matches what the default
+/// path would co-schedule. Returns the whole set as ONE batch when batching is
+/// disabled, which keeps the pre-i7gw.2 behaviour reachable.
+fn coverage_batches(accepted_paths: List<string>) -> List<List<string>> {
+    let k = TEST_BATCH_FILES
+    if k <= 1 { return [accepted_paths] }
+    let stable = sort_paths_lex(accepted_paths)
+    let n = stable.length
+    if n == 0 { return [] }
+    mut nb = n / k
+    if nb * k < n { nb = nb + 1 }
+    if nb == 0 { nb = 1 }
+    mut batches: List<List<string>> = []
+    for b in 0..nb {
+        mut members: List<string> = []
+        mut i = b
+        while i < n {
+            members.push(stable[i])
+            i = i + nb
+        }
+        if members.length > 0 { batches.push(members) }
+    }
+    batches
+}
+
 fn run_test_coverage_path(project_dir: string, inputs: BuildInputs,
                           accepted_paths: List<string>, args: TestArgs) {
-    let bin_path = match compile_test_unit(inputs, accepted_paths, args) {
-        .Ok(p) -> p
-        .Err(e) -> { fail(e) }
-    }
     let cov_dir = "${project_dir}/build/coverage"
-    let profraw = "${cov_dir}/_test.profraw"
     let profdata = "${cov_dir}/_test.profdata"
-    avra_shell_exec("rm -f ${profraw}")
-    // AVRA_TEST_JOBS=1: instrprof counters aren't atomic, so the
-    // coverage run pins the in-process runner to sequential execution
-    // for exact counts.
-    let run_rc = avra_process_forward(bin_path, "[]", "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\",\"AVRA_TEST_JOBS\":\"1\"}}")
-    if run_rc != 0 { eprintln("test binary exited with code ${string(run_rc)}") }
-
     let llvm_prefix = resolve_llvm_prefix()
-    let merge_out = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata merge -sparse -o ${profdata} ${profraw} 2>&1")
+    let pid = string(avra_getpid())
+
+    // i7gw slice 2: SHARD the coverage run. This was the last place `bs2 test`
+    // still assembled one whole-program binary — the ~6000MB/shard shape t-6flr
+    // measured, on the one path that also links the instrumentation runtime.
+    // Each shard compiles and runs independently with its OWN profraw; the
+    // counts are merged by llvm-profdata (which takes N inputs natively) and
+    // the static mappings by merge_covmaps.
+    let batches = coverage_batches(accepted_paths)
+    mut profraws: List<string> = []
+    mut covmaps: List<string> = []
+    // The exit status is a FOLD, not the last shard's. Taking the last would
+    // mask a red shard behind a green one that happened to run after it —
+    // slice 1 already had to fix this path silently exiting 0 on a failing
+    // suite, and sharding reintroduces the same hazard N-fold.
+    mut worst_rc = 0
+    mut idx = 0
+    for batch in batches {
+        let shard_id = "cov${string(idx)}.${pid}"
+        idx = idx + 1
+        let bin_path = match compile_test_unit_to(inputs, batch, args, shard_id) {
+            .Ok(p) -> p
+            .Err(e) -> { fail(e) }
+        }
+        let profraw = "${cov_dir}/_test_${shard_id}.profraw"
+        avra_shell_exec("rm -f ${profraw}")
+        // AVRA_TEST_JOBS=1: instrprof counters aren't atomic, so the coverage
+        // run pins the IN-PROCESS runner to sequential execution for exact
+        // counts. That pin is per-process, so sharding does not weaken it —
+        // the parallelism moves to processes, which is the sanctioned model.
+        let run_rc = avra_process_forward(bin_path, "[]", "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\",\"AVRA_TEST_JOBS\":\"1\"}}")
+        if run_rc != 0 {
+            eprintln("coverage shard ${shard_id} exited with code ${string(run_rc)}")
+            worst_rc = run_rc
+        }
+        profraws.push(profraw)
+        covmaps.push(coverage_covmap_path(bin_path))
+    }
+    if profraws.length == 0 {
+        eprintln("coverage: no test shards were built — nothing to report")
+        avra_process_exit(1)
+    }
+
+    let merge_out = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata merge -sparse -o ${profdata} ${profraws.join(" ")} 2>&1")
     if merge_out.length > 0 { eprintln(merge_out.trim()) }
+    let merged_covmap = merge_covmaps(covmaps, "${cov_dir}/_test.merged.covmap.tsv")
+    let run_rc = worst_rc
 
     // Dump profdata + hand off to the Avra-side coverage renderer
     // (coverage::render_coverage joins codegen's covmap.tsv with
@@ -3477,7 +3536,9 @@ fn run_test_coverage_path(project_dir: string, inputs: BuildInputs,
     // The covmap path derives from the binary the compile just produced
     // (pid-unique stem) — never a hardcoded stem, which silently reads a
     // stale/absent covmap once staging paths change.
-    render_coverage(coverage_covmap_path(bin_path), dump_path, args.lcov_path)
+    // The MERGED covmap, not a per-binary one: with N shards there is no single
+    // binary whose mapping describes the run.
+    render_coverage(merged_covmap, dump_path, args.lcov_path)
     // A failing suite must fail the coverage run too — render the report
     // (partial coverage of a red suite is still useful), then propagate
     // the test binary's exit code instead of masking it with 0.
