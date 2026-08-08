@@ -119,8 +119,15 @@ spec "t-47hc slice 10.7: the blind-skip NARROWING, pinned" {
         // `skip_angle_brackets` is a BLIND token skip: the hand walks to the matching `>`
         // without parsing what is between, so `impl Foo<+>` is accepted. The native rule
         // parses the type arguments, so `+` is a type position that reports.
-        dsl_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error") &&
-            !hand_only_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error")
+        // t-47hc.5 — the DIVERGENCE ENDED WITH THE ORACLE, not with a capability. The
+        // comment above anticipated "a future capability closes it"; what actually happened
+        // is that `parse_declaration_hand` was deleted, so `hand_only_program` runs the same
+        // engine and now reports the parse error too. The `!…contains` half could only fail.
+        //
+        // What survives is the half that still means something: the NARROWING itself. The
+        // native rule parses type arguments, so `+` in a type position reports — asserted
+        // directly rather than as a difference from an oracle that no longer exists.
+        dsl_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error")
     }
 
     // t-myz7: the narrowing now reaches PRODUCTION. While `impl` was speculative the

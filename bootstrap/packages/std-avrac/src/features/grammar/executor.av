@@ -3826,15 +3826,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // stmt keywords, `{`, non-ident expression leaves) is routed to the
     // `statement` alternative ordered after this one. A reserved keyword matches
     // neither → the alternation errors → hand fallback rejects it identically.
-    if name == "decl_hand" {
-        if tok.kind == "IDENT" || tok.kind == "DOC" || tok.kind == "MODDOC" { return true }
-        let t = tok.text
-        return t == "@" || t == "export" ||
-               t == "fn" || t == "type" || t == "enum" || t == "trait" || t == "impl" ||
-               t == "use" || t == "mod" || t == "const" || t == "let" || t == "mut" ||
-               t == "extern" || t == "shape" || t == "spec" || t == "parallel" ||
-               t == "select" || t == "component"
-    }
     false
 }
 

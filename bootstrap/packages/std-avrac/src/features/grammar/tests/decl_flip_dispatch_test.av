@@ -31,23 +31,28 @@ fn flip_decl(src: string) -> string {
     }
 }
 
-fn hand_decl(src: string) -> string {
+// t-47hc.5 — `parse_declaration_hand` is DELETED, so there is no second engine to render
+// and `agree` cannot compare two parsers any more. It compares `flip_decl` against a
+// PLAIN `parse_declaration` instead, which is a real assertion about one thing only: that
+// setting `decl_flip` explicitly and leaving it at its default reach the same code. The
+// hand-vs-DSL parity this file was built to measure ended with the oracle.
+fn plain_decl(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_declaration_hand() {
+    match p.parse_declaration() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<err>"
     }
 }
 
 fn agree(src: string) -> bool {
-    flip_decl(src) == hand_decl(src)
+    flip_decl(src) == plain_decl(src)
 }
 
 spec "ps3t.6.7 G.4b: parse_declaration flip dispatch == hand path (decl_flip field)" {
     given "the field toggles the path (sanity: flip really took the DSL branch)" {
         then "flip builds a real tree and agrees with hand for a representative decl" {
             flip_decl("fn f() -> int { 1 }") != "<err>" &&
-            flip_decl("fn f() -> int { 1 }") == hand_decl("fn f() -> int { 1 }")
+            flip_decl("fn f() -> int { 1 }") == plain_decl("fn f() -> int { 1 }")
         }
     }
     given "the decl_hand arm: type / enum / trait / impl / const declarations" {
@@ -84,7 +89,7 @@ spec "ps3t.6.7 G.4b: parse_declaration flip dispatch == hand path (decl_flip fie
     }
     given "reject parity: both parsers reject the same malformed declaration" {
         then "a dangling operator rejects on both" {
-            flip_decl("= 5") == "<err>" && hand_decl("= 5") == "<err>"
+            flip_decl("= 5") == "<err>" && plain_decl("= 5") == "<err>"
         }
     }
 }

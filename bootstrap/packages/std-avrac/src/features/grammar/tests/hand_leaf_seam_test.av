@@ -34,7 +34,11 @@ fn known_expr_leaves() -> List<string> {
 }
 
 fn known_stmt_leaves() -> List<string> {
-    ["component_decl", "let_stmt", "return_stmt", "match_table", "stmt_hand", "decl_hand"]
+    // t-47hc.5 — `decl_hand` is GONE from this list because the leaf is deleted: its
+    // delegate (`parse_declaration_hand`) no longer exists, so it resolves to nothing and
+    // asserting it "resolves in the statement half" could only ever fail. The list is the
+    // registry's contract, so a retired leaf leaves it rather than being special-cased.
+    ["component_decl", "let_stmt", "return_stmt", "match_table", "stmt_hand"]
 }
 
 fn run_render(input: string) -> string {
@@ -56,9 +60,14 @@ spec "t-47hc.7: a hand leaf's delegate is a FREE FUNCTION VALUE over the parse s
         leaf!.name == "quote_expr" && held == run
     }
     then "a statement delegate binds to `fn(Parser) -> Result<StmtId, string>`" {
-        let leaf = hand_stmt_leaf("decl_hand")
+        // t-47hc.5 — was `decl_hand`, which is DELETED; `hand_stmt_leaf` answers null for
+        // it now and the `!` below aborted the spec (SIGABRT, not a failure — which is how
+        // it survived a standalone run reporting "14/14 passed, 1 crashed").
+        // `stmt_hand` is the same class and still registered, so the seam property this
+        // pins — a delegate is a VALUE, bindable to an explicit fn type — is unchanged.
+        let leaf = hand_stmt_leaf("stmt_hand")
         let run: fn(Parser) -> Result<StmtId, string> = leaf!.run
-        leaf!.name == "decl_hand" && run == leaf!.run
+        leaf!.name == "stmt_hand" && run == leaf!.run
     }
     then "each leaf record reports its OWN name (the lookup key round-trips)" {
         mut ok = true

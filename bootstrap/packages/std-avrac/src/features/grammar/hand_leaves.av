@@ -92,7 +92,6 @@ fn hand_stmt_hand(p: Parser) -> Result<StmtId, string> { p.parse_statement_hand(
 /// The whole DECLARATION dispatch (doc/annotation/export wrapping + the decl
 /// keywords + the component-vs-expression IDENT disambiguation + the statement
 /// fall-through). The `_hand` entry, same recursion guard as `stmt_hand`.
-fn hand_decl_hand(p: Parser) -> Result<StmtId, string> { p.parse_declaration_hand() }
 
 /// `quote { … }` — bumps `quote_depth`, which is what makes a leading `~`
 /// inside the body parse as `Expr.Splice` instead of bitwise-NOT.
@@ -161,7 +160,6 @@ export fn hand_stmt_leaf(name: string) -> HandStmtLeaf? {
         "return_stmt"    -> HandStmtLeaf { name, run: hand_return_stmt }
         "match_table"    -> HandStmtLeaf { name, run: hand_match_table }
         "stmt_hand"      -> HandStmtLeaf { name, run: hand_stmt_hand }
-        "decl_hand"      -> HandStmtLeaf { name, run: hand_decl_hand }
         _                -> null
     }
 }

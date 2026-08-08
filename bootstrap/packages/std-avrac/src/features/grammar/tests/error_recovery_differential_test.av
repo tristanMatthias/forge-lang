@@ -481,8 +481,10 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
     }
 
     then "malformed decl wrappers (the routed prefixes), on all three paths" {
-        // t-47hc.4.3: the documented hand divergence — see `native_agrees_hand_differs`
-        native_agrees_hand_differs("@\nfn f() -> int { 1 }") &&
+        // t-47hc.5: was `native_agrees_hand_differs`. The hand parser is DELETED, so
+        // there is no longer a hand answer to differ from — the divergence this pinned
+        // ended with the oracle, not with a fix.
+        agree_all("@\nfn f() -> int { 1 }") &&
         agree_all("@foo(\nfn f() -> int { 1 }") &&
         agree_all("@foo(,)\nfn f() -> int { 1 }") &&
         agree_all("@foo)\nfn f() -> int { 1 }") &&
@@ -841,6 +843,33 @@ fn agree_tree(source: string) -> bool {
 // paths agree with EACH OTHER, the input still reports, and the hand still differs. That
 // last clause is what stops this being a guard that cannot fail: fix the hand and this
 // goes RED, which is the prompt to fold the case back into `agree_all`/`agree_bad`.
+// ── t-47hc.5: THIS CORPUS IS CURRENTLY VACUOUS — read this before trusting it ──
+//
+// `parse_declaration_hand` is DELETED. `AVRA_PARSER_DECL_FLIP=0` no longer selects a
+// different parser for declarations, because `parse_declaration` has no flip branch left
+// to take — so `hand_oracle()` and `static_raw()` run the SAME engine and every
+// `agree` / `agree_all` / `agree_bad` / `agree_tree` assertion below compares native
+// against native. They pass by construction. All ~525 of them.
+//
+// That is not a defect in this file; it is the cost of retiring the oracle, taken
+// deliberately. What matters is that it is VISIBLE, because a green corpus that proves
+// nothing is worse than no corpus: it reads as coverage.
+//
+// The spec below is the one assertion here that can still fail. It PINS the vacuity, so
+// that if a differential oracle is ever restored — the hand parser kept as a separate
+// build, or these cases re-baselined as GOLDEN fixtures recording the current native
+// output — this goes red and says so, instead of the restoration going unnoticed.
+spec "t-47hc.5: the hand oracle is GONE — this corpus compares native against native" {
+    then "the `hand` mode and the `emit` mode are the same engine now" {
+        // Three inputs the two engines demonstrably DISAGREED on while the hand existed:
+        // a bare `@` (hand invented an annotation named `fn`), a malformed binding, and a
+        // malformed wrapper. Identical output on all three is proof of vacuity, not parity.
+        hand_oracle("@\nfn f() -> int { 1 }") == static_raw("@\nfn f() -> int { 1 }") &&
+            hand_oracle("let x: = 1\nfn f() -> int { 1 }") == static_raw("let x: = 1\nfn f() -> int { 1 }") &&
+            hand_oracle("@a\nmut\nfn f() -> int { 1 }") == static_raw("@a\nmut\nfn f() -> int { 1 }")
+    }
+}
+
 fn native_agrees_hand_differs(source: string) -> bool {
     let sr = static_raw(source)
     let dflt = default_path(source)
@@ -1227,8 +1256,9 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         // valid-input tree pin below.
         agree_bad("export export fn g() -> int { 1 }\nfn f() -> int { 1 }") &&
         // A bare `@`, an unterminated arg list, an empty arg, a stray close paren.
-        // t-47hc.4.3: the documented hand divergence — see `native_tree_agrees_hand_differs`
-        native_tree_agrees_hand_differs("@\nfn f() -> int { 1 }") &&
+        // t-47hc.5: was `native_tree_agrees_hand_differs` — see the note in the
+        // three-path spec above.
+        agree_bad("@\nfn f() -> int { 1 }") &&
         agree_bad("@foo(\nfn f() -> int { 1 }") &&
         agree_bad("@foo(,)\nfn f() -> int { 1 }") &&
         agree_bad("@foo)\nfn f() -> int { 1 }") &&
