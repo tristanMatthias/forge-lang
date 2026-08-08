@@ -4,7 +4,7 @@
 // Release = RC cleanup for ptr-typed locals.
 // The stack lives on Ctx.defers — no mutable global needed.
 
-use core.{VarBinding}
+use core.{VarBinding, ExprId}
 use codegen.{Ctx, DeferEntry}
 use codegen.{emit_rc_release_typed}
 use features.error_propagation.{Result}
@@ -46,6 +46,32 @@ fn ok_ctx(c: Ctx) -> Result<Ctx, string> {
     let r = Result.Ok(c)
     avra_tag_as_result(r)
     r
+}
+
+/// Emit one deferred body, tagging any failure with the statement that
+/// registered it.
+///
+/// The tag is not decoration. `ctx.emit`'s message describes the EXPRESSION
+/// that failed and says nothing about where it came from, while a deferred
+/// body is emitted at the scope exit — for a function-level `defer`, at the
+/// `return`, arbitrarily far from the line the user wrote. Unqualified, the
+/// reader gets a codegen error pointing at a construct that does not appear
+/// anywhere near it.
+///
+/// This is also the single place any deferred body is emitted, so the
+/// propagation cannot be reintroduced-by-omission at one of four call sites
+/// the way it was lost at all four before (t-dy1j).
+fn emit_defer_body(ctx: Ctx, env: List<VarBinding>, body: ExprId, kind: string) -> Result<int, string> {
+    match ctx.emit(env, ctx.nodes.exprs.get(body)) {
+        .Ok(_) -> ok_unit()
+        .Err(e) -> {
+            // Worded to avoid an article before `${kind}` — "a `errdefer`" is
+            // what the obvious phrasing produces.
+            let r = Result.Err("while emitting the `${kind}` body: ${e}")
+            avra_tag_as_result(r)
+            r
+        }
+    }
 }
 
 /// Emit scope-exit cleanup for a normal return. Walks the defer
@@ -127,10 +153,10 @@ fn emit_frames_above(ctx: Ctx, env: List<VarBinding>, base: int, is_error: int) 
     while i >= base {
         match ctx.defers[i] {
             .Frame(body) -> {
-                ctx.emit(env, ctx.nodes.exprs.get(body))?
+                emit_defer_body(ctx, env, body, "defer")?
             }
             .ErrFrame(body) -> {
-                if is_error { ctx.emit(env, ctx.nodes.exprs.get(body))? }
+                if is_error { emit_defer_body(ctx, env, body, "errdefer")? }
             }
             .Release(_, _, _) -> {}
         }
@@ -170,11 +196,11 @@ fn emit_stack_filtered(ctx: Ctx, env: List<VarBinding>, stack: List<DeferEntry>,
         match stack[i] {
             .Frame(body) -> {
                 // defer always runs (body is an arena ExprId — F4d)
-                ctx.emit(env, ctx.nodes.exprs.get(body))?
+                emit_defer_body(ctx, env, body, "defer")?
             }
             .ErrFrame(body) -> {
                 // errdefer only runs on error path
-                if is_error { ctx.emit(env, ctx.nodes.exprs.get(body))? }
+                if is_error { emit_defer_body(ctx, env, body, "errdefer")? }
             }
             .Release(name, alloca, ty) -> {
                 // RC release — load and release the value
