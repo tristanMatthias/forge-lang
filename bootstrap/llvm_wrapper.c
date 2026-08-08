@@ -1044,14 +1044,29 @@ LLVMValueRef avra_llvm_build_call_coerce(LLVMBuilderRef b,
 // coverage region counters. The LLVM InstrProfiling pass lowers these
 // intrinsic calls into __profc_* counter arrays and __profd_* data records.
 
-static LLVMValueRef coverage_intrinsic = NULL;
 static int32_t coverage_region_counter = 0;
 static int32_t coverage_fn_region_count = 0;
 
-// Declare @llvm.instrprof.increment(ptr, i64, i32, i32) in the module.
-// Idempotent — safe to call multiple times.
-void avra_coverage_declare(LLVMModuleRef m) {
-    if (coverage_intrinsic) return;
+#define AVRA_INSTRPROF_INCREMENT "llvm.instrprof.increment"
+
+// The intrinsic FOR THIS MODULE, declared on first use.
+//
+// This used to be a process-wide `static LLVMValueRef coverage_intrinsic`,
+// guarded by `if (coverage_intrinsic) return;` and documented as "idempotent —
+// safe to call multiple times". That is true WITHIN one module and false
+// ACROSS modules: the static held the FIRST module's Function, so a second
+// compile in the same process skipped the declaration and then built calls
+// against a function belonging to a different (by then possibly disposed)
+// module. The result was a SIGSEGV inside llvm::CallInst::init, surfaced as an
+// F9999 that named an unrelated Avra frame (`Arena__Expr__ExprId__add`) — so
+// the report pointed away from the cause.
+//
+// Keyed off the module instead, exactly as avra_coverage_name_global already
+// does for `__profn_` globals: LLVM is the single source of truth for what
+// this module contains, which is the rule a cached ref quietly broke.
+static LLVMValueRef avra_coverage_intrinsic(LLVMModuleRef m) {
+    LLVMValueRef existing = LLVMGetNamedFunction(m, AVRA_INSTRPROF_INCREMENT);
+    if (existing) return existing;
     LLVMContextRef ctx = LLVMGetModuleContext(m);
     LLVMTypeRef param_types[] = {
         LLVMPointerType(LLVMInt8TypeInContext(ctx), 0),
@@ -1060,7 +1075,13 @@ void avra_coverage_declare(LLVMModuleRef m) {
         LLVMInt32TypeInContext(ctx)
     };
     LLVMTypeRef fn_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx), param_types, 4, 0);
-    coverage_intrinsic = LLVMAddFunction(m, "llvm.instrprof.increment", fn_type);
+    return LLVMAddFunction(m, AVRA_INSTRPROF_INCREMENT, fn_type);
+}
+
+// Declare @llvm.instrprof.increment(ptr, i64, i32, i32) in the module.
+// Idempotent per MODULE — and now genuinely so across modules too.
+void avra_coverage_declare(LLVMModuleRef m) {
+    (void)avra_coverage_intrinsic(m);
 }
 
 // Create @__profn_<name> = private constant [N x i8] c"<name>"
@@ -1088,7 +1109,11 @@ LLVMValueRef avra_coverage_name_global(LLVMModuleRef m, const char* fn_name) {
 void avra_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
                               const char* fn_name, int64_t fn_hash_unused,
                               int32_t num_counters_unused, int32_t counter_idx) {
-    if (!coverage_intrinsic) return;
+    // Resolved from the module being built, not a cached ref — see
+    // avra_coverage_intrinsic. Absent means coverage was never declared for
+    // this module, which is the same "nothing to emit" case as before.
+    LLVMValueRef intrinsic = LLVMGetNamedFunction(m, AVRA_INSTRPROF_INCREMENT);
+    if (!intrinsic) return;
     // Compute unique hash from function name (djb2)
     uint64_t hash = 5381;
     for (const char* p = fn_name; *p; p++)
@@ -1109,15 +1134,22 @@ void avra_coverage_emit_hit(LLVMBuilderRef builder, LLVMModuleRef m,
         LLVMInt32TypeInContext(ctx)
     };
     LLVMTypeRef fn_type = LLVMFunctionType(LLVMVoidTypeInContext(ctx), param_types, 4, 0);
-    LLVMBuildCall2(builder, fn_type, coverage_intrinsic, args, 4, "");
+    LLVMBuildCall2(builder, fn_type, intrinsic, args, 4, "");
 }
 
 // Patch all llvm.instrprof.increment calls in fn_val to use actual_count
 // as the num_counters argument (arg index 2).
 void avra_coverage_finalize_fn(LLVMValueRef fn_val, int32_t actual_count) {
-    if (!coverage_intrinsic || actual_count <= 0) return;
-    LLVMContextRef ctx = LLVMGetGlobalParent(fn_val) ?
-        LLVMGetModuleContext(LLVMGetGlobalParent(fn_val)) : NULL;
+    if (actual_count <= 0) return;
+    // The module comes from the FUNCTION being patched, so the callee compared
+    // below is this module's intrinsic. Comparing against a cached ref from an
+    // earlier module matched nothing, so the num_counters operand silently kept
+    // its 0 placeholder — wrong counts rather than a crash.
+    LLVMModuleRef m = LLVMGetGlobalParent(fn_val);
+    if (!m) return;
+    LLVMValueRef intrinsic = LLVMGetNamedFunction(m, AVRA_INSTRPROF_INCREMENT);
+    if (!intrinsic) return;
+    LLVMContextRef ctx = LLVMGetModuleContext(m);
     if (!ctx) return;
     LLVMValueRef count_val = LLVMConstInt(LLVMInt32TypeInContext(ctx),
                                            (uint32_t)actual_count, 0);
@@ -1127,7 +1159,7 @@ void avra_coverage_finalize_fn(LLVMValueRef fn_val, int32_t actual_count) {
         while (inst) {
             if (LLVMIsACallInst(inst)) {
                 LLVMValueRef callee = LLVMGetCalledValue(inst);
-                if (callee == coverage_intrinsic) {
+                if (callee == intrinsic) {
                     // Replace arg 2 (num_counters) with actual count
                     LLVMSetOperand(inst, 2, count_val);
                 }
