@@ -69,6 +69,17 @@ fn main() {
 /// The child cgroup is created UNDER this process's own group, which is what
 /// makes it permissible without any privilege the test does not already have.
 fn run_in_limited_cgroup(bin: string, limit_mb: int, log: string) -> string {
+    run_in_cgroup_at(bin, limit_mb, log, false)
+}
+
+/// `nested = true` puts the limit on the PARENT and runs the probe in an
+/// UNLIMITED CHILD — the layout a nested container runtime produces (a k8s pod
+/// under a limited parent, a systemd slice). A leaf-only reader sees the
+/// child's own unlimited value and reports "no limit"; only an ancestor walk
+/// finds the constraint. That is the whole point of t-kdyj.11, so the two
+/// layouts share ONE script: if they were written separately, a divergence in
+/// setup could masquerade as a difference in what the sampler reports.
+fn run_in_cgroup_at(bin: string, limit_mb: int, log: string, nested: bool) -> string {
     // `${...}` is Avra's interpolation, so anything in that form is
     // substituted here and anything written `$x` is a genuine shell variable.
     // The two inputs from Avra are bound to shell variables up front rather
@@ -76,6 +87,7 @@ fn run_in_limited_cgroup(bin: string, limit_mb: int, log: string) -> string {
     let script = "set -u
 limit_bytes=$(( ${limit_mb} * 1024 * 1024 ))
 bin=\"${bin}\"
+nested=${if nested { "1" } else { "0" }}
 name=avra_scope_probe_$$
 
 # Removing the group can lose a race with the kernel: the probe has exited and
@@ -111,9 +123,25 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
   # controller; without this the write below fails and the branch skips.
   echo +memory > \"$parent/cgroup.subtree_control\" 2>/dev/null
   if mkdir -p \"$dir\" 2>/dev/null && echo $limit_bytes > \"$dir/memory.max\" 2>/dev/null; then
-    run_in \"$dir\"
-    reap \"$dir\"
-    exit 0
+    if [ \"$nested\" = 1 ]; then
+      # Delegate so the child owns a memory.max of its own. Unset it stays the
+      # literal \"max\" — and if delegation is refused the file is absent, which
+      # the walk also reads as \"no finite limit here\", so either way the child
+      # contributes nothing and the parent must be found.
+      echo +memory > \"$dir/cgroup.subtree_control\" 2>/dev/null
+      inner=$dir/inner
+      if mkdir -p \"$inner\" 2>/dev/null; then
+        run_in \"$inner\"
+        reap \"$inner\"
+        reap \"$dir\"
+        exit 0
+      fi
+      reap \"$dir\"
+    else
+      run_in \"$dir\"
+      reap \"$dir\"
+      exit 0
+    fi
   fi
   reap \"$dir\"
 fi
@@ -123,9 +151,22 @@ rel=$(awk -F: '$2 ~ /(^|,)memory(,|$)/ { print $3 }' /proc/self/cgroup)
 if [ -n \"$rel\" ] && [ -d /sys/fs/cgroup/memory ]; then
   dir=/sys/fs/cgroup/memory$rel/$name
   if mkdir -p \"$dir\" 2>/dev/null && echo $limit_bytes > \"$dir/memory.limit_in_bytes\" 2>/dev/null; then
-    run_in \"$dir\"
-    reap \"$dir\"
-    exit 0
+    if [ \"$nested\" = 1 ]; then
+      # A fresh v1 child inherits PAGE_COUNTER_MAX, i.e. unlimited, so the
+      # probe's own group carries no constraint and only the parent does.
+      inner=$dir/inner
+      if mkdir -p \"$inner\" 2>/dev/null; then
+        run_in \"$inner\"
+        reap \"$inner\"
+        reap \"$dir\"
+        exit 0
+      fi
+      reap \"$dir\"
+    else
+      run_in \"$dir\"
+      reap \"$dir\"
+      exit 0
+    fi
   fi
   reap \"$dir\"
 fi
@@ -262,6 +303,33 @@ spec "the resource sampler reports the scope's memory, not the box's (t-kdyj.9)"
                         // a test are exactly what the suite should not ship.
                         && !out.contains("__AVRA_CGROUP_LEAKED__")
                 }
+            }
+        }
+
+        // t-kdyj.11: the ANCESTOR-ONLY layout. The limit is on the parent and
+        // the probe runs in an unlimited child — what a nested runtime
+        // produces. A leaf-only reader finds the child's own unlimited value,
+        // reports "no limit", and falls back to the BOX's memory: the exact
+        // 31x overestimate the table at the top of this file records, reached
+        // by a different route. Only an ancestor walk sees the parent.
+        //
+        // This case MUST fail against leaf-only code, and does — see the
+        // mutation record at the foot of this file.
+        then "an ancestor-only limit is still the limit" {
+            let bin = "/tmp/avra_cgroup_probe_${string(avra_getpid())}"
+            let limit_mb = 512
+            let out = run_in_cgroup_at(bin, limit_mb, "${bin}.nested.log", true)
+            if out.contains("__AVRA_CGROUP_UNAVAILABLE__") {
+                println("[cgroup_scope] SKIP — no writable cgroup available; the ancestor case did not run")
+                true
+            } else {
+                let cap = probe_value(out, "capacity_mb")
+                let avail = probe_value(out, "available_mb")
+                let kind = probe_value(out, "scope_kind")
+                cap == limit_mb
+                    && avail > 0 && avail <= limit_mb
+                    && kind == SCOPE_CGROUP
+                    && !out.contains("__AVRA_CGROUP_LEAKED__")
             }
         }
     }

@@ -5193,6 +5193,10 @@ int64_t avra_mem_available_mb(void) {
 #ifdef __linux__
 static pthread_once_t avra_cgroup_v2_once = PTHREAD_ONCE_INIT;
 static char avra_cgroup_v2_dir[PATH_MAX];
+// The controller mount point — the STOP boundary for the ancestor walk
+// (t-kdyj.11). Without it a walk up from the leaf would climb out of the
+// cgroup filesystem entirely.
+static char avra_cgroup_v2_mount_dir[PATH_MAX];
 
 // Find the v2 hierarchy's root and mountpoint from mountinfo. `/sys/fs/cgroup`
 // is common but not guaranteed in containers, so treating it as an API would
@@ -5268,6 +5272,7 @@ static void avra_cgroup_v2_init(void) {
             }
             if (rel_len == 0 || (rel_len == 1 && rel_path[0] == '/')) suffix = "";
             snprintf(avra_cgroup_v2_dir, sizeof(avra_cgroup_v2_dir), "%s%s", mount_point, suffix);
+            snprintf(avra_cgroup_v2_mount_dir, sizeof(avra_cgroup_v2_mount_dir), "%s", mount_point);
             return;
         }
         p = eol ? eol + 1 : NULL;
@@ -5290,31 +5295,127 @@ static ssize_t avra_cgroup_v2_read(const char* name, char* out, size_t cap) {
     return n;
 }
 
-// A cgroup value expressed in bytes. "max" and malformed values are unknown.
-static int64_t avra_cgroup_v2_bytes(const char* name) {
+// ── shared cgroup hierarchy walk (t-kdyj.11) ─────────────────────────
+//
+// Both hierarchies used to read the process's OWN leaf group and nothing else.
+// When the constraint sits on an ANCESTOR — the leaf's own file reads unlimited
+// — the lookup returned "no limit" and the sampler fell back to the box's
+// memory. That is the same silent overestimate t-kdyj.9 removed for the v1/v2
+// axis, arriving by a different route, and it is the ordinary layout for nested
+// runtimes: a Kubernetes pod under a limited parent, a systemd slice, a
+// container inside a container.
+//
+// ONE walk, used by BOTH hierarchies. Two implementations of the same question
+// drifting apart is precisely how v1 and v2 came to disagree in the first
+// place, which is the defect this family of changes exists to remove.
+
+// A cgroup byte value read from an explicit directory. Guards the ADD as well
+// as the multiply: at out == INT64_MAX/10 the multiply is still safe but the
+// final digit can carry past the max, and signed overflow is UB rather than a
+// wrapped value we could detect after the fact.
+static int64_t avra_cgroup_bytes_at(const char* dir, const char* name) {
+    char path[PATH_MAX];
+    int written = snprintf(path, sizeof(path), "%s/%s", dir, name);
+    if (written <= 0 || (size_t)written >= sizeof(path)) return 0;
+    int fd = open(path, O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return 0;
     char buf[128];
-    if (avra_cgroup_v2_read(name, buf, sizeof(buf)) < 0) return 0;
-    const char* p = buf;
-    if (!(*p >= '0' && *p <= '9')) return 0;
+    ssize_t n;
+    do { n = read(fd, buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
+    close(fd);
+    if (n <= 0) return 0;
+    buf[n] = '\0';
+    const char* q = buf;
+    if (!(*q >= '0' && *q <= '9')) return 0;
     int64_t out = 0;
-    while (*p >= '0' && *p <= '9') {
-        if (out > INT64_MAX / 10) return 0;
-        out = out * 10 + (*p - '0');
-        p++;
+    while (*q >= '0' && *q <= '9') {
+        int digit = *q - '0';
+        if (out > (INT64_MAX - digit) / 10) return 0;
+        out = out * 10 + digit;
+        q++;
     }
     return out;
 }
 
-static int64_t avra_cgroup_v2_memory_limit_kb(void) {
-    int64_t bytes = avra_cgroup_v2_bytes("memory.max");
-    // Treat a value too large to be a practical machine limit as unlimited.
-    if (bytes <= 0 || bytes > INT64_MAX / 2) return 0;
-    return bytes / 1024;
+// "Unlimited" is spelled differently per hierarchy — v2 writes the literal
+// `max` (non-numeric, so the parse above yields 0) and v1 writes
+// PAGE_COUNTER_MAX (numeric but absurd). Both land here as "no finite limit at
+// this level", so the walk skips the level rather than treating it as binding.
+static int avra_cgroup_limit_is_finite(int64_t bytes) {
+    return bytes > 0 && bytes <= INT64_MAX / 2;
 }
 
-static int64_t avra_cgroup_v2_memory_current_kb(void) {
-    int64_t bytes = avra_cgroup_v2_bytes("memory.current");
-    return bytes > 0 ? bytes / 1024 : 0;
+// Walk from `leaf` up to `mount` inclusive.
+//
+// `want_headroom` picks the SELECTION RULE, because capacity and availability
+// are different questions:
+//
+//   0 — the CEILING: the smallest finite limit anywhere on the path. "How much
+//       can this process ever use" is a property of the limits alone, so no
+//       usage file is opened and the limit-only callers stay cheap.
+//   1 — the BINDING HEADROOM: the level with the smallest (limit - usage).
+//       "How much more can I allocate" is not answered by the smallest limit —
+//       a level with a larger limit but higher usage can be the one that
+//       actually stops the next allocation.
+//
+// Reporting both figures from the SAME level keeps them in one accounting
+// domain, the invariant t-kdyj.9 pinned for the v1-vs-v2 choice.
+static void avra_cgroup_walk(const char* leaf, const char* mount,
+                             const char* limit_file, const char* usage_file,
+                             int want_headroom,
+                             int64_t* limit_kb, int64_t* current_kb) {
+    *limit_kb = 0;
+    *current_kb = 0;
+    if (leaf == NULL || leaf[0] == '\0' || mount == NULL || mount[0] == '\0') return;
+    size_t mount_len = strlen(mount);
+    char cur[PATH_MAX];
+    if (snprintf(cur, sizeof(cur), "%s", leaf) < 0) return;
+    if (strlen(cur) < mount_len) return;   // leaf outside the mount: not walkable
+
+    int64_t best_limit = 0, best_usage = 0, best_key = 0;
+    int have = 0;
+    for (;;) {
+        int64_t lim = avra_cgroup_bytes_at(cur, limit_file);
+        if (avra_cgroup_limit_is_finite(lim)) {
+            int64_t use = 0;
+            int64_t key = lim;
+            if (want_headroom && usage_file != NULL) {
+                use = avra_cgroup_bytes_at(cur, usage_file);
+                if (use < 0) use = 0;
+                key = lim - use;
+                if (key < 0) key = 0;
+            }
+            if (!have || key < best_key) {
+                have = 1;
+                best_key = key;
+                best_limit = lim;
+                best_usage = use;
+            }
+        }
+        if (strlen(cur) <= mount_len) break;          // reached the mount point
+        char* slash = strrchr(cur, '/');
+        if (slash == NULL || slash == cur) break;
+        *slash = '\0';
+        if (strlen(cur) < mount_len) break;
+    }
+    if (!have) return;
+    *limit_kb = best_limit / 1024;
+    *current_kb = best_usage / 1024;
+}
+
+static int64_t avra_cgroup_v2_memory_limit_kb(void) {
+    pthread_once(&avra_cgroup_v2_once, avra_cgroup_v2_init);
+    int64_t limit, current;
+    avra_cgroup_walk(avra_cgroup_v2_dir, avra_cgroup_v2_mount_dir,
+                     "memory.max", NULL, 0, &limit, &current);
+    return limit;
+}
+
+// The binding (limit, usage) pair for v2 — the level with the least headroom.
+static void avra_cgroup_v2_memory_pair_kb(int64_t* limit_kb, int64_t* current_kb) {
+    pthread_once(&avra_cgroup_v2_once, avra_cgroup_v2_init);
+    avra_cgroup_walk(avra_cgroup_v2_dir, avra_cgroup_v2_mount_dir,
+                     "memory.max", "memory.current", 1, limit_kb, current_kb);
 }
 
 // ── cgroup v1 (legacy) memory controller (t-kdyj.9) ──────────────────
@@ -5351,6 +5452,7 @@ static int avra_csv_has_token(const char* list, size_t len, const char* tok) {
 
 static pthread_once_t avra_cgroup_v1_mem_once = PTHREAD_ONCE_INIT;
 static char avra_cgroup_v1_mem_dir[PATH_MAX];
+static char avra_cgroup_v1_mount_dir[PATH_MAX];
 
 // Find the legacy memory controller's hierarchy root and mount point. Unlike
 // v2 there is one mount per controller, so the fstype alone is not enough —
@@ -5512,6 +5614,7 @@ static void avra_cgroup_v1_mem_init(void) {
                 }
                 if (rel_len == 0 || (rel_len == 1 && rel_path[0] == '/')) suffix = "";
                 snprintf(avra_cgroup_v1_mem_dir, sizeof(avra_cgroup_v1_mem_dir), "%s%s", mount_point, suffix);
+                snprintf(avra_cgroup_v1_mount_dir, sizeof(avra_cgroup_v1_mount_dir), "%s", mount_point);
                 return;
             }
         }
@@ -5519,48 +5622,20 @@ static void avra_cgroup_v1_mem_init(void) {
     }
 }
 
-static int64_t avra_cgroup_v1_mem_bytes(const char* name) {
-    pthread_once(&avra_cgroup_v1_mem_once, avra_cgroup_v1_mem_init);
-    if (avra_cgroup_v1_mem_dir[0] == '\0') return 0;
-    char path[PATH_MAX];
-    int written = snprintf(path, sizeof(path), "%s/%s", avra_cgroup_v1_mem_dir, name);
-    if (written <= 0 || (size_t)written >= sizeof(path)) return 0;
-    int fd = open(path, O_RDONLY | O_CLOEXEC);
-    if (fd < 0) return 0;
-    char buf[128];
-    ssize_t n;
-    do { n = read(fd, buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
-    close(fd);
-    if (n <= 0) return 0;
-    buf[n] = '\0';
-    const char* q = buf;
-    if (!(*q >= '0' && *q <= '9')) return 0;
-    int64_t out = 0;
-    while (*q >= '0' && *q <= '9') {
-        // Guard the ADD as well as the multiply: at out == INT64_MAX/10 the
-        // multiply is still safe but the final digit can carry past the max,
-        // and signed overflow is UB rather than a wrapped value we could
-        // detect afterwards. Kernel values never reach here; a malformed or
-        // future file value can.
-        int digit = *q - '0';
-        if (out > (INT64_MAX - digit) / 10) return 0;
-        out = out * 10 + digit;
-        q++;
-    }
-    return out;
-}
-
 static int64_t avra_cgroup_v1_memory_limit_kb(void) {
-    int64_t bytes = avra_cgroup_v1_mem_bytes("memory.limit_in_bytes");
-    // v1 spells "unlimited" as PAGE_COUNTER_MAX (9223372036854771712), not a
-    // word, so the same too-large-to-be-real guard the v2 path uses covers it.
-    if (bytes <= 0 || bytes > INT64_MAX / 2) return 0;
-    return bytes / 1024;
+    pthread_once(&avra_cgroup_v1_mem_once, avra_cgroup_v1_mem_init);
+    int64_t limit, current;
+    avra_cgroup_walk(avra_cgroup_v1_mem_dir, avra_cgroup_v1_mount_dir,
+                     "memory.limit_in_bytes", NULL, 0, &limit, &current);
+    return limit;
 }
 
-static int64_t avra_cgroup_v1_memory_current_kb(void) {
-    int64_t bytes = avra_cgroup_v1_mem_bytes("memory.usage_in_bytes");
-    return bytes > 0 ? bytes / 1024 : 0;
+// The binding (limit, usage) pair for v1 — the level with the least headroom.
+static void avra_cgroup_v1_memory_pair_kb(int64_t* limit_kb, int64_t* current_kb) {
+    pthread_once(&avra_cgroup_v1_mem_once, avra_cgroup_v1_mem_init);
+    avra_cgroup_walk(avra_cgroup_v1_mem_dir, avra_cgroup_v1_mount_dir,
+                     "memory.limit_in_bytes", "memory.usage_in_bytes", 1,
+                     limit_kb, current_kb);
 }
 
 // The effective memory cgroup limit and current usage, preferring v2 and
@@ -5579,18 +5654,10 @@ static int64_t avra_cgroup_memory_limit_kb(void) {
 }
 
 static void avra_cgroup_memory_kb(int64_t* limit_kb, int64_t* current_kb) {
-    int64_t limit = avra_cgroup_v2_memory_limit_kb();
-    if (limit > 0) {
-        *limit_kb = limit;
-        *current_kb = avra_cgroup_v2_memory_current_kb();
-        return;
-    }
-    limit = avra_cgroup_v1_memory_limit_kb();
-    if (limit > 0) {
-        *limit_kb = limit;
-        *current_kb = avra_cgroup_v1_memory_current_kb();
-        return;
-    }
+    avra_cgroup_v2_memory_pair_kb(limit_kb, current_kb);
+    if (*limit_kb > 0) return;
+    avra_cgroup_v1_memory_pair_kb(limit_kb, current_kb);
+    if (*limit_kb > 0) return;
     *limit_kb = 0;
     *current_kb = 0;
 }
