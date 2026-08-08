@@ -2885,6 +2885,16 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     let normal_per_shard_mb = lib.per_shard_mb()
     let per_shard_mb = resource_profile_seed_mb(profile, normal_per_shard_mb)
     let jobs = compute_shard_jobs(lib.job_ceiling(), per_shard_mb, snapshot)
+    // t-kdyj.10: say it ONCE, at the top, when the binary running this suite
+    // predates a compiler source. A rebase rewrites working-tree mtimes even
+    // when the content is byte-identical, so `bs2` reads as stale and the run
+    // reds with two failures that name nothing about rebasing — the freshness
+    // guard firing correctly, plus a fixture that shells out to the same
+    // binary. Both timestamps were already known here; only the output lacked
+    // them. Same shape as the mode header below: state the condition before
+    // the failures it explains, not after.
+    let stale = bs2_staleness_note()
+    if stale != "" { eprintln(stale) }
     // t-6flr: reports the ACHIEVED mode, plus the cause when it's degraded.
     eprintln("${lib.report(jobs, snapshot.available_mb)}\n[resources] profile=${resource_runtime_mode_label(profile.runtime_mode)} scope=${resource_scope_label(snapshot.scope)} pressure=${resource_pressure_label(snapshot.pressure)} seed=~${string(per_shard_mb)}MB/shard")
     tpr = shard_phase_ms("prepare:jobs_and_mem", tpr)
@@ -2983,6 +2993,22 @@ fn std_prebuild_fingerprint(project_dir: string, compiler_path: string) -> strin
 /// Serial (jobs=1 implied by the helper) because workspace packages
 /// with [dependencies] sub-build their own deps; concurrent
 /// outer+inner runs would race on the same per-dep cache slot.
+/// One line naming both paths and both timestamps when `build/bs2` predates a
+/// compiler source, or "" when it does not. t-kdyj.10.
+///
+/// The staleness DEFINITION stays in diagnose.sh rather than being reimplemented
+/// here: that file already owns the one answer to "what counts as a compiler
+/// source", and a second copy in Avra is how the runner would start reporting a
+/// different file from the one that actually triggers a rebuild. The cost is a
+/// single shell-out per run, against a suite measured in minutes.
+///
+/// Silent — deliberately — when the script is unreachable (a `bs2 test` run
+/// from outside the bootstrap tree). A reporter that cannot answer should say
+/// nothing, not guess.
+fn bs2_staleness_note() -> string {
+    avra_shell_exec("bash scripts/diagnose.sh --bs2-stale-report 2>/dev/null || true").trim()
+}
+
 fn maybe_prebuild_std_libs(project_dir: string, compiler_path: string) -> LibMode {
     // The metadata fast-path has TWO coupled halves: shards built with
     // AVRA_USE_METADATA=1 STUB every @std/* symbol as an extern, and

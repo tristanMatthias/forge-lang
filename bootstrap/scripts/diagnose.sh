@@ -222,15 +222,15 @@ die()  { err "$*"; exit 1; }
 # $STAT_MTIME deliberately.
 if stat -c %Y . >/dev/null 2>&1; then
   STAT_MTIME="stat -c %Y"
-  # Same probe, same platform split, but emitting `<mtime> <path>` so a
-  # reporter can NAME the file it found. Kept beside $STAT_MTIME rather than
-  # derived from it: the two spellings differ in the name token as well
-  # (%n vs %N), so deriving one from the other would re-hardcode the very
-  # portability assumption the probe above exists to remove.
-  STAT_MTIME_NAME="stat -c %Y %n"
+  # A FUNCTION, not a word-split string like $STAT_MTIME above. The format is
+  # two tokens (`%Y %n`), and a split string turns the second into a FILENAME
+  # argument instead of part of the format — so it printed a bare mtime with
+  # no path, the reporter below found an empty path and returned silently, and
+  # the whole thing looked like a tree that was simply never stale.
+  stat_mtime_name() { stat -c '%Y %n' "$@"; }
 else
   STAT_MTIME="stat -f %m"
-  STAT_MTIME_NAME="stat -f %m %N"
+  stat_mtime_name() { stat -f '%m %N' "$@"; }
 fi
 
 # The C LINK INPUTS count as sources (t-drl0). Every binary this gates — bs2,
@@ -284,7 +284,20 @@ compiler_source_paths() {
 # newest_source_mtime; the STALENESS DECISION stays with the predicates, so a
 # quirk here can only ever mis-name a file, never mis-classify a tree.
 newest_source_entry() {
-  compiler_source_paths | tr '\n' '\0' | xargs -0 $STAT_MTIME_NAME 2>/dev/null | sort -rn | head -1
+  local mt p
+  mt=$(newest_source_mtime)
+  [ -z "$mt" ] && return 0
+  # Resolve the newest mtime back to A path carrying it. Deliberately a loop
+  # rather than `xargs stat_mtime_name`: xargs execs a BINARY and cannot call a
+  # shell function, so that spelling silently produced nothing. Only reached
+  # once the tree is already known stale, so the extra sweep costs nothing on a
+  # fresh tree — the overwhelmingly common case.
+  compiler_source_paths | while IFS= read -r p; do
+    if [ "$($STAT_MTIME "$p" 2>/dev/null)" = "$mt" ]; then
+      printf '%s %s\n' "$mt" "$p"
+      break
+    fi
+  done
 }
 
 # STRICT sibling of source_newer_than (`-gt`, not `-ge`): true only when a
@@ -377,6 +390,11 @@ RUN MODES
                        means a source is GENUINELY newer; `tie` (rc 0) means one
                        shares bs2's second, so ensure_bs2 still rebuilds but the
                        binary does not predate an edit.
+  --bs2-stale-report   Read-only: ONE line naming both paths and both
+                       timestamps when build/bs2 predates a compiler source,
+                       and nothing otherwise. Always rc 0 — it reports, it does
+                       not gate. Printed by `bs2 test` at the top of a run so a
+                       post-rebase suite explains itself (t-kdyj.10).
   --rc-strict-suite [f] Run the spec suite under AVRA_RC_STRICT=1 (rcsf.3):
                        poison-on-free + reuse quarantine + abort on release of
                        already-freed RC memory. Validates the compiler's own
@@ -4017,6 +4035,7 @@ main() {
     --hand-leaves)        mode_hand_leaves "$@" ;;
     --emit-gen-check)     mode_emit_gen_check "$@" ;;
     --bs2-stale-check)    mode_bs2_stale_check "$@" ;;
+    --bs2-stale-report)   mode_bs2_stale_report "$@" ;;
     --rc-strict-suite)    mode_rc_strict_suite "$@" ;;
     --link-run)           mode_link_run "$@" ;;
     --check)              mode_check "$@" ;;

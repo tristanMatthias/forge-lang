@@ -1,0 +1,95 @@
+// t-kdyj.10: `bs2 test` must SAY, once and at the top, when the binary running
+// the suite predates a compiler source.
+//
+// The failure this prevents: a rebase rewrites working-tree mtimes even when
+// the resulting content is byte-identical, so the freshness probe reports
+// `stale` (correctly, by its own rules — and `make build-quick` agrees, it
+// relinks) and the suite reds with two failures that name nothing about
+// rebasing: suite_bs2_guard_test, which exists to catch exactly "you are
+// testing a binary that does not match your sources", plus a fixture that
+// shells out to the same binary. Measured: bs2 built 08:09:28, mod.av rewritten
+// by the rebase at 08:18:29, both failures cleared by a rebuild with no source
+// change. The information was already in the tree; only the output lacked it.
+//
+// Driven against a SANDBOX source tree via the AVRA_DIAGNOSE_NO_MAIN sourcing
+// hook, the same harness source_newer_than_test.av uses. That is not a
+// convenience — the honest way to test this would be to back-date the real
+// ./build/bs2, and mutating the suite's own compiler mid-run is precisely the
+// mid-suite-rebuild hazard (t-gv3n) that the guard being reported on exists to
+// prevent. Every path the reporter reads is overridden into the sandbox.
+
+use @std.avrac.core.{avra_shell_exec}
+
+/// Both cases share one sandbox builder, so the ONLY difference between the
+/// fresh and stale runs is the target's mtime. Two separately-written scripts
+/// would let an unrelated discrepancy masquerade as the signal.
+fn sandbox_script(backdate_target: bool) -> string {
+    let stamp = if backdate_target {
+        // Strictly older than the sources, so `source_strictly_newer_than` is
+        // unambiguously true — no same-second tie, which is deliberately NOT
+        // the stale condition (t-kdyj.7).
+        "touch -t 202001010000 \"$sandbox/bs2x\"\n"
+    } else {
+        // Target newer than every source: the fresh case.
+        "touch \"$sandbox/bs2x\"\n"
+    }
+    "set -u\n" +
+        "sandbox=$(mktemp -d)\n" +
+        "mkdir -p \"$sandbox/cli\" \"$sandbox/lib\"\n" +
+        "echo x > \"$sandbox/cli/a.av\"; echo y > \"$sandbox/lib/b.av\"\n" +
+        "printf rt > \"$sandbox/runtime.c\"; printf wr > \"$sandbox/llvm_wrapper.c\"\n" +
+        "touch -t 202001010001 \"$sandbox/cli/a.av\" \"$sandbox/lib/b.av\" \\\n" +
+        "    \"$sandbox/runtime.c\" \"$sandbox/llvm_wrapper.c\"\n" +
+        "printf bin > \"$sandbox/bs2x\"; chmod +x \"$sandbox/bs2x\"\n" +
+        stamp +
+        "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh\n" +
+        // Every input the reporter reads, redirected into the sandbox — the
+        // real tree must not participate in either direction.
+        "CLI_SRC_DIR=\"$sandbox/cli\"; LIB_SRC_DIR=\"$sandbox/lib\"\n" +
+        "RUNTIME_C=\"$sandbox/runtime.c\"; BOOTSTRAP_DIR=\"$sandbox\"\n" +
+        "BS2=\"$sandbox/bs2x\"\n" +
+        "echo \"BEGIN\"; mode_bs2_stale_report; echo \"END rc=$?\"\n" +
+        "rm -rf \"$sandbox\"\n"
+}
+
+fn run_sandbox(backdate_target: bool) -> string {
+    let script = sandbox_script(backdate_target)
+    avra_shell_exec("bash -c '" + script.replace("'", "'\\''") + "' 2>&1")
+}
+
+spec "the runner says so when bs2 predates a compiler source (t-kdyj.10)" {
+    given "a target strictly older than the sandbox sources" {
+        then "it names both paths and both timestamps" {
+            let out = run_sandbox(true)
+            // The whole point is that the message is SELF-EXPLAINING: a reader
+            // who has never seen this ticket must be able to act on it. So the
+            // assertion is on the parts that carry meaning — the verdict, the
+            // binary, the culprit source, and the instruction — not on an exact
+            // string that would pin the wording and break on any rewording.
+            // The parens are load-bearing: `&&` binds tighter than `||`, so
+            // without them this reads as `(stale && bs2x && a.av) || b.av` —
+            // an output containing only `b.av` would satisfy the whole
+            // assertion with the other three clauses unevaluated.
+            out.contains("[stale]")
+                && out.contains("bs2x")
+                && (out.contains("a.av") || out.contains("b.av"))
+        }
+        then "it tells the reader what to do about it" {
+            run_sandbox(true).contains("rebuild before trusting this run")
+        }
+        // Reporting must never GATE. A non-zero rc here would propagate into
+        // the runner's startup path, turning an advisory note into a failure.
+        then "it still exits 0 — this reports, it does not gate" {
+            run_sandbox(true).contains("END rc=0")
+        }
+    }
+    given "a target newer than every sandbox source" {
+        // The negative control. Without this the positive case above would be
+        // satisfied by a reporter that prints unconditionally, which is a
+        // guard that cannot fail.
+        then "it says nothing at all" {
+            let out = run_sandbox(false)
+            !out.contains("[stale]") && out.contains("BEGIN\nEND rc=0")
+        }
+    }
+}
