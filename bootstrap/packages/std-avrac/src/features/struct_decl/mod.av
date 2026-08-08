@@ -60,7 +60,6 @@ export fn field_assign_feature() -> Feature {
 export fn type_decl_feature() -> Feature {
     feature_new("type_decl") with {
         decl_keyword: "kw_type",
-        parse_decl: (p: Parser) -> p.parse_type_declaration(),
     }
 }
 
@@ -69,7 +68,6 @@ export fn type_decl_feature() -> Feature {
 export fn shape_decl_feature() -> Feature {
     feature_new("shape_decl") with {
         decl_keyword: "kw_shape",
-        parse_decl: (p: Parser) -> p.parse_shape_declaration(),
     }
 }
 

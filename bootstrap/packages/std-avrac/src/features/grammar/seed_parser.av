@@ -551,7 +551,7 @@ export fn peek_cond_names() -> List<string> {
         "comma_not_rbrace", "quote_arm", "quote_type", "body_marker", "kw_let",
         "cfg_pair_value", "cfg_pair_eq", "comp_inst_shape", "comp_nested_named",
         "comp_nested_bare", "comp_nested_raw_named", "comp_nested_raw_bare", "comp_method",
-        "bare_comp_inst", "bare_comp_inst_raw", "always", "decl_table_kw", "return_value",
+        "bare_comp_inst", "bare_comp_inst_raw", "always", "return_value",
         "cur_ident", "paren_lambda_ahead", "paren_arrow_ahead", "list_comp_ahead", "comp_paren_shape",
         "comp_implements_inst", "kw_implements", "let_destructure", "kw_config", "kw_children",
         "annot_lead", "bare_inst_lead"

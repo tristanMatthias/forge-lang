@@ -27,7 +27,7 @@ use features.grammar.{grammar_has_gate, rule_first_is_ident, rule_first_literal}
 use features.grammar.{rule_result_kind, gprim_ref_name}
 // The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
 use core.{tk_is_field_name}
-use core.{tk_keyword_str, lookup_decl_parser}
+use core.{tk_keyword_str}
 // The SHARED if-let desugar, also called by the hand's parse_if_let_expression — one
 // definition of the rows, so the native rule and the oracle cannot lower differently.
 use core.{build_if_let_expr, build_if_let_stmt}
@@ -996,7 +996,6 @@ impl PState {
         mut d = parser_new_with_store(self.src, self.file, self.store)
         d.records_roots = 0
         d.stmt_flip = false
-        d.decl_flip = false
         d.expr_flip = false
         d.expr_static = false
         self.hand_delegate = d
@@ -1319,7 +1318,6 @@ export fn new_pstate(src: string) -> PState {
     mut d = parser_new_with_store(src, "", store)
     d.records_roots = 0
     d.stmt_flip = false
-    d.decl_flip = false
     d.expr_flip = false
     d.expr_static = false
     PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
@@ -2465,27 +2463,6 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.pos == 0 { return true }
         return st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line ==
                st.store.lines.to_linecol(st.cur().pos).line
-    }
-    // `decl_table_kw` — the current token is a keyword the feature REGISTRY has a
-    // declaration parser for. Not a keyword list: it asks `lookup_decl_parser` the
-    // question the hand's `export` branch asks, off the same registry, so the two
-    // cannot drift as features register or retire declaration keywords.
-    //
-    // It exists because `exportable_inner` ends in `@hand(decl_hand)`, whose FIRST is
-    // UNIVERSAL — and `export_decl`'s `@require` reads exactly that FIRST to decide
-    // whether a declaration follows `export`. With the tail unguarded the requirement
-    // accepted anything, so `export export fn g() { }` parsed as a nested export where
-    // the hand answers "expected declaration after `export`" (the hand looks the inner
-    // keyword up in the table, and `export` is not IN the table). Narrowing the tail
-    // narrows the FIRST it contributes, which is the whole point of `@peek`.
-    //
-    // A missing delegate means no registry to consult, and the answer is CONSERVATIVE —
-    // true, so the tail still runs and the hand still gets its chance. Same reading, and
-    // the same reason, as `ident_lbrace_is_feature_form`.
-    if cond == "decl_table_kw" {
-        let d = st.delegate()
-        if d == null { return true }
-        return lookup_decl_parser(d!.features, tk_keyword_str(st.cur().tk)) != null
     }
     true
 }
@@ -4516,7 +4493,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // stmt_flip too: a leaf's nested block (closure body, `if`-expr arm) parses
     // statements by hand, never re-entering the statement flip on this delegate.
     bp.stmt_flip = false
-    bp.decl_flip = false
     bp.expr_flip = false
     bp.expr_static = false
     // `advance()`, NOT `advance_token()`: only the former maintains `prev_line`

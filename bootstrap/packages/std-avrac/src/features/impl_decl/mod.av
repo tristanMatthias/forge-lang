@@ -8,6 +8,5 @@ use core.{feature_new, Feature}
 export fn impl_decl_feature() -> Feature {
     feature_new("impl_decl") with {
         decl_keyword: "kw_impl",
-        parse_decl: (p: Parser) -> p.parse_impl_declaration(),
     }
 }

@@ -12,7 +12,7 @@
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit, type_expr_to_vtype}
-use core.{Registry, build_registry, lookup_decl_parser, lookup_stmt_parser, lookup_expr_parser}
+use core.{Registry, build_registry, lookup_stmt_parser, lookup_expr_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name, tk_is_field_name}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index, share_arenas_keep_lines}
 use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span, byte_span_none, expr_ref_id, SrcPos}
@@ -363,7 +363,6 @@ export type Parser = {
     // Read once at construction, settable by tests. Default OFF until proven
     // byte-identical on the full selfhost, then promoted (like type/pat_flip).
     // dsl_decl_grammar caches avra_decl_flip_grammar() lazily, once.
-    mut decl_flip: bool,
     mut dsl_decl_grammar: Grammar?,
     // ps3t.6.7 slice 5a — DIAGNOSTIC hook (AVRA_NO_STATIC_FALLBACK=1, default OFF).
     // When set, parse_declaration/parse_statement do NOT re-parse a failed static
@@ -861,7 +860,6 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // delegate. Proven byte-identical over the full selfhost + corpus. Escape
         // hatch AVRA_PARSER_DECL_FLIP=0 routes back to the hand RD driver, which
         // stays the @hand leaf implementation + DSL-error fallback + test oracle.
-        decl_flip: avra_process_env_get("AVRA_PARSER_DECL_FLIP") != "0",
         dsl_decl_grammar: null,
         // ps3t.6.7 slice 5a diagnostic hook — default OFF (byte-identical production).
         hand_delegate: null,
@@ -1389,7 +1387,6 @@ impl Parser {
             // full-program flip stays proven (diff-test) for the eventual static
             // generated parser, which needs no delegate/interpreter at all.
             d.stmt_flip = false
-            d.decl_flip = false
             d.expr_flip = false
             d.expr_static = false
             d.decl_static = false

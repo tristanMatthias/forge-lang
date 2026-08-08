@@ -49,7 +49,6 @@ export fn select_feature() -> Feature {
     feature_new("select") with {
         stmt_tag: Stmt.Select(empty_arms),
         decl_keyword: "kw_select",
-        parse_decl: (p: Parser) -> p.parse_select_statement(),
         emit_stmt: select_emit_stmt,
         resolve_stmt: select_resolve,
         check_stmt: select_check,

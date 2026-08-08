@@ -750,7 +750,6 @@ fn rtree_at(mode: string, source: string) -> string {
     // the vacuity class this file exists to police — asserting three implementations
     // agree while running one is worse than not asserting it.
     let f = mode_flags(mode)
-    p.decl_flip = f.decl_flip
     p.decl_static = f.decl_static
     p.expr_flip = f.expr_flip
     p.expr_static = f.expr_static
@@ -791,16 +790,16 @@ fn rtree_at(mode: string, source: string) -> string {
 ///   hand — both off, so the gate is false and `parse_expression_hand` runs
 ///   emit — expr_static on: the generated static parser
 ///   exec — expr_flip on + expr_static off: the Grammar-tree interpreter
-type RouteFlags = { decl_flip: bool, decl_static: bool, expr_flip: bool, expr_static: bool }
+type RouteFlags = { decl_static: bool, expr_flip: bool, expr_static: bool }
 
 fn mode_flags(mode: string) -> RouteFlags {
     if mode == "hand" {
-        return RouteFlags { decl_flip: false, decl_static: true, expr_flip: false, expr_static: false }
+        return RouteFlags { decl_static: true, expr_flip: false, expr_static: false }
     }
     if mode == "emit" {
-        return RouteFlags { decl_flip: true, decl_static: true, expr_flip: false, expr_static: true }
+        return RouteFlags { decl_static: true, expr_flip: false, expr_static: true }
     }
-    RouteFlags { decl_flip: true, decl_static: false, expr_flip: true, expr_static: false }
+    RouteFlags { decl_static: false, expr_flip: true, expr_static: false }
 }
 
 
@@ -976,7 +975,6 @@ fn native_tree_agrees_hand_differs(source: string) -> bool {
 fn poslist(static_raw: bool, source: string) -> string {
     mut p = parser_new(source)
     let f = mode_flags(if static_raw { "emit" } else { "hand" })
-    p.decl_flip = f.decl_flip
     p.decl_static = f.decl_static
     p.expr_flip = f.expr_flip
     p.expr_static = f.expr_static
@@ -995,7 +993,6 @@ fn poslist(static_raw: bool, source: string) -> string {
 fn rdiags(static_raw: bool, source: string) -> int {
     mut p = parser_new(source)
     let f = mode_flags(if static_raw { "emit" } else { "hand" })
-    p.decl_flip = f.decl_flip
     p.decl_static = f.decl_static
     p.expr_flip = f.expr_flip
     p.expr_static = f.expr_static

@@ -26,7 +26,6 @@ use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_parser_source}
 /// error_recovery_differential's `rtree` uses.
 fn tree(static_raw: bool, source: string) -> string {
     mut p = parser_new(source)
-    if !static_raw { p.decl_flip = false }
     let r = p.parse_file_program()
     if r.ids == null { return "<null>" }
     render_stmt_ids(r.store, r.ids!)
@@ -50,7 +49,6 @@ fn agree(source: string) -> bool {
 /// SILENCE is the one outcome a differential oracle cannot interpret).
 fn diags(static_raw: bool, source: string) -> int {
     mut p = parser_new(source)
-    if !static_raw { p.decl_flip = false }
     let r = p.parse_file_program()
     r.bag.diagnostics.length
 }

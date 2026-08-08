@@ -11,6 +11,5 @@ use core.{feature_new, Feature}
 export fn trait_decl_feature() -> Feature {
     feature_new("trait_decl") with {
         decl_keyword: "kw_trait",
-        parse_decl: (p: Parser) -> p.parse_trait_declaration(),
     }
 }

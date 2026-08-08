@@ -24,7 +24,6 @@ use @std.avrac.features.grammar.{emit_lookup_rule, rule_body_has_cut}
 
 fn flip_decl(src: string) -> string {
     mut p = parser_new(src)
-    p.decl_flip = true
     match p.parse_declaration() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<err>"

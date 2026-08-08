@@ -96,7 +96,6 @@ fn hand_only_program(src: string) -> string {
     // spec built on it partly compares a parser against itself. `decl_static` is pinned
     // off too, even though `decl_flip = false` already takes that path out of play.
     mut p = parser_new(src)
-    p.decl_flip = false
     p.decl_static = false
     p.type_flip = false
     p.type_static = false
