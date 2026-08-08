@@ -7,50 +7,7 @@ use parse.{Parser}
 
 impl Parser {
     // Parse type parameters in declarations: `<T>`, `<A, B>`, `<T: Display>`.
-    fn parse_type_params(self) -> List<TypeParamEntry> {
-        self.advance()  // consume `<`
-        let result = self.parse_type_param_entries()
-        if !self.consume(Tk.Greater, "expected `>` after type parameters") {
-            let empty: List<TypeParamEntry> = []
-            return empty
-        }
-        result
-    }
 
-    fn parse_type_param_entries(self) -> List<TypeParamEntry> {
-        mut out: List<TypeParamEntry> = []
-        if self.check(Tk.Greater) { return out }
-        if !self.check(Tk.Identifier) {
-            self.set_error("expected type parameter name")
-            return out
-        }
-        mut continue_parsing = true
-        while continue_parsing {
-            let name = self.current_lexeme
-            self.advance()
-            let bounds = if self.check(Tk.Colon) {
-                self.advance()
-                if !self.check(Tk.Identifier) {
-                    self.set_error("expected trait bound after `:`")
-                    return out
-                }
-                let b = self.current_lexeme
-                self.advance()
-                b
-            } else { "" }
-            out.push(TypeParamEntry { name: name, bounds: bounds })
-            if !self.check(Tk.Comma) {
-                continue_parsing = false
-            } else {
-                self.advance()
-                if !self.check(Tk.Identifier) {
-                    self.set_error("expected type parameter name")
-                    return out
-                }
-            }
-        }
-        out
-    }
 
     // Speculatively try to parse `<type, type, ...>(args)` as a generic call.
     // Takes the already-allocated callee's arena id; returns the GenericCall's
