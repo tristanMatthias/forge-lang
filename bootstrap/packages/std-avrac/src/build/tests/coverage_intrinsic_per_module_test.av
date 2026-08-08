@@ -1,0 +1,89 @@
+// WHY: `avra_coverage_declare` must declare the instrprof intrinsic in EVERY
+// module it is handed, not just the first one this process ever saw.
+//
+// It used to cache the intrinsic in a process-wide static:
+//
+//     static LLVMValueRef coverage_intrinsic = NULL;
+//     void avra_coverage_declare(LLVMModuleRef m) {
+//         if (coverage_intrinsic) return;          // across MODULES, not calls
+//         coverage_intrinsic = LLVMAddFunction(m, "llvm.instrprof.increment", …);
+//     }
+//
+// commented "idempotent — safe to call multiple times". That holds within one
+// module and fails across modules: the static kept the FIRST module's
+// Function, so a second compile in the same process skipped the declaration
+// and then built calls against a function owned by a different — by then
+// possibly disposed — module.
+//
+// Two failures came from that, and only one of them was loud:
+//
+//   * SIGSEGV inside llvm::CallInst::init, surfaced as an F9999 naming an
+//     unrelated Avra frame (`Arena__Expr__ExprId__add`), so the report pointed
+//     away from the cause. LLDB was the only thing that placed it in libLLVM.
+//   * `avra_coverage_finalize_fn` patches the num_counters operand by
+//     comparing `callee == <intrinsic>`. Against a stale ref that matches
+//     NOTHING, so every call kept its 0 placeholder — wrong counts, no crash,
+//     no diagnostic at all.
+//
+// This asserts the property directly, on the EMITTED IR rather than on an
+// internal pointer: build two modules in one process, declare into each, and
+// require both to carry the declaration. Against the cached version the second
+// module's IR has no `llvm.instrprof.increment` line and the second `then`
+// fails — that is the mutation check, and it is why the two modules are
+// asserted separately instead of in one conjunction.
+//
+// Found while implementing i7gw slice 2 (sharded coverage), which is the first
+// thing in the tree to compile two units in one process.
+
+use @std.avrac.core.{avra_selfhost_read_file, avra_getpid}
+use @std.avrac.core.llvm.{avra_llvm_context_create, avra_llvm_context_dispose,
+                          avra_llvm_module_create, avra_llvm_module_dispose,
+                          avra_llvm_print_module_to_file, avra_coverage_declare}
+
+const INTRINSIC = "llvm.instrprof.increment"
+
+/// Declare coverage into a freshly created module and return its printed IR.
+/// The module is disposed before returning: the defect this guards is about
+/// state OUTLIVING a module, so leaving them alive would weaken the test.
+fn declared_ir(ctx: ptr, name: string) -> string {
+    let m = avra_llvm_module_create(name, ctx)
+    avra_coverage_declare(m)
+    let path = "/tmp/avra_covintr_${name}_${avra_getpid()}.ll"
+    let _ = avra_llvm_print_module_to_file(m, path)
+    let ir = avra_selfhost_read_file(path)
+    avra_llvm_module_dispose(m)
+    ir
+}
+
+spec "the coverage intrinsic is declared per MODULE, not once per process" {
+    given "two modules created in one process" {
+        then "the first module carries the declaration" {
+            let ctx = avra_llvm_context_create()
+            let ir = declared_ir(ctx, "first")
+            avra_llvm_context_dispose(ctx)
+            ir.contains(INTRINSIC)
+        }
+        // The one that fails against the cached version. Asserted on its own
+        // so a regression names THIS module rather than a conjunction that
+        // could have failed for either reason.
+        then "the SECOND module carries it too" {
+            let ctx = avra_llvm_context_create()
+            let _first = declared_ir(ctx, "second_a")
+            let ir = declared_ir(ctx, "second_b")
+            avra_llvm_context_dispose(ctx)
+            ir.contains(INTRINSIC)
+        }
+        // Distinct CONTEXTS as well as distinct modules: a real second compile
+        // builds its own context, so the cached ref would be dangling rather
+        // than merely foreign — the shape that actually segfaulted.
+        then "a module in a second context carries it" {
+            let ctx1 = avra_llvm_context_create()
+            let _first = declared_ir(ctx1, "ctx1")
+            avra_llvm_context_dispose(ctx1)
+            let ctx2 = avra_llvm_context_create()
+            let ir = declared_ir(ctx2, "ctx2")
+            avra_llvm_context_dispose(ctx2)
+            ir.contains(INTRINSIC)
+        }
+    }
+}
