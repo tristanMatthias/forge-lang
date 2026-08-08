@@ -2885,16 +2885,6 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
     let normal_per_shard_mb = lib.per_shard_mb()
     let per_shard_mb = resource_profile_seed_mb(profile, normal_per_shard_mb)
     let jobs = compute_shard_jobs(lib.job_ceiling(), per_shard_mb, snapshot)
-    // t-kdyj.10: say it ONCE, at the top, when the binary running this suite
-    // predates a compiler source. A rebase rewrites working-tree mtimes even
-    // when the content is byte-identical, so `bs2` reads as stale and the run
-    // reds with two failures that name nothing about rebasing — the freshness
-    // guard firing correctly, plus a fixture that shells out to the same
-    // binary. Both timestamps were already known here; only the output lacked
-    // them. Same shape as the mode header below: state the condition before
-    // the failures it explains, not after.
-    let stale = bs2_staleness_note()
-    if stale != "" { eprintln(stale) }
     // t-6flr: reports the ACHIEVED mode, plus the cause when it's degraded.
     eprintln("${lib.report(jobs, snapshot.available_mb)}\n[resources] profile=${resource_runtime_mode_label(profile.runtime_mode)} scope=${resource_scope_label(snapshot.scope)} pressure=${resource_pressure_label(snapshot.pressure)} seed=~${string(per_shard_mb)}MB/shard")
     tpr = shard_phase_ms("prepare:jobs_and_mem", tpr)
@@ -3366,6 +3356,23 @@ fn run_test_command(args: TestArgs) {
         avra_process_exit(0)
         return
     }
+
+    // t-kdyj.10: say it ONCE, before any dispatch path, when the binary running
+    // this suite predates a compiler source. A rebase rewrites working-tree
+    // mtimes even when the content is byte-identical, so `bs2` reads as stale
+    // and the run reds with two failures that name nothing about rebasing — the
+    // freshness guard firing correctly, plus a fixture that shells out to the
+    // same binary. Both timestamps were already known; only the output lacked
+    // them.
+    //
+    // HERE rather than in prepare_test_run, for the same reason the
+    // AVRA_SKIP_ENSURE_BS2 stamp above is here: prepare_test_run is on the
+    // PER-FILE path only, so bundled and coverage runs would never report a
+    // stale compiler — the note would be absent exactly where a reader had no
+    // other clue. After the --list return, because listing runs nothing and so
+    // cannot be testing a stale binary.
+    let stale = bs2_staleness_note()
+    if stale != "" { eprintln(stale) }
 
     let accepted_paths = list_map(accepted, (d: DiscoveredFile) -> d.path)
 

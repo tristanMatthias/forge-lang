@@ -70,9 +70,18 @@ spec "the runner says so when bs2 predates a compiler source (t-kdyj.10)" {
             // without them this reads as `(stale && bs2x && a.av) || b.av` —
             // an output containing only `b.av` would satisfy the whole
             // assertion with the other three clauses unevaluated.
+            // The timestamps are asserted EXPLICITLY. Without them the spec's
+            // own name ("names both paths and both timestamps") was a claim it
+            // did not check — a report that dropped fmt_epoch entirely, or
+            // emitted a raw epoch, passed. The sandbox pins both sides
+            // (`touch -t 202001010000` on the target, `...0001` on the
+            // sources), and fmt_epoch renders local time from a local-time
+            // touch, so the round-trip is timezone-stable.
             out.contains("[stale]")
                 && out.contains("bs2x")
                 && (out.contains("a.av") || out.contains("b.av"))
+                && out.contains("(00:00:00)")
+                && out.contains("(00:01:00)")
         }
         then "it tells the reader what to do about it" {
             run_sandbox(true).contains("rebuild before trusting this run")
