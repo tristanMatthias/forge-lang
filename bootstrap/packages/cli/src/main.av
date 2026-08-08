@@ -66,7 +66,7 @@ use @std.avrac.test_runner.{
     new_only_diagnostics, render_strictness_delta, delta_is_strictness,
 }
 use @std.test.libmode.{LibMode, LibModeCause, lib_mode_off, collect_workspace_lib_objs, std_prebuild_cmd, SHARD_RESERVE_MB}
-use @std.avrac.coverage.{render_coverage}
+use @std.avrac.coverage.{render_coverage, merge_covmaps}
 use @std.avrac.build.{llvm_prefix_dir}
 use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           show_overview, show_symbol, show_short, show_symbols,
@@ -2438,7 +2438,24 @@ fn run_test_shard_command(paths: List<string>, args: TestArgs) {
     // same-slug compile — and the winner PUBLISHES whatever mixed bytes
     // survive. Cache slots stay pid-free (keyed on content fps); only
     // the scratch names are per-process.
-    let shard_id = "${batch_slug(paths)}.${string(avra_getpid())}"
+    //
+    // i7gw.2: the ORCHESTRATOR may supply this instead, via AVRA_SHARD_ID. It
+    // needs the id to be predictable — the coverage run has to find the covmap
+    // this child emits, and deriving it from the CHILD's pid makes that
+    // unknowable to the parent. Globbing `build/coverage/*.covmap.tsv` was the
+    // obvious alternative and is a trap: stale files from previous runs sit
+    // there and are indistinguishable from this run's output.
+    //
+    // The anti-interleave property above is preserved, because the
+    // orchestrator's id embeds ITS pid — unique per run, so an orphan from a
+    // killed run still cannot collide with a live one. Falls back to the child
+    // pid when unset, which is what a standalone `bs2 _test_shard` gets.
+    let supplied_id = avra_process_env_get("AVRA_SHARD_ID")
+    let shard_id = if supplied_id != "" {
+        supplied_id
+    } else {
+        "${batch_slug(paths)}.${string(avra_getpid())}"
+    }
     // uzs9.1: the shard path is the DEFAULT per-file test path, but on a
     // cache hit it silently exec'd the cached binary — so `bs2 test <file>`
     // reruns were fast yet never printed `[test-cache] hit`, leaving cache
@@ -2670,6 +2687,12 @@ type Shard = {
     log_path: string,    // where the shard's stdout/stderr land
     bin_path: string,    // nce6.1.F: where the shard writes @marshal TestResults
     cmd: string,         // fully-formed `env … bs2 _test_shard … > log` line
+    // i7gw.2: where this shard's coverage artifacts land. Both are PREDICTED
+    // by the orchestrator (from the shard id it supplies), never discovered by
+    // globbing — `build/coverage/` accumulates stale files from earlier runs
+    // and a glob cannot tell them from this run's. Empty on a non-coverage run.
+    profraw_path: string,
+    covmap_path: string,
 }
 
 impl Shard {
@@ -2730,6 +2753,8 @@ type RunCtx = {
     snapshot: ResourceSnapshot,
     normal_per_shard_mb: int,
     per_shard_mb: int,   // profile-specific static floor for learned estimates
+    coverage: bool,      // i7gw.2: shards instrument themselves and emit profraws
+    cov_dir: string,     // where per-shard covmaps land (build/coverage)
 }
 
 impl RunCtx {
@@ -2777,8 +2802,25 @@ impl RunCtx {
         // reporter writes a @marshal-compatible TestResults file
         // alongside the text [shard-summary] line. Orchestrator
         // prefers the bin when present.
-        let cmd = "${self.env_prefix}${pkg_root}AVRA_TEST_RESULTS_BIN_PATH='${bin_path}' '${self.compiler_path}' _test_shard ${quoted.join(" ")}${self.filter_arg} > '${log_path}' 2>&1"
-        Shard { paths: paths, slug: slug, log_path: log_path, bin_path: bin_path, cmd: cmd }
+        // i7gw.2: a coverage run instruments in the CHILD. The shard id is
+        // supplied rather than left to the child's pid so both artifact paths
+        // below are predictable here; LLVM_PROFILE_FILE is per shard so the
+        // profiles do not overwrite one another; `-c` turns on instrumentation.
+        //
+        // AVRA_TEST_JOBS=1 is NOT set here — the orchestrator already stamps it
+        // for coverage runs, and it must stay per process: instrprof counters
+        // are not atomic, so a shard running its units concurrently would
+        // corrupt its own counts. Sharding parallelises across processes only.
+        let shard_id = "${slug}.${pid}"
+        let profraw = if self.coverage { "${self.log_dir}/${slug}.${pid}.profraw" } else { "" }
+        let covmap = if self.coverage { "${self.cov_dir}/_test_${shard_id}.av.covmap.tsv" } else { "" }
+        let cov_env = if self.coverage {
+            "AVRA_SHARD_ID='${shard_id}' LLVM_PROFILE_FILE='${profraw}' "
+        } else { "" }
+        let cov_flag = if self.coverage { " -c" } else { "" }
+        let cmd = "${self.env_prefix}${pkg_root}${cov_env}AVRA_TEST_RESULTS_BIN_PATH='${bin_path}' '${self.compiler_path}' _test_shard${cov_flag} ${quoted.join(" ")}${self.filter_arg} > '${log_path}' 2>&1"
+        Shard { paths: paths, slug: slug, log_path: log_path, bin_path: bin_path, cmd: cmd,
+                profraw_path: profraw, covmap_path: covmap }
     }
 }
 
@@ -2900,6 +2942,8 @@ fn prepare_test_run(project_dir: string, args: TestArgs) -> RunCtx {
         env_prefix: build_shard_env_prefix(lib, listing_file, universe_fp, project_dir),
         filter_arg: if args.filter == "" { "" } else { " --filter '${args.filter}'" },
         want_meta: lib.want_meta(),
+        coverage: args.coverage,
+        cov_dir: "${project_dir}/build/coverage",
         jobs: jobs,
         profile: profile,
         snapshot: snapshot,
@@ -3450,38 +3494,81 @@ fn publish_test_binary(inputs: BuildInputs, fp: Fingerprint, bin_path: string) {
 /// coverage report via the Avra-side coverage::render_coverage.
 fn run_test_coverage_path(project_dir: string, inputs: BuildInputs,
                           accepted_paths: List<string>, args: TestArgs) {
-    let bin_path = match compile_test_unit(inputs, accepted_paths, args) {
-        .Ok(p) -> p
-        .Err(e) -> { fail(e) }
+    // i7gw slice 2: the coverage run SHARDS, like every other `bs2 test` path.
+    //
+    // It used to build ONE whole-program binary — the last place the runner did
+    // that, and per t-6flr the ~6000MB shape the memory spine exists to avoid.
+    // Sharding here is not merely faster: the shards become ordinary pool work,
+    // so they are admitted against measured MemAvailable by the same governor
+    // as everything else. That is what makes this path memory-safe by the same
+    // mechanism as the rest of the suite rather than by luck.
+    //
+    // The shards are CHILD PROCESSES, not an in-process loop. Three separate
+    // things make an in-process loop impossible, and only the first is a bug:
+    // an LLVM ref cached across modules (fixed, #1197); per-compile state that
+    // does not reset; and the RC region, which never returns pages to the OS,
+    // so N compiles in one process cost the SUM of their peaks. A fresh address
+    // space resolves all three by construction — which is why rule 17 makes
+    // process-level parallelism the sanctioned model.
+    let _ = inputs
+    let t_cov_start = avra_uptime_ms()
+    let cx = prepare_test_run(project_dir, args)
+    let shards = plan_shards(cx, accepted_paths)
+    if shards.length == 0 {
+        eprintln("coverage: no test shards were planned — nothing to report")
+        avra_process_exit(1)
     }
-    let cov_dir = "${project_dir}/build/coverage"
-    let profraw = "${cov_dir}/_test.profraw"
-    let profdata = "${cov_dir}/_test.profdata"
-    avra_shell_exec("rm -f ${profraw}")
-    // AVRA_TEST_JOBS=1: instrprof counters aren't atomic, so the
-    // coverage run pins the in-process runner to sequential execution
-    // for exact counts.
-    let run_rc = avra_process_forward(bin_path, "[]", "{\"env\":{\"LLVM_PROFILE_FILE\":\"${profraw}\",\"AVRA_TEST_JOBS\":\"1\"}}")
-    if run_rc != 0 { eprintln("test binary exited with code ${string(run_rc)}") }
+    // Clear this run's profraws only. A blanket wipe of build/coverage would
+    // also delete a CONCURRENT run's artifacts, and leaving them risks merging
+    // a previous run's counts into this report.
+    for sh in shards {
+        avra_shell_exec("rm -f '${sh.profraw_path}' '${sh.covmap_path}'")
+    }
 
+    // Same key shape as the per-file path (line ~2564) so a coverage run and a
+    // normal run of the same shard set share learned memory priors rather than
+    // each starting cold.
+    let prior_path = admission_prior_path("${project_dir}/build/cache", admission_key(cx.profile, shards))
+    let _gov = dispatch_shards(shards, cx, read_admission_prior(prior_path))
+    // Returns the exit CODE, already folded across shards — it counts crashes
+    // and shards that died without a log, not just failed specs. Using it is
+    // strictly better than re-deriving a verdict from a pass/fail tally here,
+    // which would miss both.
+    let suite_rc = aggregate_shard_logs(shards, t_cov_start)
+
+    let cov_dir = "${project_dir}/build/coverage"
+    let profdata = "${cov_dir}/_test.profdata"
     let llvm_prefix = resolve_llvm_prefix()
-    let merge_out = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata merge -sparse -o ${profdata} ${profraw} 2>&1")
+
+    // Only shards that actually produced a profile contribute. A shard that
+    // died before writing one is reported by the aggregate above; silently
+    // feeding llvm-profdata a missing path would fail the whole merge and lose
+    // the shards that DID run.
+    let present = list_filter(shards, (sh: Shard) -> avra_selfhost_file_exists(sh.profraw_path))
+    if present.length < shards.length {
+        eprintln("coverage: ${string(shards.length - present.length)} of ${string(shards.length)} shard(s) produced no profile — the report below is partial")
+    }
+    if present.length == 0 {
+        eprintln("coverage: no shard produced a profile — nothing to report")
+        avra_process_exit(1)
+    }
+    let raws = list_map(present, (sh: Shard) -> "'${sh.profraw_path}'")
+    let merge_out = avra_shell_exec("${llvm_prefix}/bin/llvm-profdata merge -sparse -o ${profdata} ${raws.join(" ")} 2>&1")
     if merge_out.length > 0 { eprintln(merge_out.trim()) }
 
-    // Dump profdata + hand off to the Avra-side coverage renderer
-    // (coverage::render_coverage joins codegen's covmap.tsv with
-    // per-function counts to produce line/branch/MC-DC stats + optional LCOV).
     let dump_path = "${cov_dir}/_test.profdata.txt"
     avra_shell_exec("${llvm_prefix}/bin/llvm-profdata show --all-functions --counts ${profdata} > ${dump_path} 2>/dev/null")
     println("")
-    // The covmap path derives from the binary the compile just produced
-    // (pid-unique stem) — never a hardcoded stem, which silently reads a
-    // stale/absent covmap once staging paths change.
-    render_coverage(coverage_covmap_path(bin_path), dump_path, args.lcov_path)
-    // A failing suite must fail the coverage run too — render the report
-    // (partial coverage of a red suite is still useful), then propagate
-    // the test binary's exit code instead of masking it with 0.
-    avra_process_exit(run_rc)
+    // The MERGED covmap: with N shards no single binary's mapping describes
+    // the run. merge_covmaps dedups, which is required rather than tidy —
+    // every shard links @std, so a shared function's rows appear in each.
+    let merged_covmap = merge_covmaps(list_map(present, (sh: Shard) -> sh.covmap_path),
+                                      "${cov_dir}/_test.merged.covmap.tsv")
+    render_coverage(merged_covmap, dump_path, args.lcov_path)
+    // A red suite must fail the coverage run. This is a FOLD over shards, not
+    // the last shard's status: taking the last would let a green shard mask a
+    // red one that ran before it.
+    avra_process_exit(suite_rc)
 }
 
 /// LLVM toolchain prefix lookup — delegates to the shared probe in

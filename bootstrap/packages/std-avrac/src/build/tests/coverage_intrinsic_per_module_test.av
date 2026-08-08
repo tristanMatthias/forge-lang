@@ -114,9 +114,6 @@ spec "the coverage intrinsic is declared per MODULE, not once per process" {
             avra_llvm_context_dispose(ctx)
             ir.contains(INTRINSIC)
         }
-        // Distinct CONTEXTS as well as distinct modules: a real second compile
-        // builds its own context, so the cached ref would be dangling rather
-        // than merely foreign — the shape that actually segfaulted.
         // The SILENT half. Declaration alone cannot see it: with a stale ref
         // the module still lacks nothing visible, but every hit keeps
         // num_counters=0 and the coverage numbers are quietly wrong.
@@ -134,6 +131,9 @@ spec "the coverage intrinsic is declared per MODULE, not once per process" {
             // unpatched placeholder, which is exactly the silent failure.
             ir.contains("@llvm.instrprof.increment") && ir.contains("i32 7")
         }
+        // Distinct CONTEXTS as well as distinct modules: a real second compile
+        // builds its own context, so the cached ref would be dangling rather
+        // than merely foreign — the shape that actually segfaulted.
         then "a module in a second context carries it" {
             let ctx1 = avra_llvm_context_create()
             let _first = declared_ir(ctx1, "ctx1")

@@ -153,6 +153,63 @@ fn pct(hit: int, total: int) -> int {
 /// `covmap_path` + `profdata_text_path`, prints the colored summary
 /// table to stdout, and optionally writes LCOV to `lcov_path`
 /// (empty string = no LCOV emit).
+/// Merge N per-shard covmap TSVs into one, written to `out_path`, and return
+/// that path. i7gw slice 2.
+///
+/// This is the piece the ticket called "cross-shard covmap merging" and treated
+/// as the blocker for sharding coverage. It is concatenation plus dedup:
+/// `parse_covmap` is flat and line-oriented — no header, no per-file preamble,
+/// no cross-row state — so rows from different shards parse together exactly as
+/// they would from one file.
+///
+/// The dedup is the ONLY real requirement, and it is not optional. Every shard
+/// links `@std`, so a shared function's rows appear in several shards' covmaps
+/// verbatim; concatenating without dedup counts its lines once per shard and
+/// silently inflates the denominator of every aggregate. Keyed on the whole row
+/// because a row IS its identity here — two rows differing in any field
+/// describe different counters, and two identical rows are the same counter
+/// seen from two shards.
+///
+/// `id` is deliberately NOT part of a composite key with the file: it indexes
+/// counters WITHIN a function (the join is `fn_counters[fn_name][id]`), not
+/// within a compilation unit, so two shards cannot mint colliding ids for
+/// different counters.
+export fn merge_covmaps(paths: List<string>, out_path: string) -> string {
+    let seen = avra_map_new_cstr()
+    // Accumulate into a LIST and join once. Appending to a string per line is
+    // quadratic, and these files are not small: one shard's covmap is ~19MB /
+    // 1.26M rows here, because every shard links all of `@std`. The first
+    // version of this function did that and was SIGKILLed on a ten-spec
+    // directory — the cost is invisible at toy scale and fatal at real scale.
+    mut kept: List<string> = []
+    mut missing = 0
+    for path in paths {
+        let src = avra_selfhost_read_file(path)
+        if src == "" {
+            // A shard that produced no covmap is reported rather than skipped
+            // silently: it means that shard's compile emitted no coverage
+            // mapping, and its specs would otherwise vanish from the report
+            // with the totals still looking plausible.
+            missing = missing + 1
+            continue
+        }
+        for line in src.split("\n") {
+            if line.length == 0 { continue }
+            // Comment rows carry no counters, so they need no dedup and no
+            // ordering guarantees; keeping the first shard's is enough.
+            if line[0] == "#" { continue }
+            if avra_map_has_cstr(seen, line) == 1 { continue }
+            avra_map_set_cstr(seen, line, "1")
+            kept.push(line)
+        }
+    }
+    if missing > 0 {
+        eprintln("coverage: ${string(missing)} of ${string(paths.length)} shard covmap(s) were missing or empty — the report below is partial")
+    }
+    avra_selfhost_write_file(out_path, kept.join("\n") + "\n")
+    out_path
+}
+
 export fn render_coverage(covmap_path: string, profdata_text_path: string, lcov_path: string) {
     let covmap_src = avra_selfhost_read_file(covmap_path)
     if covmap_src == "" {
