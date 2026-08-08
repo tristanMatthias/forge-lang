@@ -5371,6 +5371,14 @@ static void avra_cgroup_walk(const char* leaf, const char* mount,
     char cur[PATH_MAX];
     if (snprintf(cur, sizeof(cur), "%s", leaf) < 0) return;
     if (strlen(cur) < mount_len) return;   // leaf outside the mount: not walkable
+    // Length alone does not prove CONTAINMENT: an unrelated path that happens
+    // to be at least as long would otherwise be walked as though it were in the
+    // hierarchy, reading files outside it and climbing into unrelated
+    // directories. Both callers build the leaf as mount + suffix so the
+    // invariant holds today; this makes the boundary explicit rather than
+    // inherited from the callers.
+    if (strncmp(cur, mount, mount_len) != 0) return;
+    if (cur[mount_len] != '\0' && cur[mount_len] != '/') return;
 
     int64_t best_limit = 0, best_usage = 0, best_key = 0;
     int have = 0;

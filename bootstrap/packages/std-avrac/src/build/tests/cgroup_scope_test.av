@@ -32,7 +32,7 @@
 // Both layouts are handled, so the constrained case runs wherever either is
 // writable rather than only on the v1 host that motivated the fix.
 
-use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_getpid}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_selfhost_file_exists, avra_getpid}
 use @std.avrac.test_runner.{write_fixture}
 
 extern fn avra_resource_memory_capacity_mb() -> int
@@ -59,6 +59,47 @@ fn main() {
     println(\"scope_kind=\" + string(avra_resource_scope_kind()))
 }
 "
+}
+
+/// The probe's path, and the ONE place it is built.
+///
+/// Three `then` blocks need this binary. They previously relied on the FIRST of
+/// them having built it at an identical literal path — an ordering dependency
+/// that nothing declared: reorder or remove that block, or let its build fail,
+/// and the others run `exec` against a missing file. The cgroup setup still
+/// exits 0, so no UNAVAILABLE marker is printed, every probe_value reads -1,
+/// and the failure is reported against the ancestor walk instead of the build.
+///
+/// Building here on demand removes the dependency rather than documenting it.
+/// The build is idempotent per run (same pid, same path) and skipped once the
+/// binary exists, so this costs one build per test process, as before.
+fn probe_bin() -> string {
+    "/tmp/avra_cgroup_probe_${avra_getpid()}"
+}
+
+/// Returns "" on success, or the build log on failure. A failed build is a
+/// FAILURE and never a skip: an unavailable cgroup is a property of the box,
+/// but a three-line probe that will not compile, llc or link is a regression in
+/// this repository, and skipping it would retire every constrained case below
+/// while reporting green.
+fn ensure_probe_built() -> string {
+    let bin = probe_bin()
+    if avra_selfhost_file_exists(bin) { return "" }
+    let src = "${bin}.av"
+    write_fixture(src, probe_source())
+    // Slot-capped (diagnose.sh --slot-exec). This is a real `bs2 build` —
+    // compile, llc, link — fired from inside the shard fan-out, so uncapped it
+    // stacks on top of every other unit's heavy work. Left uncapped it reded a
+    // SIBLING in the same batch (cache_slot_integrity_test's llc
+    // materialisation), which passes both standalone and paired with this file:
+    // the collision only appears at full batch width.
+    let built = avra_shell_exec_status(
+        "bash scripts/diagnose.sh --slot-exec ./build/bs2 build '${src}' -o '${bin}' > '${bin}.build.log' 2>&1")
+    if built != 0 { return avra_selfhost_read_file("${bin}.build.log") }
+    if !avra_selfhost_file_exists(bin) {
+        return "build reported success but produced no binary at ${bin}"
+    }
+    ""
 }
 
 /// Create a child cgroup with `limit_mb`, run `bin` inside it, and capture its
@@ -179,6 +220,90 @@ echo __AVRA_CGROUP_UNAVAILABLE__
     avra_selfhost_read_file(log)
 }
 
+/// The HEADROOM-DISCRIMINATION layout (t-kdyj.11): a parent, a SIBLING holding
+/// memory, and the probe in a child whose own limit is finite but LARGER.
+///
+/// This is the only shape that tells the two selection rules apart, and it
+/// needs a sibling because usage propagates UPWARD: a child's usage can never
+/// exceed its parent's, so in a plain two-level fixture the child is always the
+/// binding level and "smallest limit" and "smallest headroom" agree. With a
+/// sibling holding memory under the shared parent they disagree, and the
+/// correct answer is the parent:
+///
+///     parent  limit 512  usage ~380  ->  headroom ~130   <- binding
+///     child   limit 500  usage    0  ->  headroom  500
+///
+/// So capacity (smallest LIMIT) must come from the CHILD and available
+/// (smallest HEADROOM) from the PARENT — different levels, which is the claim.
+///
+/// Deliberately its own script rather than another flag on the shared one: the
+/// topology differs (three groups, a live holder process), and bending the
+/// two-group script into this shape would obscure both.
+fn run_in_headroom_cgroup(bin: string, parent_mb: int, child_mb: int, hold_mb: int, log: string) -> string {
+    let script = "set -u
+bin=\"${bin}\"
+# The holder needs a real anonymous allocation that stays resident. Absent
+# python3 the case cannot be set up, and says so rather than asserting on a
+# layout it failed to build.
+command -v python3 >/dev/null 2>&1 || { echo __AVRA_CGROUP_UNAVAILABLE__; exit 0; }
+rel=$(awk -F: '$2 ~ /(^|,)memory(,|$)/ { print $3 }' /proc/self/cgroup)
+[ -n \"$rel\" ] && [ -d /sys/fs/cgroup/memory ] || { echo __AVRA_CGROUP_UNAVAILABLE__; exit 0; }
+# v1 only: this needs hierarchical accounting, which v1 exposes as
+# use_hierarchy. Without it a sibling's usage is not charged to the parent and
+# the layout cannot discriminate — so skip rather than assert a false claim.
+[ \"$(cat /sys/fs/cgroup/memory/memory.use_hierarchy 2>/dev/null)\" = 1 ] || { echo __AVRA_CGROUP_UNAVAILABLE__; exit 0; }
+
+base=/sys/fs/cgroup/memory$rel
+P=$base/avra_hdr_$$
+SIB=$P/sib
+C=$P/child
+mkdir -p \"$SIB\" \"$C\" 2>/dev/null || { echo __AVRA_CGROUP_UNAVAILABLE__; exit 0; }
+
+reap() {
+  i=0
+  while [ $i -lt 50 ]; do
+    rmdir \"$1\" 2>/dev/null && return 0
+    [ -d \"$1\" ] || return 0
+    i=$(( i + 1 ))
+    sleep 0.1
+  done
+  echo __AVRA_CGROUP_LEAKED__
+}
+cleanup() { reap \"$SIB\"; reap \"$C\"; reap \"$P\"; }
+
+if ! echo $(( ${parent_mb} * 1024 * 1024 )) > \"$P/memory.limit_in_bytes\" 2>/dev/null; then
+  cleanup
+  echo __AVRA_CGROUP_UNAVAILABLE__
+  exit 0
+fi
+echo $(( ${child_mb} * 1024 * 1024 )) > \"$C/memory.limit_in_bytes\" 2>/dev/null
+
+# Touch every page: an untouched bytearray may not be resident, and the
+# constraint is charged on FAULT, not on allocation.
+sh -c 'echo $$ > '\"$SIB\"'/cgroup.procs && exec python3 -c \"
+import time
+a = bytearray(${hold_mb}*1024*1024)
+for i in range(0, len(a), 4096): a[i] = 1
+time.sleep(20)
+\"' &
+holder=$!
+sleep 4
+
+echo parent_usage_mb=$(( $(cat \"$P/memory.usage_in_bytes\") / 1048576 ))
+echo child_usage_mb=$(( $(cat \"$C/memory.usage_in_bytes\") / 1048576 ))
+sh -c 'echo $$ > '\"$C\"'/cgroup.procs && exec '\"$bin\" 2>&1
+
+kill $holder 2>/dev/null
+wait $holder 2>/dev/null
+sleep 1
+cleanup
+"
+    let script_path = "/tmp/avra_cgroup_headroom_${avra_getpid()}.sh"
+    write_fixture(script_path, script)
+    let _ = avra_shell_exec_status("sh '${script_path}' > '${log}' 2>&1")
+    avra_selfhost_read_file(log)
+}
+
 /// Pull `key=<int>` out of the probe's output. -1 when absent, which fails
 /// every assertion below rather than silently reading as 0.
 fn probe_value(out: string, key: string) -> int {
@@ -235,27 +360,11 @@ spec "the resource sampler reports the scope's memory, not the box's (t-kdyj.9)"
 
     given "a process inside a real, limited cgroup" {
         then "the sampler reports the CGROUP's limit, not the box's memory" {
-            let bin = "/tmp/avra_cgroup_probe_${avra_getpid()}"
-            let src = "${bin}.av"
-            write_fixture(src, probe_source())
-            // Slot-capped (diagnose.sh --slot-exec). This is a real `bs2 build`
-            // — compile, llc, link — fired from inside the shard fan-out, so
-            // uncapped it stacks on top of every other unit's heavy work. Left
-            // uncapped it reded a SIBLING in the same batch
-            // (cache_slot_integrity_test's llc materialisation), which passes
-            // both standalone and paired with this file: the collision only
-            // appears at full batch width. The slot is the same bound the
-            // no-metadata fixture checks already take.
-            let built = avra_shell_exec_status(
-                "bash scripts/diagnose.sh --slot-exec ./build/bs2 build '${src}' -o '${bin}' > '${bin}.build.log' 2>&1")
-            if built != 0 {
-                // NOT a skip. An unavailable cgroup is a property of the box;
-                // a three-line probe failing to compile, llc or link is a
-                // regression in this repository, and skipping it would let a
-                // real breakage report green while silently retiring the whole
-                // constrained case below.
+            let bin = probe_bin()
+            let build_err = ensure_probe_built()
+            if build_err != "" {
                 println("[cgroup_scope] FAIL — could not build the probe:")
-                println(avra_selfhost_read_file("${bin}.build.log"))
+                println(build_err)
                 false
             } else {
                 let limit_mb = 512
@@ -315,21 +424,74 @@ spec "the resource sampler reports the scope's memory, not the box's (t-kdyj.9)"
         //
         // This case MUST fail against leaf-only code, and does — see the
         // mutation record at the foot of this file.
-        then "an ancestor-only limit is still the limit" {
-            let bin = "/tmp/avra_cgroup_probe_${string(avra_getpid())}"
-            let limit_mb = 512
-            let out = run_in_cgroup_at(bin, limit_mb, "${bin}.nested.log", true)
-            if out.contains("__AVRA_CGROUP_UNAVAILABLE__") {
-                println("[cgroup_scope] SKIP — no writable cgroup available; the ancestor case did not run")
-                true
+        // t-kdyj.11: the two selection rules must resolve to DIFFERENT levels.
+        // capacity is a CEILING (smallest finite limit) and available is the
+        // BINDING HEADROOM (smallest limit - usage); with a sibling holding
+        // memory under the shared parent those are not the same level, and
+        // "smallest limit" would overstate what is actually allocatable.
+        then "capacity comes from the smallest limit, available from the least headroom" {
+            let bin = probe_bin()
+            let build_err = ensure_probe_built()
+            if build_err != "" {
+                println("[cgroup_scope] FAIL — could not build the probe:")
+                println(build_err)
+                false
             } else {
-                let cap = probe_value(out, "capacity_mb")
-                let avail = probe_value(out, "available_mb")
-                let kind = probe_value(out, "scope_kind")
-                cap == limit_mb
-                    && avail > 0 && avail <= limit_mb
-                    && kind == SCOPE_CGROUP
-                    && !out.contains("__AVRA_CGROUP_LEAKED__")
+                let parent_mb = 512
+                let child_mb = 500
+                let hold_mb = 380
+                let out = run_in_headroom_cgroup(bin, parent_mb, child_mb, hold_mb, "${bin}.headroom.log")
+                if out.contains("__AVRA_CGROUP_UNAVAILABLE__") {
+                    println("[cgroup_scope] SKIP — the headroom layout could not be built; that rule did not run")
+                    true
+                } else {
+                    let cap = probe_value(out, "capacity_mb")
+                    let avail = probe_value(out, "available_mb")
+                    let parent_used = probe_value(out, "parent_usage_mb")
+                    let child_used = probe_value(out, "child_usage_mb")
+                    // The fixture only discriminates if the holder actually became
+                    // resident in the parent and NOT in the child. Assert the
+                    // premise, or a holder that silently failed to allocate would
+                    // make both rules agree and the case would pass vacuously.
+                    let premise = parent_used > 200 && child_used < 100
+                    if !premise {
+                        println("[cgroup_scope] SKIP — holder did not take effect (parent=${string(parent_used)}MB child=${string(child_used)}MB); the rules cannot be told apart")
+                        true
+                    } else {
+                        // capacity = the CHILD's limit (the smaller of the two).
+                        // available = the PARENT's headroom, far below the child's
+                        // own (child_mb - 0). The gap between them IS the claim.
+                        cap == child_mb
+                            && avail < parent_mb - 200
+                            && avail > 0
+                            && !out.contains("__AVRA_CGROUP_LEAKED__")
+                    }
+                }
+            }
+        }
+
+        then "an ancestor-only limit is still the limit" {
+            let bin = probe_bin()
+            let build_err = ensure_probe_built()
+            if build_err != "" {
+                println("[cgroup_scope] FAIL — could not build the probe:")
+                println(build_err)
+                false
+            } else {
+                let limit_mb = 512
+                let out = run_in_cgroup_at(bin, limit_mb, "${bin}.nested.log", true)
+                if out.contains("__AVRA_CGROUP_UNAVAILABLE__") {
+                    println("[cgroup_scope] SKIP — no writable cgroup available; the ancestor case did not run")
+                    true
+                } else {
+                    let cap = probe_value(out, "capacity_mb")
+                    let avail = probe_value(out, "available_mb")
+                    let kind = probe_value(out, "scope_kind")
+                    cap == limit_mb
+                        && avail > 0 && avail <= limit_mb
+                        && kind == SCOPE_CGROUP
+                        && !out.contains("__AVRA_CGROUP_LEAKED__")
+                }
             }
         }
     }
