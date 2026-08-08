@@ -45,23 +45,35 @@
 //
 // Every failing case is paired with a positive control that is the SAME
 // program with an emittable deferred body. Without the control, a fixture that
-// failed to compile for some unrelated reason would still satisfy a
-// `contains("F9999")` assertion and the spec would pass for the wrong reason.
+// failed to compile for some unrelated reason would still satisfy the
+// diagnostic assertion and the spec would pass for the wrong reason. `break`
+// and `continue` get one control each: they reach `emit_defers_above` from
+// separate arms, so neither is evidence about the other.
 
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_read_file}
 use @std.avrac.test_runner.{write_fixture}
 
-/// Compile `source` and capture diagnostics. `__AVRA_COMPILE_OK__` marks a
-/// clean compile, so a control asserts on a token rather than on the absence
-/// of a string — absence would also be satisfied by output that never arrived.
+/// What a probe compile produced: the compiler's real exit status, and its
+/// diagnostics.
+type CompileProbe = { status: int, out: string }
+
+/// Compile `source` and report BOTH the exit status and the diagnostics.
 ///
-/// `slot` keeps each case on its own path: test files run as parallel units
-/// (d4jv), so a single shared fixture path would let two cases race on one
-/// file and read each other's source.
-fn defer_compile_out(slot: string, source: string) -> string {
+/// The status is taken from `avra_shell_exec_status` rather than inferred from
+/// a sentinel echoed by a `&&`/`||` chain. That is not only tidier — the
+/// original defect was that a failed deferred body produced "no diagnostic, no
+/// F-code, NO NON-ZERO EXIT", and a spec that only reads stdout cannot speak to
+/// the third of those. Every case below asserts the status directly.
+///
+/// `slot` keeps each case on its own paths: test files run as parallel units
+/// (d4jv), so shared fixture and log paths would let two cases race and read
+/// each other's source or output.
+fn defer_compile(slot: string, source: string) -> CompileProbe {
     let path = "/tmp/avra_defer_propagate_${slot}.av"
+    let log = "/tmp/avra_defer_propagate_${slot}.log"
     write_fixture(path, source)
-    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+    let status = avra_shell_exec_status("./build/bs2 compile '${path}' > '${log}' 2>&1")
+    CompileProbe { status: status, out: avra_selfhost_read_file(log) }
 }
 
 /// The union declarations every fixture shares. `pick` returns an ad-hoc union,
@@ -94,43 +106,43 @@ fn blamed(out: string, kind: string) -> bool {
 spec "an unemittable deferred body is a hard error, not silence (t-dy1j)" {
     given "the function-exit walk (emit_defers -> emit_stack_filtered)" {
         then "a top-level `defer` whose body cannot be emitted fails the compile" {
-            let out = defer_compile_out("fnexit", preamble() + "fn main() {
+            let p = defer_compile("fnexit", preamble() + "fn main() {
     let u = pick(0)
     defer println(u)
     println(\"body\")
 }")
-            refused(out) && blamed(out, "defer")
+            p.status != 0 && refused(p.out) && blamed(p.out, "defer")
         }
         then "the same shape with an emittable body compiles (positive control)" {
-            let out = defer_compile_out("fnexit_ok", preamble() + "fn main() {
+            let p = defer_compile("fnexit_ok", preamble() + "fn main() {
     let u = pick(0)
     defer println(\"fine\")
     println(\"body\")
 }")
-            out.contains("__AVRA_COMPILE_OK__")
+            p.status == 0
         }
     }
 
     given "the error-return walk (emit_defers_on_error -> emit_stack_filtered)" {
         then "an `errdefer` whose body cannot be emitted fails the compile" {
-            let out = defer_compile_out("errdefer", preamble() + "fn go(n: int) -> Result<int, string> {
+            let p = defer_compile("errdefer", preamble() + "fn go(n: int) -> Result<int, string> {
     let u = pick(0)
     errdefer println(u)
     if n == 0 { return Result.Err(\"boom\") }
     Result.Ok(n)
 }
 fn main() { match go(0) { .Ok(v) -> println(string(v)) .Err(e) -> println(e) } }")
-            refused(out) && blamed(out, "errdefer")
+            p.status != 0 && refused(p.out) && blamed(p.out, "errdefer")
         }
         then "the same shape with an emittable body compiles (positive control)" {
-            let out = defer_compile_out("errdefer_ok", preamble() + "fn go(n: int) -> Result<int, string> {
+            let p = defer_compile("errdefer_ok", preamble() + "fn go(n: int) -> Result<int, string> {
     let u = pick(0)
     errdefer println(\"fine\")
     if n == 0 { return Result.Err(\"boom\") }
     Result.Ok(n)
 }
 fn main() { match go(0) { .Ok(v) -> println(string(v)) .Err(e) -> println(e) } }")
-            out.contains("__AVRA_COMPILE_OK__")
+            p.status == 0
         }
     }
 
@@ -139,47 +151,47 @@ fn main() { match go(0) { .Ok(v) -> println(string(v)) .Err(e) -> println(e) } }
             // Also the exact shape of the #1188 bug: the deferred body reads a
             // binding the BLOCK declared, so it is emitted against the block's
             // own environment or not at all.
-            let out = defer_compile_out("block", preamble() + "fn main() {
+            let p = defer_compile("block", preamble() + "fn main() {
     { let u = pick(0)
       defer println(u) }
     println(\"after\")
 }")
-            refused(out) && blamed(out, "defer")
+            p.status != 0 && refused(p.out) && blamed(p.out, "defer")
         }
         then "the same shape with an emittable body compiles (positive control)" {
-            let out = defer_compile_out("block_ok", preamble() + "fn main() {
+            let p = defer_compile("block_ok", preamble() + "fn main() {
     { let u = pick(0)
       defer println(\"fine\") }
     println(\"after\")
 }")
-            out.contains("__AVRA_COMPILE_OK__")
+            p.status == 0
         }
     }
 
     given "the block-EXPRESSION scope exit (emit_block_expr -> defer_scope_exit)" {
         then "a `defer` in a block used as a value fails the compile" {
-            let out = defer_compile_out("blockexpr", preamble() + "fn main() {
+            let p = defer_compile("blockexpr", preamble() + "fn main() {
     let v = { let u = pick(0)
               defer println(u)
               7 }
     println(string(v))
 }")
-            refused(out) && blamed(out, "defer")
+            p.status != 0 && refused(p.out) && blamed(p.out, "defer")
         }
         then "the same shape with an emittable body compiles (positive control)" {
-            let out = defer_compile_out("blockexpr_ok", preamble() + "fn main() {
+            let p = defer_compile("blockexpr_ok", preamble() + "fn main() {
     let v = { let u = pick(0)
               defer println(\"fine\")
               7 }
     println(string(v))
 }")
-            out.contains("__AVRA_COMPILE_OK__")
+            p.status == 0
         }
     }
 
     given "the loop-unwind walk (emit_defers_above -> emit_frames_above)" {
         then "a `defer` unwound by `break` fails the compile" {
-            let out = defer_compile_out("brk", preamble() + "fn main() {
+            let p = defer_compile("brk", preamble() + "fn main() {
     mut i = 0
     while i < 3 {
         let u = pick(0)
@@ -188,10 +200,10 @@ fn main() { match go(0) { .Ok(v) -> println(string(v)) .Err(e) -> println(e) } }
         i = i + 1
     }
 }")
-            refused(out) && blamed(out, "defer")
+            p.status != 0 && refused(p.out) && blamed(p.out, "defer")
         }
         then "a `defer` unwound by `continue` fails the compile" {
-            let out = defer_compile_out("cont", preamble() + "fn main() {
+            let p = defer_compile("cont", preamble() + "fn main() {
     mut i = 0
     while i < 3 {
         let u = pick(0)
@@ -200,10 +212,24 @@ fn main() { match go(0) { .Ok(v) -> println(string(v)) .Err(e) -> println(e) } }
         if i == 2 { continue }
     }
 }")
-            refused(out) && blamed(out, "defer")
+            p.status != 0 && refused(p.out) && blamed(p.out, "defer")
         }
-        then "the same loop with an emittable body compiles (positive control)" {
-            let out = defer_compile_out("brk_ok", preamble() + "fn main() {
+        then "the `continue` loop with an emittable body compiles (positive control)" {
+            // `break` and `continue` reach `emit_defers_above` from separate
+            // arms, so the `break` control says nothing about this one.
+            let p = defer_compile("cont_ok", preamble() + "fn main() {
+    mut i = 0
+    while i < 3 {
+        let u = pick(0)
+        defer println(\"fine\")
+        i = i + 1
+        if i == 2 { continue }
+    }
+}")
+            p.status == 0
+        }
+        then "the `break` loop with an emittable body compiles (positive control)" {
+            let p = defer_compile("brk_ok", preamble() + "fn main() {
     mut i = 0
     while i < 3 {
         let u = pick(0)
@@ -212,7 +238,7 @@ fn main() { match go(0) { .Ok(v) -> println(string(v)) .Err(e) -> println(e) } }
         i = i + 1
     }
 }")
-            out.contains("__AVRA_COMPILE_OK__")
+            p.status == 0
         }
     }
 }
@@ -220,35 +246,38 @@ fn main() { match go(0) { .Ok(v) -> println(string(v)) .Err(e) -> println(e) } }
 // ## MUTATION RECORD — this guard was proven able to fail
 //
 // A spec asserting a compile ERROR is worth nothing until you have watched it
-// go green against a compiler that should have made it red. Both LIFO workers
-// were reverted to the pre-t-dy1j form (call `ctx.emit(...)`, discard the
-// `Result`) one at a time, and the compiler rebuilt for each. Measured:
+// go green against a compiler that should have made it red. Three mutations,
+// applied one at a time with a rebuild for each, all measured against this
+// file as it stands (12 cases: 6 subjects, 6 controls):
 //
-//   revert `emit_stack_filtered`  -> 9/11. RED: "fnexit", "errdefer".
-//                                    The other four subjects stay green.
+//   A. `emit_stack_filtered` discards its Result   10/12
+//        RED: fnexit, errdefer
 //
-//   revert `emit_frames_above`    -> 7/11. RED: "block", "blockexpr", "brk",
-//                                    "cont". The other two stay green.
+//   B. `emit_frames_above` discards its Result      8/12
+//        RED: block, blockexpr, brk, cont
 //
-// All five controls stayed green through BOTH mutations. That is what rules
-// out the other way this spec could be worthless: a fixture failing to compile
-// for an unrelated reason would satisfy `refused()` no matter what the
-// emitters do, and the controls are what distinguish the two.
+//   C. the failure still propagates, but the        6/12
+//      message drops the statement kind             RED: all six subjects
 //
-// The split is the point. Each worker's revert reds exactly its own paths and
-// leaves the other worker's alone, so the six subjects are six independent
-// observations rather than one fact asserted six times.
+// A and B are the two LIFO workers reverted to the pre-t-dy1j form. The SPLIT
+// is the point: each reds exactly its own call paths and leaves the other
+// worker's alone, so the six subjects are six independent observations rather
+// than one fact asserted six times.
 //
-// The `blamed()` half got its own accidental mutation, which is worth keeping
-// because it is the cleanest one here. A run against a compiler built before
-// the message was reworded — so the failure still propagated, but under
-// different wording — gave 5/11: ALL SIX blame assertions red, ALL FIVE
-// controls green. `refused()` and `blamed()` therefore fail independently, and
-// a future reword that drops the statement kind cannot pass this file.
+// C is what makes `blamed()` load-bearing rather than decorative. Propagation
+// is untouched there — the compile still fails, `refused()` still holds — and
+// six cases go red purely because the diagnostic stopped saying WHICH
+// statement owned the body. So `refused()` and `blamed()` fail independently,
+// and a future reword that drops the statement kind cannot pass this file.
+//
+// All six controls stayed green through all three mutations. That is what
+// rules out the other way this spec could be worthless: a fixture failing to
+// compile for an unrelated reason would satisfy the subject assertions no
+// matter what the emitters do, and only the controls distinguish the two.
 //
 // ## What the swallow actually did, observed rather than argued
 //
-// Under the reverted `emit_frames_above`, this program:
+// Under mutation B, this program:
 //
 //     { let u = pick(0)
 //       defer println(u)
