@@ -4,6 +4,11 @@
 **/*.av.cov.ll
 **/*.av.ll.cov.ll
 **/*.av.covmap.json
+# The covmap moved from JSON to TSV (the Avra-side parser was hitting O(N)
+# strlen per character on a 2.4MB JSON buffer) and the ignore did not follow,
+# so every instrumented build left an untracked file in `git status`. i7gw.1
+# makes these routine: `bs2 build --lib --coverage` writes one per producer.
+**/*.av.covmap.tsv
 **/*.bin
 **/*.bin.o
 **/*.profraw
