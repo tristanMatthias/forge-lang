@@ -580,9 +580,6 @@ export fn struct_reg_new() -> StructReg {
     StructReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-export fn struct_reg_register(reg: StructReg, name: string, fields: List<FieldEntry>) -> StructReg {
-    struct_reg_register_full(reg, name, fields, false)
-}
 
 /// Variant of `struct_reg_register` that records whether the struct
 /// originates from an `@external_unit` module. Used by per-module
@@ -630,9 +627,6 @@ export fn enum_reg_new() -> EnumReg {
     EnumReg { ord: [], idx: avra_map_new_cstr() }
 }
 
-export fn enum_reg_register(reg: EnumReg, name: string, variants: List<Variant>) -> EnumReg {
-    enum_reg_register_full(reg, name, variants, false)
-}
 
 /// Variant of `enum_reg_register` that records whether the enum
 /// originates from an `@external_unit` module — see

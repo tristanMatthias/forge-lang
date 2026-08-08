@@ -19,12 +19,6 @@
 
 use core.{avra_selfhost_levenshtein}
 
-/// Edit distance between two strings, computed by the C runtime.
-/// Used as the last-resort tier in `suggest_score` (≤ 2 edits scores
-/// 200; everything beyond doesn't suggest at all).
-export fn levenshtein(a: string, b: string) -> int {
-    avra_selfhost_levenshtein(a, b, a.length, b.length)
-}
 
 /// Score a single `(query, candidate)` pair with the same composed
 /// scorer as `@std/lsp`. Pure: same inputs always produce the same
@@ -79,21 +73,3 @@ fn suggest_is_subsequence(needle: string, haystack: string) -> bool {
     false
 }
 
-/// Find the closest match to `name` among `candidates`, or `""` if
-/// nothing scores above the suggestion threshold (199 — silence
-/// beats a misleading "did you mean?").
-export fn suggest_similar_from_list(name: string, candidates: List<string>) -> string {
-    mut best = ""
-    mut best_score = 199
-    mut i = 0
-    while i < candidates.length {
-        let candidate = candidates[i]
-        let s = suggest_score(name, candidate)
-        if s > best_score {
-            best = candidate
-            best_score = s
-        }
-        i = i + 1
-    }
-    best
-}

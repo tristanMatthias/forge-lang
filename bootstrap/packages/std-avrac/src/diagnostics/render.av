@@ -23,8 +23,6 @@ fn color_dim(s: string) -> string { "\x1b[2m${s}\x1b[0m" }
 fn color_blue(s: string) -> string { "\x1b[1;34m${s}\x1b[0m" }
 /// Wrap `s` in gray ANSI escapes. Used for box-drawing chrome.
 fn color_gray(s: string) -> string { "\x1b[90m${s}\x1b[0m" }
-/// Wrap `s` in bold-magenta ANSI escapes. Reserved for special accents.
-fn color_magenta(s: string) -> string { "\x1b[1;35m${s}\x1b[0m" }
 
 /// Wrap `text` in the colour matching `sev` — red errors, yellow
 /// warnings, cyan info, blue hints. The single dispatch point so

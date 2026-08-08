@@ -26,12 +26,6 @@ export fn ok_br(value: ptr, ty: ValueType, ctx: Ctx, env: List<VarBinding>) -> R
     r
 }
 
-/// Wrap a block-emit failure as `Result.Err`. Pairs with `ok_br`.
-fn err_br(msg: string) -> Result<BlockResult, string> {
-    let r = Result.Err(msg)
-    avra_tag_as_result(r)
-    r
-}
 
 /// Codegen for `{ stmt; stmt; expr }` used as an expression. The
 /// block's value is the value of the LAST statement when that stmt

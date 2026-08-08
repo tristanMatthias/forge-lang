@@ -591,15 +591,6 @@ fn default_for(ty: ValueType) -> Expr {
     Expr.None
 }
 
-/// True when `ty` is `List<NestedMarshalStruct>` — i.e. a list
-/// whose element type is itself a struct. Used to gate the
-/// list-of-struct read/write block-synthesis paths.
-fn list_of_struct_elem(ty: ValueType) -> bool {
-    match ty {
-        .List(elem) -> elem is .Struct
-        _ -> false
-    }
-}
 
 fn append_ids(a: List<StmtId>, b: List<StmtId>) -> List<StmtId> {
     mut out: List<StmtId> = []

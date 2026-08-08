@@ -324,20 +324,6 @@ export fn is_truthy(value: Value) -> bool {
 
 use features.eval.{Value, EvalResult, Runtime, StepResult, ok_result, error_result, value_null, is_truthy, render_value}
 
-/// Public entry point for evaluating a single expression.
-/// Parses + walks the resulting Expr, returning an EvalResult
-/// suitable for the `avra eval` CLI.
-export fn eval_expression_source(source: string) -> EvalResult {
-    let parsed = parse_expression_source(source)
-    if parsed.had_error || parsed.expr == null {
-        return EvalResult {
-            value: null,
-            had_error: true,
-            error_message: parsed.error_message,
-        }
-    }
-    eval_parsed_expression(parsed.expr!, parsed.store)
-}
 
 /// Same as eval_expression_source but takes a pre-parsed Expr. Lets
 /// cmd_eval (which now parses through parse_expression_source first
@@ -347,23 +333,6 @@ export fn eval_parsed_expression(expr: Expr, store: NodeStore) -> EvalResult {
     finish_result(eval_expr(runtime_new(store), expr))
 }
 
-/// Public entry point for evaluating a full program. Parses
-/// the source, runs it through `execute_stmt_list`, and
-/// returns the final EvalResult. Callers that have already
-/// parsed (e.g. cmd_run, which routes through parse_or_fail
-/// for structured F-code rendering) should use
-/// `execute_program_stmts` instead to avoid a redundant parse.
-export fn execute_program_source(source: string) -> EvalResult {
-    let parsed = parse_program_source(source)
-    if parsed.had_error || parsed.ids == null {
-        return EvalResult {
-            value: null,
-            had_error: true,
-            error_message: parsed.error_message,
-        }
-    }
-    execute_program_stmts(parsed.ids!, parsed.store)
-}
 
 /// Same as `execute_program_source` but takes pre-parsed
 /// statements. Lets callers that handle parse-time diagnostics
@@ -2999,15 +2968,6 @@ fn list_value_to_expr_id_list(store: NodeStore, v: Value) -> Result<List<ExprId>
     .Ok(out)
 }
 
-fn list_value_to_string_list(v: Value) -> Result<List<string>, string> {
-    if v.kind != "list" { return .Err("decode: string list not a list") }
-    mut out: List<string> = []
-    for entry in v.list_payload {
-        if entry.kind != "string" { return .Err("decode: non-string in string list") }
-        out.push(entry.text)
-    }
-    .Ok(out)
-}
 
 fn enum_value_to_binop(v: Value) -> Result<BinOp, string> {
     if v.enum_type != "@std::avrac::core::BinOp" { return .Err("decode: not a BinOp") }

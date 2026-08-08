@@ -85,9 +85,6 @@ export fn entry_dir_for(c: Cache, fp: Fingerprint) -> string {
 export fn entry_ll_path(c: Cache, fp: Fingerprint) -> string {
     entry_dir_for(c, fp) + "/unit.ll"
 }
-export fn entry_o_path(c: Cache, fp: Fingerprint) -> string {
-    entry_dir_for(c, fp) + "/unit.o"
-}
 export fn entry_metadata_path(c: Cache, fp: Fingerprint) -> string {
     entry_dir_for(c, fp) + "/metadata.bin"
 }
@@ -634,11 +631,6 @@ export fn cache_bin_path_for(c: Cache, fp: Fingerprint) -> string {
     entry_bin_path(c, fp)
 }
 
-/// Read a cached unit's metadata blob. See `cache_read_ll` re:
-/// missing-vs-empty distinction.
-export fn cache_read_metadata(c: Cache, fp: Fingerprint) -> string {
-    avra_selfhost_read_file(entry_metadata_path(c, fp))
-}
 
 /// Evict a cache entry. Used by `avra cache prune` to GC stale
 /// entries. Returns true when both kinds of sentinel (build .ll and

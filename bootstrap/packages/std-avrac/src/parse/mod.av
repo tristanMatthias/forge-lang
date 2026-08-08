@@ -491,15 +491,6 @@ fn p_qualified_last_upper(n: string) -> bool {
     start < n.length && p_starts_with_upper(n.substring(start, start + 1))
 }
 
-/// True iff `e` is a bare or qualified identifier — used to gate
-/// promotions like Ident-to-call or Ident-to-pattern.
-fn expr_is_ident(e: Expr) -> bool {
-    match e {
-        .Ident(_) -> true
-        .QualifiedIdent(_) -> true
-        _ -> false
-    }
-}
 
 /// True iff `e` is an identifier whose first letter is uppercase —
 /// the syntactic marker the resolver uses to distinguish a type ref

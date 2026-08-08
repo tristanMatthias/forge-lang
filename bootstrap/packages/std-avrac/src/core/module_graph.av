@@ -91,13 +91,6 @@ export fn interner_intern(itn: StringInterner, name: string) -> InternResult {
     InternResult { interner: updated, sym: id }
 }
 
-/// Reverse lookup: id → name. Returns "" when id is unknown (out of
-/// range or never interned). O(1) — direct index now that the names
-/// list is a built-in List rather than a prepend-cons-list.
-export fn interner_lookup(itn: StringInterner, sym: int) -> string {
-    if sym < 0 || sym >= itn.names.length { return "" }
-    itn.names[sym]
-}
 
 // ── ResolvedPath ─────────────────────────────────────────────────────
 //
@@ -228,23 +221,6 @@ export fn module_graph_append_item(g: ModuleGraph, short_name: string, canonical
     g
 }
 
-/// Walk the graph's all_items list looking for an entry whose
-/// `short_name` matches `name` AND whose canonical is anchored at
-/// `mod_path` (either `mod_path::name`, or the bare `name` for
-/// extern fns at any module). Returns the canonical string the
-/// alias chain should record, or "" if no such item exists.
-export fn module_graph_find_item_canonical(g: ModuleGraph, mod_path: string, name: string) -> string {
-    let qual = if mod_path == "" { name } else { "${mod_path}::${name}" }
-    mut i = 0
-    while i < g.all_items.length {
-        let it = g.all_items[i]
-        if it.short_name == name && (it.canonical == qual || it.canonical == name) {
-            return it.canonical
-        }
-        i = i + 1
-    }
-    ""
-}
 
 /// Lookup an item's exported flag by full canonical path. Returns
 /// false when the item isn't registered (treats unknown as private).
@@ -323,12 +299,6 @@ export fn module_graph_get(g: ModuleGraph, id: int) -> ModuleGraphNode? {
 /// Allocate a fresh PackageId and remember which module is its root.
 export type AddPackageResult = { graph: ModuleGraph, pkg_id: int }
 
-export fn module_graph_add_package(g: ModuleGraph, root_mod_id: int) -> AddPackageResult {
-    let pkg_id = g.next_package_id
-    avra_intmap_set(g.package_roots, pkg_id, root_mod_id)
-    let updated = g with { next_package_id: pkg_id + 1 }
-    AddPackageResult { graph: updated, pkg_id }
-}
 
 /// Allocate both a fresh package and a root module for it in one
 /// step. Used by the graph builder when it encounters either the
@@ -417,21 +387,4 @@ export fn module_graph_add_item(g: ModuleGraph, mod_id: int, name: string, item_
     g
 }
 
-/// Look up an item by name in a module. Returns ID_NONE when the
-/// item isn't registered (or the module id is unknown).
-export fn module_graph_item_id(g: ModuleGraph, mod_id: int, name: string) -> int {
-    let m = module_graph_get(g, mod_id)
-    if m == null { return ID_NONE }
-    if avra_map_has_cstr(m!.items, name) != 0 {
-        avra_map_get_cstr(m!.items, name)
-    } else {
-        ID_NONE
-    }
-}
 
-/// True iff `name` is declared in `mod_id`'s `items` strmap. O(1).
-export fn module_graph_item_exists(g: ModuleGraph, mod_id: int, name: string) -> bool {
-    let m = module_graph_get(g, mod_id)
-    if m == null { return false }
-    avra_map_has_cstr(m!.items, name) != 0
-}

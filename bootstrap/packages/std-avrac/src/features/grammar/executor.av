@@ -1430,10 +1430,6 @@ export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
     run_grammar_type_src(grammar, lex_real(src), new_node_store(build_line_index(src)), src)
 }
 
-/// Caller-provided-store form of `run_grammar_type` (ps3t.6.5.8).
-export fn run_grammar_type_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> TypeRunResult {
-    run_grammar_type_src(grammar, toks, store, "")
-}
 
 /// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
