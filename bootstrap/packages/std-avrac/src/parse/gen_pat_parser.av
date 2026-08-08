@@ -42,7 +42,7 @@ fn parse_pattern(st: PState) -> CapVal {
     if (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) {
         return parse_num_pat(st)
     }
-    CapVal.Node(st.error_node_coded("F0040", "expected expression"))
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_opt_present(st: PState) -> CapVal {

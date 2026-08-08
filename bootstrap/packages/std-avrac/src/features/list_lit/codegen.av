@@ -105,6 +105,13 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
             let elem_ty = vtype_list_elem(list_ty)
             return ok_emit(ctx.call("avra_array_pop", [list_val]), elem_ty)
         }
+        // Truncates in place and yields the (now empty) list, so `xs.clear()` reads as a
+        // statement and still chains like `push` does. `clear` was in the method
+        // vocabulary with no codegen arm, which made it an ICE rather than a diagnostic.
+        "clear" -> {
+            ctx.call("avra_array_clear", [list_val])
+            return ok_emit(list_val, list_ty)
+        }
         "get" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
             let elem_ty = vtype_list_elem(list_ty)

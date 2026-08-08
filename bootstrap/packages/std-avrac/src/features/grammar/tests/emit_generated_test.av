@@ -14,6 +14,7 @@
 // "generated fns compile + pass the differential test" gate is the diagnose
 // mode (a full nested compile+run, too heavy for every `bs2 test`).
 
+use @std.avrac.core.{avra_selfhost_read_file}
 use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_parser_source, emit_rule_fn, Grammar, Rule, GNode}
 
 // The canonical §2 expression grammar is the SOURCE-OF-TRUTH `grammar { }`
@@ -74,7 +75,20 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // `assignment = l:null_coalesce ( "=" r:assignment )? -> mk_assign(l, r)`
         // ps3t.6.7 perf: the `=` guard dispatches on the Tk enum (tk_guard), not text.
         let src = emit_all()
-        src.contains("let l = parse_pipe(st)") &&
+        // t-47hc.5: `@onfail(bail)` on the LHS binds a TEMP and error-checks it before
+        // the label, so `let l = parse_pipe(st)` became `let __bres0 = parse_pipe(st)` +
+        // guard + `let l = __bres0`. The bail is what stops a FAILED left operand being
+        // built on — `if let = x { 1 }` used to consume the `=` and report twice more.
+        //
+        // The guard tests the UNION of "came back an error node" and "diagnostics grew",
+        // which is what the hand's `?` propagates (see emit.av). Pinning the diag half
+        // here is what keeps the policy from quietly narrowing back to error-node-only:
+        // that reading kept a REPORTED-but-valued sub-parse alive, which is how
+        // `let b = x is Foo` survived as a binding where the hand aborts the statement.
+        src.contains("let __bdiag0 = st.diags.length") &&
+        src.contains("let __bres0 = parse_pipe(st)") &&
+        src.contains("if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {") &&
+        src.contains("let l = __bres0") &&
         src.contains("if st.cur().tk == Tk.Equal {") &&
         src.contains("r = parse_assignment(st)") &&
         src.contains("CapVal.Node(mk_assign_expr(st, sp_start, l, r))")
@@ -284,20 +298,27 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         //     restricting transparency to `name = @hand(f)` — pin BOTH halves so neither a
         //     dropped guard nor a spurious one slips through.
         src.contains("            let __rep_before = st.pos\n            let __rep_cv = parse_postfix_suffix(st)\n            if st.pos == __rep_before { break }\n            p_list.push(capval_to_expr(st, __rep_cv))") &&
-        src.contains("        while st.cur().text == \"with\" {\n            s_list.push(capval_to_expr(st, parse_with_suffix(st)))\n        }") &&
+        // Same `@onfail(bail)` shape on the `with` element: a FAILED suffix now ends the
+        // chain instead of being swallowed by the repetition, which is what let
+        // `a with { x: 2` (unclosed) report at all — it previously built `(let b a)` with
+        // ZERO diagnostics.
+        src.contains("        while st.cur().text == \"with\" {\n            let __bdiag0 = st.diags.length\n            let __bres0 = parse_with_suffix(st)\n            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {\n                return CapVal.Node(st.error_node_silent())\n            }\n            s_list.push(capval_to_expr(st, __bres0))\n        }") &&
         // t-47hc.17: `with_suffix` is GRAMMAR-NATIVE now (hand parse_with_suffix deleted),
         // so its delegate rule must no longer route through run_hand_expr — it parses the
         // field list itself and folds it via mk_with_suffix. Assert the absence too, so a
         // regression back to the @hand leaf fails loudly here.
         !src.contains("run_hand_expr(\"with_suffix\"") &&
-        src.contains("f_list.push(capval_to_finit(st, parse_field_init(st)))") &&
+        // `@onfail(bail)` on the field element binds a temp and error-checks it, so the
+        // direct-call form became `let __bres<N> = parse_field_init(st)` + guard + push.
+        // That bail is what makes `T { x: }` abort the literal the way the hand does.
+        src.contains("f_list.push(capval_to_finit(st, __bres") &&
         src.contains("CapVal.Node(mk_with_suffix(st, sp_start, CapVal.FInits(f_list)))") &&
         // The two field-list diagnostics reproduce the hand exactly: the `{` message, and
         // `expected field name` on the closer — which covers BOTH a junk token and EOF,
         // because the hand's own `expected \`}\` after with fields` was unreachable.
         src.contains("st.report(\"expected `{` after `with`\")") &&
         src.contains("st.report(\"expected field name\")") &&
-        src.contains("s_list.push(capval_to_expr(st, parse_with_suffix(st)))") &&
+        src.contains("s_list.push(capval_to_expr(st, __bres") &&
         src.contains("CapVal.Node(fold_postfix_with_expr(st, sp_start, base, CapVal.Nodes(p_list), CapVal.Nodes(s_list)))") &&
         // ORDERING. This used to pin each guarded branch as preceding the
         // `@hand(primary_base)` fallback, because that tail matched ANYTHING and would
@@ -322,5 +343,45 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         let g = avra_expr_dispatch_grammar()
         let term = emit_rule_fn(g, rule_named(g, "term"))
         term.contains("while st.cur().tk == Tk.Plus || st.cur().tk == Tk.Minus {")
+    }
+}
+
+spec "t-47hc.5: speculative state unwinds completely, and a mode scope survives an abort" {
+    then "an ABORT return inside a mode wrapper restores the modes first" {
+        // `@cut` markers are hoisted OUTSIDE the mode wrapper because a `break` would jump
+        // past its own restore. An `@onfail(bail)` abort is the same trap one case further
+        // — it is a `return`, emitted INSIDE the body, and the branch rollback deliberately
+        // does not restore `st.modes`. Left alone, a failed call argument returned with
+        // `allow_it_sugar` still ON and every later expression in that parse saw a mode the
+        // grammar never granted it. Asserted on the emitted ORDER, since that is the whole
+        // content of the fix.
+        let src = emit_all()
+        src.contains("st.set_modes(__modes_3)\n                return CapVal.Node(st.error_node_silent())") &&
+            // …AND the wrapper's CLOSING restore still starts its own line. The first
+            // version of this transform appended a newline per split piece and then
+            // stripped a phantom tail — but `split` yields no trailing empty piece, so it
+            // took a REAL newline and the closing `st.set_modes(...)`, which opens with
+            // indent rather than a newline, merged onto the previous statement:
+            // `let c = __bres1    st.set_modes(__modes_1)`. The abort-order assertion above
+            // cannot see that, because it only looks at the line BEFORE the abort.
+            !src.contains("__bres0    st.set_modes(__modes_") &&
+            !src.contains("__bres1    st.set_modes(__modes_")
+    }
+
+    then "restore_to clears abort_prop — a rolled-back branch cannot abort the NEXT rule" {
+        // `abort_prop` is speculative state like pos / diags / had_error, so it unwinds with
+        // them. Left set, a rolled-back branch's abort outlives the branch that raised it and
+        // the next rule — which may have parsed perfectly — is replaced with an error. Read
+        // off the executor source because the flag is PState-internal: there is no emitted
+        // string for it, and the corpus cannot reach it (no production grammar pairs a
+        // speculative abort with a following rule that reads the flag before its own arm).
+        let src = avra_selfhost_read_file("packages/std-avrac/src/features/grammar/executor.av")
+        // Bounded to the METHOD, not a byte window — a fixed window silently stops
+        // covering the function the moment a comment is added above the line it guards.
+        let at = src.index_of("fn restore_to(self, pos: int, diags_len: int, err: bool) {")
+        let rest = if at < 0 { "" } else { src.substring(at, src.length) }
+        let end = rest.index_of("\n    }\n")
+        let body = if end > 0 { rest.substring(0, end) } else { rest }
+        at >= 0 && body.contains("self.abort_prop = false")
     }
 }

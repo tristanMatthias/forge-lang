@@ -54,11 +54,11 @@ fn mode_env(mode: string) -> string {
     // native that was harmless (no native table rule existed, so the expression path
     // fell through to `@hand(primary_base)` -> `parse_table_literal` anyway); once the
     // rule landed it would mean the table assertions compare native against native.
-    if mode == "hand" { return "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
-    if mode == "emit" { return "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
+    if mode == "hand" { return "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
+    if mode == "emit" { return "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
     // production — the static parser, then the INTERPRETER re-parse on `had_error`
     // (t-zrn3): the path users actually run, and the one the other two are blind to.
-    "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_NO_STATIC_FALLBACK=0 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+    "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
 }
 
 /// The full diagnostic MESSAGES, not merely their F-codes (t-myz7, the `table` slice).
@@ -323,6 +323,16 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("mut y y = 1\nfn f() -> int { 1 }") &&
         agree_all("const\nfn f() -> int { 1 }") &&
         agree_all("const C\nfn f() -> int { 1 }") &&
+        // The EMPTY TYPE ANNOTATION on all three binding keywords. `let x: = 1` was
+        // here; `mut`/`const` were not, and both carried the same defect invisibly —
+        // an un-`@require`d type position let the type view's generic F0040 "expected
+        // expression" stand where the hand reports F0001 "expected type after `:`",
+        // and the binding survived as `(… :<unknown> 1)` instead of aborting. Routing
+        // `let` is what surfaced it; the siblings needed the same fix and now need the
+        // same guard, or the next grammar edit can regress two of the three silently.
+        agree_all("mut x: = 1\nfn f() -> int { 1 }") &&
+        agree_all("const X: = 1\nfn f() -> int { 1 }") &&
+        agree_all("fn g() -> int {\n let a: = 1\n mut b: = 2\n const C: = 3\n return a\n}") &&
         agree_all("let (a b) = t\nfn f() -> int { 1 }") &&
         agree_all("fn f() -> int {\n    let x = )\n    1\n}") &&
         agree_all("fn f(o: int?) -> int {\n    let v = o else { 1 }\n    v\n}") &&
@@ -398,6 +408,17 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("component C { config { x } }\nfn f() -> int { 1 }") &&
         agree_all("component C { config { x: } }\nfn f() -> int { 1 }") &&
         agree_all("component C { children { x } }\nfn f() -> int { 1 }") &&
+        // A NON-IDENT entry takes a different path from the three above: `x` is an
+        // IDENT so the `@peek(not_rbrace) @gate` admits it and `config_entry` fails
+        // inside, where `5` is declined by the gate itself. The gated element ABORTS,
+        // and that is the hand's behaviour here — `parse_component_decl` propagates,
+        // leaving the two stray `}`s for the caller (F0001 then F0013 F0013). It is
+        // deliberately NOT `select`'s `@onfail(close)`: the two hand parsers disagree,
+        // which is the whole reason the policy is per-rule and stated rather than
+        // inferred (see GItem.onfail). Pinned because the resemblance to `select_decl`
+        // invites exactly that inference — it has been proposed on review twice.
+        agree_all("component C { config { 5 } }\nfn f() -> int { 1 }") &&
+        agree_all("component C { children { 5 } }\nfn f() -> int { 1 }") &&
         agree_all("component C { body: int }\nfn f() -> int { 1 }") &&
         agree_all("component C { let x }\nfn f() -> int { 1 }") &&
         agree_all("component C inst\nfn f() -> int { 1 }") &&
@@ -460,6 +481,9 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
     }
 
     then "malformed decl wrappers (the routed prefixes), on all three paths" {
+        // t-47hc.5: was `native_agrees_hand_differs`. The hand parser is DELETED, so
+        // there is no longer a hand answer to differ from — the divergence this pinned
+        // ended with the oracle, not with a fix.
         agree_all("@\nfn f() -> int { 1 }") &&
         agree_all("@foo(\nfn f() -> int { 1 }") &&
         agree_all("@foo(,)\nfn f() -> int { 1 }") &&
@@ -579,7 +603,16 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("fn f() -> int {\n let z = [1, 2\n return 0\n}") &&
         agree("fn f() -> int {\n let w = foo(1,\n return 0\n}") &&
         agree("fn f() -> int {\n let q = a.\n return 0\n}") &&
-        agree("fn f() -> int {\n return * 3\n}")
+        // t-47hc.4.3 — `agree_all`, not `agree`: this input rides the ONE
+        // `@gate @onfail(bail)` shape in the grammar (`return_stmt`), and the two engines
+        // did NOT agree on it. Emit's `gated_first_check` stands down for `bail` (the
+        // callee owns the message) while the executor's `gated_first_ok` stood down only
+        // for `skip`/`close`, so the pre-check fired there and answered F0001 where the
+        // hand and emit both answer F0040 — same wording, different CODE. `agree` compares
+        // emit against the hand and so was blind to it by construction, which is the
+        // t-zrn3 blind spot exactly. Measured with a control: revert the executor's
+        // stand-down and this line goes red.
+        agree_all("fn f() -> int {\n return * 3\n}")
     }
     then "the trailing dot agrees on ALL THREE paths, executor included" {
         // The `.`-led `@fallback` that replaced `@hand(postfix_suffix)` (t-47hc.33.2)
@@ -717,9 +750,7 @@ fn rtree_at(mode: string, source: string) -> string {
     // the vacuity class this file exists to police — asserting three implementations
     // agree while running one is worse than not asserting it.
     let f = mode_flags(mode)
-    p.decl_flip = f.decl_flip
     p.decl_static = f.decl_static
-    p.no_static_fallback = f.no_static_fallback
     p.expr_flip = f.expr_flip
     p.expr_static = f.expr_static
     let r = p.parse_file_program()
@@ -759,16 +790,16 @@ fn rtree_at(mode: string, source: string) -> string {
 ///   hand — both off, so the gate is false and `parse_expression_hand` runs
 ///   emit — expr_static on: the generated static parser
 ///   exec — expr_flip on + expr_static off: the Grammar-tree interpreter
-type RouteFlags = { decl_flip: bool, decl_static: bool, no_static_fallback: bool, expr_flip: bool, expr_static: bool }
+type RouteFlags = { decl_static: bool, expr_flip: bool, expr_static: bool }
 
 fn mode_flags(mode: string) -> RouteFlags {
     if mode == "hand" {
-        return RouteFlags { decl_flip: false, decl_static: true, no_static_fallback: false, expr_flip: false, expr_static: false }
+        return RouteFlags { decl_static: true, expr_flip: false, expr_static: false }
     }
     if mode == "emit" {
-        return RouteFlags { decl_flip: true, decl_static: true, no_static_fallback: true, expr_flip: false, expr_static: true }
+        return RouteFlags { decl_static: true, expr_flip: false, expr_static: true }
     }
-    RouteFlags { decl_flip: true, decl_static: false, no_static_fallback: false, expr_flip: true, expr_static: false }
+    RouteFlags { decl_static: false, expr_flip: true, expr_static: false }
 }
 
 
@@ -787,6 +818,105 @@ fn agree_tree(source: string) -> bool {
         println(hand)
     }
     sr == hand
+}
+
+// ── t-47hc.4.3 — the ONE input where the native paths deliberately DIVERGE ────
+//
+// Every other oracle in this file asserts hand == native. This one asserts the
+// opposite, for a single input, and it is recorded here rather than dropped from the
+// corpus because a case removed is a case nobody re-examines.
+//
+// The input is a BARE `@`. The hand's `parse_annotations` takes `current_lexeme` as the
+// annotation NAME without ever requiring an identifier, so `@` followed by `fn` builds an
+// annotation *named* `fn`, then reads `f() -> int { 1 }` as a call expression and reports
+// a stray `}`. Its tree is `(@annotated @fn  (expr (call f ()))) (error)`: a fabricated
+// annotation that has swallowed a valid function declaration whole.
+//
+// Reproducing that is NOT a matter of loosening the name slot. The fabricated name is
+// only the first half; the second is the declaration being re-read as an expression
+// statement, and matching it would mean changing how EVERY annotated declaration parses
+// in order to preserve one broken recovery. Measured, not assumed — see the ticket.
+//
+// So the native engines report the bad `@` once and let the function parse:
+// `(error) (fn f () -> int (expr 1))`. This asserts what must actually hold — the native
+// paths agree with EACH OTHER, the input still reports, and the hand still differs. That
+// last clause is what stops this being a guard that cannot fail: fix the hand and this
+// goes RED, which is the prompt to fold the case back into `agree_all`/`agree_bad`.
+// ── t-47hc.5: THIS CORPUS IS CURRENTLY VACUOUS — read this before trusting it ──
+//
+// `parse_declaration_hand` is DELETED. `AVRA_PARSER_DECL_FLIP=0` no longer selects a
+// different parser for declarations, because `parse_declaration` has no flip branch left
+// to take — so `hand_oracle()` and `static_raw()` run the SAME engine and every
+// `agree` / `agree_all` / `agree_bad` / `agree_tree` assertion below compares native
+// against native. They pass by construction. All ~525 of them.
+//
+// That is not a defect in this file; it is the cost of retiring the oracle, taken
+// deliberately. What matters is that it is VISIBLE, because a green corpus that proves
+// nothing is worse than no corpus: it reads as coverage.
+//
+// The spec below is the one assertion here that can still fail. It PINS the vacuity, so
+// that if a differential oracle is ever restored — the hand parser kept as a separate
+// build, or these cases re-baselined as GOLDEN fixtures recording the current native
+// output — this goes red and says so, instead of the restoration going unnoticed.
+spec "t-47hc.5: the hand oracle is GONE — this corpus compares native against native" {
+    then "the `hand` mode and the `emit` mode are the same engine now" {
+        // Three inputs the two engines demonstrably DISAGREED on while the hand existed:
+        // a bare `@` (hand invented an annotation named `fn`), a malformed binding, and a
+        // malformed wrapper. Identical output on all three is proof of vacuity, not parity.
+        hand_oracle("@\nfn f() -> int { 1 }") == static_raw("@\nfn f() -> int { 1 }") &&
+            hand_oracle("let x: = 1\nfn f() -> int { 1 }") == static_raw("let x: = 1\nfn f() -> int { 1 }") &&
+            hand_oracle("@a\nmut\nfn f() -> int { 1 }") == static_raw("@a\nmut\nfn f() -> int { 1 }")
+    }
+}
+
+fn native_agrees_hand_differs(source: string) -> bool {
+    let sr = static_raw(source)
+    let dflt = default_path(source)
+    if sr != dflt {
+        println("native paths disagree with EACH OTHER")
+        println(source)
+        println("emit=" + sr)
+        println("default=" + dflt)
+        return false
+    }
+    if sr == "" {
+        println("SILENT DROP — invalid source parsed with no diagnostic")
+        println(source)
+        return false
+    }
+    if sr == hand_oracle(source) {
+        println("the hand now AGREES — fold this case back into agree_all")
+        println(source)
+        return false
+    }
+    true
+}
+
+// The recovery-TREE half of the above, and an INDEPENDENT oracle from it: the two
+// engines can report the same diagnostics off different trees (that is the whole reason
+// `--parser-tree` exists alongside `--parser-probe`), so the divergence has to be pinned
+// in both views or half of it goes unwatched.
+fn native_tree_agrees_hand_differs(source: string) -> bool {
+    let e = rtree_at("emit", source)
+    let x = rtree_at("exec", source)
+    if e != x {
+        println("native TREES disagree with EACH OTHER")
+        println(source)
+        println("emit=" + e)
+        println("exec=" + x)
+        return false
+    }
+    if rdiags(true, source) == 0 {
+        println("SILENT DROP — invalid source parsed with no diagnostic")
+        println(source)
+        return false
+    }
+    if e == rtree_at("hand", source) {
+        println("the hand's TREE now AGREES — fold this case back into agree_bad")
+        println(source)
+        return false
+    }
+    true
 }
 
 // ── t-6u9b — the ANTI-VACUITY half: diagnostic COUNT ──────────────────────────
@@ -845,9 +975,7 @@ fn agree_tree(source: string) -> bool {
 fn poslist(static_raw: bool, source: string) -> string {
     mut p = parser_new(source)
     let f = mode_flags(if static_raw { "emit" } else { "hand" })
-    p.decl_flip = f.decl_flip
     p.decl_static = f.decl_static
-    p.no_static_fallback = f.no_static_fallback
     p.expr_flip = f.expr_flip
     p.expr_static = f.expr_static
     let r = p.parse_file_program()
@@ -865,9 +993,7 @@ fn poslist(static_raw: bool, source: string) -> string {
 fn rdiags(static_raw: bool, source: string) -> int {
     mut p = parser_new(source)
     let f = mode_flags(if static_raw { "emit" } else { "hand" })
-    p.decl_flip = f.decl_flip
     p.decl_static = f.decl_static
-    p.no_static_fallback = f.no_static_fallback
     p.expr_flip = f.expr_flip
     p.expr_static = f.expr_static
     let r = p.parse_file_program()
@@ -978,6 +1104,11 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("mut y y = 1\nfn f() -> int { 1 }") &&
         agree_bad("const\nfn f() -> int { 1 }") &&
         agree_bad("const C\nfn f() -> int { 1 }") &&
+        // The empty-type-annotation trio (see the F-code spec above): the TREE is the
+        // half that catches "reported the right message and kept the binding anyway".
+        agree_bad("mut x: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("const X: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("fn g() -> int {\n let a: = 1\n mut b: = 2\n const C: = 3\n return a\n}") &&
         agree_bad("let (a b) = t\nfn f() -> int { 1 }") &&
         agree_bad("fn f() -> int {\n    let x = )\n    1\n}") &&
         agree_bad("fn f(o: int?) -> int {\n    let v = o else { 1 }\n    v\n}") &&
@@ -1035,6 +1166,10 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("component C { config { x } }\nfn f() -> int { 1 }") &&
         agree_bad("component C { config { x: } }\nfn f() -> int { 1 }") &&
         agree_bad("component C { children { x } }\nfn f() -> int { 1 }") &&
+        // The TREE half of the non-IDENT entry (see the F-code spec above) — the half
+        // that catches "reported the right sequence and recovered somewhere else".
+        agree_bad("component C { config { 5 } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { children { 5 } }\nfn f() -> int { 1 }") &&
         agree_bad("component C { body: int }\nfn f() -> int { 1 }") &&
         agree_bad("component C { let x }\nfn f() -> int { 1 }") &&
         agree_bad("component C inst\nfn f() -> int { 1 }") &&
@@ -1073,7 +1208,7 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
     // They are ROUTED now — `comp_block_item` carries all four arms (raw-named,
     // raw-bare, nested-named, nested-bare, method shorthand) with `declaration` as the
     // honest unguarded tail. Measured: the four forms compile with BOTH production
-    // leaves refused (`AVRA_REFUSE_HAND_LEAF='*' AVRA_NO_STATIC_FALLBACK=1`), 0 refusals.
+    // leaves refused (`AVRA_REFUSE_HAND_LEAF='*'`), 0 refusals.
     //
     // The assertions stay exactly as they are. They were written as a
     // declined-vs-hand parity check and they now serve as the routed-vs-hand parity
@@ -1118,6 +1253,8 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         // valid-input tree pin below.
         agree_bad("export export fn g() -> int { 1 }\nfn f() -> int { 1 }") &&
         // A bare `@`, an unterminated arg list, an empty arg, a stray close paren.
+        // t-47hc.5: was `native_tree_agrees_hand_differs` — see the note in the
+        // three-path spec above.
         agree_bad("@\nfn f() -> int { 1 }") &&
         agree_bad("@foo(\nfn f() -> int { 1 }") &&
         agree_bad("@foo(,)\nfn f() -> int { 1 }") &&

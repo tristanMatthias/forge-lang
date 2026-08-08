@@ -41,7 +41,7 @@ use features.generics.{avra_generics_grammar}
 /// because it has NO context overload — it is logical `Not` at every quote depth.
 /// Phase 3a-4 gives the grammar the POSTFIX CHAIN + the `with` postfix: `unary`'s
 /// non-prefix branch is
-/// `base:@hand(primary_base) ( p:postfix_suffix )* ( s:with_suffix )*
+/// `base:@hand(primary_base) ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )*
 ///  -> fold_postfix_with(base, p, s)`. The grammar OWNS the postfix loop as
 /// `( postfix_suffix )*`: each `postfix_suffix` (→ `parse_postfix_suffix`) runs ONE
 /// hand `postfix_step` over the base threaded on PState (`postfix_base`), so the 8
@@ -68,7 +68,7 @@ use features.generics.{avra_generics_grammar}
 /// `postfix_suffix` and `with_suffix` are each a single delegate rule around their
 /// stateful hand step; every base references those rules, so the remaining frontier is
 /// represented once instead of duplicated across all 19 FIRST-disjoint primary
-/// alternatives. Both loops stay `( p:postfix_suffix )* ( s:with_suffix )*` at every
+/// alternatives. Both loops stay `( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )*` at every
 /// base, so the shape is unchanged — only the duplication is gone, and nativizing
 /// either step is now a ONE-LINE edit to its delegate rule instead of 19 edits.
 /// `Tk.Float` projects to the `NUMBER` kind (its lexeme keeps the dot), so the `NUMBER`
@@ -89,7 +89,15 @@ use features.generics.{avra_generics_grammar}
 fn avra_expr_core() -> Grammar {
     let gp = grammar {
   expression    = assignment
-  assignment    = l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
+  // `@onfail(bail)` on the LHS is the exact mirror of the hand's
+  // `let left = self.parse_pipe()?` (parse/mod.av:1673). Without it a FAILED left operand
+  // was still built on: `if let = x { 1 }` reported the missing binding name, then
+  // `assignment` consumed the `=`, parsed the rest of the fn body as an RHS ("expected
+  // }"), and `mk_assign_expr` added "invalid assignment target" on top — three
+  // diagnostics where the hand emits one. `bail` keys on the sub-parse FAILING, not on it
+  // reporting, which is required: `let a = (1) ->` reports and still yields `(group 1)`,
+  // a value the hand keeps.
+  assignment    = @onfail(bail) l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
   pipe          = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)
   pipe_arg      = @on(allow_it_sugar) logic_or
   null_coalesce = l:logic_or ( op:("??") r:logic_or )* -> fold_nullish(l, op, r)
@@ -110,32 +118,32 @@ fn avra_expr_core() -> Grammar {
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
   unary      = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
              | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
-             | @when(in_quote_body) @peek(tilde_ident_lbrace) @when(allow_struct_lit) "~" n:IDENT "{" ( f:field_init )* "}" -> MkSpliceStruct(n, f)
+             | @when(in_quote_body) @peek(tilde_ident_lbrace) @when(allow_struct_lit) "~" n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkSpliceStruct(n, f)
              | @when(in_quote_body) "~" t:unary -> MkSplice(t)
-             | b:NUMBER ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | b:STRING ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | b:BOOL ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | b:("null" | "none") ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
-             | base:variant_ctor ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:match_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:if_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:spawn_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:channel_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:isolated_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:when_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(quote_arm) base:quote_arm_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(quote_type) base:quote_type_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:quote_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:list_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:brace_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:qualified_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:paren_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | base:template_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_lbrace_feature) base:grammar_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_lbrace_feature) base:table_lit ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(base, p, s)
-             | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:NUMBER ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:STRING ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:BOOL ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | b:("null" | "none") ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
+             | base:variant_ctor ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:match_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:if_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:spawn_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:channel_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:isolated_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:when_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(quote_arm) base:quote_arm_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(quote_type) base:quote_type_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:quote_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:list_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:brace_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:qualified_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:paren_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | base:template_lit ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_lbrace_feature) base:grammar_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_lbrace_feature) base:table_lit ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
+             | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
   // t-myz7 — the `grammar { … }` feature block, native. This is `@rawbrace`'s canonical
   // consumer (ast.av:322 gives this exact rule as the marker's example): the body is NOT
   // Avra syntax, so it is captured verbatim and handed to the runtime engine as a string.
@@ -172,7 +180,16 @@ fn avra_expr_core() -> Grammar {
   // `bitxor` IS the hand's `parse_binary_pratt(12)`: emit lowers the ladder with
   // `lbp = 10 + 2*index` and `bitor = 10`, so entering at bitxor stops before `|` and
   // the column separator is never eaten as a bitwise-or operand.
-  table_lit  = "table" table_head ( rows:table_row )* "}"
+  // Both sub-rules are `@onfail(bail)`: a header with a duplicate column and a row whose
+  // width disagrees with the header are reported by their BUILDS (mk_table_header /
+  // mk_table_row), and the hand answers either with `return .Err("parse error")` — which
+  // leaves the table's `}` UNCONSUMED. That matters beyond the table: the enclosing fn's
+  // statement list then takes the `}` as its own closer, `0` becomes a top-level
+  // statement, and the function's real `}` is the hand's second diagnostic
+  // (F0013 `unexpected }`). Without the bail the repetition merely ended, `"}"` below
+  // consumed the brace, and that whole tail — a diagnostic and two statements' placement
+  // — was silently different.
+  table_lit  = "table" @onfail(bail) table_head ( @onfail(bail) rows:table_row )* "}"
                @expect("}", "expected `}` to close table") -> MkTableLit(rows)
   table_head = ( "<" rt:IDENT ">" )? "{" ( h:IDENT ( "|" )? ( ^h:IDENT ( "|" )? )* )?
                @expect(">", "expected `>` after table row type")
@@ -183,15 +200,22 @@ fn avra_expr_core() -> Grammar {
   // cross-line `+`/`-` while cell_mode is set, so the last cell of a multi-column row
   // could otherwise take the NEXT row's leading sign as a binary operand.
   table_row  = @on(cell_mode) v:bitxor ( ^"|" ^@on(cell_mode) v:bitxor )* -> MkTableRow(v)
-  struct_lit_expr = n:IDENT "{" ( f:field_init )* "}" -> MkStructLit(n, f)
+  struct_lit_expr = n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkStructLit(n, f)
   tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
-  qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" s:IDENT )+
-                   ( @when(allow_struct_lit) lb:"{" ( f:field_init )* "}" )?
+  // The segment name after `::` is `@require`d: unrequired it reported a bare
+  // "expected IDENT" and PARSED ON, so `@pkg::mod::name` — where `mod` is a keyword, not
+  // an identifier — left the cursor on `mod` for the declaration dispatch to pick up and
+  // added "expected module name after `mod`" on top of the hand's single message.
+  qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" @require s:IDENT )+
+                   ( @when(allow_struct_lit) lb:"{" ( @onfail(bail) f:field_init )* "}" )?
+                   @expect("IDENT", "expected identifier after `::` in qualified reference")
                    @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
                    @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
   template_lit = t:TEMPLATE -> MkTemplate(t)
   brace_expr   = @peek(brace_map) map_literal | block_expr
-  map_literal  = "{" ( k:expression ":" v:expression ( "," )? )* "}"
+  // The VALUE propagates, like `field_init`'s: `{ "a": , … }` built a map entry over an
+  // error node where the hand aborts the literal and its enclosing fn.
+  map_literal  = "{" ( k:expression @require ":" @onfail(bail) v:expression ( "," )? )* @require "}"
                  @expect(":", "expected `:` after map key")
                  @expect("}", "expected `}` after map") -> MkMapLit(k, v)
   // t-47hc.33 — the postfix chain, going native one FORM at a time. `@hand(postfix_suffix)`
@@ -214,9 +238,9 @@ fn avra_expr_core() -> Grammar {
                    @expect(")", "expected `)` after catch binding")
                    @expect("{", "expected `{` after catch")
                    @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
-                 | @peek(qdot_method_call) "?." n:FIELDNAME "(" @on(allow_it_sugar) ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkOptMethodCall(n, a)
+                 | @peek(qdot_method_call) "?." n:FIELDNAME "(" @on(allow_it_sugar) ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkOptMethodCall(n, a)
                  | @peek(qdot_plain_field) "?." n:FIELDNAME -> MkOptChain(n)
-                 | @peek(dot_enum_ctor) @when(base_upper_ident) @when(dot_postfix_ok) "." n:FIELDNAME "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkEnumCtorSuffix(n, a)
+                 | @peek(dot_enum_ctor) @when(base_upper_ident) @when(dot_postfix_ok) "." n:FIELDNAME "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkEnumCtorSuffix(n, a)
                  | @peek(dot_plain_field) @when(dot_postfix_ok) "." n:FIELDNAME -> MkFieldAccess(n)
                  | ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
                  | @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
@@ -231,8 +255,8 @@ fn avra_expr_core() -> Grammar {
                  // unguarded last native `.` branch, exactly as index_tail's `]` branch owns
                  // the message for a token that starts neither of ITS forms.
                  | @fallback @when(dot_postfix_ok) "." @require n:FIELDNAME @expect("FIELDNAME", "expected field name after `.`") -> MkFieldAccess(n)
-                 | ^"(" @on_if(base_field_access, allow_it_sugar) ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
-                 | @try @when(base_callable) "<" ( ta:type_expr ( "," ta:type_expr )* )? ">" "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? ")" -> MkGenericCallSuffix(ta, a)
+                 | ^"(" @on_if(base_field_access, allow_it_sugar) ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
+                 | @try @when(base_callable) "<" ( ta:type_expr ( "," ta:type_expr )* )? ">" "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" -> MkGenericCallSuffix(ta, a)
   call_arg = @on(allow_dot_postfix) e:expression -> MkCallArg(e)
   // The `f<T>(args)` branch is the ONE speculative form in the chain, and every marker on
   // it is chosen against try_parse_generic_call (features/generics/parser.av) rather than
@@ -284,9 +308,24 @@ fn avra_expr_core() -> Grammar {
   // the message for a token that starts NEITHER (`a[1 2]`).
   index_tail  = ".." e:expression @require "]" @expect("]", "expected `]` after slice") -> e
               | @fallback @require "]" @expect("]", "expected `]` after index") -> MkNone()
-  with_suffix = "with" "{" ( f:field_init )* "}" @expect("{", "expected `{` after `with`") @expect("}", "expected field name") -> MkWithSuffix(f)
-  field_init  = n:IDENT ( ":" v:expression )? ( "," )? -> MkFieldInit(n, v)
-  variant_ctor = "." v:IDENT ( "(" ( a:expression ( "," a:expression )* )? ")" )? -> mk_enum_ctor(v, a)
+  // At least ONE field: the hand's `parse_field_init_list` opens with
+  // `consume_identifier("expected field name")?`, so `a with { 1 }` is an ERROR there.
+  // A `@peek`-gated `*` made it optional instead — the loop took zero iterations, `with`
+  // succeeded with no overrides, and `{ 1 }` fell out as a separate block statement with
+  // NO diagnostic at all. A zero-match `+` fails the rule, which is exactly the hand's
+  // behaviour.
+  with_suffix = "with" @require "{" ( @onfail(bail) f:field_init )+ @require "}" @expect("{", "expected `{` after `with`") @expect("+", "expected field name") @expect("}", "expected `}` after struct fields") -> MkWithSuffix(f)
+  // The VALUE propagates, mirroring `parse_expression()?` in the hand's
+  // `parse_field_init_list` (features/struct_decl/parser.av:154) — a failed value aborts
+  // the whole literal. Unrequired, `T { x: }` built `(struct T (x=(error)))`, a literal
+  // asserting a field was initialised, instead of taking out the literal, the binding and
+  // the enclosing fn as the hand does. The NAME cannot carry `@require`: it is the
+  // sequence's leading item and therefore the FIRST-set guard, which the DSL rejects
+  // outright — and it needs no guard, since the rule is only entered when that FIRST holds.
+  field_init  = n:IDENT ( ":" @onfail(bail) v:expression )? ( "," )? -> MkFieldInit(n, v)
+  variant_ctor = "." @require v:IDENT ( "(" ( a:expression ( "," a:expression )* )? @require ")" )?
+                 @expect("IDENT", "expected a variant name after `.`", F0040)
+                 @expect(")", "expected `)` after arguments") -> mk_enum_ctor(v, a)
   channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
   // t-bwjg — `quote { … }` and the block-bodied kinds. `quote type { <type> }` and
   // ALL THREE quote shapes are native now: this rule owns the block-bodied kinds, while
@@ -298,11 +337,28 @@ fn avra_expr_core() -> Grammar {
   // `quote type { <type> }` — native as of slice 4b. @bump wraps the TYPE parse so a
   // splice inside it (`quote type { ~T }`, quote_splice_type_ident_test) still sees a
   // nonzero depth; the braces themselves do not care.
-  quote_type_expr = "quote" "type" lb:"{" @bump(quote_depth) t:type_expr "}" -> MkQuoteType(lb, t)
+  // Every mandatory terminal is `@require`d with the hand's exact wording. Unrequired,
+  // a missing `{` reported a generic "expected {" and the rule CARRIED ON — parsing an
+  // empty type and then reporting the missing `}` too, so `quote type` alone came out
+  // three diagnostics where `parse_quote_type_body` reports one and returns `.Err`.
+  // (Invisible until `let` routed: the initializer's `@try` rolled the whole item back
+  // to the hand, which owned the message.)
+  quote_type_expr = "quote" "type" @require lb:"{" @require @bump(quote_depth) t:type_expr @require "}"
+                    @expect("{", "expected `{` after `quote type`")
+                    @expect("type_expr", "expected a type inside `quote type { ... }`")
+                    @expect("}", "expected `}` after the type in `quote type`") -> MkQuoteType(lb, t)
   // `quote arm { pat (if guard)? -> body ,? }` — the last quote shape, native as of
   // slice 4b. `pattern_or` is the same rule the match families use; the trailing comma
   // is optional exactly as parse_quote_arm_body allows it.
-  quote_arm_expr = "quote" "arm" lb:"{" @bump(quote_depth) p:pattern_or ( "if" g:expression )? "->" b:expression ( "," )? "}" -> MkQuoteArm(lb, p, g, b)
+  // Same treatment as quote_type_expr, and the pattern position is the same shape as
+  // its type position: `@require` under the `@bump`, so a missing pattern aborts with
+  // the hand's `parse_pattern_or()?` message instead of reporting a generic F0040 and
+  // then the missing `->` on top of it.
+  quote_arm_expr = "quote" "arm" @require lb:"{" @require @bump(quote_depth) p:pattern_or ( "if" g:expression )? @require "->" b:expression ( "," )? @require "}"
+                   @expect("{", "expected `{` after `quote arm`")
+                   @expect("pattern_or", "expected `.`, `_`, literal, or type pattern to start pattern")
+                   @expect("->", "expected `->` after pattern in quote arm")
+                   @expect("}", "expected `}` after quote arm body") -> MkQuoteArm(lb, p, g, b)
   quote_expr   = "quote" ( k:("stmt" | "stmts" | "decl") )? @bump(quote_depth) body:block_expr -> MkQuote(k, body)
   spawn_expr   = "spawn" body:block_expr -> MkSpawn(body)
   isolated_expr = "isolated" body:block_expr -> MkIsolated(body)
@@ -369,22 +425,82 @@ fn avra_expr_core() -> Grammar {
                  @off(allow_struct_lit) s:expression @require t:block_expr ( "else" e:else_tail )?
                  @expect("IDENT", "expected a binding name after `if let`")
                  @expect("=", "expected `=` after the `if let` binding")
-                 @expect("{", "expected `{` after the `if let` binding") -> MkIfLet(tmp, b, s, t, e)
-               | "if" @off(allow_struct_lit) c:expression @require t:block_expr ( "else" e:else_tail )?
-                 @expect("{", "expected `{` after if condition") -> MkIfExpr(c, t, e)
+                 @expect("{", "expected `{` after the `if let` binding", F0010) -> MkIfLet(tmp, b, s, t, e)
+               // The condition is `@onfail(bail)`: a condition that FAILED means there is no
+               // `if` to finish, and the hand's `parse_expression()?` says so by propagating.
+               // Without it `else if` with nothing after it reported the missing condition
+               // (F0040) and then went on to report the missing block too — two diagnostics
+               // where the hand emits one.
+               | "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block_expr ( "else" e:else_tail )?
+                 // F0010 `ExpectedBlock`, matching the hand (`DiagCode.ExpectedBlock`) AND the
+                 // statement view's twin below. The expression view carried an uncoded
+                 // `@expect` and so rendered F0001 — invisible while `let`'s dispatcher-level
+                 // `@try` rolled `let v = if { 1 }` back to the hand, which owned the code.
+                 @expect("{", "expected `{` after if condition", F0010) -> MkIfExpr(c, t, e)
   else_tail    = if_expr | block_expr | expression
   when_arm     = ( "_" | "else" ) "->" body:expression -> MkWhenDefault(body)
                | cond:expression "->" body:expression -> MkWhenArm(cond, body)
-  list_expr    = @try "[" cb:list_comp "]" -> cb
-               | "[" ( a:expression ( @peek(comma_not_rbracket) "," a:expression )* ( "," )? )? "]" -> MkListLit(a)
-  list_comp    = b:expression "for" v:IDENT "in" c:expression ( "if" f:expression )? -> MkListComp(b, v, c, f)
-  paren_expr   = @peek(lparen_ident_colon) "(" ps:param ( "," ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
-               | @try "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
+  // PREDICTIVE, by the same scan `paren_expr` uses. The `@try` rewound the cursor to
+  // before `[`, so a malformed comprehension failed the list-LITERAL branch's closer with
+  // the cursor sitting ON `for`, and statement-level resync then parsed a for-LOOP out of
+  // the leftovers — `[a for]` came back as two `(error)` rows and a `(for-in …)` against
+  // the hand's one. The hand never gets there: `parse_list_elements` CONSUMES `for` before
+  // aborting, so its resync starts after it. Control that isolates it: `[a while]` and
+  // `[a return]` already agreed on both parsers, because only `for` is a token the hand
+  // had already eaten.
+  list_expr    = @peek(list_comp_ahead) "[" @require cb:list_comp @require "]"
+                 @expect("list_comp", "expected a comprehension body")
+                 @expect("]", "expected `]` after list") -> cb
+               | "[" ( a:expression ( @peek(comma_not_rbracket) "," a:expression )* ( "," )? )? @require "]"
+                 @expect("]", "expected `]` after list") -> MkListLit(a)
+  list_comp    = b:expression "for" @require v:IDENT @require "in" c:expression ( "if" f:expression )?
+                 @expect("IDENT", "expected variable name after `for`")
+                 @expect("in", "expected `in` after loop variable") -> MkListComp(b, v, c, f)
+  // A FAILED param ends the lambda. `param` already reports "expected parameter type
+  // after `:`" and aborts, and the MESSAGES matched exactly — but the branch built
+  // `(lambda () x)` around the aborted param anyway, dropping it silently where the hand
+  // yields `(error)`. A message-only probe calls that agreement; only the TREE shows it.
+  // `paren_lambda_ahead` guards the TYPED branch too, for the same reason it guards the
+  // untyped one: `(x: int) ->` with no body must come back `(error)` like the hand's
+  // `try_lambda_body()` returning null, not `(lambda (x:int) (error))`. The scan is
+  // token-level, so a typed parameter list is no different to it.
+  paren_expr   = @peek(lparen_ident_colon) @peek(paren_arrow_ahead) "(" @onfail(bail) ps:param ( "," @onfail(bail) ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
+               // PREDICTIVE, by a SCAN — the non-speculative decision this branch needed
+               // (t-47hc.5). `paren_lambda_ahead` walks to the matching `)` and checks two
+               // tokens: an `->` follows, and the token after it is in the shared
+               // expression FIRST set (`tok_starts_expr_leaf`, which admits `{`, so
+               // `lambda_body`'s two alternatives are covered by one predicate).
+               //
+               // `let a = (1) ->` with no body therefore never ENTERS here: the token
+               // after `->` cannot start a body, so the group branch answers and yields
+               // `(group 1)` with the `->` left for the caller — the hand's
+               // `try_lambda_body()` returning null, reached without imitating its
+               // speculation. This is what let `let` route.
+               //
+               // Deciding it by PARSING is the trap, and both obvious spellings fall into
+               // it: dropping the `@cut`, and `@require lb:lambda_body`. Inside a `@try`
+               // the emitted `@require` reports without aborting (emit.av's `abortable`
+               // guard), and the `@cut`'s own `if !s_cut { break }` is what otherwise
+               // stops a plain group before the body parse. Without that early exit every
+               // parenthesised group parses the whole remaining expression and unwinds,
+               // which nesting multiplies — measured 25/65/160/636ms at 10/12/14
+               // `(a == N) ||` terms against a flat ~24ms, and a 12GB F4014 while the
+               // compiler merely parsed its own `gen_expr_parser.av`. The `@cut` stays:
+               // the peek decides ENTRY, the cut still stops a malformed body committing.
+               | @try @peek(paren_lambda_ahead) "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
                | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
-               | "(" ( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)
+               | "(" ( @on(allow_dot_postfix) e:expression )? @require ")"
+                 @expect(")", "expected `)` after expression") -> MkGroupOrEmpty(e)
   lambda_body  = block_expr | expression
-  param        = pname:IDENT ( ":" pt:type_expr )?
-                 @expect("IDENT", "expected parameter name") -> MkParam(pname, pt)
+  // The TYPE position is `@require`d, keyed on the rule NAME because `type_expr`'s FIRST
+  // is a disjunction with no single token to name (t-myz7) — the same treatment `field`
+  // already has, for the same reason. Unrequired, a missing type did not abort: the
+  // expression view reported its own generic F0040 and the type view added "expected a
+  // type", so `fn foo(x: ) -> int { 1 }` came out F0040 + F0001 where the hand reports
+  // "expected parameter type after `:`" and stops.
+  param        = pname:IDENT ( ":" @require pt:type_expr )?
+                 @expect("IDENT", "expected parameter name") 
+                 @expect("type_expr", "expected parameter type after `:`") -> MkParam(pname, pt)
   // t-47hc.29 — a match-table CELL: exactly hand `parse_primary` (parse/mod.av:2528), in
   // its own dispatch order, and deliberately NOT `@hand(primary_base)`. That leaf resolves
   // to `parse_leaf_common(false)`, which handles a quote SPLICE and the PREFIX operators
@@ -412,6 +528,19 @@ fn avra_expr_core() -> Grammar {
                | @peek(ident_lbrace_plain) @when(allow_struct_lit) struct_lit_expr
                | @peek(ident_template) tagged_template
                | @peek(ident_plain) IDENT
+               // The FEATURE forms (t-47hc.5). `ident_plain` and `ident_lbrace_plain` both
+               // consult the registry and DECLINE `table { … }` / `grammar { … }`, so with
+               // no branch for their complement a feature-form cell had no rule at all:
+               // the row loop read `table` as the NEXT row's pattern and reported
+               // "`table` is not a valid pattern". It only surfaced once `fn` routed —
+               // until then the enclosing function rolled the whole item back to the hand.
+               //
+               // Routed to the NATIVE rules `unary` already uses for the same cond, NOT to
+               // `@hand(primary_base)`: that leaf is RETIRED from the expression parser and
+               // emit_generated_test fails the build if it reappears. Same two rules, same
+               // guard, one more caller.
+               | @peek(ident_lbrace_feature) grammar_expr
+               | @peek(ident_lbrace_feature) table_lit
                | paren_expr | list_expr | match_expr | if_expr
                | spawn_expr | channel_expr | isolated_expr | when_expr
                | @peek(quote_arm) quote_arm_expr | @peek(quote_type) quote_type_expr | quote_expr
@@ -475,7 +604,43 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `letdes_decl` UNREACHABLE — at that point the two must swap, with the more
   // specific `let (` form first. Recorded because the breakage would be silent:
   // destructuring would simply stop parsing, with no diagnostic naming the cause.
-  declaration = use_decl | mod_decl | shape_decl | @try enum_decl | @try type_decl | @try extern_decl | @try fn_decl | trait_decl | @try impl_decl | @try export_decl | @try doc_decl | @try mdoc_decl | @try annot_decl | @try let_decl | mut_decl | const_decl | @try letdes_decl | @try select_decl | @try parallel_decl | @try spec_decl | @try component_decl | @try comp_inst | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
+  // `~name` in a NAME slot — legal ONLY inside a quote body, where it splices a
+  // macro-scope variable into the position (t-47hc.5). The hand's
+  // `consume_name_or_splice` is the oracle: it encodes the splice by PREFIXING the name
+  // with `~` and carrying it as an ordinary name string, which the quote LOWERER reads
+  // back out — so this rule must produce the same string rather than a new node kind.
+  //
+  // It became reachable when `fn` routed: a `quote stmt { type ~name = … }` sits inside a
+  // function body, and while the body rolled back to the hand this slot was never the
+  // native rule's problem. The `@when` is what keeps `type ~name` a parse error OUTSIDE a
+  // quote, which is the other half of the hand's contract.
+  name_or_splice = @when(in_quote_body) "~" sn:IDENT -> MkSpliceName(sn)
+                 | pn:IDENT -> MkPlainName(pn)
+  // WHAT DELETING `@hand(decl_hand)` COSTS — measured, not estimated (t-47hc.5 Phase 4).
+  //
+  // Every declaration KEYWORD is routed and `--parser-frontier` reports none, so the two
+  // `@hand(decl_hand)` references below are the last leaf on the production path. Removing
+  // both was tried: the compiler still self-compiles, `--hand-leaves` reports 0, and the
+  // whole compiler source plus the entire difftest corpus parse with ZERO refusals under
+  // `AVRA_REFUSE_HAND_LEAF=decl_hand`. What it costs is exactly FIVE corpus divergences,
+  // in two clusters — both WRAPPER rules whose `@try` rollback lands on `statement` once
+  // the leaf is not there to catch it:
+  //
+  //   1. `annot_decl` — `@` or `@inline` with no declaration after it. The hand reports
+  //      F0040; the fall-through re-parses `@…` through the EXPRESSION view and reports
+  //      the qualified-reference message instead. The awkward part is WHY the hand says
+  //      F0040: `parse_annotations` takes `current_lexeme` as the annotation NAME without
+  //      requiring an identifier, so `@` followed by `fn` builds an annotation *named*
+  //      `fn` and then fails on what follows — a shape `annot = "@" n:IDENT` cannot
+  //      express. Matching it byte-for-byte means deciding whether to encode that
+  //      looseness in the grammar or to treat it as a hand bug and change the oracle.
+  //   2. `doc_decl` — `/// d` over a malformed inner (`let x: = 1`). The native path adds
+  //      an F0040 ahead of the inner's own diagnostic and splits one `(error)` into two.
+  //
+  // Neither is about the leaf; both are wrappers that need to OWN their inner's failure,
+  // the same lesson every routed keyword taught. Recorded here rather than attempted in
+  // the routing slice because cluster 1 is a design decision about the oracle, not a fix.
+  declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | export_decl | doc_decl | mdoc_decl | annot_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | bare_comp_inst_raw | @try bare_comp_inst | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -507,9 +672,41 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `avra_null_deref_trap` line baked into the IR — moves with it. diff-test caught it as
   // selfhost line numbers drifting by 2, 3 and 41; arbitrary deltas are the tell that a
   // position is inherited rather than shifted.
-  export_decl      = "export" ed:exportable_decl -> MkExport(ed)
+  // t-myz7: `export` owns its recovery. The inner is `@require`d with a declared message
+  // because `exportable_decl`'s FIRST is a disjunction of keywords — there is no single
+  // token to name, which is exactly the case `@expect("<rule>", …)` exists for.
+  export_decl      = @try "export" @cut @require ed:exportable_decl
+                     @expect("exportable_decl", "expected declaration after `export`") -> MkExport(ed)
   exportable_decl  = ei:exportable_inner -> MkStampAt(ei)
-  exportable_inner = @try fn_decl | @try type_decl | @try enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try use_decl | @try mod_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
+  // t-47hc.5: this alternation MIRRORS `declaration`'s, tail role included. A `@try`
+  // branch commits only if the callee reported NOTHING, so a keyword whose native rule
+  // reports and then rolls back leaves the alternation with no branch at all — and with
+  // no tail that is `Nil`, which `MkStampAt`'s `capval_to_stmt` answers with a generic
+  // "expected a statement" ON TOP of a re-parse of the same keyword by the caller.
+  // `export let` showed both: the hand says "expected variable name" once, the native
+  // path said "expected a statement" and then, having consumed only `export`, let the
+  // top-level loop hand `let` to the hand parser for the real message.
+  //
+  // So the unrouted keywords keep the SAME tail they have at the top level: the hand.
+  // It is the same `@hand(decl_hand)` leaf `declaration` ends with — one leaf, two
+  // references — and it dies with that one when the last keyword routes. The keywords
+  // already BARE in `declaration` are bare here too, because a routed rule owns its
+  // recovery and must not be given a rollback it does not have at the top level.
+  //
+  // The tail is `@peek`-NARROWED, and that is load-bearing rather than tidy: a bare
+  // `@hand` tail's FIRST is UNIVERSAL, and `export_decl`'s `@require` reads exactly
+  // that FIRST to decide whether a declaration follows. Unguarded, `export export fn
+  // g() { }` parsed as a nested export where the hand rejects it — the hand looks the
+  // inner keyword up in the feature registry's declaration table, and `export` is not
+  // in that table. `decl_table_kw` asks the registry the SAME question, so this rule's
+  // acceptance frontier is the table's, not a keyword list that can drift from it.
+  // The branch list is `declaration`'s, MINUS the four prefix wrappers (`export`,
+  // `///`, `@ann`, `//!`) and the IDENT-led component instantiations — neither is in
+  // the decl table, so the hand's `export` branch cannot reach them either — and minus
+  // the `statement` tail, which is not a declaration. Same `@try`/bare split, same
+  // order (`let_decl` before `letdes_decl` for the reason `declaration` records), so
+  // the two alternations cannot disagree about who owns a keyword.
+  exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header
   // The remaining three prefix wrappers (t-47hc Phase 4), same shape as `export_decl`
   // with ONE deliberate difference: their inner IS recursive. The hand's doc and
   // annotation branches re-enter `parse_declaration` (unlike export's direct table
@@ -534,12 +731,39 @@ fn avra_decl_edge_grammar() -> Grammar {
   // the arg list is the call-suffix group verbatim, because on the hand side it IS
   // parse_arg_list_ids (allow_dot_postfix on via call_arg's own `@on`, no it-sugar
   // toggle — annotations read the ambient mode, exactly like a plain `f(args)` call).
-  doc_decl       = d:DOC ( d:DOC )* dd:docable_decl -> MkDocAnnotated(d, dd)
+  // t-47hc.4.3 — the doc wrapper OWNS its inner's failure, for the same reason
+  // `annot_decl` does and with the same shape. `///` cannot start an expression, so the
+  // leading `d:DOC` is its own FIRST-set guard and no `@peek` is needed; what the
+  // `@require` buys is that a malformed inner (`/// d` over `let x: = 1`) reports ONCE.
+  // Under the old `@try` the inner's report rolled the whole item back to
+  // `@hand(decl_hand)`, which re-parsed and re-reported — and with the leaf deleted the
+  // rollback lands on `statement` instead, which re-parses and adds an F0040 on top of
+  // the inner's own message. A bare `/// d` with nothing after it already agreed with the
+  // hand (F0040, `(error)`) and still does — that is what the `@expect` pins.
+  doc_decl       = d:DOC ( d:DOC )* @require dd:docable_decl
+                   @expect("docable_decl", "expected expression", F0040) -> MkDocAnnotated(d, dd)
   docable_decl   = di:wrapped_inner -> MkStampAt(di)
   mdoc_decl      = m:MODDOC ( m:MODDOC )* -> MkModuleDoc(m)
-  annot_decl     = an:annot ( an:annot )* ad:annotable_decl -> MkAnnotatedArgs(an, ad)
+  // t-47hc.4.3 — `annot_decl` OWNS its inner's failure, because after the `decl_hand`
+  // deletion there is nothing below it to own one. `@peek(annot_lead)` decides
+  // annotation-vs-qualified-reference predictively (see the cond for why the hand's
+  // answer is position-dependent), and the `@cut` after the first annotation is what
+  // turns "no declaration follows" into the hand's F0040 instead of a rollback into the
+  // expression path's qualified-reference message.
+  annot_decl     = @peek(annot_lead) an:annot ( an:annot )* @require ad:annotable_decl
+                   @expect("annotable_decl", "expected expression", F0040) -> MkAnnotatedArgs(an, ad)
   annotable_decl = ai:wrapped_inner -> MkStampAt(ai)
-  annot          = "@" n:IDENT ( "(" ( a:call_arg ( @peek(comma_not_rparen) "," a:call_arg )* ( "," )? )? ")" )? -> MkAnn(n, a)
+  // The name is `@require`d with the hand's F0040 so a BARE `@` reports what the hand
+  // reports. It cannot be spelled as the leading item's FIRST-set guard: `"@"` is that
+  // guard, and the name is the item after it.
+  // The first argument is `@peek(not_rparen) @require`d, not merely optional: the hand
+  // CALLS `parse_expression` as soon as it has consumed the `(`, so `@foo(` followed by a
+  // token that starts no expression reports F0040 about the missing ARGUMENT. Left
+  // optional, the group's FIRST test simply declined, the args were skipped, and the
+  // required `)` reported F0001 about the PAREN instead — same tree, wrong message.
+  annot          = "@" @require n:IDENT ( "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" )?
+                   @expect("IDENT", "expected expression", F0040)
+                   @expect(")", "expected expression", F0040) -> MkAnn(n, a)
   // `component_decl` is in this set (t-myz7): an ANNOTATED or DOC-COMMENTED
   // component had no native path, so `@expand(expand_cli) component cli {}` fell to
   // `@hand(decl_hand)` — 157 sites in packages/cli/src/main.av, the last form still
@@ -548,7 +772,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // native and `@expand` on a `fn` was fine. Its FIRST (`component`) collides with
   // nothing else here, and `wrapped_inner` is shared by both `annot_decl` and
   // `doc_decl`, so this covers the doc-comment form too.
-  wrapped_inner  = @try fn_decl | @try type_decl | @try enum_decl | @try trait_decl | @try extern_decl | @try shape_decl | @try impl_decl | @try component_decl | @try use_decl | @try mod_decl | @try export_decl | @try doc_decl | @try annot_decl | @try let_decl | @try mut_decl | @try const_decl | @try letdes_decl
+  wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | comp_header | @try use_decl | @try mod_decl | export_decl | doc_decl | annot_decl | letdes_decl | let_decl | mut_decl | const_decl | spec_decl | select_decl | parallel_decl | mdoc_decl | @try bare_comp_inst_raw | @try bare_comp_inst | statement
   // The `let` / `mut` / `const` BINDINGS (t-47hc Phase 4) — the highest-traffic
   // residue of `@hand(decl_hand)`: every binding statement in every routed body
   // used to detour through the hand delegate. The rules mirror the hand parsers
@@ -563,20 +787,55 @@ fn avra_decl_edge_grammar() -> Grammar {
   //     else statement because that is where the hand mints (`build_let_else`
   //     parses the else, checks divergence, THEN calls `fresh`) — the same
   //     mint-order discipline as if_expr's `@gensym(iflet)`. The divergence
-  //     check itself lives in the BUILD (mk_let_binding_g): a non-diverging else
-  //     reports, the `@try` rolls the branch back, and the hand re-parses the
-  //     item owning the coded diagnostic — recovery stays the hand's,
-  //     byte-for-byte.
+  //     check itself lives in the BUILD (mk_let_binding_g), which reports the
+  //     CODED F1203 — it has to, now that the rule commits: the diagnostic used
+  //     to reach the user by ROLLBACK (report message-only, let the `@try` unwind,
+  //     let the hand re-parse and own the code), and a `@cut` leaves no rollback
+  //     to hand it off to.
   //   * `const` has no guard form and no `mut` modifier, matching the hand.
-  //   * The DESTRUCTURE form has its own rule below: `let_decl`'s `n:IDENT`
-  //     fails on `(`, the `@try` rewinds, and `letdes_decl` (next in the
-  //     alternation) parses it.
-  let_decl   = "let" ( m:"mut" )? n:IDENT ( ":" ty:type_expr )? "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )? -> MkLetBinding(m, n, ty, init, e, tmp)
-  mut_decl   = @try "mut" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" init:expression ( "else" e:statement tmp:@gensym(letelse) )?
+  //   * The DESTRUCTURE form has its own rule below, dispatched BEFORE this one
+  //     and selected predictively by its own `@peek(let_destructure)`. It used to
+  //     sit after `let_decl` and be reached by ROLLBACK (`n:IDENT` failing on the
+  //     `(`), which a committed rule no longer provides.
+  // t-47hc.5: `let` is ROUTED, and it was the LAST keyword under `@hand(decl_hand)` —
+  // `--parser-frontier` now reports none. The `@try`/`@cut` pair lives INSIDE the rule so
+  // the dispatcher references it bare, exactly as `mut` and `const` already do.
+  //
+  // Committing it measured 32 divergences and NONE of them were about bindings: the
+  // initializer position is a hole through which every expression-level gap shows, and a
+  // dispatcher-level `@try` had been hiding all of them by rolling the whole item back to
+  // the hand. What it took to close them is spread across the rules that actually owned
+  // each gap — `paren_expr`'s predictive lambda gates, `quote type`/`quote arm`'s required
+  // terminals, `table_lit`'s bailing header and rows, `if_expr`'s bailed condition, the
+  // lexer-diagnostic bridge (`lex_real_full` -> `PState.lex_diags` -> `boundary_diags`),
+  // and the flip seam reporting at its own byte. The invalid corpus
+  // (error_recovery_differential_test) is 117/117 with `let` routed, which is the gate
+  // this keyword was held behind.
+  //
+  // `@onfail(bail)` on the initializer is keyed on the sub-parse having FAILED **or**
+  // REPORTED — the union the hand's `?` propagates. It was failure-only, carved out for
+  // `let a = (1) ->`, where the expression view reported the missing lambda body and still
+  // handed back `(group 1)` that the hand KEEPS. `paren_expr`'s `@peek(paren_lambda_ahead)`
+  // removed that input (the group now parses clean and the dangling `->` is the next
+  // statement's F0040), so the carve-out went with it — and without the union
+  // `let b = x is Foo` survived as a binding where the hand aborts the statement.
+  //
+  // The TYPE position is `@require`d and keyed on the rule NAME, exactly as `param`'s is
+  // and for the same reason: `type_expr`'s FIRST is a disjunction with no single token to
+  // name. Unrequired, `let x: = 1` did not abort — the type view reported its own generic
+  // F0040 "expected expression" and the binding survived as `(let x:<unknown> 1)`, where
+  // the hand reports "expected type after `:`" and the whole statement becomes `(error)`.
+  let_decl   = @try "let" @cut ( m:"mut" )? @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
                @expect("IDENT", "expected variable name")
+               @expect("type_expr", "expected type after `:`")
+               @expect("=", "expected `=` after variable name") -> MkLetBinding(m, n, ty, init, e, tmp)
+  mut_decl   = @try "mut" @cut @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
+               @expect("IDENT", "expected variable name")
+               @expect("type_expr", "expected type after `:`")
                @expect("=", "expected `=` after variable name") -> MkMutBinding(n, ty, init, e, tmp)
-  const_decl = @try "const" @cut @require n:IDENT ( ":" ty:type_expr )? @require "=" init:expression
+  const_decl = @try "const" @cut @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression
                @expect("IDENT", "expected constant name")
+               @expect("type_expr", "expected type after `:`")
                @expect("=", "expected `=` after constant name") -> MkConstBinding(n, ty, init)
   // `let (a, b, …) = init` — the destructure binding, completing the binding
   // family's exit from `@hand(decl_hand)`. The list shape is `for_binding`'s,
@@ -589,7 +848,9 @@ fn avra_decl_edge_grammar() -> Grammar {
   // reads is_mut — so `let mut (a, b) = t` is a plain destructure on both
   // engines. A BARE `mut (` stays an error (parse_mut_statement demands an
   // identifier), which is why mut_decl has no destructure sibling.
-  letdes_decl = "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? ")" "=" init:expression -> MkDestructure(n, init)
+  letdes_decl = @peek(let_destructure) "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? @require ")" @require "=" @onfail(bail) init:expression
+                @expect(")", "expected `)` after destructure names")
+                @expect("=", "expected `=` after destructure pattern") -> MkDestructure(n, init)
   // The CONCURRENCY statements (t-47hc Phase 4). `parallel` is a keyword + a
   // brace-delimited statement list held as RAW ids under a LEAF Parallel row
   // (the hand's parse_statement_list_ids → Stmt.Parallel(ids) — no Block
@@ -606,16 +867,18 @@ fn avra_decl_edge_grammar() -> Grammar {
   // re-check emit inserts is what reports for it. `@expect("IDENT", …)` on
   // `select_arm` supplies that check's message; with no declared message it would
   // fall back to a generic "expected select_arm", naming a grammar rule at the user.
-  parallel_decl = "parallel" "{" body:declaration* "}" -> MkParallel(body)
+  parallel_decl = @try "parallel" @cut @require "{" body:declaration* @require "}"
+                  @expect("{", "expected `{` after parallel")
+                  @expect("}", "expected `}` to close parallel block") -> MkParallel(body)
   // NOT committed, for the reason recorded on `enum_decl`: `select { x }` must report
   // the missing `<-` and still build `(select ())`, while a committed rule ABORTS to
   // `(error)` and additionally leaves the `}` unconsumed so the caller adds a spurious
   // F0013. A gated element's failure needs to SKIP the element and let the rule close,
   // which is a non-aborting mode the DSL does not have.
-  select_decl   = "select" "{" ( @peek(not_rbrace) @gate arms:select_arm )* "}"
+  select_decl   = @try "select" @cut @require "{" ( @peek(not_rbrace) @gate @onfail(close) arms:select_arm )* @require "}"
                   @expect("{", "expected `{` after select")
                   @expect("}", "expected `}` to close select") -> MkSelect(arms)
-  select_arm    = b:IDENT "<-" ch:expression "->" "{" body:declaration* "}"
+  select_arm    = b:IDENT @require "<-" @onfail(bail) ch:expression @require "->" @require "{" body:declaration* @require "}"
                   @expect("IDENT", "expected select arm binding name")
                   @expect("<-", "expected `<-` after select arm binding")
                   @expect("->", "expected `->` after channel in select arm")
@@ -639,16 +902,16 @@ fn avra_decl_edge_grammar() -> Grammar {
   // NOT committed, same reason: `spec "s" { given }` must DROP the malformed item and
   // build `(spec "s" )`, where the committed rule keeps `(spec "s" (error))`. Item-drop
   // is a third recovery shape the DSL cannot yet express.
-  spec_decl  = "spec" n:STRING "{" body:spec_item* "}"
+  spec_decl  = @try "spec" @cut @require n:STRING @require "{" @onfail(drop) body:spec_item* @require "}"
                @expect("STRING", "expected spec name string after `spec`")
                @expect("{", "expected `{` after spec name")
                @expect("}", "expected `}` to close spec block") -> MkSpecBlock(n, body)
   spec_item  = given_blk | then_blk | declaration
-  given_blk  = "given" n:STRING "{" body:spec_item* "}"
+  given_blk  = @try "given" @cut @require n:STRING @require "{" @onfail(drop) body:spec_item* @require "}"
                @expect("STRING", "expected given name string after `given`")
                @expect("{", "expected `{` after given name")
                @expect("}", "expected `}` to close given block") -> MkGivenBlock(n, body)
-  then_blk   = "then" n:STRING "{" body:declaration* "}"
+  then_blk   = @try "then" @cut @require n:STRING @require "{" body:declaration* @require "}"
                @expect("STRING", "expected then name string after `then`")
                @expect("{", "expected `{` after then name")
                @expect("}", "expected `}` to close then block") -> MkThenBlock(n, body)
@@ -669,9 +932,94 @@ fn avra_decl_edge_grammar() -> Grammar {
   // leave a registration behind on rollback, which is byte-for-byte the
   // status quo (a hand-parsed def inside a rolled-back @try branch already
   // does this; see the t-47hc hazard-1 comment).
-  component_decl = "component" n:IDENT ( "implements" tr:IDENT ( @peek(comma_ident) "," tr:IDENT )* ","? )? "{" ( "config" "{" ( cfg:config_entry )* "}" )? ( "children" "{" ( cs:children_slot ( @peek(comma_ident) "," cs:children_slot )* ","? )? "}" )? ( @peek(body_marker) "body" ":" bm:IDENT )? body:comp_item* "}" -> MkComponentDef(n, tr, cfg, cs, bm, body)
-  config_entry  = k:IDENT ":" ty:type_expr ( "=" d:expression )? ( "@" ( a:IDENT )? )* ","? -> MkCompConfig(k, ty, d)
-  children_slot = k:IDENT ":" ty:type_expr -> MkChildrenSlot(k, ty)
+  // The LEGACY paren form, `component C(a: int) { config? body }` (t-47hc.5). The hand
+  // still accepts it, so it is VALID input the grammar could not express — which blocks
+  // committing `component` outright, not merely its recovery. Dispatched on a LOOKAHEAD
+  // rather than left to a `@try`, because the header it shares with the brace form is
+  // variable-length (`implements A, B`) and a committed rule cannot back out of it.
+  // No `children` block and no `body:` marker here: parse_component_decl's paren branch
+  // admits neither, and the shared build enforces the rest.
+  // The `implements A, B` clause as its OWN rule, referenced by all three header forms
+  // (t-47hc.5). Not tidiness: `@expect` is keyed by TOKEN, and the header has TWO IDENT
+  // positions wanting different wording — the component NAME ("expected component name")
+  // and the first trait ("expected trait name after `implements`"). One rule cannot say
+  // both, so the clause moves to where its own message is unambiguous. That is the same
+  // reference-site keying `@require` already uses for rule references.
+  // ONE `component` entry point, four shapes (t-47hc.5). The dispatcher must see a
+  // SINGLE `component`-led branch or the FIRST/FIRST guard rightly flags four rules that
+  // all start with the same literal; the discrimination is a LOOKAHEAD, so it belongs on
+  // branches inside a rule where the guard can see it, not spread across the dispatcher.
+  //
+  // Referenced by `declaration`, `exportable_inner` AND `wrapped_inner`, which is the
+  // other half of the fix: the hand's export/doc/annotation wrappers look `component` up
+  // in the decl table and get `parse_component_decl`, i.e. ALL FOUR forms. Pointing those
+  // wrappers at `component_decl` alone quietly excluded `export component C(a: int) {}`.
+  comp_header = @peek(comp_inst_shape) comp_inst
+              | @peek(comp_paren_shape) comp_paren_decl
+              | @peek(comp_implements_inst) comp_impl_inst
+              | component_decl
+  // The `config { … }` and `children { … }` blocks as their OWN rules (t-47hc.5), for
+  // the reason `comp_implements` is one: `@expect` is keyed by TOKEN, and the header has
+  // THREE `{` positions wanting different wording — the component body's ("expected `{`
+  // after component name"), config's, and children's. `component C { config }` came out
+  // with the body's message where the hand says "expected `{` after `config`".
+  comp_config_block   = "config" @require "{" ( @peek(not_rbrace) @gate ccfg:config_entry )* @require "}"
+                        @expect("{", "expected `{` after `config`")
+                        @expect("}", "expected `}` after config entries") -> MkCompConfigList(ccfg)
+  comp_children_block = "children" @require "{" ( @peek(not_rbrace) @gate ccs:children_slot ( @peek(comma_ident) "," ccs:children_slot )* ","? )? @require "}"
+                        @expect("{", "expected `{` after `children`")
+                        @expect("}", "expected `}` after children entries") -> MkChildrenSlotList(ccs)
+  // `body: TokenStream` as its OWN rule so the type check runs WHEN THE MARKER IS PARSED
+  // (t-47hc.5). The hand validates it there and returns `.Err`, leaving the component's
+  // closing `}` for statement-level recovery; validating in the enclosing build instead
+  // runs AFTER `@require "}"` has already consumed the brace, so the hand's second
+  // diagnostic could not appear no matter what the build did.
+  comp_body_marker = "body" @require ":" @require bmn:IDENT
+                     @expect(":", "expected `:` after `body`")
+                     @expect("IDENT", "expected a type after `body:`") -> MkCompBodyMarker(bmn)
+  comp_implements = "implements" @require ctr:IDENT ( @peek(comma_ident) "," ctr:IDENT )* ","?
+                    @expect("IDENT", "expected trait name after `implements`") -> MkTraitList(ctr)
+  comp_paren_decl = @peek(comp_paren_shape) "component" @require pn:IDENT ( @peek(kw_implements) @gate pci:comp_implements )?
+                    @require "(" ( @peek(not_rparen) @gate pps:param ( @peek(comma_not_rparen) "," pps:param )* ( "," )? )? @require ")"
+                    @require "{" ( @peek(kw_config) @gate pcfg:comp_config_block )? @onfail(abort) pbody:comp_item* @require "}"
+                    @expect("IDENT", "expected component name")
+                    @expect("(", "expected `(` after component name")
+                    @expect(")", "expected `)` after component params")
+                    @expect("{", "expected `{` after component header")
+                    @expect("}", "expected `}` at end of component") -> MkComponentParenDef(pn, pps, pci, pcfg, pbody)
+  // The one header shape the hand answers with a MESSAGE rather than a parse: an
+  // implements clause followed by an instance name. Its `@require "{"` can only FAIL —
+  // the cond admits this branch precisely when an IDENT sits where the `{` belongs — so
+  // the rule is a reporter, and the body after it exists to give the sequence a shape,
+  // not to run. Written as its own branch because the message is CONTEXTUAL: the same
+  // missing `{` is "expected `{` after component name" without an implements clause, and
+  // one `@expect` per token cannot say both.
+  // NO BUILD, deliberately: the `@require "{"` is the last item and it can only fail, so
+  // there is nothing to construct. Giving it `MkComponentDef` would mean declaring
+  // captures nothing ever binds purely to satisfy an arity.
+  comp_impl_inst = @peek(comp_implements_inst) "component" @require iname:IDENT ici:comp_implements
+                   @require "{"
+                   @expect("{", "`implements` clause must be followed by `{` or `(` — if you meant another trait name, add a `,` (instance-prefix component blocks may not carry an `implements` clause)")
+  component_decl = "component" @require n:IDENT ( @peek(kw_implements) @gate ci:comp_implements )? @require "{" ( @peek(kw_config) @gate cfg:comp_config_block )? ( @peek(kw_children) @gate cs:comp_children_block )? ( @peek(body_marker) @gate bm:comp_body_marker )? @onfail(abort) body:comp_item* @require "}"
+                   @expect("IDENT", "expected component name")
+                   @expect("{", "expected `{` after component name")
+                   @expect("}", "expected `}` at end of component") -> MkComponentDef(n, ci, cfg, cs, bm, body)
+  // `@require ":"` with the hand's own message: `parse_comp_config_schema` consumes the
+  // colon with `expected `:` after config key` and RETURNS `.Err`, so a keyless entry
+  // ends the config block rather than going on to look for a type (t-47hc.5).
+  // The IDENT message is declared HERE, on the callee, because that is where the gated
+  // entry re-check reads it from (`rule_first_expect_msg`) — a caller-side
+  // `@expect("config_entry", …)` is inert. Without it the fallback printed the GRAMMAR
+  // RULE NAME at the user: `component C { config { 5 } }` said "expected config_entry"
+  // where the hand says "expected config key".
+  config_entry  = k:IDENT @require ":" @require ty:type_expr ( "=" d:expression )? ( "@" ( a:IDENT )? )* ","?
+                  @expect("IDENT", "expected config key")
+                  @expect(":", "expected `:` after config key")
+                  @expect("type_expr", "expected config type") -> MkCompConfig(k, ty, d)
+  children_slot = k:IDENT @require ":" @require ty:type_expr
+                  @expect("IDENT", "expected child slot name")
+                  @expect(":", "expected `:` after slot name")
+                  @expect("type_expr", "expected slot type") -> MkChildrenSlot(k, ty)
   // The `@peek(kw_let)` gate declares the dispatch the ambiguity guard would
   // otherwise flag as a silent FIRST/FIRST shadow: `declaration` also derives
   // `let` (the routed let_decl), and comp_field must own it TOTALLY so the
@@ -687,13 +1035,13 @@ fn avra_decl_edge_grammar() -> Grammar {
   // cores (chars.av), so `key -5`, `key trueish`, `key /* c */ "v"` and
   // `key r"s"` are all decided identically to the hand rather than
   // re-derived at token level.
-  comp_inst   = @peek(comp_inst_shape) "component" n:IDENT i:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, i, p, body)
+  comp_inst   = @peek(comp_inst_shape) "component" n:IDENT i:IDENT "{" ( @onfail(bail) p:config_pair )* @onfail(abort) body:comp_block_item* @require "}" @expect("}", "expected `}` at end of component block") -> MkComponentBlock(n, i, p, body)
   // Slice C — the same instantiation WITHOUT the `component` keyword. Decidable only
   // via the registry (see the `bare_comp_inst` cond), because `acct_sr a { … }` and
   // `foo bar { … }` are the same token shape. The raw twin mirrors the nested
   // raw arms above: a `body: TokenStream` component captures its instance body
   // verbatim rather than parsing it.
-  bare_comp_inst     = @peek(bare_comp_inst) n:IDENT i:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, i, p, body)
+  bare_comp_inst     = @peek(bare_comp_inst) n:IDENT i:IDENT "{" ( @onfail(bail) p:config_pair )* @onfail(abort) body:comp_block_item* @require "}" @expect("}", "expected `}` at end of component block") -> MkComponentBlock(n, i, p, body)
   bare_comp_inst_raw = @peek(bare_comp_inst_raw) rn:IDENT ri:IDENT "{" rb:@rawbrace(component) "}" -> MkRawComponentBlock(rn, ri, rb)
   config_pair = @peek(cfg_pair_value) k:IDENT v:expression ","? -> MkCompConfigPair(k, v)
               | @peek(cfg_pair_eq) k:IDENT "=" v:expression ","? -> MkCompConfigPair(k, v)
@@ -706,14 +1054,38 @@ fn avra_decl_edge_grammar() -> Grammar {
   // tail no longer needs a gate to decline into — which is what makes it honest:
   // a `@peek` on the last branch is silently dropped (dispatch_has_tail), so the
   // previous `@peek(comp_body_plain) declaration` was a guard that never ran.
-  comp_block_item = @peek(comp_nested_raw_named) rn:IDENT ri:IDENT "{" rb:@rawbrace(component) "}" -> MkRawComponentBlock(rn, ri, rb)
-                  | @peek(comp_nested_raw_bare) rn:IDENT "{" rb:@rawbrace(component) "}" -> MkRawComponentBlock(rn, rn, rb)
-                  | @peek(comp_nested_named) n:IDENT i:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, i, p, body)
-                  | @peek(comp_nested_bare) n:IDENT "{" ( p:config_pair )* body:comp_block_item* "}" -> MkComponentBlock(n, n, p, body)
-                  | @peek(comp_method) m:IDENT "(" ")" "{" mb:declaration* "}" -> MkMethodShorthand(m, mb)
+  // Every position the hand `consume`s with a message is `@require`d, with that message
+  // (t-47hc.5). Per-BRANCH `@expect`s, which is what makes the two IDENT slots in the
+  // named arm expressible: the component name is guaranteed by the branch's own `@peek`,
+  // so the only IDENT that can fail there is the INSTANCE name.
+  comp_block_item = @peek(comp_nested_raw_named) rn:IDENT @require ri:IDENT @require "{" rb:@rawbrace(component) @require "}"
+                    @expect("IDENT", "expected instance name")
+                    @expect("{", "expected `{` after nested block name")
+                    @expect("}", "expected `}` at end of nested block") -> MkRawComponentBlock(rn, ri, rb)
+                  | @peek(comp_nested_raw_bare) rn:IDENT @require "{" rb:@rawbrace(component) @require "}"
+                    @expect("{", "expected `{` after nested block name")
+                    @expect("}", "expected `}` at end of nested block") -> MkRawComponentBlock(rn, rn, rb)
+                  | @peek(comp_nested_named) n:IDENT @require i:IDENT @require "{" ( @onfail(bail) p:config_pair )* @onfail(abort) body:comp_block_item* @require "}"
+                    @expect("IDENT", "expected instance name")
+                    @expect("{", "expected `{` after nested block name")
+                    @expect("}", "expected `}` at end of nested block") -> MkComponentBlock(n, i, p, body)
+                  | @peek(comp_nested_bare) n:IDENT @require "{" ( @onfail(bail) p:config_pair )* @onfail(abort) body:comp_block_item* @require "}"
+                    @expect("{", "expected `{` after nested block name")
+                    @expect("}", "expected `}` at end of nested block") -> MkComponentBlock(n, n, p, body)
+                  | @peek(comp_method) m:IDENT @require "(" @require ")" @require "{" mb:declaration* @require "}"
+                    @expect("(", "expected `(` in method shorthand")
+                    @expect(")", "expected `)` in method shorthand")
+                    @expect("{", "expected `{` after method header")
+                    @expect("}", "expected `}` after method body") -> MkMethodShorthand(m, mb)
                   | declaration
-  comp_item     = @peek(kw_let) comp_field | declaration
-  comp_field    = "let" f:IDENT ":" ty:type_expr ( "=" init:expression )? -> MkCompField(f, ty, init)
+  comp_item     = @peek(kw_let) @gate comp_field | declaration
+  // `parse_comp_def_body`'s `let` arm consumes the colon with `expected `:` after field
+  // name` and returns `.Err`, so a bare `let x` ends the component and leaves its `}` for
+  // statement-level recovery (t-47hc.5).
+  comp_field    = "let" @require f:IDENT @require ":" @require ty:type_expr ( "=" init:expression )?
+                  @expect("IDENT", "expected field name")
+                  @expect(":", "expected `:` after field name")
+                  @expect("type_expr", "expected field type") -> MkCompField(f, ty, init)
   // See the §2 twin above: on the PRODUCTION path a routed body is a DECLARATION list,
   // matching the hand's parse_statement_list_ids (which re-enters parse_declaration per
   // item) and the precedent `stmt_block` / `block_expr` already set. Using `statement`
@@ -779,7 +1151,7 @@ export fn avra_stmt_grammar() -> Grammar {
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
   defer_stmt    = "defer" e:expression -> MkDefer(e)
   errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
-  return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
+  return_stmt   = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     // The match-table fragment is composed IN (not left external) for the same
@@ -881,9 +1253,21 @@ fn avra_stmt_common_grammar() -> Grammar {
   stmt_block    = "{" stmts:declaration* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
-  if_stmt       = "if" @off(allow_struct_lit) c:expression t:block ( "else" e:statement )? -> If(c, t, e)
+  // t-47hc.5: `@require t:block` with the hand's own message AND its F-CODE. Both
+  // halves were missing and neither shows until `fn` routes: while the function body
+  // rolled back to the hand, `if cond expr` was answered by the hand and this rule's
+  // silence never surfaced. Without the `@require` the missing block is not an error at
+  // all here, so the rule builds an `if` with no consequent and the enclosing body then
+  // reports about ITS closer instead — two diagnostics, neither the hand's one.
+  if_stmt       = "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block ( "else" e:statement )?
+                  @expect("{", "expected `{` after if condition", F0010) -> If(c, t, e)
   for_binding   = lp:"(" ( names:IDENT ( @peek(comma_ident) "," names:IDENT )* ","? )? ")" -> MkForBinding(lp, names)
-  while_stmt    = "while" @off(allow_struct_lit) c:expression body:block -> While(c, body)
+  // `@onfail(bail)` on the CONDITION: the hand's `parse_expression()?` propagates, so a
+  // failed condition ends the rule and the missing block is never reported. `while return
+  // 2` is the shape — one F0040 on the hand, and without the bail the native rule went on
+  // to report about the `{` too.
+  while_stmt    = "while" @onfail(bail) @off(allow_struct_lit) c:expression @require body:block
+                  @expect("{", "expected `{` after while condition", F0010) -> While(c, body)
   // t-47hc.22: the SUBJECTLESS form `match { cond -> body }` is grammar-native. Its arms
   // are NOT the expression family's `when_arm`: the hand parse_when_arm_list this mirrors
   // takes `_` as the ONLY default (never `else`, which `when { … }` does accept), so
@@ -928,7 +1312,7 @@ fn avra_stmt_common_grammar() -> Grammar {
   // shared fragment composed into both is the only home that serves both (t-47hc.25).
   defer_stmt    = "defer" e:expression -> MkDefer(e)
   errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
-  return_stmt   = "return" ^( e:expression )? -> MkReturn(e)
+  return_stmt   = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> MkReturn(e)
   // STATEMENT-position `if let` — the hand's `parse_if_let_statement`, not its
   // expression twin. Routing this to `expression` (which reaches `if_expr`) parsed the
   // form correctly but lowered it to the WRONG SHAPE: an `ExprStmt(Block-expr)` holding
@@ -952,7 +1336,7 @@ fn avra_stmt_common_grammar() -> Grammar {
                  @off(allow_struct_lit) s:expression @require t:block ( "else" e:statement )?
                  @expect("IDENT", "expected a binding name after `if let`")
                  @expect("=", "expected `=` after the `if let` binding")
-                 @expect("{", "expected `{` after the `if let` binding") -> MkIfLetStmt(tmp, b, s, t, e)
+                 @expect("{", "expected `{` after the `if let` binding", F0010) -> MkIfLetStmt(tmp, b, s, t, e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     grammar_checked(gp)
@@ -1093,7 +1477,21 @@ export fn avra_decl_dispatch_grammar() -> Grammar {
 export fn avra_type_grammar() -> Grammar {
     let gp = grammar {
   type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
-  type_atom  = qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
+  // t-47hc.4.3 — `~var` in TYPE position, as its own atom rather than a widened
+  // `named_type`. The hand routes it through `consume_name_or_splice`, which yields the
+  // ordinary name string PREFIXED with `~` for the quote lowerer to read back; this
+  // builds the same `TypeExpr.Named("~var")`.
+  //
+  // An atom, not a wider `named_type`, because `named_type`'s name slot is a REPEATED
+  // capture (the dotted path) and its accumulator type is inferred from the first item —
+  // leading with a rule reference silently redeclared it `List<ExprId>` and the generated
+  // parser then pushed a Token into it. A splice is a single name with no dotted tail, so
+  // it has no business in that list.
+  //
+  // `@when(in_quote_body)` keeps `~` a parse error outside a quote, so valid input is
+  // untouched. Placed BEFORE `named_type` because `~` starts no other atom.
+  splice_type = @when(in_quote_body) "~" sn:IDENT ( opt:"?" )? -> MkSpliceType(sn, opt)
+  type_atom  = splice_type | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
   qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
   fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
   dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)
@@ -1115,7 +1513,21 @@ export fn avra_type_grammar() -> Grammar {
 export fn avra_type_flip_grammar() -> Grammar {
     let gp = grammar {
   type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
-  type_atom  = qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
+  // t-47hc.4.3 — `~var` in TYPE position, as its own atom rather than a widened
+  // `named_type`. The hand routes it through `consume_name_or_splice`, which yields the
+  // ordinary name string PREFIXED with `~` for the quote lowerer to read back; this
+  // builds the same `TypeExpr.Named("~var")`.
+  //
+  // An atom, not a wider `named_type`, because `named_type`'s name slot is a REPEATED
+  // capture (the dotted path) and its accumulator type is inferred from the first item —
+  // leading with a rule reference silently redeclared it `List<ExprId>` and the generated
+  // parser then pushed a Token into it. A splice is a single name with no dotted tail, so
+  // it has no business in that list.
+  //
+  // `@when(in_quote_body)` keeps `~` a parse error outside a quote, so valid input is
+  // untouched. Placed BEFORE `named_type` because `~` starts no other atom.
+  splice_type = @when(in_quote_body) "~" sn:IDENT ( opt:"?" )? -> MkSpliceType(sn, opt)
+  type_atom  = splice_type | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
   qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
   fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
   dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)
@@ -1166,6 +1578,12 @@ export fn avra_program_grammar() -> Grammar {
     let gp = grammar {
   program     = ( d:declaration )* -> Block(d)
   declaration = fn_decl | extern_decl | type_decl | shape_decl | enum_decl | trait_decl | impl_decl | use_decl | mod_decl
+  // Defined in BOTH views, like every other rule the shared decl fragments reach: the
+  // §2 program grammar and the production decl view compose different rule sets, and
+  // `type_decl` (a shared fragment) names this one, so a definition in only one view
+  // leaves the other with an unknown rule and a hard parse failure.
+  name_or_splice = @when(in_quote_body) "~" sn:IDENT -> MkSpliceName(sn)
+                 | pn:IDENT -> MkPlainName(pn)
   // t-20wd — the BODY nonterminal, defined per VIEW. This §2 `declaration` is
   // declarations-ONLY (no `statement` tail), so a body here must be a statement list.
   // The production view (avra_decl_edge_grammar) defines it as `declaration`, whose tail
@@ -1173,10 +1591,17 @@ export fn avra_program_grammar() -> Grammar {
   // is what a fn body needs and what the hand parser does. The two views never compose
   // each other, so each owns its own definition and the shared fragments stay body-agnostic.
   body_item   = statement
-  param       = pname:IDENT ( ":" pt:type_expr )?
-                 @expect("IDENT", "expected parameter name") -> MkParam(pname, pt)
+  // The TYPE position is `@require`d, keyed on the rule NAME because `type_expr`'s FIRST
+  // is a disjunction with no single token to name (t-myz7) — the same treatment `field`
+  // already has, for the same reason. Unrequired, a missing type did not abort: the
+  // expression view reported its own generic F0040 and the type view added "expected a
+  // type", so `fn foo(x: ) -> int { 1 }` came out F0040 + F0001 where the hand reports
+  // "expected parameter type after `:`" and stops.
+  param       = pname:IDENT ( ":" @require pt:type_expr )?
+                 @expect("IDENT", "expected parameter name") 
+                 @expect("type_expr", "expected parameter type after `:`") -> MkParam(pname, pt)
   statement   = return_stmt | @hand(let_stmt) | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
-  return_stmt = "return" ^( rv:expression )? -> MkReturn(rv)
+  return_stmt = "return" ( @peek(return_value) @gate @onfail(bail) rv:expression )? -> MkReturn(rv)
   defer_stmt  = "defer" de:expression -> MkDefer(de)
   errdefer_stmt = "errdefer" ee:expression -> MkErrdefer(ee)
   block_stmt  = "{" ( bs:statement )* "}" -> Block(bs)

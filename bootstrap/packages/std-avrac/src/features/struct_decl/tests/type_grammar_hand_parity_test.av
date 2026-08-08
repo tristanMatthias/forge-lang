@@ -17,6 +17,7 @@
 // `parse_variant_list` skips `Tk.DocComment` and the fragment had to learn to — the hand's
 // field list has no such skip, so there is nothing to match.
 
+use @std.avrac.features.grammar.{emitted_rule_body}
 use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, avra_decl_dispatch_grammar, emit_parser_source_ex}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
@@ -87,36 +88,68 @@ fn decl_src() -> string {
     emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
 }
 
-spec "t-47hc slice 10.12: `type` is routed onto the production path, speculatively" {
+spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" {
     then "parse_type_decl exists and dispatches BEFORE the decl_hand gate" {
         let src = decl_src()
         let type_at = src.index_of("parse_type_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         src.contains("fn parse_type_decl(st: PState) -> CapVal") &&
-            type_at >= 0 && hand_at >= 0 && type_at < hand_at
+        // t-47hc.4.3 — the leaf is DELETED, so this asserts there is no gate to dispatch
+        // before, rather than an ordering against one. Strictly stronger: an ordering claim
+        // is satisfiable by a gate that still exists, `hand_at < 0` only by its absence.
+            type_at >= 0 && hand_at < 0
     }
 
-    then "the branch is SPECULATIVE — on any diagnostic it rolls back into the hand gate" {
+    // t-myz7: `type` OWNS its recovery, so the dispatcher calls it DIRECTLY and the
+    // `@try` moved inside the rule, paired with the `@cut` after the keyword. The
+    // rollback scaffold is still emitted, one frame in, covering only a failure BEFORE
+    // the cut. Both halves are asserted: a speculative dispatch would silently un-route
+    // the keyword with every parity spec above still green, and a missing `s_cut` would
+    // leave the rule committing nowhere with its own `@expect` messages unreachable.
+    then "the branch is COMMITTED — the dispatcher calls it directly, the rule owns the rollback" {
+        // The three rollback strings are scoped to THIS rule's emitted body. They are
+        // byte-identical in every speculative rule the emitter renders, so a whole-file
+        // `contains` passed off `parse_mut_decl`'s or `parse_const_decl`'s copy and could
+        // not fail for type_decl — the missing-`s_cut` case the note above claims to catch.
         let src = decl_src()
-        src.contains("s_last = parse_type_decl(st)") &&
-            src.contains("st.store.truncate_to_mark(s_mark)") &&
-            src.contains("st.restore_hand_state(s_hand)")
+        let rule = emitted_rule_body(src, "fn parse_type_decl(st: PState) -> CapVal")
+        src.contains("return parse_type_decl(st)") &&
+            !src.contains("s_last = parse_type_decl(st)") &&
+            rule.contains("mut s_cut = false") &&
+            rule.contains("st.store.truncate_to_mark(s_mark)") &&
+            rule.contains("st.restore_hand_state(s_hand)")
     }
 
     then "the RHS is ONE optional group — the brace and alias forms are EXCLUSIVE" {
         // t-myz7.1 in the emitted output: a single guard admitting either form, with the
         // alias branch as an `else if` INSIDE it. Two adjacent `if`s here would mean the
         // alias group is still tried after the brace form completed, which is the bug.
-        let src = decl_src()
-        src.contains("if st.cur().tk == Tk.LeftBrace || tok_starts_type(st.cur()) {") &&
-            src.contains("} else if tok_starts_type(st.cur()) {")
+        // t-47hc.4.3 — asserted on the SHAPE, not on the FIRST-set text. This used to pin
+        // the guard verbatim (`… || tok_starts_type(st.cur()) {`), so widening `type_expr`'s
+        // declared FIRST for the quote-splice `~` turned it red without anything about the
+        // exclusivity it exists to protect having changed. A guard that fails on an
+        // unrelated edit trains people to update it without reading it.
+        //
+        // Bounded to the rule's OWN body: `LeftBrace ||` and `} else if` both appear in
+        // several emitted rules, so a whole-file `contains` proves nothing about this one.
+        let rule = emitted_rule_body(decl_src(), "fn parse_type_decl(st: PState) -> CapVal")
+        rule != "" &&
+            // ONE opener admitting either form — the brace test is the left disjunct...
+            rule.contains("if st.cur().tk == Tk.LeftBrace || ") &&
+            // ...and the alias form is an `else if` INSIDE it. Two adjacent `if`s would mean
+            // the alias group is still tried after the brace form completed — the bug.
+            rule.contains("} else if ") &&
+            // and the alias branch tests the TYPE first, whatever that expands to today
+            rule.contains("tok_starts_type(st.cur())")
     }
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
         let src = decl_src()
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
+        // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
+        tail_at >= 0 && hand_at < 0
     }
 }
 

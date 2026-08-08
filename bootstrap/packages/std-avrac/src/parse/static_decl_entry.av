@@ -11,7 +11,7 @@
 
 use parse.gen_decl_parser.{parse_declaration}
 use parse.{Parser}
-use features.grammar.{run_static_snode_at_shared, Token, PState, CapVal, ExprModes, DslStmtResult}
+use features.grammar.{run_static_snode_at_shared, Token, PState, CapVal, ExprModes, DslStmtResult, LexDiag}
 use core.{NodeStore}
 
 /// Drive the generated static DECLARATION parser over the shared token stream at
@@ -22,6 +22,6 @@ use core.{NodeStore}
 /// walk / per-node capture-env allocation). The whole top-level dispatch — the only
 /// work the interpreter did in production after the single-level-delegate landing —
 /// is now generated straight-line code.
-export fn run_static_decl(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
-    run_static_snode_at_shared(toks, start_byte, src, file, store, modes, delegate, parse_declaration)
+export fn run_static_decl(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
+    run_static_snode_at_shared(lex_diags, toks, start_byte, src, file, store, modes, delegate, parse_declaration)
 }

@@ -1604,6 +1604,14 @@ int64_t avra_array_pop(void* arr) {
     return a->data[--a->len];
 }
 
+// Drop every element, keeping the allocation. `clear` has always been in the list
+// method vocabulary (resolve/mod.av) but had no codegen, so reaching it was an ICE
+// rather than a diagnostic; this is the missing primitive.
+void avra_array_clear(void* arr) {
+    if (!arr) return;
+    ((AvraArray*)arr)->len = 0;
+}
+
 // Create a new array from a slice of an existing one.
 void* avra_array_slice(void* arr, int64_t start, int64_t end) {
     AvraArray* src = (AvraArray*)arr;

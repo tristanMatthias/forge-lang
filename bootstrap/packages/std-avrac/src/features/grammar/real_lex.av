@@ -28,6 +28,7 @@
 use core.{Tk, tk_keyword_str}
 use parse.{Parser, parser_new}
 use features.grammar.{Token}
+use diagnostics.{Diagnostic, error_def}
 
 impl Parser {
     /// Drive this parser's streaming lexer from its current position to EOF,
@@ -35,9 +36,35 @@ impl Parser {
     /// `Parser` method (like `parse_grammar_block`) so it can call the
     /// lexer's own `advance_token` / read `current_*` without exporting them.
     fn lex_all_grammar_tokens(self) -> List<Token> {
+        self.lex_all_grammar(). toks
+    }
+
+    /// The same drive, keeping the lexer's own DIAGNOSTICS and the token index each
+    /// one belongs to.
+    ///
+    /// The streaming lexer reports as it scans (`unexpected character \`;\``,
+    /// `unterminated string`, a bad number), into the `Parser.bag` this bridge builds
+    /// and then throws away. On the HAND path those land interleaved with the parser's
+    /// own diagnostics, because the hand pulls one token at a time and the lexer
+    /// reports mid-pull. On the native path the whole stream is lexed up front, so a
+    /// discarded bag is a diagnostic the user never sees: `let z = ;` is F0001
+    /// `unexpected character \`;\`` + F0041 on the hand and F0041 alone natively.
+    ///
+    /// Attribution is EXACT and needs no byte→token mapping: the bag is measured
+    /// either side of each `advance_token()`, so anything new belongs to the token
+    /// that call produced. Byte spans would have to be re-searched against token
+    /// starts and would tie on a zero-width report.
+    fn lex_all_grammar(self) -> LexedSource {
         mut toks: List<Token> = []
-        // `parser_new` already primed the first token, so `current_*` is valid
-        // before the first advance. Push-then-advance; stop AFTER pushing EOF.
+        mut diags: List<LexDiag> = []
+        // `parser_new` already primed the first token, so `current_*` is valid before
+        // the first advance — and anything already in the bag was reported while
+        // producing token 0.
+        mut seen = 0
+        while seen < self.bag.diagnostics.length {
+            diags.push(lex_diag_at(0, self.bag.diagnostics[seen]))
+            seen = seen + 1
+        }
         while true {
             let k = self.current_kind
             toks.push(Token {
@@ -48,9 +75,28 @@ impl Parser {
             })
             if k == Tk.Eof { break }
             self.advance_token()
+            // Whatever the lexer just reported belongs to the token it just produced,
+            // which is the one about to be pushed — index `toks.length`.
+            while seen < self.bag.diagnostics.length {
+                diags.push(lex_diag_at(toks.length, self.bag.diagnostics[seen]))
+                seen = seen + 1
+            }
         }
-        toks
+        LexedSource { toks, diags }
     }
+}
+
+/// One lexer diagnostic, tagged with the index of the token it was reported while
+/// producing. `code` is the F-code STRING, matching `GDiag` — the vocabulary the DSL
+/// diagnostics channel speaks, so a flushed lexer diagnostic is indistinguishable from
+/// a rule's own by the time the flip seam re-reports it.
+export type LexDiag = { at: int, code: string, msg: string }
+
+/// A lexed source: the token stream plus the lexer diagnostics, positioned.
+export type LexedSource = { toks: List<Token>, diags: List<LexDiag> }
+
+fn lex_diag_at(at: int, d: Diagnostic) -> LexDiag {
+    LexDiag { at, code: error_def(d.code).code, msg: d.message }
 }
 
 /// Tokenise `src` through the shipping streaming lexer and hand back the
@@ -58,6 +104,13 @@ impl Parser {
 export fn lex_real(src: string) -> List<Token> {
     mut p = parser_new(src)
     p.lex_all_grammar_tokens()
+}
+
+/// `lex_real` plus the positioned lexer diagnostics — what a PState is built from, so
+/// the native parser can flush each one at the point the hand would have reported it.
+export fn lex_real_full(src: string) -> LexedSource {
+    mut p = parser_new(src)
+    p.lex_all_grammar()
 }
 
 /// True for the keyword family (all `Kw*` variants), including the reserved

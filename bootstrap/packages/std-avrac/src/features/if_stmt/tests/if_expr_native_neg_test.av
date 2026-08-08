@@ -89,7 +89,11 @@ spec "t-47hc.24: the native if expression reports its own block diagnostic" {
         // in its place would also fire for a block that merely CONTAINS an error, which
         // the hand recovers from — see the malformed-body spec below for the behaviour.
         let gen = generated_if_expr_source()
-        gen.contains("if !(st.cur().tk == Tk.LeftBrace) {\n            st.report(\"expected `{` after if condition\")")
+        // `report_coded`, not `report`: the `@expect` carries F0010 now, matching the
+        // hand's `DiagCode.ExpectedBlock` and the statement view's twin. The uncoded
+        // spelling rendered F0001, which only became visible once `let` routed and
+        // stopped handing `let v = if { 1 }` back to the hand.
+        gen.contains("if !(st.cur().tk == Tk.LeftBrace) {\n            st.report_coded(\"F0010\", \"expected `{` after if condition\")")
     }
 }
 

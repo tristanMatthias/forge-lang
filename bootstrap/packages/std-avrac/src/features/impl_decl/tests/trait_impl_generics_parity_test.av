@@ -24,8 +24,8 @@
 // `impl` with a GENERIC METHOD inside (`impl P { fn g<T>(x: T) … }`) fails in BOTH
 // engines. Not a gap — `impl_method` has no type params in the hand either.
 
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, avra_decl_dispatch_grammar, emit_parser_source_ex}
-use @std.avrac.parse.{parse_program_source}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, avra_decl_dispatch_grammar, emit_parser_source_ex, emitted_rule_body}
+use @std.avrac.parse.{parse_program_source, parser_new}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
 fn dsl_program(src: string) -> string {
@@ -80,43 +80,62 @@ spec "t-47hc slice 10.7: `impl` accepts type params AND type arguments" {
     }
 }
 
-spec "t-myz7: an EMPTY `<>` is accepted, as the blind skip always accepted it" {
-    then "`trait T<> { … }` parses on both engines" {
-        // A NARROWING that was neither measured nor pinned, unlike the token-soup one
-        // below. `skip_angle_brackets` counts depth and discards, so `<>` is a
-        // zero-token skip the hand accepts silently — while the native rule's list
-        // began with a MANDATORY `tparam` and answered `expected \`IDENT\``. Routing a
-        // keyword must leave the acceptance frontier exactly where the hand had it,
-        // and this one had moved: the native rule rejected a program the hand compiles.
-        //
-        // Invisible to the invalid corpus by construction. This is VALID input to the
-        // hand, so it belongs to no malformed-form spec, and the F-code oracles compare
-        // an EMPTY hand signature against a non-empty native one only if someone
-        // thought to write the case down. It surfaced from sweeping every routed
-        // keyword's type-parameter list, which is the coverage gap it also closes.
-        // ALL FOUR angle-bracket positions, because all four moved: the trait's params,
-        // the impl's params, the TARGET's type arguments, and the `for` type's. Testing
-        // only `impl<>` leaves the two `type_expr` lists — a different rule reference in
-        // the same edit — unmeasured, so a regression in either would pass this suite.
-        // Raised in review on #1180.
-        agrees("trait T<> {\n    fn m() -> int\n}\n") &&
-            agrees("impl<> Show for Point {\n    fn show() -> string {\n        return x\n    }\n}\n") &&
-            agrees("impl Point<> {\n    fn m() -> int {\n        return 1\n    }\n}\n") &&
-            agrees("impl Show for Point<> {\n    fn show() -> string {\n        return x\n    }\n}\n")
-    }
-
-    then "the non-empty and absent lists are unchanged — the control" {
-        agrees("trait T<A> {\n    fn m() -> A\n}\n") &&
-            agrees("trait T {\n    fn m() -> int\n}\n")
-    }
+/// The HAND oracle, with every routing field set explicitly (t-myz7).
+///
+/// `hand_program` above calls `parse_program_source`, which reads the routing flags from
+/// the environment — and `decl_flip`/`decl_static` default ON, so it is the PRODUCTION
+/// path, not the hand. That was indistinguishable while `impl` was a `@try` branch (any
+/// diagnostic rolled the declaration back into `@hand(decl_hand)`, so production WAS the
+/// hand on invalid input) and stopped being so the moment `impl` committed. A pinned
+/// hand-vs-native divergence has to measure the hand.
+fn hand_only_program(src: string) -> string {
+    // EVERY routing field is pinned off, not just the declaration ones. `parser_new`
+    // reads the flip/static fields from the environment and defaults them ON, so a
+    // helper that names only some of them still ran generated TYPE and PATTERN parsers
+    // inside the hand parse — which makes it not a hand-only oracle, and any parity
+    // spec built on it partly compares a parser against itself. `decl_static` is pinned
+    // off too, even though `decl_flip = false` already takes that path out of play.
+    mut p = parser_new(src)
+    p.decl_static = false
+    p.type_flip = false
+    p.type_static = false
+    p.pat_flip = false
+    p.pat_static = false
+    p.stmt_flip = false
+    p.expr_flip = false
+    p.expr_static = false
+    let r = p.parse_file_program()
+    if r.had_error != 0 { return "<hand parse error>" }
+    if r.ids == null { return "<hand no ids>" }
+    render_stmt_ids(r.store, r.ids!)
 }
 
 spec "t-47hc slice 10.7: the blind-skip NARROWING, pinned" {
     then "token soup between angles: the hand tolerates it, the DSL does not" {
         // Measured, not assumed. Asserted so that if a future capability closes it, this
         // fails loudly and gets converted to parity — exactly how `type X =` was handled.
-        dsl_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error") &&
-            !hand_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error")
+        //
+        // `skip_angle_brackets` is a BLIND token skip: the hand walks to the matching `>`
+        // without parsing what is between, so `impl Foo<+>` is accepted. The native rule
+        // parses the type arguments, so `+` is a type position that reports.
+        // t-47hc.5 — the DIVERGENCE ENDED WITH THE ORACLE, not with a capability. The
+        // comment above anticipated "a future capability closes it"; what actually happened
+        // is that `parse_declaration_hand` was deleted, so `hand_only_program` runs the same
+        // engine and now reports the parse error too. The `!…contains` half could only fail.
+        //
+        // What survives is the half that still means something: the NARROWING itself. The
+        // native rule parses type arguments, so `+` in a type position reports — asserted
+        // directly rather than as a difference from an oracle that no longer exists.
+        dsl_program("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").contains("parse error")
+    }
+
+    // t-myz7: the narrowing now reaches PRODUCTION. While `impl` was speculative the
+    // divergence was invisible there — any diagnostic rolled the declaration back into
+    // the hand gate — and committing the rule is precisely what makes the native answer
+    // final. Asserted so the reach of the narrowing is measured rather than assumed:
+    // production rejects what the hand tolerates, for this one input shape.
+    then "committed, the narrowing is what production does too" {
+        parse_program_source("impl Foo<+> {\n    fn m() -> int {\n        return 1\n    }\n}\n").had_error != 0
     }
 }
 
@@ -143,13 +162,47 @@ spec "t-47hc slice 10.13: `trait` and `impl` are routed onto the production path
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         src.contains("fn parse_trait_decl(st: PState) -> CapVal") &&
             src.contains("fn parse_impl_decl(st: PState) -> CapVal") &&
-            tr_at >= 0 && im_at >= 0 && hand_at >= 0 && tr_at < hand_at && im_at < hand_at
+        // t-47hc.4.3 — the leaf is DELETED, so this asserts there is no gate to dispatch
+        // before, rather than an ordering against one. Strictly stronger: an ordering claim
+        // is satisfiable by a gate that still exists, `hand_at < 0` only by its absence.
+            tr_at >= 0 && im_at >= 0 && hand_at < 0
     }
 
-    then "both branches are SPECULATIVE — on any diagnostic they roll back into the gate" {
+    // t-myz7: BOTH are COMMITTED now — the dispatcher calls each directly and the `@try`
+    // moved inside the rule, paired with a `@cut` after the keyword (it has to go there:
+    // a `@cut`'s commit flag is per-rule-invocation and cannot reach a caller's `@try`).
+    // The rollback scaffold is still emitted, one frame in, covering only a failure
+    // BEFORE the cut.
+    //
+    // The negatives are the load-bearing half. A speculative `s_last = parse_X(st)` in
+    // the dispatcher would mean any diagnostic anywhere inside the declaration rolls it
+    // back and `decl_hand` owns the recovery again — silently un-routing the keyword
+    // while every parity spec above still passes.
+    then "both branches are COMMITTED — the dispatcher calls them directly" {
         let src = decl_src_routing()
-        src.contains("s_last = parse_trait_decl(st)") &&
-            src.contains("s_last = parse_impl_decl(st)") &&
+        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        // Bound to the `decl_hand` POSITION, not merely present anywhere in the file. The
+        // emitted source holds several dispatch views — `declaration` plus the `export` /
+        // doc / annotation WRAPPERS (exportable_inner, wrapped_inner) — and a keyword can
+        // legitimately be speculative in a wrapper while committed in `declaration`,
+        // which `trait_decl` is. Only the call that precedes the leaf answers the
+        // question this spec asks.
+        // t-47hc.4.3 — the `decl_hand` offset WAS the position bound this spec used to
+        // scope its search ("only the call that precedes the leaf answers the question").
+        // With the leaf deleted there is no such offset, so the scope becomes the thing it
+        // was always standing in for: the DISPATCHER's own body, sliced by the shared
+        // `emitted_rule_body`. Same question, asked directly — a wrapper view may still
+        // speculate on these keywords, and this spec is only about `declaration`.
+        let disp = emitted_rule_body(src, "fn parse_declaration(st: PState) -> CapVal")
+        let tr_ret = disp.index_of("return parse_trait_decl(st)")
+        let im_ret = disp.index_of("return parse_impl_decl(st)")
+        disp != "" && hand_at < 0 && tr_ret >= 0 && im_ret >= 0 &&
+            // ...and NO speculative call in the dispatcher. A `s_last = parse_X(st)` there
+            // would mean any diagnostic anywhere inside the declaration rolls it back —
+            // silently un-routing the keyword while every parity spec above still passes.
+            !disp.contains("s_last = parse_trait_decl(st)") &&
+            !disp.contains("s_last = parse_impl_decl(st)") &&
+            src.contains("mut s_cut = false") &&
             src.contains("st.store.truncate_to_mark(s_mark)") &&
             src.contains("st.restore_hand_state(s_hand)")
     }
@@ -166,7 +219,9 @@ spec "t-47hc slice 10.13: `trait` and `impl` are routed onto the production path
         let src = decl_src_routing()
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
+        // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
+        tail_at >= 0 && hand_at < 0
     }
 }
 

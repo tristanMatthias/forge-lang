@@ -1,0 +1,111 @@
+// WHY: the DSL flip seam (parse/mod.av) turns a grammar-reported F-code STRING back
+// into a `DiagCode` via `syntax_diag_code`, and a code it cannot reverse does not
+// fail — it falls through to `set_error`, which renders as F0001. So an unreversible
+// code keeps its MESSAGE and silently changes its CODE, which is invisible in every
+// message-only oracle (`--parser-probe`, `msgs_agree_*`) and shows up only if some
+// test happens to assert the rendered `error[Fxxxx]`.
+//
+// That is exactly how routing `let` broke F1203: `mk_let_binding_g` started reporting
+// `report_coded("F1203", …)` because the committed native rule now owns the
+// diagnostic, `syntax_diag_code` covered only F0001-F0999, and the compiler emitted
+// the right sentence under the wrong code.
+//
+// This guard closes the class rather than the instance. It reads the two places a
+// code STRING can enter the seam — the production grammar's `@expect(…, CODE)` forms
+// and `report_coded("CODE", …)` calls in the executor — and asserts every one of them
+// round-trips through `syntax_diag_code`. Adding a code without an entry is a red
+// test here, not a silent downgrade in the field.
+use @std.avrac.diagnostics.{syntax_diag_code, error_def}
+use @std.avrac.core.{avra_selfhost_read_file}
+
+/// Every distinct `Fdddd` literal in `src`, in appearance order.
+fn f_codes_in(src: string) -> List<string> {
+    mut out: List<string> = []
+    mut i = 0
+    while i + 5 <= src.length {
+        if src.substring(i, i + 1) == "F" {
+            let cand = src.substring(i, i + 5)
+            mut all_digits = true
+            mut d = 1
+            while d < 5 {
+                let c = cand.substring(d, d + 1)
+                if c < "0" || c > "9" { all_digits = false }
+                d = d + 1
+            }
+            if all_digits {
+                mut seen = false
+                for c in out { if c == cand { seen = true } }
+                if !seen { out.push(cand) }
+            }
+        }
+        i = i + 1
+    }
+    out
+}
+
+/// The codes the seam must be able to reverse: those the GRAMMAR names in an
+/// `@expect(…, CODE)` and those the executor reports via `report_coded("CODE", …)`.
+/// Read from the real sources, so the guard cannot go stale against them.
+fn seam_codes() -> List<string> {
+    mut out: List<string> = []
+    let grammar = avra_selfhost_read_file("packages/std-avrac/src/features/grammar/avra_grammar.av")
+    let exec = avra_selfhost_read_file("packages/std-avrac/src/features/grammar/executor.av")
+    // `@expect(tok, msg, CODE)` — the code is the only bare Fdddd on such a line.
+    for line in grammar.split("\n") {
+        if line.contains("@expect(") {
+            for c in f_codes_in(line) { out.push(c) }
+        }
+    }
+    // `report_coded("CODE", …)` — take the code from the call itself, not the line,
+    // so a comment mentioning an unrelated code on the same line cannot inflate this.
+    for line in exec.split("\n") {
+        if line.contains("report_coded(\"") {
+            let at = line.index_of("report_coded(\"")
+            let rest = line.substring(at + 14, line.length)
+            let end = rest.index_of("\"")
+            if end == 5 { out.push(rest.substring(0, 5)) }
+        }
+    }
+    mut uniq: List<string> = []
+    for c in out {
+        mut seen = false
+        for u in uniq { if u == c { seen = true } }
+        if !seen { uniq.push(c) }
+    }
+    uniq
+}
+
+spec "every F-code the parser seam can carry is reversible by syntax_diag_code" {
+    given "the codes named by the production grammar and the executor's report_coded" {
+        then "the extraction is NON-VACUOUS — it really found codes in both sources" {
+            // Without this, a broken reader makes the round-trip below pass on an
+            // empty list, which is the guard-that-cannot-fail shape.
+            let codes = seam_codes()
+            if codes.length < 2 { println("seam_codes found only: " + codes.join(", ")) }
+            codes.length >= 2
+        }
+
+        then "each one round-trips to a DiagCode whose own code is that string" {
+            mut bad: List<string> = []
+            for c in seam_codes() {
+                let dc = syntax_diag_code(c)
+                if dc == null { bad.push(c + " (not reversible — renders as F0001)") }
+                else if error_def(dc!).code != c { bad.push(c + " -> " + error_def(dc!).code) }
+            }
+            if bad.length > 0 {
+                println("codes the seam cannot carry: " + bad.join(", "))
+            }
+            bad.length == 0
+        }
+    }
+
+    given "F1203, the code that caught this" {
+        then "LetElseMustDiverge reverses, and a genuine typeck code still does not" {
+            let f1203 = syntax_diag_code("F1203")
+            // F1000 is a typeck code no parser reports — it must still answer null,
+            // or this table has stopped meaning anything.
+            f1203 != null && error_def(f1203!).code == "F1203" &&
+                syntax_diag_code("F1000") == null && syntax_diag_code("F9999") == null
+        }
+    }
+}

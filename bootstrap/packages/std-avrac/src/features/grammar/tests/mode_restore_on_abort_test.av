@@ -1,0 +1,131 @@
+// WHY: `@require` and a mode-SET marker (`@off` / `@on` / `@bump`) on the SAME item
+// used to be a hard grammar error. The emitted wrapper is `save; set; <item>;
+// restore`, a failed `@require` returns early from inside <item>, and that skipped
+// the restore — the set mode LEAKED into the rest of the parse. The validator chose
+// rejection over threading cleanup through every emitted return path, on the grounds
+// that the combination "has no use today".
+//
+// Both halves of that changed. The cleanup is threaded (emit's
+// `restore_modes_before_aborts`), and `quote type { <type> }` needs the pair: the
+// type position wants `@require` so a missing type aborts with the hand's message
+// instead of reporting a generic F0040 and then the missing `}` on top of it, and it
+// wants `@bump(quote_depth)` so a splice inside still sees a nonzero depth.
+//
+// Lifting a validator is only safe with the property it was protecting under test, so
+// this file asserts that property directly, from both ends:
+//   1. STRUCTURAL — the emitted rule restores the saved modes BEFORE its abort return,
+//      not only on the success path.
+//   2. BEHAVIOURAL — a real parse of the aborting form leaves `quote_depth` unleaked,
+//      so a `~` after the failed quote is bitnot again rather than a splice.
+use @std.avrac.features.grammar.{avra_expr_grammar, emit_parser_source_ex, emitted_rule_body, parse_grammar, grammar_checked}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+fn expr_src() -> string {
+    emit_parser_source_ex(avra_expr_grammar(), false)
+}
+
+fn check_out(name: string, src: string) -> string {
+    let fixture = "build/_moderestore_${name}.av"
+    let _ = avra_selfhost_write_file(fixture, src)
+    avra_shell_exec("./build/bs2 check '${fixture}' 2>&1")
+}
+
+spec "a `@require` under a mode-SET marker restores the mode on its ABORT path" {
+    given "the emitted quote_type_expr — the rule that needs the pair" {
+        then "EVERY abort return inside the @bump wrapper restores the mode first" {
+            // Stated as a PROPERTY over the wrapper region, not as a literal match on
+            // emitted text: the same rule renders differently in the isolated
+            // expression view and the composed declaration view (`grammar_has_gate`
+            // adds `st.set_abort_prop` lines and inlines the FIRST-set), and a spec
+            // pinned to one spelling silently stops covering the other.
+            //
+            // The region runs from the mode SET to the LAST restore. Every abort return
+            // in it must be immediately preceded by a restore — that is exactly the
+            // leak the lifted validator was protecting against.
+            let body = emitted_rule_body(expr_src(), "fn parse_quote_type_expr(st: PState) -> CapVal")
+            let lines = body.split("\n")
+            mut in_wrap = false
+            mut aborts = 0
+            mut guarded = 0
+            mut prev = ""
+            for raw in lines {
+                let line = raw.trim()
+                if line.contains("modes_with_counter_bumped(st.modes, \"quote_depth\")") { in_wrap = true }
+                if in_wrap && line == "return CapVal.Node(st.error_node_silent())" {
+                    aborts = aborts + 1
+                    if prev.starts_with("st.set_modes(__modes_") { guarded = guarded + 1 }
+                    else { println("UNGUARDED abort in the @bump wrapper, preceded by: " + prev) }
+                }
+                // The wrapper ends at the restore that is NOT part of an abort path —
+                // the one followed by the closing terminal, which is the success exit.
+                if in_wrap && line.starts_with("let t = ") { in_wrap = false }
+                if line != "" { prev = line }
+            }
+            if aborts == 0 { println("no abort returns found inside the wrapper — the guard is vacuous") }
+            aborts > 0 && guarded == aborts
+        }
+
+        then "the SUCCESS path restores too — the abort fix did not replace it" {
+            // The restore must appear AFTER the captured type, i.e. on the way out of a
+            // successful parse, not only on the abort branches.
+            let body = emitted_rule_body(expr_src(), "fn parse_quote_type_expr(st: PState) -> CapVal")
+            let bind_at = body.index_of("let t = ")
+            let after = if bind_at >= 0 { body.substring(bind_at, body.length) } else { "" }
+            bind_at >= 0 && after.contains("st.set_modes(__modes_")
+        }
+    }
+
+    given "a real parse whose `quote type` aborts on the required type" {
+        then "the aborting form still reports, and the rest of the item parses normally" {
+            // HONEST LABEL, in the style this repo's frontier specs use: this assertion
+            // does NOT fail when the restore is removed, and it is kept anyway.
+            //
+            // Measured, by deleting `restore_modes_before_aborts` from the `@bump`
+            // wrapper and re-running: the recovery tree for
+            //     fn both(x: int) -> int { let q = quote type { }  let y = ~x  y }
+            // is byte-identical leaked and unleaked — `(~ x)` both times, never a
+            // splice. The leak is CONTAINED because the decl flip runs a fresh PState
+            // per top-level item and the failed binding aborts to `(error)`, so a
+            // leaked `quote_depth` never reaches a later `~`. The validator's original
+            // fear — "a silent mode leak into the rest of the parse" — is therefore
+            // overstated for today's grammar, which is worth knowing but is NOT a
+            // reason to stop restoring: containment is a property of the current
+            // dispatch shape, not of the wrapper.
+            //
+            // So the discriminating guard is the STRUCTURAL one above, which does fail
+            // (it names both unguarded aborts). This one pins the surrounding behaviour
+            // that must not change while that structure is being enforced.
+            let out = check_out("aborts",
+                "fn both(x: int) -> int {\n" +
+                "    let q = quote type { }\n" +
+                "    let y = ~x\n" +
+                "    y\n" +
+                "}\n")
+            let reported = out.contains("expected a type inside `quote type { ... }`")
+            if !reported { println("aborting form did not report:\n" + out) }
+            reported
+        }
+    }
+
+    given "the validator itself" {
+        then "the pair PARSES now — it was a hard grammar error before" {
+            let gp = parse_grammar("r = \"q\" @require @bump(quote_depth) t:type_expr\n" +
+                                   "    @expect(\"type_expr\", \"expected a type\")\n" +
+                                   "type_expr = IDENT")
+            if gp.error != "" { println("still rejected: " + gp.error) }
+            gp.error == "" && grammar_checked(gp).rules.length == 2
+        }
+
+        then "and marker ORDER is irrelevant — the other spelling parses identically" {
+            // `@bump(x) @require y` and `@require @bump(x) y` annotate the same item.
+            // A straight-line marker chain accepted only its own order and rejected the
+            // other with `parse_primary`'s generic "expected a rule reference, terminal,
+            // …(at `@`)", which names neither marker.
+            let a = parse_grammar("r = \"q\" @require @bump(quote_depth) t:type_expr\n" +
+                                  "    @expect(\"type_expr\", \"expected a type\")\ntype_expr = IDENT")
+            let b = parse_grammar("r = \"q\" @bump(quote_depth) @require t:type_expr\n" +
+                                  "    @expect(\"type_expr\", \"expected a type\")\ntype_expr = IDENT")
+            a.error == "" && b.error == "" && b.grammar.rules.length == a.grammar.rules.length
+        }
+    }
+}

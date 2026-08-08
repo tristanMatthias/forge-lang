@@ -13,10 +13,27 @@
 // production emit (diagnose.sh --emit-gen-check stays GENPASS). The BEHAVIOURAL
 // byte-identity proof lands at STEP 4 (the recovery-tree oracle over the real
 // static parser once block/if/for/while mirror into the dispatch grammar).
+use @std.avrac.features.grammar.{emit_parser_source_ex, avra_decl_dispatch_grammar, emitted_rule_body}
 use @std.avrac.features.grammar.{avra_stmt_flip_grammar, emit_parser_source}
 
 fn emit_flip() -> string {
     emit_parser_source(avra_stmt_flip_grammar())
+}
+
+/// The two other loop shapes come from REAL rules in the declaration grammar —
+/// `spec_decl` carries `@onfail(drop)` on its body repeat and `component_decl` carries
+/// `@onfail(abort)` on its. Sliced to the rule body so the assertions cannot be
+/// satisfied by some other rule's copy of the shared scaffolding.
+fn decl_all() -> string {
+    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+}
+
+fn emit_flip_drop() -> string {
+    emitted_rule_body(decl_all(), "fn parse_spec_decl(st: PState) -> CapVal")
+}
+
+fn emit_flip_abort() -> string {
+    emitted_rule_body(decl_all(), "fn parse_component_decl(st: PState) -> CapVal")
 }
 
 spec "t-47hc.13 STEP2: emit renders the statement-list-with-recovery loop for a block" {
@@ -46,13 +63,47 @@ spec "t-47hc.13 STEP2: emit renders the statement-list-with-recovery loop for a 
 
     then "a failed child triggers panic-mode resync + a positioned Stmt.Error placeholder" {
         let src = emit_flip()
-        src.contains("if st.had_error {") &&
+        // The failure test is "did this child FAIL", not "did anything REPORT" — the hand
+        // asks the first (`parse_declaration()` returning `.Err`), so a child that
+        // reported and still produced a node is KEPT (t-47hc.5). `had_error` is still
+        // read, separately, to carry the diagnostic out.
+        src.contains("if st.had_error { __any_err = true }") &&
+        src.contains("if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {") &&
         src.contains("st.synchronize_stmt()") &&
         // forward-progress guard: a zero-width errored parse must still advance.
         src.contains("if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }") &&
-        src.contains("let __e = st.store.stmts.add_leaf(Stmt.Error)") &&
+        // The recovery row REUSES the error the child already produced when it produced
+        // one — allocating unconditionally left an orphan in the store (see error_stmt_of).
+        src.contains("let __e = error_stmt_of(st, __cv)") &&
         src.contains("st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })") &&
         src.contains("st.clear_error()")
+    }
+
+    // The two OTHER shapes `emit_stmt_list_loop` renders. Both were added without a
+    // structural guard, so a regression in either was silent at this layer — and the
+    // default-policy block above cannot catch them, since it asserts the strings they
+    // deliberately omit.
+    then "@onfail(drop) keys failure on the abort alone and stands NO error row" {
+        let src = emit_flip_drop()
+        // `drop` keeps a child that reported and RECOVERED — the hand's
+        // `parse_spec_body` returns its partial list — so the test is the ABORT only,
+        // and the dropped child leaves no `(error)` behind it.
+        src.contains("if st.abort_prop {") &&
+            !src.contains("let __e = error_stmt_of(st, __cv)") &&
+            // the reported-but-recovered child still carries its error out by hand
+            src.contains("if st.had_error { __any_err = true }")
+    }
+
+    then "@onfail(abort) returns instead of resyncing, and does not stop at EOF" {
+        let src = emit_flip_abort()
+        // An abort loop propagates rather than recovering: no resync, no error row, and
+        // no `at_end` break — `parse_comp_block_body` loops `while !check(RightBrace)`,
+        // so at end of input it ATTEMPTS a child and lets that child report.
+        src.contains("st.set_abort_prop(true)") &&
+            src.contains("return CapVal.Node(st.error_node_silent())") &&
+            !src.contains("st.synchronize_stmt()") &&
+            !src.contains("if st.at_end() || st.cur().text == \"}\" { break }") &&
+            src.contains("if st.cur().text == \"}\" { break }")
     }
 
     // had_error is a SINGLE flag reused across children (the block reuses one PState),

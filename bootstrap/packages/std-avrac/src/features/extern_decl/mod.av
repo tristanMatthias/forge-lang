@@ -8,6 +8,5 @@ use core.{feature_new, Feature}
 export fn extern_decl_feature() -> Feature {
     feature_new("extern_decl") with {
         decl_keyword: "kw_extern",
-        parse_decl: (p: Parser) -> p.parse_extern_declaration(),
     }
 }

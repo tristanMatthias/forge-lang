@@ -42,6 +42,18 @@ spec "pqyp: macro-emitted top-level declared names survive hygiene un-renamed" {
         out.contains("ran_foo")
     }
     then "an emitted enum + a fn returning it survive and are matched by the emitted variant name" {
+        // The match arms are `.Ready` / `.Busy`, NOT `Status_Gen.Ready`. A qualified
+        // enum prefix is not pattern syntax — `parse_pattern` accepts only `_`, `rest`,
+        // a literal, `IDENT(binding)`, or a leading `.` — so the old fixture never
+        // compiled on ANY front end. It passed anyway for a reason worth recording: the
+        // assertion is `out.contains("is_ready")`, and the RENDERED DIAGNOSTIC quotes the
+        // offending source line, which contains `println("is_ready")`. The error message
+        // satisfied the success check. It only came apart when the span moved (a routed
+        // `fn` reports at the item start, not the arm), which is the good kind of luck.
+        //
+        // The spec's actual claim is untouched: the emitted enum's TYPE name is still
+        // referenced across declarations (`fn current() -> Status_Gen`), and the arms
+        // still match by the emitted VARIANT names.
         let out = write_fixture_and_run("/tmp/avra_expand_name_survival_enum.av",
             "use @std.avrac.core.{Stmt, StmtId}\n" +
             "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
@@ -55,10 +67,13 @@ spec "pqyp: macro-emitted top-level declared names survive hygiene un-renamed" {
             "fn placeholder() {}\n" +
             "fn main() {\n" +
             "    match current() {\n" +
-            "        Status_Gen.Ready -> println(\"is_ready\")\n" +
-            "        Status_Gen.Busy -> println(\"is_busy\")\n" +
+            "        .Ready -> println(\"is_ready\")\n" +
+            "        .Busy -> println(\"is_busy\")\n" +
             "    }\n" +
             "}\n")
-        out.contains("is_ready")
+        // NON-VACUOUS: the program must have RUN. `contains` alone is satisfied by any
+        // diagnostic that quotes the source line, which is exactly how this passed while
+        // failing to compile — so the absence of an error is asserted too.
+        out.contains("is_ready") && !out.contains("error[")
     }
 }

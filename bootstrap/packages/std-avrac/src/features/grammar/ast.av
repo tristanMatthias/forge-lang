@@ -155,8 +155,13 @@ export enum GNode {
 /// different closing-`]` diagnostics the hand parser emits, and `@expect` keys on the
 /// token so each needs its own sequence. Must be the LAST branch (a guarded branch after
 /// it would be dead) and at most one; both enforced at grammar-parse time.
-/// A gated rule reference found inside a node — see emit.gated_ref_of.
-export type GatedRef = { found: bool, rule: string }
+/// A gated rule reference found inside a node — see emit.gated_ref_of. `onfail` is that
+/// item's failure POLICY (`GItem.onfail`) and `label` its capture, both carried here
+/// because the caller-side unwind is emitted at the GROUP level, where the gated item
+/// itself is no longer in hand: the policy decides whether the abort unwinds the rule or
+/// closes the repetition, and the label names the accumulator a closed repetition must
+/// take its half-built element back off.
+export type GatedRef = { found: bool, rule: string, onfail: string, label: string }
 
 export type GSeq = {
     items: List<GItem>,
@@ -262,7 +267,119 @@ export type GItem = {
     // grammar `( x )*` exits and the enclosing `@require CLOSER` answers instead.
     // With `gate` set, the FIRST conjunct is dropped and the cond alone decides.
     gate: bool,
+    // t-myz7 NON-ABORTING FAILURE POLICY (`@onfail(policy)`): what this position does
+    // when its sub-parse fails. Empty = ABORT, which is what `@require` and `@gate`
+    // both do today and what `enum`/`trait` want (a malformed member aborts the whole
+    // declaration, so the caller still sees the stray `}` the hand leaves behind).
+    //
+    // WHY IT MUST BE STATED RATHER THAN INFERRED. The hand parsers do not agree on what
+    // a malformed element does, and the disagreement is not a property of the INPUT:
+    //
+    //     enum with a bad variant field   -> (error)         ABORTS
+    //     trait with a bad member         -> (error)         ABORTS
+    //     select with a bad arm           -> (select ())     recovers, keeps the node
+    //     spec with a bad given           -> (spec "s" )     recovers, DROPS the item
+    //
+    // A structural discriminator was derived from the first four cases and REFUTED by
+    // measurement (the "unbalanced group opener" rule — `PState.group_delta` — took the
+    // recovery corpus 109/114 -> 108/114; see the t-myz7 ticket, which records it so it
+    // is not re-attempted). What each hand parser happens to do is per-rule POLICY, so
+    // the DSL says it:
+    //
+    //     skip   on a rule REF        — check its FIRST; on failure report and step OVER
+    //                                   it. Do not call it, do not consume, do not abort;
+    //                                   the sequence continues. `@require`'s non-aborting
+    //                                   twin, and what `enum E< { A }` needs: the hand
+    //                                   reports "expected type parameter name" AND
+    //                                   "expected `>`" and still builds `(enum E (A()))`,
+    //                                   where calling `parse_tparam` on an unproven FIRST
+    //                                   BINDS the `{` as a type-parameter name.
+    //     halt   on a GATED element   — report, then ABANDON the rest of the enclosing
+    //                                   GROUP, without aborting the rule. `close`'s
+    //                                   reporting twin, and what a bracketed LIST needs:
+    //                                   `parse_type_param_entries` answers a bad entry with
+    //                                   `set_error(…); return out`, so the caller's
+    //                                   `consume(Greater)` still runs and still reports.
+    //                                   `enum E<,T>` is four diagnostics on the hand for
+    //                                   exactly that reason — abandon consumes nothing, so
+    //                                   `>`, `{` and the stray `}` each get their say.
+    //     close  on a GATED element   — an aborting element ENDS the repetition instead
+    //                                   of unwinding the rule, and its partial result is
+    //                                   not pushed. `select { x }`: report the missing
+    //                                   `<-`, close the arm list, let the rule's own `}`
+    //                                   consume the brace, build `(select ())`.
+    //     drop   on a stmt-list rep   — a failed child is OMITTED from the list rather
+    //                                   than kept as an `(error)` row. `spec "s" { given }`
+    //                                   builds `(spec "s" )`; `parse_spec_body` swallows
+    //                                   the Err and returns the partial item list.
+    //     bail   on a rule REF        — the callee reports; if it DID, abort. `@require`'s
+    //                                   other half: `@require` tests whether the sub-rule
+    //                                   STARTS here and reports for it, this tests whether
+    //                                   it SUCCEEDED and lets it keep its own message.
+    //                                   `parse_select_arm` is the shape — a channel
+    //                                   expression that fails to parse ends the arm
+    //                                   (`.Err(_) -> return out`), so `select { x <- }` is
+    //                                   the expression view's F0040 and nothing more,
+    //                                   where carrying on adds the `->` mismatch too.
+    //     discard on a CLOSING terminal — report the missing closer, then THROW AWAY the
+    //                                   list the bracket was collecting, and carry on.
+    //                                   `parse_type_params` is literally this: a missing
+    //                                   `>` returns an empty list, so `enum E<T { A }` is
+    //                                   `(enum E (A()))` on the hand — `T` is parsed and
+    //                                   then dropped with the unterminated bracket.
+    //
+    // Each policy is legal only on the shape it names (validate_onfail in seed_parser).
+    onfail: string,
+    // The capture `@onfail(discard, <label>)` throws away — empty for every other policy.
+    //
+    // NAMED rather than derived from the enclosing group because the emitters reach a
+    // terminal with the BRANCH's capture sets in hand, not the group's, and "the labels
+    // this bracket collected" is not recoverable from there. Naming it also puts the
+    // consequence at the use site, where a reader of the grammar can see which list the
+    // missing closer costs them — the same reason `x{#cap}` names its bound.
+    onfail_cap: string,
     bound: string,
+}
+
+/// The failure POLICIES `@onfail(p)` may name — the single source of truth shared by
+/// seed_parser's validation, emit and the executor, so a policy cannot be spelled in
+/// the grammar that only one engine understands. See `GItem.onfail`.
+/// The body of ONE emitted rule fn, sliced out of a generated parser source by its
+/// `fn parse_<rule>(st: PState) -> CapVal` header. Empty when the header is absent.
+///
+/// Exists because every structural assertion over emitted source needs it and NONE of
+/// them can be trusted without it: `index_of`/`contains` search the whole file, and the
+/// emitter renders byte-identical scaffolding (`mut s_cut = false`,
+/// `st.store.truncate_to_mark(s_mark)`, `run_hand_stmt("decl_hand"`) into dozens of
+/// rules. A file-wide check therefore passes off some OTHER rule's copy and cannot fail
+/// for the rule it names — the vacuity class these guards exist to prevent. One shared
+/// slicer so the tests cannot each re-derive it slightly differently.
+export fn emitted_rule_body(src: string, head: string) -> string {
+    let at = src.index_of(head)
+    if at < 0 { return "" }
+    let rest = src.substring(at, src.length)
+    let end = rest.index_of("\n}\n")
+    if end > 0 { rest.substring(0, end) } else { rest }
+}
+
+/// True iff the emitted rule named by `head` carries the `@try` scaffolding — a commit
+/// flag, a node-store truncate, and a cursor/diagnostic rollback — within ITS OWN body.
+export fn emitted_rule_speculates(src: string, head: string) -> bool {
+    let rule = emitted_rule_body(src, head)
+    rule.contains("mut s_cut = false") &&
+        rule.contains("st.store.truncate_to_mark(s_mark)") &&
+        rule.contains("st.restore_to(s_pos, s_diags, s_err)")
+}
+
+export fn onfail_policy_supported(p: string) -> bool {
+    p == "skip" || p == "close" || p == "drop" || p == "discard" || p == "bail" || p == "halt" || p == "abort"
+}
+
+/// True for the policies that NAME a capture — `@onfail(discard, <label>)`. One list
+/// so the parser, its validation and the error text cannot disagree about which
+/// policies take an argument.
+export fn onfail_policy_takes_capture(p: string) -> bool {
+    p == "discard"
 }
 
 /// Repetition suffix on a primary: none / `*` / `+` / `?`.
@@ -367,7 +484,16 @@ export enum GBuild {
 /// next token or reports `msg`; `@recover(sync_to: tok)` marks a
 /// panic-mode synchronize target.
 export enum GAnnot {
-    Expect(tok: string, msg: string)
+    /// `@expect(tok, msg)` — the message a missing `tok` reports, and optionally the
+    /// F-CODE it reports under (`@expect(tok, msg, F0010)`).
+    ///
+    /// The code is on the ANNOTATION rather than the rule because that is the grain the
+    /// message already has: one rule's positions can want different codes (`if cond expr`
+    /// is F0010 `ExpectedBlock` while the same rule's other closers are plain F0001), and
+    /// a rule-wide code would have to pick one. Empty means UNCODED — every existing
+    /// `@expect` — which the seam already handles as `set_error`, so widening the variant
+    /// changes nothing that does not opt in.
+    Expect(tok: string, msg: string, code: string)
     Recover(sync_to: string)
 }
 
@@ -375,7 +501,7 @@ export enum GAnnot {
 
 /// A plain uncaptured One-item from a primary.
 export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, gate: false, bound: "" }
+    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, gate: false, onfail: "", onfail_cap: "", bound: "" }
 }
 
 /// True when a sequence has no explicit build — the executor then
@@ -664,6 +790,12 @@ export fn build_kind(bn: string) -> string {
     if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkIfLet" || bn == "MkQuote" || bn == "MkQuoteType" || bn == "MkQuoteArm" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkSpliceStruct" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkGrammarBlock" || bn == "MkTaggedTemplate" || bn == "MkTableHeader" || bn == "MkTableRow" || bn == "MkTableLit" || bn == "MkPrimaryFail" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" || bn == "MkIfLetStmt" { return "stmt" }
     if bn == "MkArmReturn" { return "expr" }
+    // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
+    // is inferred from the OTHER branch alone in some orders and from this one in others,
+    // and a `( arms:match_arm )*` accumulator silently declares `List<ExprId>` — the
+    // capval_to_expr default. That is the same silent tree-corruption trap the annotation
+    // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
+    if bn == "MkSpliceArm" { return "arm" }
     if bn == "MkArm" { return "arm" }
     if bn == "MkFieldInit" { return "finit" }
     if bn == "MkWhenArm" || bn == "MkWhenDefault" { return "warm" }
@@ -674,10 +806,24 @@ export fn build_kind(bn: string) -> string {
     // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
     // except the component CapVals (MkParam → PEntry, MkField → Field,
     // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentBlock" || bn == "MkRawComponentBlock" || bn == "MkMethodShorthand" || bn == "MkCompField" { return "stmt" }
+    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkAssocTypeDef" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentParenDef" || bn == "MkComponentBlock" || bn == "MkRawComponentBlock" || bn == "MkMethodShorthand" || bn == "MkCompField" { return "stmt" }
     if bn == "MkAnn" { return "ann" }
     if bn == "MkParam" { return "pentry" }
-    if bn == "MkTypeParam" { return "tparam" }
+    // `MkWhereParam` yields the SAME TypeParamEntry a `tparam` does — a where entry is
+    // a type parameter that names its bounds after the parameter list instead of inside
+    // it — so it must classify identically or the accumulator's element coercion drifts.
+    // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
+    // name string with a `~` prefix, so it must classify as `tok` and flow through
+    // `capval_tok_text` exactly as a bare IDENT does.
+    // A splice in TYPE position yields a TypeExpr, not a token — it is `named_type`'s
+    // sibling atom, not a name-slot splice (t-47hc.4.3).
+    if bn == "MkSpliceType" { return "type" }
+    if bn == "MkSpliceName" || bn == "MkPlainName" { return "tok" }
+    if bn == "MkTraitList" { return "toks" }
+    if bn == "MkCompBodyMarker" { return "tok" }
+    if bn == "MkCompConfigList" { return "ccfgs" }
+    if bn == "MkChildrenSlotList" { return "cslots" }
+    if bn == "MkTypeParam" || bn == "MkWhereParam" { return "tparam" }
     if bn == "MkField" { return "field" }
     if bn == "MkEVariant" { return "variant" }
     if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" || bn == "OptPresent" || bn == "OptAbsent" { return "pat" }
@@ -745,18 +891,68 @@ export fn emit_lookup_rule(g: Grammar, name: string) -> Rule {
 // and a gate-message drift is invisible on VALID input by construction — which is
 // the whole reason routing bugs in this area ship green.
 
-export type ExpectHit = { found: bool, msg: string }
+/// Is every branch of `name` led by the `IDENT` named terminal? The structural test
+/// behind "this position binds a NAME", which is what decides whether a missing token
+/// there keeps the hand's RESERVED-KEYWORD diagnostic (so07.2) instead of the rule's
+/// generic wording. Shared, because emit's gated FIRST check and the interpreter's twin
+/// must make the same call — a position that says "`move` is a reserved keyword" on one
+/// engine and "expected parameter name" on the other is a divergence no valid input can
+/// reveal.
+///
+/// Conservative by construction: a rule whose branches disagree, or that leads with
+/// anything else, answers false and keeps the plain report.
+export fn rule_first_is_ident(g: Grammar, name: string) -> bool {
+    let i = rule_index_of(g, name)
+    // A CROSS-VIEW rule is not in this grammar at all — `param` is defined in the
+    // expression view and called from the declaration view — so there is nothing to
+    // inspect and the declared answer is the only one available. Same shape as the
+    // declared FIRSTs `rule_first_guard` keeps for exactly these names, and kept HERE
+    // rather than beside them so both engines read one list: emit renders a guard
+    // string, the interpreter walks tokens, and neither can consult the other's table.
+    if i < 0 { return external_rule_first_is_ident(name) }
+    match g.rules[i].body {
+        .Alt(branches) -> {
+            if branches.length == 0 { return false }
+            for b in branches {
+                if !seq_leads_with_ident(b) { return false }
+            }
+            true
+        }
+    }
+}
+
+/// The cross-view rules whose FIRST is the bare `IDENT` terminal. One entry today:
+/// `param = pname:IDENT ( ":" pt:type_expr )?`, reachable from the declaration view since
+/// `fn` / `extern` / `trait` / `impl` routed. Add a name here when a new external rule
+/// binds a NAME in its first position — the cost of missing one is only the generic
+/// message instead of the reserved-keyword one, never a wrong parse.
+fn external_rule_first_is_ident(name: string) -> bool {
+    name == "param"
+}
+
+fn seq_leads_with_ident(seq: GSeq) -> bool {
+    for item in seq.items {
+        if prim_is_zero_width(item.prim) { continue }
+        match item.prim {
+            .Named(tok) -> { return tok == "IDENT" }
+            _ -> { return false }
+        }
+    }
+    false
+}
+
+export type ExpectHit = { found: bool, msg: string, code: string }
 
 export fn expect_for(annots: List<GAnnot>, tok: string) -> ExpectHit {
     for a in annots {
         match a {
-            .Expect(t, m) -> {
-                if t == tok { return ExpectHit { found: true, msg: m } }
+            .Expect(t, m, c) -> {
+                if t == tok { return ExpectHit { found: true, msg: m, code: c } }
             }
             _ -> {}
         }
     }
-    ExpectHit { found: false, msg: "" }
+    ExpectHit { found: false, msg: "", code: "" }
 }
 
 
@@ -879,6 +1075,58 @@ export fn rule_first_expect_msg(g: Grammar, name: string) -> string {
 }
 
 
+/// True when any item DIRECTLY in this node carries the named `@onfail` policy. One level
+/// only: a nested group is its own scope, and its policy is that group's business.
+///
+/// Shared by seed_parser (which validates `close`'s repetition requirement), emit (which
+/// wraps a `halt`-bearing optional in a breakable scope) and the executor. A second copy
+/// would let the three disagree about which groups a policy governs.
+export fn node_has_onfail(node: GNode, policy: string) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.onfail == policy { return true }
+                }
+            }
+            false
+        }
+    }
+}
+
+/// `abort_prop` is the CROSS-RULE abort signal, and it is scoped to grammars that
+/// actually have a `@gate` — one emitter renders FOUR checked-in parsers (decl /
+/// expr / type / pattern) and only the decl view gates, so an unscoped write would
+/// put the flag into all four for no reader. This predicate is that scope, shared:
+/// the emitter asks it to decide what to EMIT, the interpreter asks it to decide
+/// what to CHECK, and the two must never answer differently about the same grammar.
+export fn grammar_has_gate(g: Grammar) -> bool {
+    for r in g.rules {
+        if rule_body_has_gate(r.body) { return true }
+    }
+    false
+}
+
+/// The recursive form of `node_has_gate`: a gate can sit inside a `( … )*` /
+/// `( … )?` group (that is where `enum_decl` and `trait_decl` put theirs), so a
+/// top-level-only scan would miss every real one.
+export fn rule_body_has_gate(node: GNode) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    if it.gate { return true }
+                    match it.prim {
+                        .Group(inner) -> { if rule_body_has_gate(inner) { return true } }
+                        _ -> {}
+                    }
+                }
+            }
+            false
+        }
+    }
+}
+
 export fn gated_ref_of(node: GNode) -> GatedRef {
     match node {
         .Alt(branches) -> {
@@ -886,13 +1134,13 @@ export fn gated_ref_of(node: GNode) -> GatedRef {
                 for it in b.items {
                     if it.gate {
                         match it.prim {
-                            .Ref(nm) -> return GatedRef { found: true, rule: nm }
+                            .Ref(nm) -> return GatedRef { found: true, rule: nm, onfail: it.onfail, label: it.label }
                             _ -> {}
                         }
                     }
                 }
             }
-            GatedRef { found: false, rule: "" }
+            GatedRef { found: false, rule: "", onfail: "", label: "" }
         }
     }
 }

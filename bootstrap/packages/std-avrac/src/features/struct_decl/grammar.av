@@ -29,7 +29,24 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// diagnostic_equivalence_test.
 export fn avra_struct_decl_grammar() -> Grammar {
     let gp = grammar {
-  type_decl   = "type" tname:IDENT ( "<" tparams:tparam ( "," tparams:tparam )* ">" )? "=" ( "{" ( fields:field ","? )* "}" | talias:type_expr ( top:( "without" | "only" ) "{" ( topf:IDENT ","? )* "}" )? )? -> MkTypeDeclAny(tname, tparams, fields, talias, top, topf)
+  // t-myz7: `type` OWNS its recovery — `@try` + `@cut` inside the rule, so a malformed
+  // header reports through these `@expect`s instead of rolling back to `decl_hand`.
+  // The type-parameter group is `parse_type_params`' shape exactly: a non-leading
+  // `tparam` REPORTS and is stepped over rather than binding whatever token is there,
+  // and a missing `>` throws the whole list away (`return empty`), so
+  // `type Foo<T { x: int }` keeps neither `T` nor a stray brace.
+  // The inner list is OPTIONAL, gated on `@peek(not_gt)` — the acceptance frontier has to
+  // stay exactly where the hand's is. `parse_type_param_entries` opens with
+  // `if check(Greater) { return out }` and only then demands an IDENT, so the hand
+  // accepts `E<>` AND reports "expected type parameter name" for `E< {`. A bare `( … )?`
+  // inner reproduces the first and silently loses the second; the peek splits them where
+  // the hand does.
+  type_decl   = @try "type" @cut @require tname:name_or_splice ( "<" ( @peek(not_gt) @gate @onfail(halt) tparams:tparam ( "," @onfail(skip) tparams:tparam )* )? @onfail(discard, tparams) ">" )? @require "=" ( "{" ( @peek(not_rbrace) @gate fields:field ","? )* @require "}" | talias:type_expr ( top:( "without" | "only" ) @require "{" ( topf:IDENT ","? )* @require "}" @expect("{", "expected `{` after type operator") @expect("}", "expected `}` after type operator fields") )? )?
+                @expect("name_or_splice", "expected type name")
+                @expect("=", "expected `=` after type name")
+                @expect(">", "expected `>` after type parameters")
+                @expect("tparam", "expected type parameter name")
+                @expect("}", "expected `}` after fields") -> MkTypeDeclAny(tname, tparams, fields, talias, top, topf)
   shape_decl  = @try "shape" @cut @require shname:IDENT @require "=" @require "{" ( @peek(not_rbrace) @gate shfields:field ","? )* @require "}"
                 @expect("IDENT", "expected shape name")
                 @expect("=", "expected `=` after shape name")
@@ -45,7 +62,10 @@ export fn avra_struct_decl_grammar() -> Grammar {
   field       = ( "mut" )? fname:IDENT @require ":" @require ftype:type_expr
                 @expect("IDENT", "expected field name")
                 @expect(":", "expected `:` after field name")
-                @expect("type_expr", "expected type after `:`") -> MkField(fname, ftype)
+                // The hand's wording, verbatim — `parse_type_expr("expected field type")`,
+                // and it is the SAME string in struct_decl, enum_decl and component_decl,
+                // which is exactly the sharing this one rule already stands for.
+                @expect("type_expr", "expected field type") -> MkField(fname, ftype)
     }
     grammar_checked(gp)
 }

@@ -27,7 +27,6 @@ export fn let_destructure_feature() -> Feature {
 export fn let_keyword_feature() -> Feature {
     feature_new("let") with {
         decl_keyword: "kw_let",
-        parse_decl: kw_parse_let,
     }
 }
 
@@ -36,7 +35,6 @@ export fn let_keyword_feature() -> Feature {
 export fn const_keyword_feature() -> Feature {
     feature_new("const") with {
         decl_keyword: "kw_const",
-        parse_decl: kw_parse_const,
     }
 }
 
@@ -45,7 +43,6 @@ export fn const_keyword_feature() -> Feature {
 export fn mut_keyword_feature() -> Feature {
     feature_new("mut") with {
         decl_keyword: "kw_mut",
-        parse_decl: kw_parse_mut,
     }
 }
 

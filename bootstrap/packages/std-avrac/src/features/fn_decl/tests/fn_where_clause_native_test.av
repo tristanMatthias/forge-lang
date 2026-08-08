@@ -1,0 +1,137 @@
+// WHY (t-47hc.5): the `where` clause was the one VALID `fn` form the grammar could
+// not express, and a form the routed rule cannot express is a form that must fall
+// back — so it blocked committing `fn_decl` outright, not merely its recovery.
+//
+// The clause is NOT sugar for more angle-bracket parameters. It MERGES into them
+// (`fn f<T: A>(…) where T: B` is one param bounded `A + B`) and a name it mentions
+// that the brackets did not declare is APPENDED as a fresh entry. That fold lives in
+// a BUILD (`mk_fn_decl_where_g`) because nothing in the DSL can express "amend an
+// earlier capture", which is why the form needed real work rather than a wider
+// sequence.
+//
+// WHAT IS BEING ASSERTED, precisely: PARSER PARITY, not a language capability. Where
+// the hand accepts and runs a form, the native paths must too; where it does not (a
+// `+`-joined bound is a TYPECK limitation on both paths, not a parse one), all three
+// must fail IDENTICALLY. Asserting the capability instead would have made this file a
+// test of the type checker that fails for reasons the parser cannot fix.
+//
+// Every assertion runs on all three paths — hand (the oracle), the EMIT-generated
+// static parser, and the EXECUTOR — because the two recovery oracles both disable the
+// fallback and would leave interpreter behaviour unmeasured (t-zrn3).
+
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+/// True iff a `@hand` refusal was raised FOR `path` — the message alone is not
+/// attribution, so the location line that follows it must name the file.
+fn refusal_in_file(out: string, path: string) -> bool {
+    let at = out.index_of("is refused")
+    if at < 0 { return false }
+    let rest = out.substring(at, out.length)
+    rest.index_of(path) >= 0
+}
+
+fn run_out(name: string, env: string, src: string) -> string {
+    let fixture = "build/_fn_where_${name}.av"
+    let log = "build/_fn_where_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("${env} ./build/bs2 run '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+fn hand_env() -> string { "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
+fn emit_env() -> string { "AVRA_PARSER_DECL_FLIP=1 AVRA_NO_STATIC_FALLBACK=1 AVRA_PARSER_EXPR_STATIC=1" }
+fn exec_env() -> string { "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1" }
+
+/// Every path RUNS the program and prints the same thing. Running (not merely
+/// compiling) is the point: a where clause that parsed but dropped its bounds would
+/// still compile, and only the monomorphised call proves the bound landed.
+fn runs_same(name: string, src: string, want: string) -> bool {
+    let h = run_out("${name}_hand", hand_env(), src)
+    let e = run_out("${name}_emit", emit_env(), src)
+    let x = run_out("${name}_exec", exec_env(), src)
+    h.contains("__status=0\n") && h.contains(want) &&
+        e.contains("__status=0\n") && e.contains(want) &&
+        x.contains("__status=0\n") && x.contains(want)
+}
+
+/// The three paths answer IDENTICALLY — used where the hand itself rejects, so
+/// "matches the oracle" is the whole claim and the rejection's cause is not this
+/// file's business.
+///
+/// Compared on the DIAGNOSTIC, not the rendered output. Two reasons a raw string
+/// equality cannot serve: `run_out` names the fixture after the case and a rendered
+/// diagnostic QUOTES its path, so three per-path fixtures never compare equal; and the
+/// interpreter deliberately carries NO spans (it is the differential oracle), so its
+/// render has no source snippet at all. That is why the recovery corpus compares
+/// F-codes and TREES rather than rendered text — the same reason applies here.
+fn agrees(name: string, src: string, msg: string) -> bool {
+    let h = run_out("${name}_hand", hand_env(), src)
+    let e = run_out("${name}_emit", emit_env(), src)
+    let x = run_out("${name}_exec", exec_env(), src)
+    !h.contains("__status=0\n") && h.contains(msg) &&
+        !e.contains("__status=0\n") && e.contains(msg) &&
+        !x.contains("__status=0\n") && x.contains(msg)
+}
+
+
+fn prelude() -> string {
+    "trait Show { fn show(self) -> string }\n" +
+    "trait Tag { fn tag(self) -> string }\n" +
+    "type Boxy = { v: int }\n" +
+    "impl Show for Boxy { fn show(self) -> string { \"S\" } }\n" +
+    "impl Tag for Boxy { fn tag(self) -> string { \"T\" } }\n"
+}
+
+spec "t-47hc.5: `fn` accepts a where clause on every parser path" {
+    then "a bare `where T: Trait` binds the bound the angle brackets left open" {
+        runs_same("basic", prelude() +
+            "fn dump<T>(x: T) -> string where T: Show { x.show() }\n" +
+            "fn main() { println(dump(Boxy { v: 1 })) }\n", "S")
+    }
+
+    then "several entries, comma-separated, each bind their own parameter" {
+        runs_same("multi", prelude() +
+            "fn duo<A, B>(a: A, b: B) -> string where A: Show, B: Tag { b.tag() }\n" +
+            "fn main() { println(duo(Boxy { v: 1 }, Boxy { v: 2 })) }\n", "T")
+    }
+
+    then "a clause on a parameter that ALREADY has an angle-bracket bound still runs" {
+        // `merge_type_param_bound` appends ` + ` rather than replacing, so `Show`
+        // survives and the `show()` call still resolves. Replacing would drop it.
+        runs_same("merge", prelude() +
+            "fn both<T: Show>(x: T) -> string where T: Tag { x.show() }\n" +
+            "fn main() { println(both(Boxy { v: 1 })) }\n", "S")
+    }
+
+    then "a `+`-joined bound is answered IDENTICALLY by all three paths" {
+        // The hand rejects this at TYPECK (concatenating two generic trait-method
+        // results is what it will not check), and so must the native paths — byte for
+        // byte. This is the case that would otherwise be read as a parser regression
+        // when the parser is exactly right.
+        agrees("plus", prelude() +
+            "fn dump<T>(x: T) -> string where T: Show + Tag { x.show() + x.tag() }\n" +
+            "fn main() { println(dump(Boxy { v: 1 })) }\n",
+            "function `dump` returns `string`, but body produces `int`")
+    }
+}
+
+spec "t-47hc.5: the where clause is parsed NATIVELY, not by the hand delegate" {
+    then "a valid where clause never reaches `@hand(decl_hand)`" {
+        // The assertion that makes the rest of this file mean something. Without it
+        // every case above would pass on a rule that silently rolled back to the hand
+        // — the t-6u9b vacuous-agreement shape.
+        let fixture = "build/_fn_where_refuse.av"
+        let log = "build/_fn_where_refuse.log"
+        let _ = avra_selfhost_write_file(fixture, prelude() +
+            "fn dump<T, U>(x: T, y: U) -> string where T: Show, U: Tag { y.tag() }\n" +
+            "fn main() { println(dump(Boxy { v: 1 }, Boxy { v: 2 })) }\n")
+        let rc = avra_shell_exec_status("AVRA_REFUSE_HAND_LEAF=decl_hand ./build/bs2 check '${fixture}' > '${log}' 2>&1")
+        let out = avra_selfhost_read_file(log)
+        // ATTRIBUTED: a bare `!out.contains("is refused")` counts a refusal raised
+        // anywhere in the compile, including inside an imported module — the trap
+        // decl_flip_dispatch_test records as having been believed twice. This fixture
+        // has no `use` today, so the bare form is correct only by accident; keying on
+        // the fixture path makes it correct by construction.
+        rc == 0 && !refusal_in_file(out, fixture)
+    }
+}

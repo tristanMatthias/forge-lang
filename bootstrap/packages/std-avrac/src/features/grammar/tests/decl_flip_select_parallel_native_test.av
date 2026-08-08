@@ -8,6 +8,7 @@
 // (select_stmt/tests/select_arm_missing_arrow_test.av pins that fix itself).
 
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{emitted_rule_speculates}
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
@@ -31,6 +32,12 @@ fn clean_all_paths(name: string, src: string) -> bool {
         clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
 }
 
+/// Thin wrapper over the SHARED `emitted_rule_speculates` (ast.av) — the slicing and
+/// the scaffolding strings live there so this file and its sibling cannot drift apart.
+fn rule_speculates(head: string) -> bool {
+    emitted_rule_speculates(decl_src(), head)
+}
+
 /// A malformed fixture must report `needle` on EVERY native path, not just the
 /// default. The default path answers invalid input with the EXECUTOR (static ->
 /// had_error -> re-parse), so a `default`-only assertion measures the executor and
@@ -52,31 +59,43 @@ spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
             src.contains("fn parse_select_arm(st: PState) -> CapVal")
     }
 
-    then "they dispatch BEFORE the decl_hand gate — else they would be dead code" {
+    then "they are dispatched, and NO decl_hand gate survives (t-47hc.4.3)" {
         let src = decl_src()
         let sel_at = src.index_of("parse_select_decl(st)")
         let par_at = src.index_of("parse_parallel_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        // Both are `@try` IN THE DISPATCHER, so both lower to the speculative
-        // `s_last = …` bookkeeping — and that form IS the "routed as `@try`, never
-        // bare" proof: a bare branch emits a direct call with no snapshot around it.
+        // BOTH reach the dispatcher by a direct predictive `return parse_X(st)` now:
+        // each one's `@try` lives INSIDE its rule (a `@cut`'s commit flag is
+        // per-rule-invocation and cannot reach a caller's `@try`), so neither lowers to
+        // the speculative `s_last = …` bookkeeping in the dispatcher any more.
         //
+        // The forms are asserted EXPLICITLY rather than dropping the check, because
+        // "routed as `@try`, never bare" is the invariant — see the speculation
+        // assertions below, which read each rule BODY for it. Pinning only `s_last = `
+        // would have quietly stopped testing a keyword the moment it committed, which is
+        // what this assertion is here to prevent.
         // Bound to the `decl_hand` POSITION, not merely present: index the EXACT
         // dispatch text and compare that index with `hand_at`. `contains` alone would
-        // pass if the call sat AFTER the hand gate, or in some other fn entirely —
-        // which is the #1028 dead-code failure this assertion exists for.
-        //
-        // `select` was briefly COMMITTED (`@try … @cut` inside the rule, reached by a
-        // direct `return parse_select_decl(st)`) and had to be un-routed: a committed
-        // rule never rolls back, so `select { x }` aborted to `(error)` where the hand
-        // reports the missing `<-` and still builds `(select ())`. If it is committed
-        // again, this assertion is what says so.
-        let sel_ret = src.index_of("s_last = parse_select_decl(st)")
-        let par_ret = src.index_of("s_last = parse_parallel_decl(st)")
-        hand_at >= 0 && sel_ret >= 0 && par_ret >= 0 &&
-            sel_ret < hand_at && par_ret < hand_at &&
-            sel_at >= 0 && par_at >= 0 &&
-            sel_at < hand_at && par_at < hand_at
+        // pass if the direct return sat AFTER the hand gate, or in some other fn
+        // entirely — which is the #1028 dead-code failure this assertion exists for.
+        let sel_ret = src.index_of("return parse_select_decl(st)")
+        let par_ret = src.index_of("return parse_parallel_decl(st)")
+        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
+        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
+        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
+        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
+        // be reached from the dispatcher, or it is dead code with correct output.
+        hand_at < 0 && sel_ret >= 0 && par_ret >= 0 && sel_at >= 0 && par_at >= 0
+    }
+
+    then "`select` / `parallel` are routed as `@try`, never bare — each rule owns its rollback" {
+        // The other half of the dispatch check above. A direct `return parse_X(st)`
+        // is only safe when the rule ITSELF speculates: it must snapshot, and on a
+        // pre-`@cut` failure roll the cursor, node store and diagnostics back so the
+        // `@hand` gate below still sees untouched input. A BARE branch would be
+        // error-TOLERANT and build partial nodes where the hand aborts.
+        rule_speculates("fn parse_select_decl(st: PState)") &&
+            rule_speculates("fn parse_parallel_decl(st: PState)")
     }
 
     then "the select-arm accumulator is typed List<SelectArm>, not the ExprId default" {

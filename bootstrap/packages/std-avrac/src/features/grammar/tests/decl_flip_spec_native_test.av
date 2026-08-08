@@ -8,6 +8,7 @@
 // hand (spec_test/tests/spec_block_missing_name_test.av pins that fix itself).
 
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{emitted_rule_speculates}
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
@@ -29,6 +30,12 @@ fn clean_all_paths(name: string, src: string) -> bool {
         clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
         clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
         clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+}
+
+/// Thin wrapper over the SHARED `emitted_rule_speculates` (ast.av) — the slicing and
+/// the scaffolding strings live there so this file and its sibling cannot drift apart.
+fn rule_speculates(head: string) -> bool {
+    emitted_rule_speculates(decl_src(), head)
 }
 
 /// A malformed fixture must report `needle` on EVERY native path, not just the
@@ -53,20 +60,37 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
             src.contains("fn parse_then_blk(st: PState) -> CapVal")
     }
 
-    then "spec_decl dispatches BEFORE the decl_hand gate — else it would be dead code" {
+    then "spec_decl is dispatched, and NO decl_hand gate survives (t-47hc.4.3)" {
         let src = decl_src()
         let spec_at = src.index_of("parse_spec_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        // `spec_decl` is `@try` IN THE DISPATCHER, so it lowers to the speculative
-        // `s_last = …` bookkeeping — and that form IS the "routed as `@try`, never
-        // bare" proof. Bound to the `decl_hand` POSITION, not merely present.
-        //
-        // It was briefly COMMITTED and had to be un-routed: a committed rule never
-        // rolls back, so `spec "s" { given }` kept `(spec "s" (error))` where the hand
-        // DROPS the malformed item and builds `(spec "s" )`.
-        let spec_ret = src.index_of("s_last = parse_spec_decl(st)")
-        hand_at >= 0 && spec_ret >= 0 && spec_ret < hand_at &&
-            spec_at >= 0 && spec_at < hand_at
+        // The dispatcher reaches `spec_decl` by a DIRECT predictive call now, not the
+        // speculative `s_last = …` bookkeeping it used to emit: `spec_decl`'s `@try`
+        // moved INSIDE the rule, because a `@cut`'s commit flag is per-rule-invocation
+        // and cannot reach a caller's `@try`. The routing invariant is unchanged and
+        // still asserted (dispatch precedes the hand gate, else the rule is dead
+        // code); the speculation half moved to its own assertion below, so committing
+        // a keyword can no longer silently retire the check.
+        // Bound to the `decl_hand` POSITION, not merely present — see the sibling
+        // assertion in decl_flip_select_parallel_native_test.
+        let spec_ret = src.index_of("return parse_spec_decl(st)")
+        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
+        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
+        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
+        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
+        // be reached from the dispatcher, or it is dead code with correct output.
+        hand_at < 0 && spec_ret >= 0 && spec_at >= 0
+    }
+
+    then "`spec` is routed as `@try`, never bare — the rule owns the rollback" {
+        // A direct `return parse_spec_decl(st)` is only safe when the rule itself
+        // speculates: snapshot, and on a pre-`@cut` failure restore the cursor, node
+        // store and diagnostics so the `@hand` gate below still sees untouched input.
+        // Scoped to the rule's OWN body — `index_of` finds the FIRST match in the
+        // file, and the dispatcher's other speculative branches emit the identical
+        // rollback lines, so a whole-file `contains` here would pass no matter what
+        // `spec_decl` lowered to.
+        rule_speculates("fn parse_spec_decl(st: PState)")
     }
 
     then "the spec-item accumulators are typed List<StmtId> via capval_to_stmt" {

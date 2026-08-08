@@ -3669,6 +3669,27 @@ fn cmd_expr(args: CliResult) -> int {
 /// `program <file>` — parse the file as a full program, print its AST.
 fn cmd_program(args: CliResult) -> int {
     let fa = arg_file_source(args)
+    // `--recover` is the RECOVERY-TREE probe (t-47hc.5). `parse_or_fail` stops at the
+    // diagnostics, so on invalid input — the only input whose tree is interesting —
+    // plain `program` prints errors and no tree at all. That left the shape of a
+    // recovery tree observable ONLY from inside the differential test (`rtree_at`,
+    // which drives `parser_new` in-process), so comparing what the hand and the
+    // native rule BUILD meant reading it out of a failing spec's output. The parse
+    // itself is the same one the harness uses; only the fail-fast is skipped, and
+    // the diagnostics still go to stderr so the tree on stdout stays pipeable.
+    if result_has_flag(args, "recover") {
+        let r = parse_program_source(fa.source)
+        // The COUNT goes to stderr, not the rendered diagnostics: `--parser-probe`
+        // already compares the messages, and keeping them off stdout leaves the tree
+        // clean to diff. Reporting the count rather than nothing keeps a silent drop
+        // (a parse that reported and still produced a full tree) visible.
+        eprintln("// ${string(r.bag.error_count)} error(s), ${string(r.bag.warning_count)} warning(s)")
+        match r.ids {
+            null -> println("(no tree — the parse produced no statements)")
+            _ -> println(render_stmt_ids(r.store, r.ids!))
+        }
+        return 0
+    }
     let parsed_p = parse_or_fail(fa.source, render_ctx(false, fa.source, fa.path))
     println(render_stmt_ids(parsed_p.store, parsed_p.ids))
     0
@@ -4576,6 +4597,7 @@ cli avra {
 
     command program {
         description "Parse and display a program"
+        flag recover { description "Render the RECOVERY tree for invalid input instead of stopping at the diagnostics (t-47hc.5)" }
         arg file { description "Source file", required true }
         run() { cmd_program(args) }
     }

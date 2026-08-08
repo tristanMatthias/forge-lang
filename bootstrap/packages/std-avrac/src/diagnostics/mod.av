@@ -514,6 +514,51 @@ export enum DiagCode {
 ///                phase-internal codes still being refined.
 export type ErrorDef = { code: string, help: string }
 
+/// The REVERSE of `error_def`, over the SYNTAX range only (F0001-F0999).
+///
+/// WHY IT EXISTS (t-47hc.5). A grammar-native rule reports through the DSL, whose
+/// diagnostics carry their F-code as a STRING (`GDiag.code`); the flip seam then has to
+/// re-report them into the real bag, which is keyed by `DiagCode`. That boundary used to
+/// map exactly ONE code — F0040, hard-coded — and defaulted everything else to
+/// `SyntaxError`, so a routed rule could not keep a specific code even when it had one:
+/// `if cond expr` is the hand's F0010 `ExpectedBlock` and came out F0001 the moment `fn`
+/// routed and the statement body stopped falling back.
+///
+/// The set is "codes a PARSER may report", which is the syntax range PLUS the handful of
+/// non-syntax codes the hand parser itself raises. F1203 `LetElseMustDiverge` is the
+/// caught instance: `let_stmt/parser.av` reports it from the parser, so when `let_decl`
+/// went native the builder had to report it too — and a code outside the range answered
+/// `null` here, degrading it to the F0001 default. The message survived and the CODE
+/// silently changed, which is the failure mode this table has to make impossible.
+///
+/// What stays EXCLUDED is a genuine typeck/resolve code arriving through this boundary:
+/// that would mean something is wrong upstream, and `null` says so rather than
+/// manufacturing one. `null` is also what an UNCODED diagnostic (`report`, the common
+/// case) yields, and the seam's `set_error` default handles both identically.
+///
+/// Drift is GUARDED, not trusted: `diagnostics/tests/parser_code_reverse_test.av` reads
+/// the grammar and the executor's own source, extracts every F-code they name, and fails
+/// if any of them is not reversible here — so adding `@expect(…, F1234)` or a
+/// `report_coded("F1234", …)` without an entry below is a red test, never a silent F0001.
+export fn syntax_diag_code(code: string) -> DiagCode? {
+    if code == "F0001" { return DiagCode.SyntaxError }
+    if code == "F0002" { return DiagCode.UnterminatedString }
+    if code == "F0003" { return DiagCode.UnterminatedTemplate }
+    if code == "F0006" { return DiagCode.BadNumber }
+    if code == "F0010" { return DiagCode.ExpectedBlock }
+    if code == "F0011" { return DiagCode.MismatchedParen }
+    if code == "F0012" { return DiagCode.MismatchedBracket }
+    if code == "F0013" { return DiagCode.MismatchedBrace }
+    if code == "F0014" { return DiagCode.ExpectedArrow }
+    if code == "F0030" { return DiagCode.ExpectedForVar }
+    if code == "F0031" { return DiagCode.ExpectedIn }
+    if code == "F0040" { return DiagCode.ExpectedExpression }
+    if code == "F0041" { return DiagCode.UnexpectedSemicolon }
+    // Non-syntax, but PARSER-reported — see the note above.
+    if code == "F1203" { return DiagCode.LetElseMustDiverge }
+    null
+}
+
 /// Single source of truth for all error metadata. Add a new error in
 /// three places: a DiagCode variant, a match arm here, and (for
 /// runtime traps) a corresponding handler in runtime.c.

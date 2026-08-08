@@ -423,9 +423,46 @@ is the difference between a real measurement and a false one:
 | env | which parser |
 |---|---|
 | `AVRA_PARSER_DECL_FLIP=0` | the HAND parser — the oracle |
-| `AVRA_NO_STATIC_FALLBACK=1` | the EMIT-generated static parser, raw |
 | `AVRA_PARSER_DECL_STATIC=0` | the grammar EXECUTOR (interpreter) |
-| *(none)* | **production**: static → `had_error` → re-parse the item with the EXECUTOR |
+| *(none)* | **production**: the EMIT-generated static parser |
+
+**The interpreter re-parse fallback is DELETED (t-47hc.4.3), and with it
+`AVRA_NO_STATIC_FALLBACK`.** Production used to be "static → `had_error` → re-parse the
+item with the EXECUTOR", because the static parser's CapVal fold/optional rules did not
+reproduce the interpreter's error-RECOVERY tree. The parity work closed that gap and the
+recovery corpus measures it on all 117 malformed inputs. Removal was MEASURED first: a
+full suite with the fallback disabled was green (6824/6831, every failure environmental),
+including a targeted re-run of the two shards that had been skipped for disk.
+
+Two consequences to know. **The executor no longer answers invalid DECLARATION input**, so
+`agree_all`'s three paths collapse to two there; the corpus's executor coverage now comes
+from the TYPE family, where `type_flip` still routes through `exec_rule` in production —
+which is also why the t-47hc rule about never bolting behaviour onto `exec_*` still
+stands. And `--parser-probe`'s EMIT and PROD rows now name the same engine and print
+identically; they are kept separate on purpose, so a reintroduced fallback shows up as a
+divergence between them rather than hiding behind a collapsed row.
+
+Don't set these by hand — three `diagnose.sh` modes drive all four paths with EVERY
+routing field pinned (set only the one field that names your mode and the rest stay
+ambient, so a run under `AVRA_PARSER_DECL_FLIP=0` collapses several modes onto the hand
+and the probe compares it against itself):
+
+```bash
+bash scripts/diagnose.sh --parser-probe 'let a = (1) ->'   # the DIAGNOSTICS, all four paths
+bash scripts/diagnose.sh --parser-tree  'let a = (1) ->'   # the RECOVERY TREE + (error) row counts
+bash scripts/diagnose.sh --parser-frontier [keyword]       # which keywords still need @hand(decl_hand)
+```
+
+**Run `--parser-tree` as well as `--parser-probe`, always — they are INDEPENDENT
+oracles and the tree is the one that catches routing bugs.** `let a = (1) ->` reports
+the same F0040 on all four paths and still comes back `(group 1)` from the hand and
+`(lambda (_) (error))` from a rule that commits after `->`. A message-only probe calls
+that agreement. `--parser-tree` needs `bs2 program --recover` (t-47hc.5): plain
+`program` runs through `parse_or_fail` and stops at the diagnostics, so for invalid
+input — the only input whose tree is interesting — it printed errors and NO tree, which
+is why recovery trees used to be observable only from inside
+`error_recovery_differential_test`'s in-process `rtree_at`. Guard:
+`parse/tests/program_recover_tree_test.av`.
 
 Both recovery oracles disable the fallback, so between them they measure **emit
 and nothing else** — while on any invalid input the DEFAULT path is answered by
@@ -438,6 +475,124 @@ Corollary for emit/executor lockstep: when the two disagree, **check both
 directions.** emit had a tail-role bug fixed alone in #1061; the executor had the
 mirror of the same rule. Shared predicates live in `ast.av` — reachable from
 executor.av (production) where emit.av deliberately is not.
+
+### A `@try` WRAPPER HIDES the rules under it — routing one keyword unmasks dozens of gaps (t-47hc.5)
+
+`@try X` in the dispatcher rolls the WHOLE item back to `@hand(decl_hand)` on any
+diagnostic. That is not just a fallback — it is a **blindfold over everything X
+contains**, and it is why the invalid corpus was much weaker than its size
+suggested. Every corpus fixture wraps its malformed statement in `fn f() -> int {
+… }`; while `fn` was `@try`, ~23 of those specs compared **the hand against
+itself** and passed vacuously (the t-6u9b shape, at scale). Routing `fn` dropped
+the corpus 117 → 94, and not one of the 23 was a bug in `fn`: they were `if {`,
+`while`, unclosed `(` at EOF, map literals, template interpolation, qualified
+struct literals, `let … else`. All pre-existing, all invisible.
+
+So: **expect routing a keyword to cost far more than the keyword.** Budget for the
+constructs it stops hiding, and re-read any spec that "already passed" through it.
+
+`let` was the far end of that scale, and it is now ROUTED — `--parser-frontier` reports
+NO keyword still needing `@hand(decl_hand)`. It is the most common statement in the
+corpus, so committing it uncovered **32** divergences at once, **none of them about
+bindings**: every VALID binding form was already native, so the whole cost was recovery
+parity, and the initializer position is a hole through which every expression-level gap
+shows. The corpus is 117/117 with it routed. What it actually took, all fixed at the rule
+that owned the gap rather than at `let`:
+
+- **`paren_expr` decides the lambda by SCAN.** `let a = (1) ->` led the list — the hand's
+  `try_lambda_body()` returns null and yields `(group 1)` where a `@cut` after `->`
+  commits and yields `(lambda (_) (error))`. The obvious fixes (drop the `@cut`, or gate
+  with `@require lb:lambda_body`) are BOTH the exponential-backtracking trap documented in
+  the F4014 section below. `@peek(paren_lambda_ahead)` walks to the matching `)` and
+  tests that an `->` follows and the token after it can start a body, so a bodiless lambda
+  never ENTERS. `paren_arrow_ahead` is the same scan WITHOUT the body test, for the TYPED
+  branch: an untyped `(1)` is a valid group so a missing body must send it there, but a
+  typed `(x: int)` is not an expression at all and requiring a body sent `(x: int) ->` to
+  the group branch.
+- **`@onfail(bail)` keys on failed **or** REPORTED**, the union the hand's `?` propagates.
+  It was failure-only, carved out for exactly the `(1) ->` case above — and once the peek
+  removed that input, the carve-out was letting `let b = x is Foo` survive as a binding
+  where the hand aborts the statement.
+- **The lexer's diagnostics reach the native parser at all.** `lex_real` built a throwaway
+  `Parser`, drove its streaming lexer and kept only the tokens, so `unexpected character` /
+  unterminated-literal reports existed on the hand path and nowhere else. They are carried
+  now (`lex_real_full` → `PState.lex_diags`), positioned by token index, and interleaved in
+  `boundary_diags`. **Merged at the BOUNDARY, never released mid-parse**: `@try`,
+  `@require` and `@onfail(bail)` all decide by asking whether `diags` GREW, so a lexer
+  diagnostic released mid-parse reads to every one of them as "this rule reported" — the
+  first attempt did that and the initializer's bail swallowed the expression's own F0041.
+- **Whoever COMMITS owns the diagnostics.** F1203 `LetElseMustDiverge` used to reach the
+  user by ROLLBACK: the native builder reported message-only, the `@try` unwound, the hand
+  re-parsed and owned the code. `@cut` leaves no rollback, so the code silently vanished
+  while the message stayed. Same class: the flip seam reported at the hand's cursor (still
+  the ITEM START), so a native diagnostic rendered at the declaration's first token —
+  `broken.av:2:9` came out `broken.av:1:1`. `Parser.report_at_byte` + `GDiag.byte` fix it.
+- **Required terminals with the hand's exact wording** on `quote type` / `quote arm`, and
+  `@onfail(bail)` on `table_lit`'s header and rows (the hand's `return .Err` leaves the
+  table's `}` UNCONSUMED, which is what makes the enclosing fn close on it and produces a
+  SECOND diagnostic).
+- **`letdes_decl` is dispatched FIRST**, predictively on its own `@peek(let_destructure)`.
+  It used to be reached by rollback, which a committed `let_decl` no longer provides.
+
+Two mechanism-level fixes fell out, both worth knowing before touching the grammar DSL:
+
+- **Grammar marker ORDER is no longer significant.** `@bump(x) @require y` and
+  `@require @bump(x) y` annotate the same item, but the straight-line marker chain in
+  `parse_labeled` accepted only its own order and rejected the other with `parse_primary`'s
+  generic "expected a rule reference, terminal, …(at `@`)" — naming neither marker. It
+  loops until a pass consumes nothing now. Making order irrelevant is what surfaced the
+  REAL diagnostic underneath, which had been unreachable.
+- **`@require` + a mode-SET marker on one item is legal.** It was rejected because a failed
+  require returns early and would skip the mode restore; the cleanup is threaded now
+  (`restore_modes_before_aborts`), and the executor never had the hole (its abort is a flag
+  set on the way out). `quote type { <type> }` needed both. Guard:
+  `mode_restore_on_abort_test.av`.
+
+What still reaches `@hand(decl_hand)` is NOT a keyword: it is the bare-IDENT lead
+`@peek(decl_lead)` admits — `Foo bar { … }`, a component instantiation whose component is
+undeclared, which `bare_comp_inst` declines.
+
+**Deleting the leaf was measured, and it is TWO clusters away, not a project.** Removing
+both `@hand(decl_hand)` references: the compiler still self-compiles, `--hand-leaves`
+reports 0, and the whole compiler source plus the entire difftest corpus parse with ZERO
+refusals under `AVRA_REFUSE_HAND_LEAF=decl_hand`. Cost: exactly FIVE corpus divergences,
+both in WRAPPER rules whose `@try` rollback lands on `statement` once the leaf is gone —
+`annot_decl` (`@` / `@inline` with no declaration after it) and `doc_decl` (`/// d` over a
+malformed inner). Neither is about the leaf; both are wrappers that need to OWN their
+inner's failure.
+
+The one genuinely awkward part, worth knowing before starting: the hand's
+`parse_annotations` takes `current_lexeme` as the annotation NAME **without requiring an
+identifier**, so `@` followed by `fn` builds an annotation *named* `fn` and then fails on
+what follows — which is why the hand answers a bare `@` with F0040. `annot = "@" n:IDENT`
+cannot express that, so byte-parity means deciding whether to encode the looseness in the
+grammar or to treat it as a hand bug and move the oracle. That is a design call, not a fix.
+
+Three defect SHAPES recur; check for each when a routed rule diverges:
+
+1. **A rule that reports but does not FAIL.** The hand propagates `Result` (`?`),
+   so a sub-parse that reported is over. A native rule keeps going and reports
+   again — one diagnostic becomes three. Signals available: `abort_prop` (same
+   grammar only), the error NODE (crosses views), and `@onfail(bail)` for "the
+   callee owns the message". `mk_binary` needed the node check: `return * 3` built
+   `(* (error) 3)`, a tree claiming a multiplication happened.
+2. **"Did it report" used where "did it fail" is meant.** The statement-list loops
+   keyed recovery on `had_error`, so `let v = o else { 1 }` — which reports F1203
+   and still builds a full desugared binding — collapsed to one `(error)`. They
+   are separate questions and the loop needs BOTH: the failure test drives
+   recovery, `had_error` drives `note_had_error` (fold them and the item comes
+   back CLEAN and the diagnostic never reaches the seam).
+3. **A form the routed rule cannot EXPRESS.** Not a recovery gap — it fails on
+   VALID input, so it blocks committing at all. `fn`'s `where` clause and
+   `type ~name` inside a quote were both this. Find them before routing: grep the
+   hand parser for what the rule's slots accept.
+
+**And the E2E fixtures can pass on the diagnostic itself.** `out.contains("is_ready")`
+was satisfied by the rendered ERROR, because the snippet quotes the offending source
+line — `println("is_ready")`. That fixture had never compiled on any front end. It
+only came apart when the span moved. **A fixture assertion must include
+`!out.contains("error[")`**, or "the program printed X" and "the compiler quoted the
+line containing X" are the same test.
 
 ## CRITICAL RULE: Test cycle hygiene
 
@@ -646,6 +801,35 @@ error[F4014]: compiler memory ceiling exceeded — 11055 MiB resident (ceiling 1
 ```
 
 The `phase:` line is the point — a runaway is now attributable to the file/pass that caused it, instead of arriving as a bare SIGKILL (or a container restart). Ceiling = `AVRA_MEM_LIMIT_MB` (default: 75% of `MemAvailable` sampled at startup; `0` disables). RSS is MEASURED, not accounted, because the compiler links LLVM and LLVM allocates through C++ `new` — an allocation-accounting scheme would miss the largest consumer. Guard: `build/tests/memory_ceiling_test.av`. **An F4014 on a normal input is a COMPILER BUG, not a box-too-small problem — read the phase and fix it; don't just raise the ceiling.**
+
+**The likeliest way YOU cause an F4014 in `phase: parse` is a grammar edit that makes the
+generated parser backtrack exponentially (t-47hc.5).** `@require` on a rule REFERENCE emits
+a FIRST-set gate, and inside a speculative `@try` branch that gate emits the REPORT but NOT
+the abort — emit.av's `abortable` guard (~line 1422) drops `rret`, so the referenced rule is
+parsed ANYWAY and the branch is only unwound afterwards by the diagnostics check. Harmless
+when the callee's FIRST is narrow. When it is broad it is not: `@require lb:lambda_body`
+(FIRST = `{` or ANY expression) in `paren_expr`'s lambda branch makes every parenthesised
+group parse the whole remaining expression before unwinding, and nesting multiplies it.
+Measured on `if (a == 0) || (a == 1) || …`: flat at ~24ms up to 16 terms before, then
+25 / 65 / 160 / 636ms at 10 / 12 / 14 terms after — and the compiler hit a 12GB F4014
+**parsing its own `gen_expr_parser.av`**, whose giant emitted FIRST-set conditions are
+exactly that shape. Prefer `@cut` (commit the branch) over a broad-FIRST `@require`.
+Three things that make this cheap to diagnose, all learned the expensive way:
+- **`./build/seed` is the control.** It is the PINNED integration compiler, so running the
+  same reproducer under it answers "did I cause this" in one command. Flat under `seed` and
+  exponential under `build/bs2` ⇒ yours. Without a control this reads as box pressure, and
+  `free` + `make stray` both come back clean because the box genuinely is fine.
+- **Reduce to a standalone file, and sample RSS correctly.** A `bs2 check` of the one big
+  generated file reproduces it in seconds; bisecting by `head -N` pins the trigger line. But
+  an RSS sampler that polls `/proc/$p/status` can miss entirely and report ~2MB for a 13.6GB
+  parse — that false reading sent this investigation down a "standalone is fine, so it must
+  be the package pipeline" path. Cross-check a suspiciously small peak against wall time.
+- **A pathological generated parser BRICKS its own regen.** `build/bs2` embeds the parser it
+  generated, so once the bad one is on disk you cannot `--emit-regen-*` your way out — and
+  reverting only the grammar does nothing, because the binary is still the old one. The exit
+  is: `git checkout` the generated parser, `make build-quick`, THEN regen from the fixed
+  grammar. Expect to want it twice; nothing about the failure says which of the two stale
+  things (grammar or binary) you are looking at.
 
 Two things this changed that you'd otherwise trip over:
 - `source_newer_than` (diagnose.sh) now watches `runtime.c` / `llvm_wrapper.c`, not just `*.av`. `build/seed` already keyed its C inputs (`seed_inputs_hash`); `build/bs2` did NOT, so a runtime.c edit rebuilt `runtime.o` and then silently re-linked the PREVIOUS bs2 — you'd be testing the code you just replaced. If a C-side change appears to do nothing, check `ls -la build/bs2 build/runtime.o` before believing it.

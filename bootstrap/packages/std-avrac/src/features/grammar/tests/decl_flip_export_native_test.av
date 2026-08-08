@@ -24,6 +24,7 @@
 // invisible on VALID input by construction, so a wrapper absent from the invalid corpus
 // would be routed on no evidence at all.
 
+use @std.avrac.features.grammar.{emitted_rule_body}
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
 use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
@@ -50,7 +51,7 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
             src.contains("fn parse_exportable_decl(st: PState) -> CapVal")
     }
 
-    then "it dispatches BEFORE the decl_hand gate — else it would be dead code" {
+    then "it is dispatched, and NO decl_hand gate survives (t-47hc.4.3)" {
         // `export` is in `decl_lead`'s FIRST set and still is. Emitted after the gate,
         // the gate would swallow it first and the native rule would be unreachable:
         // correct output, no diagnostic, flip silently disabled. The #1028 failure
@@ -58,20 +59,70 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
         let src = decl_src()
         let exp_at = src.index_of("parse_export_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        exp_at >= 0 && hand_at >= 0 && exp_at < hand_at
+        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
+        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
+        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
+        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
+        // be reached from the dispatcher, or it is dead code with correct output.
+        exp_at >= 0 && hand_at < 0
     }
 
-    then "the branch is SPECULATIVE — it rolls back into the hand gate on error" {
-        // Load-bearing, not incidental. A bare branch is error-TOLERANT: it would build
-        // a partial node where the hand ABORTS, and every `export` form the native rules
-        // cannot express (`export spec`, `export component`, `export let`) would be
-        // parsed WRONG instead of handed back.
+    then "the branch is COMMITTED — the rule owns its own recovery" {
+        // t-47hc.5 flips this assertion, and the flip is the ticket. `export` used to be
+        // `@try`: on any error the whole branch rolled back and `@hand(decl_hand)` parsed
+        // the item, so every form the native rules could not express was handed back.
+        // Phase 4 removes that gate, so the branch must be BARE — no rollback scaffold
+        // for `parse_export_decl` in the dispatcher at all.
+        //
+        // The safety net did not disappear, it MOVED INWARD: `exportable_inner` carries
+        // the same `@hand(decl_hand)` tail the dispatcher has, narrowed by
+        // `@peek(decl_table_kw)` to exactly the keywords the hand's own `export` branch
+        // accepts. So an inexpressible inner (`export let`, `export component`) still
+        // reaches the hand — one level down, where only the INNER rolls back rather than
+        // the whole wrapper.
         let src = decl_src()
-        src.contains("s_last = parse_export_decl(st)") &&
-            src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
-            src.contains("st.store.truncate_to_mark(s_mark)") &&
-            src.contains("st.restore_to(s_pos, s_diags, s_err)") &&
-            src.contains("st.restore_hand_state(s_hand)")
+        !src.contains("s_last = parse_export_decl(st)") &&
+            src.contains("return parse_export_decl(st)")
+    }
+
+    then "the inner alternation keeps the hand tail, narrowed to the DECL TABLE" {
+        // Both halves matter. Without the tail, a `@try` inner that reports and rolls
+        // back leaves the alternation with NO branch, and `MkStampAt`'s coercion answers
+        // that with a generic "expected a statement" on top of the caller re-parsing the
+        // same keyword — two diagnostics where the hand emits one (`export let`).
+        //
+        // Without the NARROWING, the tail's FIRST is universal, and `export_decl`'s
+        // `@require` reads exactly that FIRST: `export export fn g() {}` parsed as a
+        // nested export where the hand rejects it, because the hand looks the inner
+        // keyword up in the registry's declaration table and `export` is not in it.
+        // Read the tail out of the INNER rule's own body, not out of the whole file:
+        // `export_decl`'s `@require` guard mentions the same cond EARLIER (that is the
+        // narrowing working — the requirement inherits the tail's FIRST), so a
+        // whole-file `index_of` finds the caller's copy and proves nothing about the
+        // callee.
+        // Bounded to the rule's OWN body by the shared slicer. `substring(at, length)`
+        // only dropped the text BEFORE the fn, so everything emitted after it stayed in
+        // scope — and `run_hand_stmt("decl_hand"` also appears in `parse_declaration`,
+        // which is emitted later. The check would have passed off the dispatcher's copy:
+        // exactly the false positive the note above says it prevents.
+        // t-47hc.4.3 INVERTS this. The narrowed tail was the LAST `@hand(decl_hand)`
+        // reference on the production path, and it is deleted: the inexpressible inners it
+        // existed for (`export let`, `export component`) are all native now, so the tail
+        // guarded nothing and only kept the delegate alive. The `decl_table_kw` narrowing
+        // goes with it — it existed solely to bound that tail's FIRST.
+        //
+        // Both halves the comment above defends are still bought, by other means, and the
+        // corpus is what proves it rather than this structural read. `export let (a b) = t`
+        // producing ONE diagnostic instead of two is the `MkStampAt` coercion case; it now
+        // holds because `exportable_inner`'s branches own their failures directly (each
+        // binding rule `@require`s its own pieces) rather than because a tail catches them.
+        // `export export fn g() {}` is the FIRST-narrowing case; it now holds because
+        // `exportable_inner` no longer HAS a universal-FIRST branch to widen the
+        // requirement — `export` is simply not among its alternatives.
+        let body = emitted_rule_body(decl_src(), "fn parse_exportable_inner(st: PState) -> CapVal")
+        body != "" &&
+            body.index_of("lookahead_ok(\"decl_table_kw\", st)") < 0 &&
+            body.index_of("run_hand_stmt(\"decl_hand\"") < 0
     }
 
     then "the INNER declaration is stamped with its own position" {
@@ -110,7 +161,9 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
         let src = decl_src()
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
+        // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
+        tail_at >= 0 && hand_at < 0
     }
 }
 

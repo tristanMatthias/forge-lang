@@ -21,6 +21,7 @@
 // `tparam` lives in features/generics, not here: fn / type / enum / trait / impl all take
 // the same `<T, U: Bound>` list, so it is shared sub-structure the way `field` is.
 
+use @std.avrac.features.grammar.{emitted_rule_body}
 use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, avra_decl_dispatch_grammar, emit_parser_source_ex}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
@@ -87,35 +88,65 @@ fn decl_src() -> string {
     emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
 }
 
-spec "t-47hc slice 10.11: `enum` is routed onto the production path, speculatively" {
+spec "t-47hc slice 10.11: `enum` is routed onto the production path, COMMITTED" {
     then "parse_enum_decl and parse_variant exist and dispatch BEFORE the decl_hand gate" {
         let src = decl_src()
         let enum_at = src.index_of("parse_enum_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         src.contains("fn parse_enum_decl(st: PState) -> CapVal") &&
             src.contains("fn parse_variant(st: PState) -> CapVal") &&
-            enum_at >= 0 && hand_at >= 0 && enum_at < hand_at
+        // t-47hc.4.3 — the leaf is DELETED, so this asserts there is no gate to dispatch
+        // before, rather than an ordering against one. Strictly stronger: an ordering claim
+        // is satisfiable by a gate that still exists, `hand_at < 0` only by its absence.
+            enum_at >= 0 && hand_at < 0
     }
 
-    then "the branch is SPECULATIVE — on any diagnostic it rolls back into the hand gate" {
+    // t-myz7: `enum` OWNS its recovery, so the dispatcher calls it DIRECTLY. The `@try`
+    // moved inside the rule, paired with a `@cut` after the keyword — it has to be there,
+    // because a `@cut`'s commit flag is per-rule-invocation and cannot reach a caller's
+    // `@try`. So the rollback scaffold is still emitted, just one frame in: it now belongs
+    // to `parse_enum_decl` and covers only a failure BEFORE the cut.
+    //
+    // Both halves are asserted because they fail in opposite directions. A speculative
+    // `s_last = parse_enum_decl(st)` in the dispatcher would mean any diagnostic anywhere
+    // inside the enum — however deep — rolls the whole declaration back and `decl_hand`
+    // owns the recovery again, silently un-routing the keyword while every parity spec
+    // above still passed. A missing `s_cut` would mean the rule commits nowhere and its
+    // own `@expect` messages are unreachable.
+    then "the branch is COMMITTED — the dispatcher calls it directly, the rule owns the rollback" {
+        // The three rollback strings are scoped to THIS rule's emitted body. They are
+        // byte-identical in every speculative rule the emitter renders, so a whole-file
+        // `contains` passed off `parse_mut_decl`'s or `parse_const_decl`'s copy and could
+        // not fail for enum_decl — the missing-`s_cut` case the note above claims to catch.
         let src = decl_src()
-        src.contains("s_last = parse_enum_decl(st)") &&
-            src.contains("st.store.truncate_to_mark(s_mark)") &&
-            src.contains("st.restore_hand_state(s_hand)")
+        let rule = emitted_rule_body(src, "fn parse_enum_decl(st: PState) -> CapVal")
+        src.contains("return parse_enum_decl(st)") &&
+            !src.contains("s_last = parse_enum_decl(st)") &&
+            rule.contains("mut s_cut = false") &&
+            rule.contains("st.store.truncate_to_mark(s_mark)") &&
+            rule.contains("st.restore_hand_state(s_hand)")
     }
 
     then "the variant list lowers to the SHARED cores, not an executor-only build" {
         // The recurring trap this slice has hit four times: an executor-only build passes
         // every interpreter-driven parity spec above and emits nothing usable.
         let src = decl_src()
+        // A GATED element captures in TWO steps (t-myz7): the call binds to `__gres<idx>`,
+        // the abort is read, and only then does the coercion run — `capval_to_*` reports
+        // over a non-matching CapVal, and an aborted sub-parse hands back exactly that.
+        // The coercion is still the assertion's point; what moved is where the result
+        // comes from, so the SHARED-core check is unchanged in substance.
         src.contains("mk_evariant(capval_tok_text(vname), vfields_list)") &&
-            src.contains("vars_list.push(capval_to_variant(st, parse_variant(st)))")
+            src.contains("let __gres0 = parse_variant(st)") &&
+            src.contains("vars_list.push(capval_to_variant(st, __gres0))")
     }
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
         let src = decl_src()
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
+        // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
+        tail_at >= 0 && hand_at < 0
     }
 }

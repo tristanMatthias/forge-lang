@@ -45,7 +45,6 @@ export fn parallel_feature() -> Feature {
     feature_new("parallel") with {
         stmt_tag: Stmt.Parallel(empty_body),
         decl_keyword: "kw_parallel",
-        parse_decl: (p: Parser) -> p.parse_parallel_statement(),
         emit_stmt: parallel_emit_stmt,
         resolve_stmt: parallel_resolve,
         check_stmt: parallel_check,

@@ -18,7 +18,6 @@ export fn spec_feature() -> Feature {
         check_stmt: spec_check_stmt,
         eval_stmt: spec_eval_stmt,
         decl_keyword: "kw_spec",
-        parse_decl: (p: Parser) -> p.parse_spec_block(),
     }
 }
 
