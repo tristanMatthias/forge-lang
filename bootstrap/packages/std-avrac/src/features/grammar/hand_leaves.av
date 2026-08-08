@@ -114,14 +114,12 @@ fn hand_paren_expr(p: Parser) -> Result<ExprId, string> { p.parse_paren_expr() }
 fn hand_lambda_body(p: Parser) -> Result<ExprId, string> { p.parse_lambda_body() }
 
 /// A lambda body known to be a BLOCK.
-fn hand_lambda_block_body(p: Parser) -> Result<ExprId, string> { p.parse_block_expression() }
 
 /// The identifier-led primary (bare ident / struct literal / table / feature
 /// keyword / tagged template).
 fn hand_ident_primary(p: Parser) -> Result<ExprId, string> { p.parse_ident_expr() }
 
 /// The ident-or-`@`-led primary, via the full primary dispatch.
-fn hand_ident_expr(p: Parser) -> Result<ExprId, string> { p.parse_primary() }
 
 /// The remaining primaries served by `parse_primary`: enum constructors
 /// (`.Variant(…)`) and list literals.
@@ -135,7 +133,6 @@ fn hand_hand_unary(p: Parser) -> Result<ExprId, string> { p.parse_unary() }
 /// The `with`-BASE leaf: `parse_unary` WITHOUT the `with` loop. Not
 /// `parse_call` — the `~` splice/BitNot prefix must stay here so splice-in-quote
 /// stays byte-identical.
-fn hand_call_leaf(p: Parser) -> Result<ExprId, string> { p.parse_unary_leaf() }
 
 /// The primary BASE (splice/prefix + `parse_primary`, NO postfix chain); the
 /// grammar's `unary` rule owns the postfix loop over it.
@@ -175,11 +172,8 @@ export fn hand_expr_leaf(name: string) -> HandExprLeaf? {
         "ident_primary"     -> HandExprLeaf { name, seeds_postfix: true,  run: hand_ident_primary }
         "primary_base"      -> HandExprLeaf { name, seeds_postfix: true,  run: hand_primary_base }
         "lambda_body"       -> HandExprLeaf { name, seeds_postfix: false, run: hand_lambda_body }
-        "lambda_block_body" -> HandExprLeaf { name, seeds_postfix: false, run: hand_lambda_block_body }
-        "ident_expr"        -> HandExprLeaf { name, seeds_postfix: false, run: hand_ident_expr }
         "more_primary"      -> HandExprLeaf { name, seeds_postfix: false, run: hand_more_primary }
         "hand_unary"        -> HandExprLeaf { name, seeds_postfix: false, run: hand_hand_unary }
-        "call_leaf"         -> HandExprLeaf { name, seeds_postfix: false, run: hand_call_leaf }
         "postfix_suffix"    -> HandExprLeaf { name, seeds_postfix: false, run: hand_postfix_suffix }
         _                   -> null
     }
