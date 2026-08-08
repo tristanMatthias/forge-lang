@@ -28,12 +28,12 @@
 // evaluated against THIS file's scope, not the fixture's — it fails with
 // `undefined variable` before the fixture is ever written.
 
+use @std.avrac.test_runner.{write_fixture}
 extern fn avra_shell_exec(cmd: string) -> string
 
 fn run_capture(source: string) -> string {
     let path = "/tmp/avra_tki3s_upper_method.av"
-    let escaped = source.replace("'", "'\\''")
-    avra_shell_exec("cat > '${path}' <<'EOF'\n${escaped}\nEOF")
+    write_fixture(path, source)
     avra_shell_exec("./build/bs2 run '${path}' 2>&1 || true")
 }
 

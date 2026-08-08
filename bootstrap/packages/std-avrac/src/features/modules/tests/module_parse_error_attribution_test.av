@@ -22,6 +22,7 @@
 // These specs drive the real CLI over a real two-file module tree, because
 // that is the only place all three layers compose. t-kdyj.8.
 
+use @std.avrac.test_runner.{write_fixture}
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_shell_exec_status(cmd: string) -> int
 extern fn avra_selfhost_read_file(path: string) -> string
@@ -31,9 +32,8 @@ extern fn avra_selfhost_read_file(path: string) -> string
 fn compile_module_tree(module_body: string) -> string {
     let dir = "/tmp/avra_t_kdyj8_mod"
     avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
-    avra_shell_exec("cat > '${dir}/main.av' <<'EOF'\nmod broken\n\nfn main() -> int {\n    0\n}\nEOF")
-    let escaped = module_body.replace("'", "'\\''")
-    avra_shell_exec("cat > '${dir}/broken.av' <<'EOF'\n${escaped}\nEOF")
+    write_fixture("${dir}/main.av", "mod broken\n\nfn main() -> int {\n    0\n}")
+    write_fixture("${dir}/broken.av", module_body)
     capture_with_status("${dir}/main.av", "${dir}/out.log")
 }
 
@@ -65,7 +65,7 @@ fn reserved_word_body() -> string {
 fn compile_missing_module() -> string {
     let dir = "/tmp/avra_t_kdyj8_missing"
     avra_shell_exec("rm -rf '${dir}' && mkdir -p '${dir}'")
-    avra_shell_exec("cat > '${dir}/main.av' <<'EOF'\nmod absent\n\nfn main() -> int {\n    0\n}\nEOF")
+    write_fixture("${dir}/main.av", "mod absent\n\nfn main() -> int {\n    0\n}")
     capture_with_status("${dir}/main.av", "${dir}/out.log")
 }
 
