@@ -164,7 +164,33 @@ fn expr_entry_markers(tag: string, expr_flip: bool, expr_static: bool) -> int {
     n
 }
 
-spec "t-47hc.5: the hand family tails are UNREACHABLE through the production front end" {
+// ── t-bw9s: these three rows are REGRESSION GUARDS, not measurements ─────────
+//
+// Read this before quoting a zero from them. They assert that a `bs2 check` of a
+// whole program logs no `[hand-fallback]` marker — and no `bs2 check` CAN log one,
+// under any routing flags, on valid or invalid input. Verified directly: default;
+// `EXPR_STATIC=0 EXPR_FLIP=0`; `STMT_FLIP=1` on malformed input; `TYPE_STATIC=0
+// TYPE_FLIP=0`; fresh filenames to defeat the compile cache; and through the LOG
+// sink as well as stderr, where the log file is never even created — so
+// `note_hand_fallback` is not being called at all.
+//
+// That is the flip being COMPLETE, not the probe being broken. With zero production
+// `@hand` leaves the generated parser never calls back into `Parser.parse_*_hand`, so
+// the hand entries are unreachable from the front end. (`parse_statement`'s callers —
+// while_stmt, for_stmt, let-else, component_decl — are themselves hand-path-only, so
+// even a `while` body does not reach the stmt hand.)
+//
+// The consequence is what matters: a positive control for these rows is IMPOSSIBLE
+// without reintroducing a hand leaf purely to test the probe. So a zero here is not
+// evidence that "nothing reached the hand" — it cannot distinguish that from "nothing
+// could have". What the rows DO catch is a regression: reintroduce a leaf, and the
+// generated parser routes into it, and they go red. That is worth keeping and is all
+// they claim.
+//
+// The rows with a real control are the `bs2 expr` ones further down: that command
+// reaches the expression ladder directly, its marker demonstrably FIRES with the
+// expression flags off, and its zero therefore means something.
+spec "t-47hc.5 / t-bw9s: no production front-end path routes into a hand family tail (GUARD — see note above; a zero here cannot fire and so is not a measurement)" {
     given "the probe is armed and the parser runs its default routing" {
         // Nothing to set up beyond the fixtures each `then` writes — the point is
         // that the DEFAULT configuration is what gets measured.
