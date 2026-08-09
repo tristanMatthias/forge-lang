@@ -96,26 +96,32 @@ fn fcodes(name: string, env: string, src: string) -> string {
 /// routing property — and the absence of a parse-stage code in that agreed signature
 /// is what proves the raw contents were captured rather than parsed.
 fn agree_all_paths(name: string, src: string) -> bool {
+    // t-bw9s: the `_emit` and `_hand` legs pinned AVRA_NO_STATIC_FALLBACK and
+    // AVRA_PARSER_DECL_FLIP. Both flags are dead, so both legs had become empty-env
+    // duplicates of `_dflt` — three names, one engine. Two routings actually differ
+    // for declarations: production (generated static parser) and the EXECUTOR.
     let d = fcodes("${name}_dflt", "", src)
-    let e = fcodes("${name}_emit", "", src)
     let x = fcodes("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)
-    let h = fcodes("${name}_hand", "", src)
-    if d != h || e != h || x != h {
+    if d != x {
         println("path divergence for ${name}")
-        println("hand=${h} dflt=${d} emit=${e} exec=${x}")
+        println("dflt=${d} exec=${x}")
     }
-    d == h && e == h && x == h
+    d == x
 }
 
-/// All FOUR parser paths (CLAUDE.md's table): the hand oracle, the emit-generated
-/// static parser raw, the grammar EXECUTOR, and the production default. A routed
-/// rule has to be right on every one — an executor-only divergence is invisible to
-/// the two recovery oracles, which both disable the interpreter fallback.
+/// Both surviving declaration routings: the production default (the emit-generated
+/// static parser) and the grammar EXECUTOR. A routed rule has to be right on both —
+/// an executor-only divergence is invisible to the recovery oracles, which is the
+/// whole reason the executor gets its own leg.
+///
+/// This read "all FOUR parser paths … the hand oracle, the emit-generated static
+/// parser raw, the grammar EXECUTOR, and the production default" until t-bw9s. The
+/// hand-oracle and raw-emit legs selected their engines through AVRA_PARSER_DECL_FLIP
+/// and AVRA_NO_STATIC_FALLBACK; with both flags dead they ran the default engine under
+/// different names, so the count was four and the coverage was two.
 fn clean_all_paths(name: string, src: string) -> bool {
     clean(check_out("${name}_dflt", "", src)) &&
-        clean(check_out("${name}_emit", "", src)) &&
-        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
-        clean(check_out("${name}_hand", "", src))
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src))
 }
 
 spec "t-47hc.5.1: the instantiation BODY rule is routed, and passes its value through" {
