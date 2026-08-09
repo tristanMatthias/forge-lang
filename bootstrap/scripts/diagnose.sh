@@ -247,6 +247,20 @@ source_newer_than() {
   local target_mtime
   target_mtime=$($STAT_MTIME "$target" 2>/dev/null) || return 0
   local newest_src
+  # t-kdyj.10 fix (2): mtime is the CHEAP GATE, content is the VERDICT.
+  #
+  # A rebase rewrites working-tree files, so their mtimes jump to now even
+  # when the resulting content is byte-identical to what `build/bs2` was
+  # built from. Purely by mtime that reads as stale, and the operator-
+  # visible outcome was two unrelated-looking spec failures on a tree that
+  # had passed minutes earlier (this ticket's opening report). Fix (1)
+  # made that legible; keying on content makes it not happen.
+  #
+  # The order matters for cost. mtime is one stat per source and answers
+  # "nothing newer" for the overwhelmingly common case without hashing
+  # anything; the content sweep runs ONLY once mtime has already flagged,
+  # which is exactly when a rebuild was about to be paid for anyway. Same
+  # shape as pdme.1's dep-aware compile key, one binary down the chain.
   # `*_test.av` is EXCLUDED, mirroring package_full_fingerprint (2wfp,
   # build/fingerprint.av): a test entry is not part of the compiled surface
   # — nothing imports one and the [lib] build does not emit one — so it
@@ -258,7 +272,82 @@ source_newer_than() {
   # that this staleness check is the second line of defence against.
   newest_src=$(newest_source_mtime)
   [ -z "$newest_src" ] && return 1   # no sources found — pathological
-  [ "$newest_src" -ge "$target_mtime" ]
+  if [ "$newest_src" -lt "$target_mtime" ]; then
+    # Fresh by mtime. ADOPT the current content as this target's baseline if
+    # it has none — otherwise the stamp only ever appears after the next
+    # genuine relink, and the very first rebase on an already-built tree
+    # still reports stale (measured: `make build-quick` on a fresh tree
+    # skips the link, so nothing stamped and `--bs2-stale-check` said
+    # `stale` after a content-preserving touch).
+    #
+    # Sound because mtime-newer-than-every-source IS the freshness contract
+    # this script already runs on: the binary was built from these bytes.
+    # Write-if-absent, never overwrite, so an existing stamp stays
+    # authoritative and repeated calls cannot churn.
+    adopt_compiler_srcfp_if_absent "$target"
+    return 1
+  fi
+  # mtime says stale. Confirm against content before believing it: if the
+  # sources hash to exactly what this target was stamped with, the bytes
+  # that produced it are unchanged and the target is FRESH.
+  compiler_sources_changed "$target"
+}
+
+# Deterministic digest of the compiler's source inputs — the same set
+# `compiler_source_paths` defines, so the content check and the mtime check
+# can never disagree about what a source is. Paths are SORTED (find's order
+# is filesystem-dependent) and each contributes `<path>:<sha256>`, so a
+# rename with identical bytes still changes the digest — it changes the
+# build. Mirrors build/fingerprint.av's `package_source_fingerprint`.
+compiler_sources_fp() {
+  compiler_source_paths | LC_ALL=C sort | while IFS= read -r p; do
+    printf '%s:%s\n' "$p" "$($SHA256_CMD "$p" 2>/dev/null | awk '{print $1}')"
+  done | $SHA256_CMD | awk '{print $1}'
+}
+
+# Where a target records the source digest it was built from.
+src_fp_stamp_path() {
+  printf '%s/.%s.srcfp\n' "$BUILD_DIR" "$(basename "$1")"
+}
+
+# Record the digest for `target`. Called after a successful link of each
+# binary `source_newer_than` gates. Failing to stamp is not fatal — an
+# absent stamp degrades to the old mtime-only behaviour (report stale,
+# rebuild), which is the safe direction.
+stamp_compiler_sources() {
+  local stamp; stamp=$(src_fp_stamp_path "$1")
+  # Skip SILENTLY when the build dir does not exist. A failed `>` redirect is
+  # reported by the shell on its ORIGINAL stderr — the trailing `2>/dev/null`
+  # never gets applied, because redirections are set up left to right and the
+  # first one already failed. That noise broke `bs2_stale_report_test`'s
+  # "it says nothing at all" negative control, which is precisely the contract
+  # it exists to hold: reporting must be silent when there is nothing to say.
+  # An absent stamp reads as "changed" downstream, which is the safe
+  # direction, so skipping costs correctness nothing.
+  [ -d "$(dirname "$stamp")" ] || return 0
+  { compiler_sources_fp > "$stamp"; } 2>/dev/null || true
+}
+
+# Bootstrap a baseline for a target that is fresh by mtime but has no stamp —
+# the pre-existing-binary case. Never overwrites: only the link sites and this
+# first adoption ever establish a baseline, so a stamp always describes bytes
+# the target really was built from.
+adopt_compiler_srcfp_if_absent() {
+  local stamp; stamp=$(src_fp_stamp_path "$1")
+  [ -s "$stamp" ] && return 0
+  stamp_compiler_sources "$1"
+}
+
+# True (0) when the sources differ from what `target` was stamped with.
+# An ABSENT or empty stamp answers "changed": a target built before this
+# stamping existed has no evidence its content matches, and claiming fresh
+# without evidence is the one direction that serves a stale compiler.
+compiler_sources_changed() {
+  local stamp; stamp=$(src_fp_stamp_path "$1")
+  [ -f "$stamp" ] || return 0
+  local recorded; recorded=$(cat "$stamp" 2>/dev/null)
+  [ -n "$recorded" ] || return 0
+  [ "$recorded" != "$(compiler_sources_fp)" ]
 }
 
 # Newest mtime across the compiler's source inputs. ONE definition, shared by
@@ -319,7 +408,16 @@ source_strictly_newer_than() {
   local newest_src
   newest_src=$(newest_source_mtime)
   [ -z "$newest_src" ] && return 1   # no sources found — pathological
-  [ "$newest_src" -gt "$target_mtime" ]
+  if [ "$newest_src" -le "$target_mtime" ]; then
+    adopt_compiler_srcfp_if_absent "$target"
+    return 1
+  fi
+  # Content-keyed for the same reason as source_newer_than (t-kdyj.10 fix 2),
+  # and this is the predicate the REPORTED symptom came through: the rebase
+  # in that ticket reddened `suite_bs2_guard_test`, which drives
+  # `--bs2-stale-check` → here. Fixing only the build-decision sibling would
+  # have left the operator-visible half untouched.
+  compiler_sources_changed "$target"
 }
 
 print_help() {
@@ -1376,6 +1474,7 @@ ensure_bs2() {
     if "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
       log "linking $BS2"
       link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
+      stamp_compiler_sources "$BS2"
       ok "built $BS2"
     else
       # Seed crashed. Check if it's an LLVM -O2 miscompilation by
@@ -1399,6 +1498,7 @@ ensure_bs2() {
         cp "$BUILD_DIR/seed_o0" "$SEED_BIN"
         log "linking $BS2"
         link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
+        stamp_compiler_sources "$BS2"
         ok "built $BS2 (via -O0 seed fallback)"
       else
         cat "$BUILD_DIR/bs2.codegen.log" >&2
@@ -1436,6 +1536,7 @@ ensure_bs2_O0() {
     fi
     log "linking $BS2_O0 at -O0"
     link_ll_O0 "$SRC_DIR/main.av.ll" "$BS2_O0" "$BUILD_DIR/bs2_O0.link.log"
+    stamp_compiler_sources "$BS2_O0"
     ok "built $BS2_O0 (lldb-friendly, -O0)"
   fi
 }
@@ -1451,6 +1552,7 @@ ensure_bs2_debug() {
     fi
     log "linking $BS2_DEBUG at -O0"
     link_ll_O0 "$SRC_DIR/main.av.ll" "$BS2_DEBUG" "$BUILD_DIR/bs2_debug.link.log"
+    stamp_compiler_sources "$BS2_DEBUG"
     ok "built $BS2_DEBUG (null checks enabled, -O0)"
   fi
 }
