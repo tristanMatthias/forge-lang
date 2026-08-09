@@ -1205,9 +1205,6 @@ fn annots_or(inner: List<GAnnot>, outer: List<GAnnot>) -> List<GAnnot> {
     out
 }
 
-fn emit_seq_items(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: string, list_labels: List<string>, opts: List<string>) -> string {
-    emit_seq_items_from(g, seq, outer_annots, ind, list_labels, opts, 0, spec_none())
-}
 
 /// The three speculative contexts a `@require` can sit in. Small named constants
 /// rather than a bool pair so the intent reads at every call site.

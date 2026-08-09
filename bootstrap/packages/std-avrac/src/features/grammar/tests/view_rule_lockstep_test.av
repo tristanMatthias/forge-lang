@@ -1,0 +1,100 @@
+// WHY: the grammar file defines some rules MORE THAN ONCE, on purpose, and nothing was
+// keeping the copies in step.
+//
+// The duplication is load-bearing, not sloppiness: `avra_program_grammar`,
+// `avra_stmt_grammar` and `avra_type_grammar` are SELF-CONTAINED views — emit-gen-check
+// compiles each generated family ALONE, with no sibling file to call into, so every rule
+// a view reaches must be defined inside it. Merging them would break that. Measured while
+// looking for DRY wins: 29 rule names are defined more than once, 45 redundant copies in
+// total, and 22 of the 29 legitimately DIVERGE between views.
+//
+// The remaining 7 are byte-identical across every view that defines them, and THAT is the
+// class this guards. Editing one copy and not the others is silent: the production view
+// changes, the isolated view keeps the old text, and the only symptom is a generated
+// parser that disagrees with production on some input nobody has in a corpus yet.
+//
+// Not hypothetical — it is exactly what happened landing the quote-splice work in
+// t-47hc.5. `splice_type` had to be added to BOTH type views and `name_or_splice` to both
+// the decl-edge and program views; missing either would have compiled clean and failed
+// only on `~var` in a type position inside a quote. This test is that mistake, made loud.
+//
+// It asserts a CONTRACT, not a computation: the list below is hand-declared, so a rule
+// whose copies drift turns this red rather than the test quietly re-deriving "identical"
+// from whatever the file happens to say. A rule that SHOULD start diverging gets removed
+// from the list deliberately, with a reason.
+
+use @std.avrac.core.{avra_selfhost_read_file}
+
+fn grammar_path() -> string {
+    "packages/std-avrac/src/features/grammar/avra_grammar.av"
+}
+
+/// The rules that MUST read identically in every view that defines them.
+///
+/// Deliberately hand-maintained. Adding a rule here says "these copies are one thing
+/// spelled twice"; removing one says "these views have genuinely parted ways". Both are
+/// decisions worth making explicitly, which is why this is not derived from the file.
+fn rules_that_must_match() -> List<string> {
+    ["break_stmt", "continue_stmt", "name_or_splice", "param", "splice_type", "term", "type_expr"]
+}
+
+/// Every right-hand side for `name`, in file order. A rule line is `  <name> = <body>`
+/// at exactly two spaces of indent — the grammar's own layout for a production.
+///
+/// The body is taken VERBATIM, with no trim. Views align their `=` to different
+/// columns (`param        =` in one, `param       =` in another), but that padding
+/// sits BEFORE the `=` and so never reaches the substring — every extracted body
+/// starts with the single space that follows the `=`. Normalising here would buy
+/// nothing against the alignment that actually varies, and would cost the one
+/// difference this test exists to catch: a trailing space on one copy, which is
+/// invisible on the page and is exactly how two "identical" rules drift apart.
+fn bodies_of(src: string, name: string) -> List<string> {
+    mut out: List<string> = []
+    let head = "  " + name + " "
+    for line in src.split("\n") {
+        if line.starts_with(head) {
+            let eq = line.index_of("=")
+            if eq >= 0 { out.push(line.substring(eq + 1, line.length)) }
+        }
+    }
+    out
+}
+
+spec "t-47hc.5: rules duplicated across views stay in LOCKSTEP" {
+    then "every rule in the contract is actually defined more than once" {
+        // Anti-vacuity. If a rule stops being duplicated (a view is retired, or the rule
+        // is centralised), asserting "all its copies match" becomes trivially true and the
+        // entry should leave the list — so require the duplication that makes it mean
+        // something. This is the half that catches the list going stale.
+        let src = avra_selfhost_read_file(grammar_path())
+        mut ok = true
+        for r in rules_that_must_match() {
+            if bodies_of(src, r).length < 2 { ok = false }
+        }
+        ok
+    }
+
+    then "and all of its copies are byte-identical" {
+        let src = avra_selfhost_read_file(grammar_path())
+        mut ok = true
+        for r in rules_that_must_match() {
+            let bs = bodies_of(src, r)
+            mut i = 1
+            while i < bs.length {
+                if bs[i] != bs[0] { ok = false }
+                i = i + 1
+            }
+        }
+        ok
+    }
+
+    then "the reader finds the shape it expects — a known duplicate and a known single" {
+        // The two halves above are both `for … if !x { ok = false }` loops, which pass
+        // vacuously if `bodies_of` silently returns nothing. Pin it against a rule known
+        // to be duplicated and one known to be unique, so a broken extractor fails HERE
+        // rather than making the contract look satisfied.
+        let src = avra_selfhost_read_file(grammar_path())
+        bodies_of(src, "type_expr").length >= 2 &&
+            bodies_of(src, "no_such_rule_anywhere").length == 0
+    }
+}

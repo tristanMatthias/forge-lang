@@ -110,8 +110,6 @@ fn bucket_of(s: Sym) -> int {
     }
 }
 
-/// True when the Sym lives in the Functions bucket.
-fn is_fn(s: Sym) -> bool { bucket_of(s) == 1 }
 /// True when the Sym lives in the Types bucket.
 fn is_type(s: Sym) -> bool { bucket_of(s) == 2 }
 /// True when the Sym lives in the Enums bucket.

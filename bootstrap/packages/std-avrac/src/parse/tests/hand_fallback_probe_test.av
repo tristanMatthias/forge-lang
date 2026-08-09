@@ -1,0 +1,248 @@
+// WHY: t-47hc.5 — the expression / statement / type dispatchers each still END in
+// `self.parse_<family>_hand(...)`, the last of the hand parser on the production
+// path. (The DECLARATION family has no such tail: `parse_declaration_hand` is
+// deleted and its DSL path is unconditional.) That tail is INVISIBLE on valid
+// input by construction — the grammar succeeds, so the tail never runs — and no
+// green build can tell you whether it is load-bearing. This file makes the answer
+// MEASURED rather than assumed, and re-measures it on every suite run.
+//
+// The instrument is `AVRA_REFUSE_HAND_FALLBACK` (parse/mod.av): set to `*`, every
+// entry into a hand family prints `[hand-fallback] <family> at <file>:<byte>`. It
+// does NOT change parse behaviour — the fall-through still happens — so a probe run
+// is a normal compile whose stderr can simply be counted.
+//
+// TWO specs, and the second is what makes the first worth anything. Reporting
+// "zero fall-throughs" from an instrument nobody proved can fire is the blind-
+// instrument failure mode CLAUDE.md documents (`avra_rc_live_count` measuring
+// nothing; four uniform zeros read as four confirmations). So:
+//
+//   1. the ZERO spec — a valid fixture and an INVALID one, both through the real
+//      front end (`bs2 check`), must report no fall-through at all; and
+//   2. the CONTROL spec — the instrument shown FIRING on an entry that genuinely
+//      reaches the tail, and shown SILENT on the same entry once the generated
+//      parser answers instead.
+//
+// If (2) ever stops firing, (1) has become vacuous and this file says so by going
+// red — rather than reporting a comfortable zero from an instrument that was
+// switched off.
+//
+// WHAT WAS MEASURED, and it is stronger than "the tail rarely runs": the tail is
+// not reachable from the whole-program entry AT ALL, in ANY routing configuration.
+// `parse_file_program` routes every item through `parse_declaration`, whose DSL
+// path is unconditional and whose builders never call the `Parser.parse_*` ladder,
+// so the family flags do not even change the answer. Swept over the whole
+// @std::avrac package compile (6218 parser constructions) and a 264-file corpus
+// (792 constructions — 240 invalid programs extracted from
+// error_recovery_differential_test plus the 24 difftest corpus files), across
+// valid and invalid input and with every family flag forced off: ZERO entries.
+// The ladder survives only under `parse_file_expression` (the expression-only
+// entry the control uses) and under `@hand` leaves, of which the production
+// grammars have none.
+//
+// `parse_file_expression` IS a production entry, though — `bs2 expr` and
+// `bs2 eval` reach it — so the tail is not dead weight yet, and the third spec
+// draws that boundary exactly: over 53 expression forms, every VALID one is
+// answered by the generated parser and the 19 that fall through are all
+// MALFORMED. What remains is therefore error RECOVERY for one entry, not parsing.
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{avra_process_env_set}
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+
+/// A VALID program touching all three families: a type annotation (`type`), a
+/// binding + call statement (`stmt`), and arithmetic/comparison (`expr`).
+fn valid_src() -> string {
+    "fn add(a: int, b: int) -> int {\n" +
+    "    let sum: int = a + b\n" +
+    "    if sum > 10 { return sum }\n" +
+    "    sum * 2\n" +
+    "}\n"
+}
+
+/// An INVALID program — the recovery path, where a fall-through is most likely.
+/// `->` at statement position starts nothing at all, so it can only be answered by
+/// a dispatcher's tail (the `agree_all` case t-zrn3 was built around).
+fn invalid_src() -> string {
+    "fn a() -> int { 1 }\n" +
+    "->\n" +
+    "fn b() -> int { return * 3 }\n"
+}
+
+fn write_fixture(name: string, src: string) -> string {
+    let path = "build/_handfb_${name}.av"
+    let _ = avra_selfhost_write_file(path, src)
+    path
+}
+
+/// Sentinel for "the probe command did not do what it was asked to" — returned
+/// instead of a marker count, so it fails BOTH an `== 0` and a `> 0` assertion.
+/// A count is only meaningful if the compile it came from actually happened.
+const PROBE_DID_NOT_RUN = -1
+
+/// Count `[hand-fallback]` lines from a `bs2 <cmd>` of `src` under `env`.
+/// Diagnostics from the fixture itself are irrelevant — only the marker is counted,
+/// so an invalid fixture (which SHOULD produce errors) measures the same thing a
+/// valid one does.
+///
+/// `want_ok` says whether the command is expected to SUCCEED, and it is what keeps
+/// the zero-assertions from passing vacuously: counting alone cannot distinguish
+/// "the generated parser answered everything" from "`./build/bs2` was missing, or
+/// died before it reached the parser" — both yield zero markers. So the status is
+/// checked first and a mismatch returns the sentinel. Output goes through a
+/// per-fixture log because `avra_shell_exec_status` yields the status, not the text.
+fn fallback_lines_cmd(env: string, cmd: string, name: string, src: string, want_ok: bool) -> int {
+    let path = write_fixture(name, src)
+    let log = "build/_handfb_out_${name}.txt"
+    let status = avra_shell_exec_status("${env} ./build/bs2 ${cmd} '${path}' > '${log}' 2>&1")
+    if want_ok != (status == 0) { return PROBE_DID_NOT_RUN }
+    let out = avra_shell_exec("cat '${log}' 2>/dev/null")
+    // A NON-zero status is not by itself evidence the compiler ran: a missing or
+    // unrunnable `./build/bs2` also exits non-zero, which would let every
+    // `want_ok: false` fixture match its expected status and then count zero
+    // markers. Require a rendered diagnostic, which only the compiler emits.
+    // (The `want_ok: true` side needs no such witness — nothing but bs2 itself
+    // reaching the end of a successful compile can exit 0 here.)
+    if !want_ok && !out.contains("error[F") { return PROBE_DID_NOT_RUN }
+    mut n = 0
+    for line in out.split("\n") {
+        if line.contains("[hand-fallback]") { n = n + 1 }
+    }
+    n
+}
+
+/// The whole-program front end — what `build` / `run` / `check` all go through.
+fn fallback_lines(env: string, name: string, src: string, want_ok: bool) -> int {
+    fallback_lines_cmd(env, "check", name, src, want_ok)
+}
+
+/// The EXPRESSION-only front end (`bs2 expr`, and `bs2 eval` alongside it): the
+/// one production command that reaches `parse_expression`, via
+/// `parse_expr_or_fail` -> `parse_expression_source` -> `parse_file_expression`.
+fn expr_cmd_fallbacks(name: string, src: string, want_ok: bool) -> int {
+    fallback_lines_cmd("AVRA_REFUSE_HAND_FALLBACK='*'", "expr", name, src, want_ok)
+}
+
+/// Drive the EXPRESSION dispatcher in-process and count the marker lines the probe
+/// appended to its log. `parse_file_expression` is the entry that actually reaches
+/// `parse_expression` — the whole-program entry does NOT, because
+/// `parse_file_program` routes every item through `parse_declaration`, whose DSL
+/// path is unconditional and whose builders never call the Parser ladder. That
+/// asymmetry is the finding this file records, and it is also why the control has
+/// to use this entry: a control built on `parse_file_program` reports zero for the
+/// same reason the assertions do, and would "pass" while proving nothing.
+///
+/// Setting BOTH fields explicitly is the discipline `rtree_at` documents:
+/// `parse_expression`'s guard is `expr_flip || expr_static`, an OR whose second
+/// term reads `!= "0"` — ON by default — so pinning one and leaving the other
+/// ambient would leave the generated parser running and measure nothing.
+fn expr_entry_markers(tag: string, expr_flip: bool, expr_static: bool) -> int {
+    let log = "build/_handfb_log_${tag}.txt"
+    let _ = avra_shell_exec("rm -f '${log}'")
+    avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK", "*")
+    avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK_LOG", log)
+    mut p = parser_new("1 + 2 * 3")
+    p.expr_flip = expr_flip
+    p.expr_static = expr_static
+    let _ = p.parse_file_expression()
+    // Disarm before returning: the probe is process-wide, and leaving it armed
+    // would make every LATER parse in this test binary append to a stale log.
+    avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK", "")
+    avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK_LOG", "")
+    mut n = 0
+    for line in avra_shell_exec("cat '${log}' 2>/dev/null").split("\n") {
+        if line.contains("[hand-fallback]") { n = n + 1 }
+    }
+    n
+}
+
+spec "t-47hc.5: the hand family tails are UNREACHABLE through the production front end" {
+    given "the probe is armed and the parser runs its default routing" {
+        // Nothing to set up beyond the fixtures each `then` writes — the point is
+        // that the DEFAULT configuration is what gets measured.
+        true
+    }
+
+    then "a valid program reaches no hand family tail" {
+        fallback_lines("AVRA_REFUSE_HAND_FALLBACK='*'", "valid", valid_src(), true) == 0
+    }
+
+    // The interesting half: on INVALID input the grammar reports, and the tail is
+    // exactly what used to answer. If routing ever regresses so the grammar cannot
+    // recover on its own, this is where it shows up.
+    then "an invalid program reaches no hand family tail either" {
+        fallback_lines("AVRA_REFUSE_HAND_FALLBACK='*'", "invalid", invalid_src(), false) == 0
+    }
+
+    // Scoping: the marker must be attributable per family, not a single global
+    // flag. Naming one family must not report another's.
+    then "the allowlist form is scoped — naming only `type` reports no expr/stmt" {
+        fallback_lines("AVRA_REFUSE_HAND_FALLBACK='type'", "scoped", valid_src(), true) == 0
+    }
+}
+
+// `bs2 expr` / `bs2 eval` are the ONLY production commands that reach the
+// expression ladder, and they draw the boundary the whole-program sweep cannot
+// see. Measured over 53 expression forms: every VALID one is answered by the
+// generated parser, and the 19 that fall through are all MALFORMED — including
+// three (`a is Foo`, `spawn f()`, `dyn T`) that look valid and are not, since the
+// hand parser rejects them too (`is` takes a `.Variant`, `spawn` takes a block,
+// and `dyn T` is a type rather than an expression).
+//
+// So the expression tail is not dead weight yet: it owns error RECOVERY for this
+// entry. That is the remaining work, and stating it as a measurement rather than
+// an impression is the point — the tail can be deleted once the expression view
+// recovers on its own, and not before.
+spec "t-47hc.5: `bs2 expr` — the grammar owns VALID input; the tail owns recovery" {
+    given "the expression-only front end is probed directly" {
+        true
+    }
+
+    // The guard: a routing regression that pushed valid expressions back onto the
+    // hand parser would be invisible everywhere else, because the two agree on
+    // valid input by construction. Here it is a red test.
+    then "no valid expression form falls back to the hand ladder" {
+        expr_cmd_fallbacks("e_arith", "1 + 2 * 3 - 4 / 5\n", true) == 0 &&
+        expr_cmd_fallbacks("e_chain", "a?.b ?? c\n", true) == 0 &&
+        expr_cmd_fallbacks("e_pipe", "x |> f |> g\n", true) == 0 &&
+        expr_cmd_fallbacks("e_lambda", "(x) -> x + 1\n", true) == 0 &&
+        expr_cmd_fallbacks("e_match", "match v { .A -> 1, _ -> 2 }\n", true) == 0 &&
+        expr_cmd_fallbacks("e_struct", "Foo { x: 1, y: 2 }\n", true) == 0 &&
+        expr_cmd_fallbacks("e_post", "a.b.c(1)[2]\n", true) == 0 &&
+        expr_cmd_fallbacks("e_isvar", "a is .Some\n", true) == 0 &&
+        expr_cmd_fallbacks("e_in", "x in [1, 2]\n", true) == 0 &&
+        expr_cmd_fallbacks("e_generic", "f<int>(3)\n", true) == 0
+    }
+
+    // The vacuity control for the row above, and the honest record of the gap: on
+    // MALFORMED input this entry still reaches the tail. If this ever returns 0,
+    // the expression view has learned to recover and the tail is deletable — so a
+    // red here is good news, and the fix is to delete the tail, not the assertion.
+    then "malformed expressions DO still reach the tail (the remaining gap)" {
+        expr_cmd_fallbacks("e_bad_trail", "1 +\n", false) > 0 &&
+        expr_cmd_fallbacks("e_bad_open", "f(\n", false) > 0 &&
+        expr_cmd_fallbacks("e_bad_lead", "* 3\n", false) > 0
+    }
+}
+
+spec "t-47hc.5: the fall-through probe is NOT a blind instrument (positive control)" {
+    given "the expression dispatcher is driven in-process through parse_file_expression" {
+        true
+    }
+
+    // Without this, the zeros above are unfalsifiable. A misplaced marker, an env
+    // name typo, or a probe accidentally deleted would all read as "clean" — the
+    // blind-instrument failure mode, where uniform zeros get counted as
+    // independent confirmations instead of as one broken gauge.
+    then "with the expression flags OFF the probe FIRES" {
+        expr_entry_markers("ctl_on", false, false) > 0
+    }
+
+    // The negative half, on the SAME entry and the SAME input: the only thing that
+    // changed is which parser answered. So the count above tracks the hand tail
+    // being taken, not merely "this helper writes to a log".
+    then "with the static expression parser ON the same entry logs nothing" {
+        expr_entry_markers("ctl_off", false, true) == 0
+    }
+}

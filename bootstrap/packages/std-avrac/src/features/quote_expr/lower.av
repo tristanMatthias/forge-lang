@@ -1735,24 +1735,3 @@ fn three_args(a: Expr, b: Expr, c: Expr) -> List<Expr> {
     [a, b, c]
 }
 
-/// Escape every `"` and `\` in `s` for embedding in a string-literal
-/// source form. The parser stores Expr.String values with their outer
-/// quotes; nesting one inside another needs the inner pair escaped.
-fn escape_string(s: string) -> string {
-    mut out = ""
-    mut i = 0
-    while i < s.length {
-        let ch = s.substring(i, i + 1)
-        if ch == "\"" {
-            out = out + "\\\""
-        } else {
-            if ch == "\\" {
-                out = out + "\\\\"
-            } else {
-                out = out + ch
-            }
-        }
-        i = i + 1
-    }
-    out
-}

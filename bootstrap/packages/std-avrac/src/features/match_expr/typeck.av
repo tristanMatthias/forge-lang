@@ -601,25 +601,6 @@ fn unify_arm_types(host_tc: TC, seed: ValueType, arm_body: Expr, arm_ty: ValueTy
     tc_report(host_tc, DiagCode.TypeMismatch, msg)
 }
 
-/// Expression-position arm checker. Type-checks each arm and
-/// unifies the result types via `unify_arm_types`. so07.4 (T4):
-/// passes `first_ty` as the expected type for each arm body so
-/// `[]` and `[x]` literals inherit the list element type from the
-/// match's overall expected shape.
-export fn check_match_expr_arms(tc: TC, subject_ty: ValueType, arms: List<MatchArm>, first_ty: ValueType) -> ExprResult {
-    mut acc = tc_reject_variant_on_scalar(tc, subject_ty, arms)
-    mut i = 0
-    while i < arms.length {
-        let arm = arms[i]
-        // Row 12 (ps3t.4.5): match-expr arms never thread param types
-        // into a lambda — annotate or F1006.
-        acc = tc_gate_unthreaded_lambda(acc, acc.nodes.exprs.get(arm.body_id))
-        let b = check_expr_expected(enter_arm_with_guard(acc, arm, subject_ty), acc.nodes.exprs.get(arm.body_id), first_ty)
-        acc = unify_arm_types(tc_exit(b.tc), first_ty, acc.nodes.exprs.get(arm.body_id), b.ty)
-        i = i + 1
-    }
-    tc_er(acc, first_ty)
-}
 
 /// Wrapper around `check_match_expr_arms` that picks a seed
 /// type from the first non-skip arm. Used when the caller

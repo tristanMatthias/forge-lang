@@ -28,9 +28,15 @@ use @std.avrac.parse.{Parser}
 // the table RESOLVES each one — the invariants below are written so that adding
 // or deleting a leaf does not falsify them.
 fn known_expr_leaves() -> List<string> {
+    // t-47hc.5 — `lambda_block_body`, `ident_expr` and `call_leaf` are GONE. They were
+    // registered leaves that NO grammar referenced, in production or in tests: pure dead
+    // registration behind a live-looking table. The list is the registry's contract, so a
+    // retired leaf leaves it rather than being special-cased — and leaving it in is not
+    // harmless, because every assertion here force-unwraps the lookup and a null ABORTS
+    // the spec (SIGABRT), which the runner reports as "crashed", not "failed".
     ["quote_expr", "match_expr", "if_expr", "list_expr", "paren_expr",
-     "ident_primary", "primary_base", "lambda_body", "lambda_block_body",
-     "ident_expr", "more_primary", "hand_unary", "call_leaf", "postfix_suffix"]
+     "ident_primary", "primary_base", "lambda_body",
+     "more_primary", "hand_unary", "postfix_suffix"]
 }
 
 fn known_stmt_leaves() -> List<string> {
@@ -173,7 +179,10 @@ spec "t-47hc.7: seeds_postfix is a COLUMN of the leaf, not a parallel table" {
     }
     then "a MID-CHAIN or body leaf does NOT seed the base" {
         mut ok = true
-        for n in ["postfix_suffix", "hand_unary", "call_leaf", "ident_expr", "more_primary", "lambda_body", "lambda_block_body"] {
+        // t-47hc.5 — `call_leaf`, `ident_expr` and `lambda_block_body` dropped with the
+        // dead leaves they named; `hand_expr_leaf` answers null for them and the `!` below
+        // would ABORT rather than fail.
+        for n in ["postfix_suffix", "hand_unary", "more_primary", "lambda_body"] {
             if hand_expr_leaf(n)!.seeds_postfix { ok = false }
         }
         ok

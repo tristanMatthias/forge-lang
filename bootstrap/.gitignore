@@ -3,6 +3,11 @@
 **/*.av.ll
 **/*.av.cov.ll
 **/*.av.ll.cov.ll
+# Per-pid compile intermediates. A concurrent or interrupted `bs2 compile
+# --output` / lib build leaves `<entry>.av.build-<pid>.ll` beside the source
+# (the atomic produce-then-rename staging), and `*.av.ll` does NOT match it —
+# so `git add -A` would happily commit a multi-megabyte IR dump.
+**/*.av.build-*.ll
 **/*.av.covmap.json
 # The covmap moved from JSON to TSV (the Avra-side parser was hitting O(N)
 # strlen per character on a 2.4MB JSON buffer) and the ignore did not follow,

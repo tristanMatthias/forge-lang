@@ -499,10 +499,6 @@ export enum GAnnot {
 
 // ── Small constructors / probes (keep call sites readable) ──
 
-/// A plain uncaptured One-item from a primary.
-export fn gitem(prim: GPrim) -> GItem {
-    GItem { label: "", rep: GRep.One, prim, sameline: false, mode_off: "", mode_on: "", mode_bump: "", mode_on_if: "", cut: false, require: false, gate: false, onfail: "", onfail_cap: "", bound: "" }
-}
 
 /// True when a sequence has no explicit build — the executor then
 /// applies the default build (pass-through of the single sub-result, or
@@ -843,7 +839,6 @@ fn rep_is_plus(rep: GRep) -> bool { match rep { .Plus -> true  _ -> false } }
 fn rep_is_opt(rep: GRep) -> bool { match rep { .Opt -> true  _ -> false } }
 
 fn build_is_none(build: GBuild) -> bool { match build { .None -> true  _ -> false } }
-fn build_is_call(build: GBuild) -> bool { match build { .Call(_, _) -> true  _ -> false } }
 
 // ── Node-kind of a rule's result (its Nystrom target) — drives the coercion,
 // the CapVal wrapper, and the list element type PER referenced rule, so the

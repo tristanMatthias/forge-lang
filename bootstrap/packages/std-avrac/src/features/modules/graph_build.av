@@ -80,42 +80,6 @@ export type UseEdge = {
     bindings: List<int>,
 }
 
-/// Build the module graph starting from `entry_file`. The entry file
-/// becomes package 0's root module. Every transitively-loaded `mod X`
-/// is a separate node; every transitively-loaded `@scope.name` package
-/// becomes a separate package with its own root.
-///
-/// Pure on the AST side — only file I/O is reading the .av files we
-/// resolve along the way. No exit() calls; failures surface via
-/// `had_error` + `error_message` so callers can decide.
-export fn build_module_graph(entry_file: string) -> BuildGraphResult {
-    if avra_selfhost_file_exists(entry_file) == 0 {
-        return BuildGraphResult {
-            graph: module_graph_new(),
-            uses: [],
-            had_error: 1,
-            error_message: "entry file not found: ${entry_file}",
-        }
-    }
-    // Allocate package + root module atomically. The chicken/egg
-    // (package needs a root id; root needs a package id) is solved by
-    // module_graph_add_package_root.
-    let pr = module_graph_add_package_root(module_graph_new(), entry_file)
-    let content = avra_selfhost_read_file(entry_file)
-    let parsed = parse_program_source(content)
-    if parsed.had_error || parsed.ids == null {
-        return BuildGraphResult {
-            graph: pr.graph,
-            uses: [],
-            had_error: 1,
-            error_message: "parse error in ${entry_file}: ${parsed.error_message}",
-        }
-    }
-    let entry_dir = modules_dirname(entry_file)
-    // The entry file is the program root — canonical path "".
-    let g_canon = module_graph_set_canonical(pr.graph, "", pr.mod_id)
-    walk_stmts(parsed.store, g_canon, parsed.ids!, pr.mod_id, pr.pkg_id, "", entry_dir, [])
-}
 
 // ── Internal walker ──────────────────────────────────────────────────
 

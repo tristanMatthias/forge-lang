@@ -68,13 +68,6 @@ export fn emit_enum_ctor(ctx: Ctx, env: List<VarBinding>, type_name: string, var
     ok_emit(as_i64, .Enum(resolved_name, empty_args, type_registry_id_for(ctx.type_reg, resolved_name)))
 }
 
-/// Allocate the fixed 16-byte `{tag, payload}` outer struct.
-/// `variants` parameter is unused — kept for symmetry with the
-/// struct-side `malloc_struct_bytes`.
-export fn malloc_enum_bytes(ctx: Ctx, variants: List<Variant>) -> ptr {
-    // Fixed size: {i8 tag, ptr payload} = 16 bytes always
-    ctx.arena_alloc(ctx.i64(16))
-}
 
 /// Untyped payload-fill: walks the args, emitting each and
 /// storing it at the right slot via `ctx.store_slot`. Used as
@@ -98,28 +91,6 @@ fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: 
     ok_emit(null_ptr_val(), .Void)
 }
 
-/// Type-safe payload fill via GEP into the per-variant struct
-/// type. Lets `store_field` truncate / cast each value to its
-/// declared field type so packed bool / float fields don't get
-/// clobbered.
-fn fill_enum_payload_typed(ctx: Ctx, env: List<VarBinding>, pay_ty: ptr, payload_ptr: ptr, fields: List<FieldEntry>, args: List<ExprId>, idx: int) -> Result<EmitValue, string> {
-    for (i, id) in args.enumerate() {
-        let slot = idx + i
-        let fld_ty = if slot < fields.length { fields[slot].resolved } else { ValueType.Unknown }
-        // emit_expected threads a fn-typed payload field's declared param
-        // types into a lambda arg (the layout-totality threading).
-        let r = emit_expected(ctx, env, ctx.nodes.exprs.get(id), fld_ty)?
-        let fld_gep = ctx.gep(pay_ty, payload_ptr, slot, "pay_fld")
-        // Box a present value-inner arg into a `T?` field (guarded).
-        let v = if needs_optional_box(r.ty, fld_ty) {
-            emit_optional_some(ctx, vtype_strip_optional(fld_ty), r.value)
-        } else {
-            r.value
-        }
-        ctx.store_field(v, fld_gep, fld_ty)
-    }
-    ok_emit(null_ptr_val(), .Void)
-}
 
 /// Compare two enum values by their tag field. Returns Bool.
 /// Used by `emit_binary` for `==` / `!=` on enum types — `pred`

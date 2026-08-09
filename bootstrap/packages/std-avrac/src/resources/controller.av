@@ -83,12 +83,6 @@ export fn governor_width_only(width_cap: int) -> MemGovernor {
     governor_for(width_cap, 0, 0, 0 - 1)
 }
 
-/// Construct the generic controller from an execution profile and the native
-/// resource snapshot. This is the one policy boundary shared by test, build,
-/// coverage, and future schedulers.
-export fn resource_controller_for(width_cap: int, profile: ResourceProfile, normal_estimate_mb: int, reserve_mb: int) -> MemGovernor {
-    resource_controller_for_snapshot(width_cap, profile, normal_estimate_mb, reserve_mb, resource_snapshot())
-}
 
 /// Snapshot-taking sibling for callers that need the initial resource report
 /// and first admission to use the identical sample.

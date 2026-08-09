@@ -1,10 +1,9 @@
 // WHY: t-47hc.2 (Phase 1) — the DECLARATIVE operator/punctuation lexical grammar.
 // This is the concrete form of "just say `">>" = Shr`": every fixed-spelling
 // terminal the lexer recognises, as DATA (`LitRule { spelling, tk }`), instead of
-// the hand lexer's ~40 open-coded `set_current(Tk.Shr, ">>")` arms
-// (parse/lexer.av advance_token) + scan_subset's `scan_compound_op`/`subset_punct_tk`
-// branches. It is the single SOURCE OF TRUTH for the spelling<->token binding, which
-// is currently DUPLICATED at every `set_current` call and again in the byte-scanner.
+// the hand lexer's ~40 open-coded `set_current(Tk.Shr, ">>")` arms that used to
+// live in `advance_token` (parse/lexer.av). It is the single SOURCE OF TRUTH for
+// the spelling<->token binding — the one place a spelling names its token.
 //
 // This file is DATA, not the runtime scanner — it does NOT walk a table per byte
 // (the "interpret a table" anti-pattern the design forbids: "the DFA lexer EMITS

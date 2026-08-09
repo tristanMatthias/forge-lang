@@ -45,17 +45,6 @@ export type Unit = {
     dep_names: List<string>,
 }
 
-/// Free helper for "does `xs` contain a unit with name == target?".
-/// List<Unit> doesn't ship a built-in `.contains_by(predicate)` so
-/// every site that needs name-based membership uses this one walker.
-export fn unit_list_contains_name(xs: List<Unit>, target: string) -> bool {
-    mut i = 0
-    while i < xs.length {
-        if xs[i].name == target { return true }
-        i = i + 1
-    }
-    false
-}
 
 /// Result of `build_graph`. `units` is in topological order (a unit
 /// appears AFTER all of its dependencies). `had_error` flags cycle
