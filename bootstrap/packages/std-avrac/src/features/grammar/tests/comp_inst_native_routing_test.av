@@ -99,7 +99,7 @@ fn agree_all_paths(name: string, src: string) -> bool {
     let d = fcodes("${name}_dflt", "", src)
     let e = fcodes("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
     let x = fcodes("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)
-    let h = fcodes("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src)
+    let h = fcodes("${name}_hand", "", src)
     if d != h || e != h || x != h {
         println("path divergence for ${name}")
         println("hand=${h} dflt=${d} emit=${e} exec=${x}")
@@ -115,7 +115,7 @@ fn clean_all_paths(name: string, src: string) -> bool {
     clean(check_out("${name}_dflt", "", src)) &&
         clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
         clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
-        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+        clean(check_out("${name}_hand", "", src))
 }
 
 spec "t-47hc.5.1: the instantiation BODY rule is routed, and passes its value through" {

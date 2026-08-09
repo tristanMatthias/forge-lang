@@ -29,7 +29,7 @@ fn clean_all_paths(name: string, src: string) -> bool {
     clean(check_out("${name}_dflt", "", src)) &&
         clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
         clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
-        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+        clean(check_out("${name}_hand", "", src))
 }
 
 /// Thin wrapper over the SHARED `emitted_rule_speculates` (ast.av) — the slicing and

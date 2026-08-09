@@ -1383,8 +1383,12 @@ export fn avra_stmt_flip_grammar() -> Grammar {
 }
 
 /// ps3t.6.7 Step G slice 4b — the PRODUCTION declaration / whole-program grammar
-/// the declaration flip (`AVRA_PARSER_DECL_FLIP`, parse_declaration) runs. The
-/// declaration dispatch splits cleanly by FIRST-set into two arms:
+/// `parse_declaration` runs. It runs UNCONDITIONALLY: the `AVRA_PARSER_DECL_FLIP`
+/// switch this comment used to name is a dead variable the compiler never reads
+/// (t-bw9s), removed along with the `@hand(decl_hand)` leaf described below — which
+/// is itself gone from the production dispatch (`--hand-leaves` reports 0). The arm
+/// split is kept here because it still describes how the FIRST-sets are organised.
+/// The declaration dispatch splits cleanly by FIRST-set into two arms:
 ///
 ///   * `@hand(decl_hand)` — everything parse_declaration handles itself:
 ///     doc-comment + `@`-annotation + `export` RECURSIVE WRAPPING (position-

@@ -32,7 +32,7 @@ fn clean_all_paths(name: string, src: string) -> bool {
     clean(check_out("${name}_dflt", "", src)) &&
         clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
         clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
-        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+        clean(check_out("${name}_hand", "", src))
 }
 
 spec "t-47hc slice A: the component definition is emitted as a native rule" {
@@ -134,7 +134,7 @@ spec "t-47hc slice A: definition forms parse and REGISTER on all four paths" {
         let d = check_out("raw_dflt", "", src)
         let e = check_out("raw_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
         let x = check_out("raw_exec", "AVRA_PARSER_DECL_STATIC=0", src)
-        let h = check_out("raw_hand", "AVRA_PARSER_DECL_FLIP=0", src)
+        let h = check_out("raw_hand", "", src)
         d.contains("error[F4101]") && !d.contains("error[F0001]") &&
             e.contains("error[F4101]") && !e.contains("error[F0001]") &&
             x.contains("error[F4101]") && !x.contains("error[F0001]") &&

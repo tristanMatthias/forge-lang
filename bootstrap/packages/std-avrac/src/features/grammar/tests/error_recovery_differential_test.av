@@ -54,11 +54,11 @@ fn mode_env(mode: string) -> string {
     // native that was harmless (no native table rule existed, so the expression path
     // fell through to `@hand(primary_base)` -> `parse_table_literal` anyway); once the
     // rule landed it would mean the table assertions compare native against native.
-    if mode == "hand" { return "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
-    if mode == "emit" { return "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
+    if mode == "hand" { return "AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
+    if mode == "emit" { return "AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
     // production — the static parser, then the INTERPRETER re-parse on `had_error`
     // (t-zrn3): the path users actually run, and the one the other two are blind to.
-    "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+    "AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
 }
 
 /// The full diagnostic MESSAGES, not merely their F-codes (t-myz7, the `table` slice).

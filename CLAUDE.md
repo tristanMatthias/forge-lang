@@ -422,9 +422,34 @@ is the difference between a real measurement and a false one:
 
 | env | which parser |
 |---|---|
-| `AVRA_PARSER_DECL_FLIP=0` | the HAND parser — the oracle |
+| `AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0` | the HAND parser — the oracle, **expressions/statements ONLY** |
 | `AVRA_PARSER_DECL_STATIC=0` | the grammar EXECUTOR (interpreter) |
 | *(none)* | **production**: the EMIT-generated static parser |
+
+**There is NO hand oracle for DECLARATIONS any more, and `AVRA_PARSER_DECL_FLIP` is a
+DEAD VARIABLE (t-bw9s).** This row used to read ``AVRA_PARSER_DECL_FLIP=0`` → "the HAND
+parser — the oracle". The compiler does not read that name at all: `parse/mod.av` has
+exactly one decl env read, `AVRA_PARSER_DECL_STATIC`. It died with the `@hand(decl_hand)`
+leaf — `parse_declaration` has no flip branch left to take — but it stayed in this table,
+in `diagnose.sh`'s four `PARSER_MODE_*` strings, and in ~15 test files, all of which read
+as though setting it selects the hand.
+
+It does not, and the failure is SILENT and CONVINCING: the run succeeds, the output looks
+like a hand-parser row, and it is the generated parser answering. A 2026-08-09 session
+compared "hand vs generated" expression recovery with `AVRA_PARSER_DECL_FLIP=0 bs2 expr`,
+got AGREE on all five malformed inputs, and reported parity — from a comparison that was
+partly a path against itself. The conclusion survived re-derivation via `--parser-tree`
+(three genuinely distinct paths), but the measurement was worthless and did not look it.
+
+Two consequences worth internalising before you measure anything here:
+- `diagnose.sh --parser-probe` / `--parser-tree`'s `hand` row is the hand parser for
+  EXPRESSIONS and STATEMENTS and the GENERATED parser for DECLARATIONS. It is a real
+  oracle for the first two families and vacuous for the third. The rows say so now.
+- `error_recovery_differential_test.av` is in the same position and says so at the top:
+  its ~525 `agree*` assertions compare native against native and pass by construction.
+  A dedicated spec PINS that vacuity so a restored oracle turns it red. **Do not quote
+  "the 117-case corpus" as evidence for a DECLARATION-level change** — it is evidence for
+  expression/statement behaviour and for nothing about decl recovery.
 
 **The interpreter re-parse fallback is DELETED (t-47hc.4.3), and with it
 `AVRA_NO_STATIC_FALLBACK`.** Production used to be "static → `had_error` → re-parse the
@@ -444,13 +469,13 @@ divergence between them rather than hiding behind a collapsed row.
 
 Don't set these by hand — three `diagnose.sh` modes drive all four paths with EVERY
 routing field pinned (set only the one field that names your mode and the rest stay
-ambient, so a run under `AVRA_PARSER_DECL_FLIP=0` collapses several modes onto the hand
-and the probe compares it against itself):
+ambient, so a run that pins only `AVRA_PARSER_EXPR_STATIC=0` collapses several modes onto
+the hand and the probe compares it against itself):
 
 ```bash
 bash scripts/diagnose.sh --parser-probe 'let a = (1) ->'   # the DIAGNOSTICS, all four paths
 bash scripts/diagnose.sh --parser-tree  'let a = (1) ->'   # the RECOVERY TREE + (error) row counts
-bash scripts/diagnose.sh --parser-frontier [keyword]       # which keywords still need @hand(decl_hand)
+bash scripts/diagnose.sh --parser-frontier [keyword]       # per-keyword routing (all `native` since t-47hc; the leaf is gone)
 ```
 
 **Run `--parser-tree` as well as `--parser-probe`, always — they are INDEPENDENT

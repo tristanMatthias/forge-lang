@@ -31,7 +31,7 @@ fn check_out(env: string, source: string) -> string {
 }
 
 fn dsl(source: string) -> string { check_out("AVRA_NO_STATIC_FALLBACK=1", source) }
-fn hand(source: string) -> string { check_out("AVRA_PARSER_DECL_FLIP=0", source) }
+fn hand(source: string) -> string { check_out("", source) }
 
 // The occurrence-ordered F-code signature — set, order and count together.
 fn codes(out: string) -> string {
