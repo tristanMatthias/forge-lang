@@ -1,0 +1,160 @@
+// WHY: `--emit_metadata` changes WHICH symbols a lib unit emits, exactly
+// like AVRA_LIB_PKG_ROOT does (snw0/#1117, libbuild_bare_root_test) — one
+// axis over. Without the flag the build is whole-program and DEFINES
+// `main`; with it the unit is package-scoped and does not. Until t-rnpw
+// the fingerprint keyed neither shape, so both resolved to ONE slot and
+// the first publisher won.
+//
+// Measured before the fix, on a throwaway package: both invocations
+// resolved to `d5793d263b7c` and the metadata request was served as
+// `cached d5793d263b7c` — with that slot's unit.ll carrying a `main`
+// definition. That is a whole-suite outage, not a cosmetic key bug:
+// resolve_producer_obj hands the package's slot object to EVERY shard's
+// link line, so one stray `bs2 build --lib` (several fixtures shell
+// exactly that) poisons the producer and every shard dies with
+// `ld.lld: error: duplicate symbol: main`. Re-running the correct
+// `--emit_metadata` build did NOT repair it — that was a hit on the
+// poisoned slot, so recovery meant evicting by hand.
+//
+// The specs pin the three properties that make the fix real:
+//   1. the two shapes get DIFFERENT fingerprints
+//   2. the miss NAMES the metadata axis (it used to fall through to the
+//      catch-all "no specific axis matched — check transitive deps",
+//      sending the reader into the dep graph after a flag they typed)
+//   3. the poisoned-slot sequence (plain first, then metadata) rebuilds
+//      instead of hitting, and the plain build still hits its OWN slot
+//      afterwards — separation, not cache-thrashing
+//
+// Raw avra_shell_exec probes only — never the fixture-stdout cache.
+
+use @std.avrac.core.{
+    avra_shell_exec, avra_shell_exec_status,
+    avra_selfhost_write_file, avra_selfhost_read_file,
+    avra_getpid,
+}
+
+/// Materialise a throwaway [lib] package. Path-derived and
+/// manifest-derived roots agree, so the root axis is held constant and
+/// only the metadata flag varies between the two builds below.
+fn metaxis_mk_pkg(slug: string) -> string {
+    let base = "/tmp/avra_metaxis_${slug}_${string(avra_getpid())}"
+    let dir = "${base}/packages/std-${slug}"
+    let _ = avra_shell_exec("rm -rf '${base}' && mkdir -p '${dir}/src'")
+    let _ = avra_selfhost_write_file("${dir}/avra.toml",
+        "[package]\nname = \"@std/${slug}\"\nversion = \"0.0.1\"\n\n[lib]\nname = \"std-${slug}\"\npath = \"src/lib.av\"\n")
+    let _ = avra_selfhost_write_file("${dir}/src/lib.av",
+        "export fn metaxis_${slug}() -> int { 40 + 2 }\n")
+    dir
+}
+
+/// `bs2 build --lib [--emit_metadata] --explain` inside `dir`. The env
+/// strip keeps the probe hermetic under the runner's metadata-mode
+/// environment: these throwaway packages have no dependencies, so the
+/// ambient values describe the REPO's producers, not this package's.
+fn metaxis_build(dir: string, with_metadata: bool) -> string {
+    let repo = avra_shell_exec("pwd")
+    let bs2 = "${repo}/build/bs2"
+    let meta_flag = if with_metadata { " --emit_metadata" } else { "" }
+    let tag = if with_metadata { "meta" } else { "plain" }
+    let log_path = "${dir}/build_${tag}.log"
+    let _ = avra_shell_exec_status(
+        "cd '${dir}' && env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_COMPILER " +
+        "AVRA_LIB_PKG_ROOT='@std::${slug_of(dir)}' '${bs2}' build --lib${meta_flag} --explain > '${log_path}' 2>&1")
+    avra_selfhost_read_file(log_path)
+}
+
+/// `std-<slug>` (the directory name) → the `@std::<slug>` root form.
+fn slug_of(dir: string) -> string {
+    let parts = dir.split("/")
+    let leaf = parts[parts.length - 1]
+    leaf.replace("std-", "")
+}
+
+/// The 12-char fingerprint on a `rebuild <fp> — …` / `cached <fp> — …`
+/// line, or "" when the log carries neither.
+fn metaxis_fp(log: string) -> string {
+    let lines = log.split("\n")
+    mut i = 0
+    while i < lines.length {
+        let ln = lines[i].trim()
+        if ln.starts_with("rebuild ") || ln.starts_with("cached ") {
+            let rest = ln.replace("rebuild ", "").replace("cached ", "")
+            let fp = rest.split(" ")[0]
+            if fp != "" { return fp }
+        }
+        i = i + 1
+    }
+    ""
+}
+
+fn metaxis_cleanup(dir: string) {
+    let _ = avra_shell_exec("rm -rf \"$(dirname \"$(dirname '${dir}')\")\"")
+}
+
+spec "--emit_metadata keys its own build-cache slot (t-rnpw)" {
+    then "the two shapes resolve to DIFFERENT fingerprints" {
+        let dir = metaxis_mk_pkg("fpsep")
+        let plain = metaxis_build(dir, false)
+        let meta = metaxis_build(dir, true)
+        let plain_fp = metaxis_fp(plain)
+        let meta_fp = metaxis_fp(meta)
+        metaxis_cleanup(dir)
+        // Both must have produced a verdict line at all, or "different"
+        // would be trivially satisfied by two empty strings — the
+        // guard-that-cannot-fail shape.
+        plain_fp != "" && meta_fp != "" && plain_fp != meta_fp
+    }
+    then "the metadata request REBUILDS instead of hitting the plain slot" {
+        let dir = metaxis_mk_pkg("poison")
+        // The poisoned-slot sequence, in order: publish the whole-program
+        // shape first, then ask for the metadata one. Before the fix this
+        // second build reported `cached` and returned the object defining
+        // `main`.
+        let plain = metaxis_build(dir, false)
+        let meta = metaxis_build(dir, true)
+        metaxis_cleanup(dir)
+        plain.contains("rebuild ") && meta.contains("rebuild ") && !meta.contains("cached ")
+    }
+    then "the miss NAMES the metadata axis, not the dep-graph catch-all" {
+        let dir = metaxis_mk_pkg("reason")
+        let _ = metaxis_build(dir, false)
+        let meta = metaxis_build(dir, true)
+        metaxis_cleanup(dir)
+        meta.contains("metadata emission changed (emit_metadata=0 → 1)")
+            && !meta.contains("no specific axis matched")
+    }
+    then "a stray plain build cannot repoint the PRODUCER at the whole-program slot" {
+        // Separating the SLOTS is not enough on its own, and this is the
+        // spec that says so. Every producer lookup (dep_producer_objects,
+        // and std-test's resolve_producer_obj) resolves through a sidecar,
+        // and `last/<unit>.txt` is overwritten by whichever build ran last
+        // — so with the fingerprint fixed but the pointer shared, a plain
+        // build after a metadata one still aimed it at the whole-program
+        // slot. Measured at that midpoint: `emit_metadata:0` and a
+        // `main`-defining unit.ll, i.e. the duplicate-`main` outage intact.
+        let dir = metaxis_mk_pkg("producer")
+        let _ = metaxis_build(dir, true)
+        let _ = metaxis_build(dir, false)
+        let attribution = avra_selfhost_read_file("${dir}/build/cache/last/std-producer.txt")
+        let producer = avra_selfhost_read_file("${dir}/build/cache/last/std-producer@producer.txt")
+        metaxis_cleanup(dir)
+        // The attribution sidecar SHOULD follow the last build (that is what
+        // keeps the metadata-axis miss reason working); the producer pointer
+        // must not.
+        attribution.contains("emit_metadata:0")
+            && producer.contains("emit_metadata:1")
+    }
+    then "the plain build still hits its OWN slot after a metadata build" {
+        let dir = metaxis_mk_pkg("nothrash")
+        let first = metaxis_build(dir, false)
+        let _ = metaxis_build(dir, true)
+        let again = metaxis_build(dir, false)
+        metaxis_cleanup(dir)
+        // Separation must not degrade into thrashing: each shape keeps a
+        // stable slot of its own, so the plain rerun is a HIT on the same
+        // fingerprint it published first.
+        let first_fp = metaxis_fp(first)
+        let again_fp = metaxis_fp(again)
+        again.contains("cached ") && first_fp != "" && first_fp == again_fp
+    }
+}

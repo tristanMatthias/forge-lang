@@ -91,6 +91,12 @@ export type BuildInputs = {
     // `.ll` (e.g. a whole-program "" build, or a mistyped root, poisons the
     // lib slot). "" for whole-program builds.
     lib_pkg_root: string,
+    // t-rnpw: whether this build passes `--emit_metadata` to the child. Like
+    // `lib_pkg_root` above it selects WHICH symbols are emitted — without it
+    // the unit is whole-program and defines `main`, with it it is
+    // package-scoped and does not — so the two shapes are different artifacts
+    // and must not share a slot.
+    emit_metadata: bool,
     // pdme.1: transitive dep fingerprints. For bin/lib/compile units this
     // is the entry package's dep-aware full fingerprint
     // (package_full_fingerprint — folds every transitive dep's source in),
@@ -154,6 +160,7 @@ export fn decide_build(inputs: BuildInputs) -> BuildOutcome {
         profile_key,
         inputs.target_triple,
         inputs.lib_pkg_root,
+        inputs.emit_metadata,
         inputs.dep_fps,
     )
 
@@ -214,6 +221,15 @@ fn miss_reason(c: Cache, inputs: BuildInputs, compiler_hash: string, profile_key
     if prev_lib_root != "" && prev_lib_root != inputs.lib_pkg_root {
         return "library root changed (" + prev_lib_root + " → " + inputs.lib_pkg_root + ")"
     }
+    // t-rnpw. Named explicitly: without this the metadata axis fell through to
+    // the catch-all "no specific axis matched — check transitive deps", which
+    // sends the reader hunting through dependencies for a flag they passed on
+    // the command line.
+    let prev_meta = read_field(prior, "emit_metadata:")
+    let cur_meta = if inputs.emit_metadata { "1" } else { "0" }
+    if prev_meta != "" && prev_meta != cur_meta {
+        return "metadata emission changed (emit_metadata=" + prev_meta + " → " + cur_meta + ")"
+    }
     // Entry-digest check FIRST (pdme.5 attribution fix): the dep-fp
     // axis folds the package's own full fingerprint (pdme.1), so an
     // entry-file edit changes BOTH axes — checked in the old order,
@@ -254,6 +270,31 @@ fn last_inputs_path(c: Cache, unit_name: string) -> string {
     // exist, so write_last_inputs silently failed and every such unit
     // lost its --explain attribution. Flatten to one path component.
     c.cache_dir + "last/" + unit_name.replace("/", "_") + ".txt"
+}
+
+/// The PRODUCER pointer: where the most recent `--emit_metadata` build of
+/// `unit_name` recorded its fingerprint. Deliberately a SECOND file rather
+/// than a shape-keyed rename of the one above, because the two sidecars
+/// answer different questions and both are needed:
+///
+///   * `last/<unit>.txt` — "what did this unit build LAST, in any shape".
+///     Every build overwrites it; `miss_reason` diffs against it, which is
+///     what lets a rebuild be attributed to the metadata axis at all.
+///   * `last/<unit>@producer.txt` — "which slot is this package's PRODUCER
+///     object". Only a metadata build writes it, so a stray plain
+///     `bs2 build --lib` cannot repoint it.
+///
+/// t-rnpw, second half. Keying the fingerprint on `emit_metadata` stopped
+/// the two SHAPES sharing a cache slot, but every producer lookup
+/// (`dep_producer_objects`, and std-test's `resolve_producer_obj`) resolves
+/// through the sidecar, and the sidecar was still one file per unit. So a
+/// plain build after a metadata one still repointed it at the
+/// whole-program slot: measured, `emit_metadata:0` and a `main`-defining
+/// unit.ll — the duplicate-`main` shard-link outage, intact. Separating the
+/// slots without separating the pointer fixed the collision and left the
+/// consequence.
+fn producer_inputs_path(c: Cache, unit_name: string) -> string {
+    c.cache_dir + "last/" + unit_name.replace("/", "_") + "@producer.txt"
 }
 
 /// Pull a single value from the prior-inputs text file. Format is
@@ -356,6 +397,7 @@ fn write_last_inputs(c: Cache, inputs: BuildInputs, fp: Fingerprint) -> bool {
         + "profile:" + profile_key + "\n"
         + "target:" + inputs.target_triple + "\n"
         + "lib_root:" + inputs.lib_pkg_root + "\n"
+        + "emit_metadata:" + (if inputs.emit_metadata { "1" } else { "0" }) + "\n"
         + "deps:" + inputs.dep_fps.join(",") + "\n"
         + "kind:" + inputs.kind + "\n"
         + "src_count:" + string(inputs.sources.length) + "\n"
@@ -370,7 +412,14 @@ fn write_last_inputs(c: Cache, inputs: BuildInputs, fp: Fingerprint) -> bool {
             + "src_digest:" + entry_digest + "\n"
     }
     let path = last_inputs_path(c, inputs.unit_name)
-    avra_selfhost_write_file(path, body) != 0
+    let wrote = avra_selfhost_write_file(path, body) != 0
+    // The producer pointer only ever advances on a metadata build, so a
+    // later plain build leaves it aimed at the metadata slot. Same body,
+    // so either sidecar reads identically through `read_field`.
+    if inputs.emit_metadata {
+        let _ = avra_selfhost_write_file(producer_inputs_path(c, inputs.unit_name), body)
+    }
+    wrote
 }
 
 /// Helper for tooling and tests: read the cached IR for a fingerprint
@@ -409,6 +458,26 @@ export fn cached_build_ll_path(pkg_root: string, unit_name: string) -> string {
 /// has been recorded. The key behind cached_build_ll_path, exposed on its
 /// own so a caller can reach the slot's OTHER artifacts (notably the
 /// producer object a dependent has to link).
+/// The fingerprint of a package's most recent `--emit_metadata` build —
+/// the slot whose object is a legitimate PRODUCER for a dependent to link.
+/// "" when no metadata build has been recorded.
+///
+/// Every producer lookup must come through here rather than
+/// `cached_build_fp`: that one answers "what built last, in any shape", and
+/// a whole-program build's object defines `main`, so linking it into every
+/// shard is the `ld.lld: error: duplicate symbol: main` outage (t-rnpw).
+///
+/// Returning "" is the correct failure and not a regression in reach: both
+/// callers already degrade honestly on an absent sidecar (std-test reports
+/// `has no lib-build sidecar … the @std/* pre-build never ran` and falls
+/// back to whole-program shards). Deliberately NO fallback to the general
+/// sidecar — a fallback would re-open exactly the hole this closes, since
+/// the case where they differ IS the bug.
+export fn cached_producer_fp(pkg_root: string, unit_name: string) -> string {
+    let c = cache_for(pkg_root)
+    read_field(avra_selfhost_read_file(producer_inputs_path(c, unit_name)), "fp:")
+}
+
 export fn cached_build_fp(pkg_root: string, unit_name: string) -> string {
     let c = cache_for(pkg_root)
     // read_field is the same sidecar parser miss_reason uses for

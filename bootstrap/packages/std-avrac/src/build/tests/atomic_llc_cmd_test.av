@@ -13,7 +13,7 @@ use @std.avrac.build.{atomic_obj_llc_cmd, atomic_cp_cmd, llvm_prefix_dir}
 use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_file_exists, avra_file_size, avra_getpid}
 
 fn workdir(slug: string) -> string {
-    let d = "/tmp/avra_rrio_llc_${slug}"
+    let d = "/tmp/avra_rrio_llc_${slug}_${string(avra_getpid())}"
     let _ = avra_shell_exec("rm -rf '${d}' && mkdir -p '${d}'")
     d
 }

@@ -14,10 +14,10 @@
 // (external state not in the fixture-cache key); opt out of failure caching
 // so a repaired lint re-probes instead of replaying a stale `: FAIL`.
 
-use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_getpid}
 
 fn tmpdir(slug: string) -> string {
-    let d = "/tmp/avra_collect_lint_${slug}"
+    let d = "/tmp/avra_collect_lint_${slug}_${string(avra_getpid())}"
     let _ = avra_shell_exec("rm -rf '${d}' && mkdir -p '${d}'")
     d
 }
