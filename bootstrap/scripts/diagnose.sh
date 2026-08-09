@@ -299,10 +299,24 @@ source_newer_than() {
 # is filesystem-dependent) and each contributes `<path>:<sha256>`, so a
 # rename with identical bytes still changes the digest — it changes the
 # build. Mirrors build/fingerprint.av's `package_source_fingerprint`.
+# FAILS (non-zero, no output) when any input cannot be hashed. The obvious
+# spelling — printf-ing whatever the hash produced — turns an unreadable or
+# vanished source into `<path>:` and the OUTER hash still succeeds, yielding a
+# perfectly stable fingerprint that says nothing about that file's bytes.
+# Stamp and check would then agree with each other while agreeing about
+# nothing, i.e. report FRESH with no evidence — the one direction that serves
+# a stale compiler. The loop is fed by process substitution rather than a
+# pipeline so `return 1` leaves this function instead of a subshell.
 compiler_sources_fp() {
-  compiler_source_paths | LC_ALL=C sort | while IFS= read -r p; do
-    printf '%s:%s\n' "$p" "$($SHA256_CMD "$p" 2>/dev/null | awk '{print $1}')"
-  done | $SHA256_CMD | awk '{print $1}'
+  local acc="" p h
+  while IFS= read -r p; do
+    h=$($SHA256_CMD "$p" 2>/dev/null | awk '{print $1}')
+    [ -n "$h" ] || return 1
+    acc="${acc}${p}:${h}
+"
+  done < <(compiler_source_paths | LC_ALL=C sort)
+  [ -n "$acc" ] || return 1
+  printf '%s' "$acc" | $SHA256_CMD | awk '{print $1}'
 }
 
 # Where a target records the source digest it was built from.
@@ -315,7 +329,23 @@ src_fp_stamp_path() {
 # absent stamp degrades to the old mtime-only behaviour (report stale,
 # rebuild), which is the safe direction.
 stamp_compiler_sources() {
+  stamp_compiler_sources_value "$1" "$(compiler_sources_fp)"
+}
+
+# Record an ALREADY-CAPTURED digest for `target`. Split out because the digest
+# must be sampled BEFORE the compile reads the sources, not after the link: a
+# source edited in between would otherwise be recorded as the baseline for a
+# binary built from the previous bytes, and the next check would call that
+# genuinely-stale target fresh. Every link site therefore captures first and
+# writes here on success.
+#
+# Refuses to publish an empty value: `compiler_sources_fp` fails that way when
+# an input cannot be hashed, and an empty stamp must stay absent rather than
+# become a baseline.
+stamp_compiler_sources_value() {
   local stamp; stamp=$(src_fp_stamp_path "$1")
+  local fp="$2"
+  [ -n "$fp" ] || return 0
   # Skip SILENTLY when the build dir does not exist. A failed `>` redirect is
   # reported by the shell on its ORIGINAL stderr — the trailing `2>/dev/null`
   # never gets applied, because redirections are set up left to right and the
@@ -325,13 +355,20 @@ stamp_compiler_sources() {
   # An absent stamp reads as "changed" downstream, which is the safe
   # direction, so skipping costs correctness nothing.
   [ -d "$(dirname "$stamp")" ] || return 0
-  { compiler_sources_fp > "$stamp"; } 2>/dev/null || true
+  { printf '%s\n' "$fp" > "$stamp"; } 2>/dev/null || true
 }
 
-# Bootstrap a baseline for a target that is fresh by mtime but has no stamp —
-# the pre-existing-binary case. Never overwrites: only the link sites and this
-# first adoption ever establish a baseline, so a stamp always describes bytes
-# the target really was built from.
+# Bootstrap a baseline for a target that is fresh by mtime but has no VALID
+# stamp — the pre-existing-binary case.
+#
+# Never overwrites a valid (non-empty) baseline, so a stamp always describes
+# bytes the target really was built from and a genuinely stale target cannot
+# launder itself fresh. An EMPTY stamp is deliberately re-adopted rather than
+# preserved (`-s`, not `-e`): empty is how a torn write looks, it carries no
+# evidence, and `compiler_sources_changed` already reads it as "changed" — so
+# preserving it would pin the target stale until the next relink instead of
+# self-healing. Re-adopting is safe because adoption only ever runs on the
+# path where mtime has already proved the target newer than every source.
 adopt_compiler_srcfp_if_absent() {
   local stamp; stamp=$(src_fp_stamp_path "$1")
   [ -s "$stamp" ] && return 0
@@ -347,7 +384,11 @@ compiler_sources_changed() {
   [ -f "$stamp" ] || return 0
   local recorded; recorded=$(cat "$stamp" 2>/dev/null)
   [ -n "$recorded" ] || return 0
-  [ "$recorded" != "$(compiler_sources_fp)" ]
+  # A fingerprint we cannot COMPUTE is not a match — it is an absence of
+  # evidence, and answering "unchanged" here would serve the stale target.
+  local current; current=$(compiler_sources_fp) || return 0
+  [ -n "$current" ] || return 0
+  [ "$recorded" != "$current" ]
 }
 
 # Newest mtime across the compiler's source inputs. ONE definition, shared by
@@ -1471,10 +1512,15 @@ ensure_bs2() {
     # old vintages park compile entries (newer compilers cache at the
     # package root AND key dep-aware, so they need no drop).
     rm -rf "$CLI_SRC_DIR/build/cache"
+    # Sample the digest BEFORE the compile reads the sources. Stamping after
+    # the link would record any edit made in between as the baseline for a
+    # binary built from the previous bytes — reporting a genuinely stale
+    # target as fresh.
+    local pre_srcfp; pre_srcfp=$(compiler_sources_fp)
     if "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
       log "linking $BS2"
       link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
-      stamp_compiler_sources "$BS2"
+      stamp_compiler_sources_value "$BS2" "$pre_srcfp"
       ok "built $BS2"
     else
       # Seed crashed. Check if it's an LLVM -O2 miscompilation by
@@ -1487,6 +1533,7 @@ ensure_bs2() {
         $EXPORT_DYNAMIC $LD_SELECT -L"$LLVM_PREFIX/lib" -lLLVM $CXXLIB 2>/dev/null \
         || { rm -f "$BUILD_DIR/seed_o0.tmp"; die "seed -O0 link failed"; }
       mv "$BUILD_DIR/seed_o0.tmp" "$BUILD_DIR/seed_o0"
+      local retry_srcfp; retry_srcfp=$(compiler_sources_fp)
       if "$BUILD_DIR/seed_o0" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2.codegen.log" 2>&1; then
         warn "LLVM OPTIMIZATION BUG: seed works at -O0 but crashes at -O2"
         warn "This is an llc -O2 miscompilation on $(uname -m), not a Avra bug."
@@ -1498,7 +1545,7 @@ ensure_bs2() {
         cp "$BUILD_DIR/seed_o0" "$SEED_BIN"
         log "linking $BS2"
         link_ll "$SRC_DIR/main.av.ll" "$BS2" "$BUILD_DIR/bs2.link.log"
-        stamp_compiler_sources "$BS2"
+        stamp_compiler_sources_value "$BS2" "$retry_srcfp"
         ok "built $BS2 (via -O0 seed fallback)"
       else
         cat "$BUILD_DIR/bs2.codegen.log" >&2
@@ -1530,13 +1577,14 @@ ensure_bs2_O0() {
   if source_newer_than "$BS2_O0" \
      || [ "$SEED_LL" -nt "$BS2_O0" ]; then
     log "compiling packages/cli/src/main.av with seed compiler (for -O0 build)"
+    local pre_srcfp; pre_srcfp=$(compiler_sources_fp)
     if ! "$SEED_BIN" compile "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_O0.codegen.log" 2>&1; then
       cat "$BUILD_DIR/bs2_O0.codegen.log" >&2
       die "bs2_O0 codegen failed"
     fi
     log "linking $BS2_O0 at -O0"
     link_ll_O0 "$SRC_DIR/main.av.ll" "$BS2_O0" "$BUILD_DIR/bs2_O0.link.log"
-    stamp_compiler_sources "$BS2_O0"
+    stamp_compiler_sources_value "$BS2_O0" "$pre_srcfp"
     ok "built $BS2_O0 (lldb-friendly, -O0)"
   fi
 }
@@ -1546,13 +1594,14 @@ ensure_bs2_debug() {
   if source_newer_than "$BS2_DEBUG" \
      || [ "$SEED_LL" -nt "$BS2_DEBUG" ]; then
     log "compiling packages/cli/src/main.av with seed compiler (--debug-null)"
+    local pre_srcfp; pre_srcfp=$(compiler_sources_fp)
     if ! "$SEED_BIN" compile --debug-null "$SRC_DIR/main.av" >"$BUILD_DIR/bs2_debug.codegen.log" 2>&1; then
       cat "$BUILD_DIR/bs2_debug.codegen.log" >&2
       die "bs2_debug codegen failed"
     fi
     log "linking $BS2_DEBUG at -O0"
     link_ll_O0 "$SRC_DIR/main.av.ll" "$BS2_DEBUG" "$BUILD_DIR/bs2_debug.link.log"
-    stamp_compiler_sources "$BS2_DEBUG"
+    stamp_compiler_sources_value "$BS2_DEBUG" "$pre_srcfp"
     ok "built $BS2_DEBUG (null checks enabled, -O0)"
   fi
 }

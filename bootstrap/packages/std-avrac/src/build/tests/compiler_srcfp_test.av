@@ -135,7 +135,73 @@ spec "t-kdyj.10: compiler freshness is content-keyed, not mtime-only" {
             && out.contains("ADOPTED") && out.contains("AFTER_FRESH")
             && !out.contains("NOT_ADOPTED") && !out.contains("AFTER_STALE")
     }
-    then "adoption never OVERWRITES an existing stamp" {
+    then "an EMPTY stamp is re-adopted, not preserved — a torn write self-heals" {
+        // `-s`, not `-e`, and deliberately: empty is what a torn write looks
+        // like, it carries no evidence, and compiler_sources_changed already
+        // reads it as "changed". Preserving it would pin the target stale
+        // until the next relink instead of healing. Safe because adoption
+        // only runs where mtime has already proved the target newer than
+        // every source.
+        let out = srcfp_run(
+            ": > \"$sandbox/build/.bs2x.srcfp\"\n" +
+            "adopt_compiler_srcfp_if_absent \"$sandbox/bs2x\"\n" +
+            "if [ -s \"$sandbox/build/.bs2x.srcfp\" ]; then echo HEALED; else echo STILL_EMPTY; fi\n")
+        out.contains("HEALED") && !out.contains("STILL_EMPTY")
+    }
+    then "a source that cannot be hashed yields NO fingerprint, and reads as changed" {
+        // The obvious spelling turns an unhashable input into `<path>:` and
+        // the OUTER hash still succeeds — a stable fingerprint that says
+        // nothing about that file. Stamp and check would then agree with each
+        // other while agreeing about nothing: FRESH with no evidence.
+        //
+        // Uses a MISSING input, not `chmod 000`: the suite frequently runs as
+        // root, where chmod does not block reads at all, so the chmod spelling
+        // passed here without ever reaching the failure path — a guard that
+        // could not fail. Verified: chmod → FP_OK on this box, missing file →
+        // FP_FAILED.
+        let out = srcfp_run(
+            "stamp_compiler_sources \"$sandbox/bs2x\"\n" +
+            "RUNTIME_C=\"$sandbox/does_not_exist.c\"\n" +
+            "if compiler_sources_fp >/dev/null 2>&1; then echo FP_OK; else echo FP_FAILED; fi\n" +
+            "if compiler_sources_changed \"$sandbox/bs2x\"; then echo READS_CHANGED; else echo READS_SAME; fi\n")
+        out.contains("FP_FAILED") && out.contains("READS_CHANGED")
+            && !out.contains("FP_OK") && !out.contains("READS_SAME")
+    }
+    then "a failed fingerprint publishes NO stamp" {
+        // The write side of the same rule: if the digest cannot be computed,
+        // the stamp must stay absent rather than become a baseline that
+        // matches nothing in particular.
+        let out = srcfp_run(
+            "RUNTIME_C=\"$sandbox/does_not_exist.c\"\n" +
+            "stamp_compiler_sources \"$sandbox/bs2x\"\n" +
+            "if [ -s \"$sandbox/build/.bs2x.srcfp\" ]; then echo WROTE; else echo NO_STAMP; fi\n")
+        out.contains("NO_STAMP") && !out.contains("WROTE")
+    }
+    then "every gated link stamps a PRE-CAPTURED digest, never a post-hoc one" {
+        // A STRUCTURAL guard, because the behavioural one is not reachable: the
+        // ordering lives in `ensure_bs2`/`ensure_bs2_O0`/`ensure_bs2_debug`,
+        // which need a real seed compile and the live ./build/bs2 — the very
+        // thing the sandbox exists to avoid touching (t-gv3n). Same idiom as
+        // `--check-layout-boundary`: assert the source shape when the runtime
+        // check cannot fire.
+        //
+        // The invariant: a link site must write a digest sampled BEFORE the
+        // compile read the sources. Stamping after the link records any edit
+        // made in between as the baseline for a binary built from the previous
+        // bytes, so the next check calls a genuinely stale target fresh.
+        let src = avra_shell_exec("cat scripts/diagnose.sh")
+        // The bare form re-hashes at call time; at a gated link site that is
+        // exactly the post-hoc mistake.
+        !src.contains("stamp_compiler_sources \"$BS2\"")
+            && !src.contains("stamp_compiler_sources \"$BS2_O0\"")
+            && !src.contains("stamp_compiler_sources \"$BS2_DEBUG\"")
+            // ...and the pre-captured variables really are threaded through.
+            && src.contains("stamp_compiler_sources_value \"$BS2\" \"$pre_srcfp\"")
+            && src.contains("stamp_compiler_sources_value \"$BS2\" \"$retry_srcfp\"")
+            && src.contains("stamp_compiler_sources_value \"$BS2_O0\" \"$pre_srcfp\"")
+            && src.contains("stamp_compiler_sources_value \"$BS2_DEBUG\" \"$pre_srcfp\"")
+    }
+    then "adoption never OVERWRITES a valid stamp" {
         // A baseline must only ever be established by a link or the first
         // adoption; silently re-adopting would let a genuinely-stale target
         // launder itself fresh the moment its mtime happened to lead.
