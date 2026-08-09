@@ -1246,8 +1246,8 @@ fn avra_stmt_common_grammar() -> Grammar {
   // and the note below rightly warns against deduping them. Same item rule, two rules.
   block         = "{" stmts:declaration* "}" -> Block(stmts)
   // A bare `{ … }` statement body may contain DECLARATIONS, not just statements — an
-  // inline module's component is the case that proves it (`declaration = @hand(decl_hand)
-  // | statement`, so declaration is the superset). block_expr already uses declaration*
+  // inline module's component is the case that proves it (`declaration` is the native
+  // declaration arms followed by a `statement` tail, so declaration is the superset). block_expr already uses declaration*
   // for exactly this reason; using statement* here silently dropped that case, which the
   // full suite caught. NOT the same body as `block` — do not "dedupe" the two.
   stmt_block    = "{" stmts:declaration* "}" -> Block(stmts)
@@ -1390,22 +1390,28 @@ export fn avra_stmt_flip_grammar() -> Grammar {
 /// split is kept here because it still describes how the FIRST-sets are organised.
 /// The declaration dispatch splits cleanly by FIRST-set into two arms:
 ///
-///   * `@hand(decl_hand)` — everything parse_declaration handles itself:
-///     doc-comment + `@`-annotation + `export` RECURSIVE WRAPPING (position-
-///     recorded on the wrapped inner), the decl KEYWORDS (fn/type/enum/…/let/
-///     mut/const, each a feature parser), and a bare IDENT — the component-
-///     instantiation-vs-expression-statement disambiguation (2-token lookahead
-///     the stateless grammar FIRST-set cannot do). All of these MUST stay @hand.
+///   * the NATIVE declaration rules — one per lead, in FIRST-set order:
+///     `use`/`mod`/`shape`/`enum`/`type`/`extern`/`fn`/`trait`/`impl`/`export`,
+///     the doc-comment and `@`-annotation WRAPPERS (`doc_decl`/`mdoc_decl`/
+///     `annot_decl`, position-recorded on the wrapped inner), the binding leads
+///     (`letdes_decl`/`let_decl`/`mut_decl`/`const_decl`), `select`/`parallel`/
+///     `spec`, and the component forms — `comp_header`, then `bare_comp_inst_raw`
+///     and `@try bare_comp_inst` for the bare-IDENT component-instantiation-vs-
+///     expression-statement case, whose 2-token lookahead a stateless FIRST-set
+///     cannot do and which `@peek`/`@try` express instead.
 ///   * `statement` — the fall-through: every non-declaration item (stmt keywords
 ///     if/while/for/match/…, `break`/`continue`, `{` blocks, non-ident expression
 ///     statements), routed to the SAME proven statement grammar the statement
 ///     flip uses. This is where the real structuralization lives — a function
-///     body's statements parse through the DSL, not a blanket @hand.
+///     body's statements parse through the DSL.
 ///
-/// The alternation order (decl_hand first, then statement) + hand_starts(
-/// "decl_hand") being the exact declaration-lead FIRST-set is what keeps IDENT/`@`
-/// on the parse_declaration path (component/annotation) and everything else on
-/// the statement path. Byte-identical: each arm's builder IS the hand parser's.
+/// This paragraph described a single leading `@hand(decl_hand)` arm until t-47hc
+/// routed every keyword natively and deleted the leaf; `hand_starts("decl_hand")`
+/// and its declaration-lead FIRST-set went with it. What still holds is the SHAPE:
+/// the declaration arms come first and `statement` is the unguarded tail, so IDENT
+/// and `@` stay on the declaration path and everything else falls through. Adding
+/// or removing an arm changes which one is the tail — assert it structurally with
+/// `dispatch_has_tail` (ast.av) rather than by eye.
 export fn avra_decl_flip_grammar() -> Grammar {
     compose_grammars(avra_decl_edge_grammar(), avra_stmt_flip_grammar())
 }
@@ -1460,7 +1466,8 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
 }
 
 /// ps3t.6.7 Phase 2 — the DISPATCH-ONLY declaration grammar (the static-emit twin of
-/// avra_decl_flip_grammar): `declaration = @hand(decl_hand) | statement` composed
+/// avra_decl_flip_grammar): `declaration` = the native declaration arms + a `statement`
+/// tail, composed
 /// with the dispatch-only statement grammar (expression EXTERNAL). This is what
 /// gen_decl_file emits the checked-in production declaration static parser from.
 export fn avra_decl_dispatch_grammar() -> Grammar {

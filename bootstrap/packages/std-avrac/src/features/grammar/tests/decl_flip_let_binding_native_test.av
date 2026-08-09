@@ -48,10 +48,14 @@ fn clean(out: string) -> bool { out.contains("__status=0\n") }
 /// failure behind the interpreter fallback; emit-raw (`AVRA_NO_STATIC_FALLBACK=1`)
 /// is the assertion that the GENERATED rule itself owns the form.
 fn clean_all_paths(name: string, src: string) -> bool {
+    // t-bw9s: two DISTINCT routings survive here — production (the generated static
+    // parser) and the grammar EXECUTOR. The `_emit` and `_hand` legs pinned
+    // AVRA_NO_STATIC_FALLBACK and AVRA_PARSER_DECL_FLIP; both flags are dead (the
+    // interpreter re-parse fallback went in t-47hc.4.3, the decl hand parser with the
+    // `@hand(decl_hand)` leaf), so those legs had become empty-env duplicates of
+    // `_dflt`. Keeping them would report four paths while exercising two.
     clean(check_out("${name}_dflt", "", src)) &&
-        clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
-        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
-        clean(check_out("${name}_hand", "", src))
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src))
 }
 
 spec "t-47hc Phase 4: the bindings are emitted as native rules" {
@@ -219,14 +223,12 @@ spec "t-47hc Phase 4: every binding form the compiler itself writes parses on al
             "    let () = pair()\n" +
             "    println(string(1))\n" +
             "}\n"
+        // Two distinct routings (t-bw9s): the `_emit` and `_hand` legs pinned flags
+        // that no longer exist, leaving them empty-env duplicates of `_dflt`.
         let d = check_out("des_empty_dflt", "", src)
-        let e = check_out("des_empty_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
         let x = check_out("des_empty_exec", "AVRA_PARSER_DECL_STATIC=0", src)
-        let h = check_out("des_empty_hand", "", src)
         !clean(d) && d.contains("error[F1000]") && !d.contains("error[F0001]") &&
-            !clean(e) && e.contains("error[F1000]") && !e.contains("error[F0001]") &&
-            !clean(x) && x.contains("error[F1000]") && !x.contains("error[F0001]") &&
-            !clean(h) && h.contains("error[F1000]") && !h.contains("error[F0001]")
+            !clean(x) && x.contains("error[F1000]") && !x.contains("error[F0001]")
     }
 }
 
@@ -245,7 +247,7 @@ spec "t-47hc Phase 4: the binding frontier did not widen" {
             "}\n" +
             "fn main() { println(string(f(none))) }\n"
         mut ok = true
-        for path in [["nondiverge_dflt", ""], ["nondiverge_emit", "AVRA_NO_STATIC_FALLBACK=1"],
+        for path in [["nondiverge_dflt", ""], ["nondiverge_emit", ""],
                      ["nondiverge_exec", "AVRA_PARSER_DECL_STATIC=0"], ["nondiverge_hand", ""]] {
             let out = check_out(path[0], path[1], src)
             if clean(out) || !out.contains("error[F1203]") {

@@ -26,10 +26,14 @@ fn check_out(name: string, env: string, src: string) -> string {
 fn clean(out: string) -> bool { out.contains("__status=0\n") }
 
 fn clean_all_paths(name: string, src: string) -> bool {
+    // t-bw9s: two DISTINCT routings survive here — production (the generated static
+    // parser) and the grammar EXECUTOR. The `_emit` and `_hand` legs pinned
+    // AVRA_NO_STATIC_FALLBACK and AVRA_PARSER_DECL_FLIP; both flags are dead (the
+    // interpreter re-parse fallback went in t-47hc.4.3, the decl hand parser with the
+    // `@hand(decl_hand)` leaf), so those legs had become empty-env duplicates of
+    // `_dflt`. Keeping them would report four paths while exercising two.
     clean(check_out("${name}_dflt", "", src)) &&
-        clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
-        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
-        clean(check_out("${name}_hand", "", src))
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src))
 }
 
 /// Thin wrapper over the SHARED `emitted_rule_speculates` (ast.av) — the slicing and
@@ -44,7 +48,7 @@ fn rule_speculates(head: string) -> bool {
 /// leaves the emitted static parser untested — the t-zrn3 blind spot in reverse.
 fn reports_all_paths(name: string, src: string, needle: string) -> bool {
     let d = check_out("${name}_dflt", "", src)
-    let e = check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
+    let e = check_out("${name}_emit", "", src)
     let x = check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)
     !clean(d) && d.contains(needle) &&
         !clean(e) && e.contains(needle) &&

@@ -25,7 +25,7 @@ fn check_out(env: string, source: string) -> string {
     avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1")
 }
 
-fn dsl(source: string) -> string { check_out("AVRA_NO_STATIC_FALLBACK=1", source) }
+fn dsl(source: string) -> string { check_out("", source) }
 fn hand(source: string) -> string { check_out("", source) }
 
 // The occurrence-ordered F-code signature — set, order and count together.

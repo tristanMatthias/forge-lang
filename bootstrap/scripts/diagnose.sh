@@ -4065,17 +4065,34 @@ mode_check_parser_flags() {
   local dsh="$REPO_DIR/bootstrap/scripts/diagnose.sh"
   [ -f "$dsh" ] || dsh="$REPO_DIR/scripts/diagnose.sh"
 
+  # The routing names this lint governs. AVRA_NO_STATIC_FALLBACK is in scope because it
+  # is the same kind of switch and died the same way (t-47hc.4.3 removed the interpreter
+  # re-parse fallback); scoping the lint to `AVRA_PARSER_*` alone let a second dead pin
+  # sit in fn_where_clause_native_test.av untouched while the lint reported all-clear.
+  # GROUPED deliberately: alternation binds looser than concatenation in BRE, so an
+  # ungrouped `A\|B` used as "$pat=[01]" attaches the `=[01]` to B alone and A then
+  # matches a bare mention — every prose reference to a flag got reported as a pin.
+  local pat='\(AVRA_PARSER_[A-Z][A-Z_]*\|AVRA_NO_STATIC_FALLBACK\)'
   local read_names used_names dead=0 n
-  read_names=$(grep -rho 'avra_process_env_get("AVRA_PARSER_[A-Z_]*")' "$src" 2>/dev/null \
+
+  # READS come from PRODUCTION sources only. Scanning *_test.av here would let a
+  # test-only `avra_process_env_get("AVRA_X")` vouch for a dead `AVRA_X=0` pin in the
+  # same tree — the lint would confirm a flag against itself, which is precisely the
+  # circularity it exists to break. Comment lines are excluded for the same reason: a
+  # commented-out read is not a read.
+  read_names=$(grep -rh "avra_process_env_get(\"$pat\")" "$src" --include='*.av' \
+      --exclude='*_test.av' 2>/dev/null \
+    | grep -v '^[[:space:]]*//' \
+    | grep -o "avra_process_env_get(\"$pat\")" \
     | sed 's/.*("//; s/").*//' | sort -u)
-  [ -n "$read_names" ] || die "check-parser-flags: found no AVRA_PARSER_* env reads — the lint would pass vacuously"
+  [ -n "$read_names" ] || die "check-parser-flags: found no routing env reads in production sources — the lint would pass vacuously"
 
   # COMMENTS are exempt: prose that explains why a flag died (or pins a known vacuity,
   # as error_recovery_differential_test.av does) is exactly what should be written down.
   # Only a live PIN — a flag set on a real command line — can mislead a measurement.
-  _cpf_pins() { grep -v '^[[:space:]]*//' | grep -v '^[[:space:]]*#' | grep -o 'AVRA_PARSER_[A-Z_]*=[01]'; }
-  used_names=$( { grep -rh 'AVRA_PARSER_[A-Z_]*=[01]' "$src" --include='*_test.av' 2>/dev/null
-                  grep -h 'AVRA_PARSER_[A-Z_]*=[01]' "$dsh" 2>/dev/null; } \
+  _cpf_pins() { grep -v '^[[:space:]]*//' | grep -v '^[[:space:]]*#' | grep -o "$pat=[01]"; }
+  used_names=$( { grep -rh "$pat=[01]" "$src" --include='*_test.av' 2>/dev/null
+                  grep -h "$pat=[01]" "$dsh" 2>/dev/null; } \
     | _cpf_pins | sed 's/=[01]$//' | sort -u)
 
   for n in $used_names; do
@@ -4089,7 +4106,7 @@ mode_check_parser_flags() {
   done
 
   [ "$dead" -eq 0 ] || die "check-parser-flags: $dead dead parser flag(s) pinned — a pin that selects nothing is a measurement that proves nothing"
-  ok "check-parser-flags: every pinned AVRA_PARSER_* flag is read by the compiler ($(printf '%s\n' "$read_names" | grep -c .) live name(s))"
+  ok "check-parser-flags: every pinned routing flag is read by production compiler sources ($(printf '%s\n' "$read_names" | grep -c .) live name(s))"
 }
 
 mode_check_ci_gates() {

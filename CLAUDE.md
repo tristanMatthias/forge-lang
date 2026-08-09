@@ -467,10 +467,11 @@ stands. And `--parser-probe`'s EMIT and PROD rows now name the same engine and p
 identically; they are kept separate on purpose, so a reintroduced fallback shows up as a
 divergence between them rather than hiding behind a collapsed row.
 
-Don't set these by hand — three `diagnose.sh` modes drive all four paths with EVERY
-routing field pinned (set only the one field that names your mode and the rest stay
-ambient, so a run that pins only `AVRA_PARSER_EXPR_STATIC=0` collapses several modes onto
-the hand and the probe compares it against itself):
+Don't set these by hand. Three `diagnose.sh` modes drive all four paths and each mode
+pins EVERY routing field itself, so invoke them with nothing set in your environment.
+The reason is the failure they exist to avoid: pin one field by hand and the rest stay
+ambient, and several modes collapse onto the same engine — the probe then compares a
+path against itself and still prints a full, authoritative-looking set of rows.
 
 ```bash
 bash scripts/diagnose.sh --parser-probe 'let a = (1) ->'   # the DIAGNOSTICS, all four paths

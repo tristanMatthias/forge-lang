@@ -55,4 +55,36 @@ spec "parser routing flags: every pinned flag is one the compiler reads" {
         let _ = avra_shell_exec("rm -rf '${tmp}'")
         rc != 0
     }
+
+    // The MASKING case, which the first version of this lint got wrong: reads were
+    // harvested from the whole tree including `*_test.av`, so a test-only
+    // `avra_process_env_get("AVRA_PARSER_X")` vouched for a dead `AVRA_PARSER_X=0` pin
+    // sitting beside it. The lint then confirmed a flag against itself and reported
+    // all-clear — the same circularity it exists to break, one level up. Reads are
+    // production-only now, and this is the row that says so.
+    then "a test-only READ cannot vouch for a dead pin" {
+        let tmp = "build/_parser_flag_mask"
+        let _ = avra_shell_exec("rm -rf '${tmp}' && mkdir -p '${tmp}/packages/std-avrac/src/x/tests' '${tmp}/scripts'")
+        let dead = "AVRA_PARSER_" + "MASKED"
+        // The dead pin AND a matching read, both inside the SAME test file.
+        let _ = avra_shell_exec("printf 'fn e() -> string { \"${dead}=0\" }\nfn r() { avra_process_env_get(\"${dead}\") }\n' > '${tmp}/packages/std-avrac/src/x/tests/mask_test.av'")
+        let _ = avra_shell_exec("printf 'fn r() { avra_process_env_get(\"AVRA_PARSER_EXPR_STATIC\") }\n' > '${tmp}/packages/std-avrac/src/x/live.av'")
+        let _ = avra_shell_exec("cp scripts/diagnose.sh '${tmp}/scripts/diagnose.sh'")
+        let rc = avra_shell_exec_status("cd '${tmp}' && bash scripts/diagnose.sh --check-parser-flags > /dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${tmp}'")
+        rc != 0
+    }
+
+    // Same shape, one line lower: a read that is COMMENTED OUT is not a read.
+    then "a commented-out READ cannot vouch for a dead pin either" {
+        let tmp = "build/_parser_flag_comment"
+        let _ = avra_shell_exec("rm -rf '${tmp}' && mkdir -p '${tmp}/packages/std-avrac/src/x/tests' '${tmp}/scripts'")
+        let dead = "AVRA_PARSER_" + "COMMENTED"
+        let _ = avra_shell_exec("printf 'fn e() -> string { \"${dead}=0\" }\n' > '${tmp}/packages/std-avrac/src/x/tests/c_test.av'")
+        let _ = avra_shell_exec("printf '// avra_process_env_get(\"${dead}\")\nfn r() { avra_process_env_get(\"AVRA_PARSER_EXPR_STATIC\") }\n' > '${tmp}/packages/std-avrac/src/x/live.av'")
+        let _ = avra_shell_exec("cp scripts/diagnose.sh '${tmp}/scripts/diagnose.sh'")
+        let rc = avra_shell_exec_status("cd '${tmp}' && bash scripts/diagnose.sh --check-parser-flags > /dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${tmp}'")
+        rc != 0
+    }
 }
