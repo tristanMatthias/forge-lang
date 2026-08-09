@@ -123,6 +123,27 @@ spec "--emit_metadata keys its own build-cache slot (t-rnpw)" {
         meta.contains("metadata emission changed (emit_metadata=0 → 1)")
             && !meta.contains("no specific axis matched")
     }
+    then "a stray plain build cannot repoint the PRODUCER at the whole-program slot" {
+        // Separating the SLOTS is not enough on its own, and this is the
+        // spec that says so. Every producer lookup (dep_producer_objects,
+        // and std-test's resolve_producer_obj) resolves through a sidecar,
+        // and `last/<unit>.txt` is overwritten by whichever build ran last
+        // — so with the fingerprint fixed but the pointer shared, a plain
+        // build after a metadata one still aimed it at the whole-program
+        // slot. Measured at that midpoint: `emit_metadata:0` and a
+        // `main`-defining unit.ll, i.e. the duplicate-`main` outage intact.
+        let dir = metaxis_mk_pkg("producer")
+        let _ = metaxis_build(dir, true)
+        let _ = metaxis_build(dir, false)
+        let attribution = avra_selfhost_read_file("${dir}/build/cache/last/std-producer.txt")
+        let producer = avra_selfhost_read_file("${dir}/build/cache/last/std-producer@producer.txt")
+        metaxis_cleanup(dir)
+        // The attribution sidecar SHOULD follow the last build (that is what
+        // keeps the metadata-axis miss reason working); the producer pointer
+        // must not.
+        attribution.contains("emit_metadata:0")
+            && producer.contains("emit_metadata:1")
+    }
     then "the plain build still hits its OWN slot after a metadata build" {
         let dir = metaxis_mk_pkg("nothrash")
         let first = metaxis_build(dir, false)

@@ -6,8 +6,8 @@
 // hold, every failure carries the cause that names it, and `std_prebuild_cmd`
 // creates its own log dir so a missing scratch dir can't disable the fast path.
 
-use @std.avrac.core.{avra_shell_exec, avra_selfhost_file_exists, avra_selfhost_read_file}
-use @std.avrac.build.{cache_for, cache_entry_realobj_path, Fingerprint}
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_file_exists}
+use @std.avrac.build.{cache_for, cache_entry_realobj_path, Fingerprint, cached_producer_fp}
 
 /// Why the fast path is or isn't in effect. `OptedOut` is deliberate;
 /// `Unavailable` is the fail-open worth shouting about.
@@ -105,9 +105,25 @@ export fn lib_mode_off(cause: LibModeCause) -> LibMode {
 
 export fn std_prebuild_log_path(pkg_dir: string) -> string { "${pkg_dir}build/prebuild.log" }
 
-/// Where the lib-build driver records a package's current producer fingerprint.
+/// Where the lib-build driver records a package's current producer
+/// fingerprint: the PRODUCER pointer, written only by `--emit_metadata` builds
+/// (t-rnpw). It used to read `last/${pkg}.txt`, which every build
+/// overwrites — so one stray plain `bs2 build --lib` on a std package
+/// repointed it at a whole-program slot and every shard linked a second
+/// `main`. An absent pointer degrades honestly via the caller's existing
+/// "the @std/* pre-build never ran" path, which is strictly better than
+/// linking the wrong object.
 fn std_prebuild_sidecar_path(pkg_dir: string, pkg: string) -> string {
-    "${pkg_dir}build/cache/last/${pkg}.txt"
+    "${pkg_dir}build/cache/last/${pkg}@producer.txt"
+}
+
+/// The producer fingerprint for `dir`, via the build package's own
+/// accessor. Reading it through `cached_producer_fp` rather than
+/// re-deriving the path here keeps ONE definition of where the pointer
+/// lives — the path above is retained only so the error message can name
+/// the file the operator should look for.
+fn producer_fp_for(dir: string) -> string {
+    cached_producer_fp(dir, subdir_basename(dir))
 }
 
 /// `bs2 build --lib --emit_metadata` for one @std/* package.
@@ -149,13 +165,13 @@ export fn collect_workspace_lib_objs(project_dir: string) -> LibMode {
 /// One package's producer object, or the reason there isn't one. The `Err` is
 /// what the operator reads in the degraded header, so it names the missing file.
 ///
-/// The slot comes from the driver's `last/<pkg>.txt` sidecar, whose `fp:` line
-/// names the entry for the CURRENT source + compiler. Globbing for the newest
+/// The slot comes from the driver's `last/<pkg>@producer.txt` sidecar, whose
+/// `fp:` line names the entry for the CURRENT source + compiler. Globbing for the newest
 /// `cache/*/unit.realobj.o` does not work: a stale slot materialised later
 /// (realobj is llc'd lazily on read) carries the fresher mtime.
 fn resolve_producer_obj(dir: string) -> Result<string, string> {
     let sidecar = std_prebuild_sidecar_path(dir, subdir_basename(dir))
-    let fp = sidecar_fp_for(sidecar)
+    let fp = producer_fp_for(dir)
     if fp == "" {
         return Result.Err("${dir} has no lib-build sidecar (${sidecar}) — its build/ dir is missing, or the @std/* pre-build never ran")
     }
@@ -164,15 +180,6 @@ fn resolve_producer_obj(dir: string) -> Result<string, string> {
         return Result.Err("${dir} has no producer object for build fp ${fp} — its cache slot has no unit.ll, or llc failed")
     }
     Result.Ok(o)
-}
-
-fn sidecar_fp_for(sidecar: string) -> string {
-    let body = avra_selfhost_read_file(sidecar)
-    if body == "" { return "" }
-    for line in body.split("\n") {
-        if line.starts_with("fp:") { return line.substring(3, line.length) }
-    }
-    ""
 }
 
 /// `packages/std-cli/` → `std-cli`.

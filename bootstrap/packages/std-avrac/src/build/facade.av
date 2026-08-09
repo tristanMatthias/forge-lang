@@ -682,6 +682,15 @@ fn dep_producer_objects(project_dir: string) -> DepObjs {
     for u in g.units {
         let root = strip_trailing_slash(u.project_root)
         if root == self_root { continue }
+        // cached_build_fp, NOT cached_producer_fp — deliberately either
+        // shape. t-rnpw's producer pointer exists for the SHARD link line,
+        // which lists objects directly; this closure is wrapped by
+        // `archive_objects`, and archive semantics are exactly what let one
+        // link line serve a whole-program app alongside its dep's object
+        // without defining `main` twice (the arm workspace_executable_test
+        // calls "the OTHER direction, and the one that killed an earlier
+        // attempt at this fix"). Narrowing it here rejects a dep legitimately
+        // built with a plain `--lib` and reports it as missing — measured.
         let fp = cached_build_fp(root, unit_name_for(load_manifest("${root}/"), true))
         if fp == "" {
             if missing == "" { missing = u.name }

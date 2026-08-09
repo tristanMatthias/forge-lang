@@ -65,7 +65,7 @@ spec "t-6flr: removing the prebuild's prerequisites changes the header" {
         let ok = !lib.want_meta()
             && lib.report(1, 15000).contains("DEGRADED whole-program")
             && lib.cause_detail().contains("packages/std-fake/")
-            && lib.cause_detail().contains("build/cache/last/std-fake.txt")
+            && lib.cause_detail().contains("build/cache/last/std-fake@producer.txt")
         if !ok { println("libmode_test: unexpected report:\n${lib.report(1, 15000)}") }
         avra_shell_exec("rm -rf '${root}'")
         ok
