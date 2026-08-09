@@ -1542,7 +1542,43 @@ impl Parser {
                 self.copy_cursor_from(d)
                 return .Ok(dsl.expr)
             }
-            // DSL parse error → fall through to the authoritative hand parser.
+            // The expression family OWNS ITS RECOVERY — the same seam the
+            // statement family got in Slice 5.4 above, and the last production
+            // fall-through into the hand parser. A generated-parser error used to
+            // discard the whole parse and re-run `parse_expression_hand`, which made
+            // the hand authoritative for every malformed expression: the probe below
+            // measured a hand entry on `1 +`, `f(`, `* 3`, `a.`, `f(1,` and zero on
+            // any valid form, so recovery was the ONLY thing still keeping it alive.
+            //
+            // MEASURED before removing, not assumed (the standard this file already
+            // holds itself to): the 117-case invalid corpus in
+            // error_recovery_differential_test is GREEN with the fall-through gone —
+            // the static parser's raw recovery tree, the executor's, and the hand's
+            // already agreed on all of them, because the parity work for `fn` and
+            // `let` closed the expression-level gaps as it went. Nothing here teaches
+            // the grammar to recover; it stops throwing away recovery it already had.
+            //
+            // The merge order mirrors the statement seam exactly, and for the same
+            // reasons: the DELEGATE's diagnostics first (a `@hand` leaf is deeper
+            // than the native rule that reached it, so the hand emits it first), then
+            // every `dsl.diags` entry in report order with its own declared code —
+            // the recovery oracle compares the ORDERED F-code signature, so both the
+            // source order and the per-rule codes are observable.
+            self.copy_cursor_from(d)
+            self.bag = bag_merge(self.bag, d.bag)
+            mut gi = 0
+            while gi < dsl.diags.length {
+                let gd = dsl.diags[gi]
+                let dc = syntax_diag_code(gd.code)
+                if dc != null {
+                    self.report_at_byte(dc!, gd.msg, gd.byte)
+                } else {
+                    self.report_at_byte(DiagCode.SyntaxError, gd.msg, gd.byte)
+                }
+                gi = gi + 1
+            }
+            self.had_error = true
+            return .Err("expression parse error")
         }
         self.parse_expression_hand()
     }

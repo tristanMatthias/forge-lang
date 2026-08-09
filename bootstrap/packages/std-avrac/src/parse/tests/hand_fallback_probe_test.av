@@ -215,14 +215,26 @@ spec "t-47hc.5: `bs2 expr` — the grammar owns VALID input; the tail owns recov
         expr_cmd_fallbacks("e_generic", "f<int>(3)\n", true) == 0
     }
 
-    // The vacuity control for the row above, and the honest record of the gap: on
-    // MALFORMED input this entry still reaches the tail. If this ever returns 0,
-    // the expression view has learned to recover and the tail is deletable — so a
-    // red here is good news, and the fix is to delete the tail, not the assertion.
-    then "malformed expressions DO still reach the tail (the remaining gap)" {
-        expr_cmd_fallbacks("e_bad_trail", "1 +\n", false) > 0 &&
-        expr_cmd_fallbacks("e_bad_open", "f(\n", false) > 0 &&
-        expr_cmd_fallbacks("e_bad_lead", "* 3\n", false) > 0
+    // The gap this row used to record is CLOSED. It asserted `> 0` — malformed
+    // input still reaching the hand — above a comment promising that a red here
+    // would be good news and that the fix was to delete the tail rather than the
+    // assertion. The expression seam now owns its recovery (parse/mod.av), so the
+    // tail is unreachable in production on invalid input too, and this is the
+    // assertion that pins it: MALFORMED expressions must reach the hand ZERO times.
+    //
+    // This is NOT vacuous, and the thing that makes it non-vacuous is a different
+    // spec: "with the expression flags OFF the probe FIRES" drives this same entry
+    // with the generated parser disabled and requires a NON-zero count. A probe
+    // that silently stopped working would fail there, so a zero here means the
+    // grammar answered, not that nothing ran. The per-fixture exit-status check in
+    // `fallback_lines_cmd` closes the other half (a bs2 that never ran cannot
+    // report zero markers and pass).
+    then "malformed expressions no longer reach the tail either — the gap is CLOSED" {
+        expr_cmd_fallbacks("e_bad_trail", "1 +\n", false) == 0 &&
+        expr_cmd_fallbacks("e_bad_open", "f(\n", false) == 0 &&
+        expr_cmd_fallbacks("e_bad_lead", "* 3\n", false) == 0 &&
+        expr_cmd_fallbacks("e_bad_dot", "a.\n", false) == 0 &&
+        expr_cmd_fallbacks("e_bad_call", "f(1,\n", false) == 0
     }
 }
 
