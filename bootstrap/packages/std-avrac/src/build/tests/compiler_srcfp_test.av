@@ -1,0 +1,224 @@
+// WHY: t-kdyj.10 fix (2) — the freshness check is CONTENT-keyed, not just
+// mtime-keyed.
+//
+// A rebase rewrites working-tree files, so their mtimes jump to now even when
+// the resulting content is byte-identical to what `build/bs2` was built from.
+// Purely by mtime that reads as stale, and the operator-visible outcome was
+// two unrelated-looking spec failures on a tree that had passed 6812/6812
+// twenty minutes earlier. Fix (1) (#1194) made that legible by naming the
+// stale file; this makes it not happen: identical content is a no-op.
+//
+// The ORDER is the design. mtime stays the cheap gate — one stat per source,
+// and it answers "nothing newer" for the overwhelmingly common case without
+// hashing anything. The content sweep runs only once mtime has already
+// flagged, which is exactly when a rebuild was about to be paid for anyway.
+// So the fast path is unchanged and only the false-positive is removed.
+//
+// Three specs, because the interesting behaviour is a 2x2 and only three
+// corners are reachable: (mtime newer, content same) is the rebase case this
+// fixes; (mtime newer, content differs) must still be stale or the check is
+// worthless; and an ABSENT stamp must read as stale, since a binary built
+// before stamping existed has no evidence its content matches and "fresh
+// without evidence" is the one direction that serves a stale compiler.
+//
+// Drives the REAL functions through the AVRA_DIAGNOSE_NO_MAIN sourcing hook
+// against a SANDBOX tree — never the live ./build/bs2, since mutating the
+// suite's own compiler mid-run is the t-gv3n hazard.
+
+use @std.avrac.core.{avra_shell_exec}
+
+/// Shared sandbox preamble: a two-source tree, a fake target, and the
+/// diagnose.sh globals repointed at it. `BUILD_DIR` is redirected too, so the
+/// stamp lands in the sandbox rather than the real build dir.
+fn srcfp_sandbox() -> string {
+    "set -u\n" +
+    "sandbox=$(mktemp -d)\n" +
+    "mkdir -p \"$sandbox/cli\" \"$sandbox/lib\" \"$sandbox/build\"\n" +
+    "printf 'fn a() {}\\n' > \"$sandbox/cli/a.av\"\n" +
+    "printf 'fn b() {}\\n' > \"$sandbox/lib/b.av\"\n" +
+    "printf 'int c;\\n' > \"$sandbox/runtime.c\"\n" +
+    "printf 'int w;\\n' > \"$sandbox/llvm_wrapper.c\"\n" +
+    // Back-date the sources so the target starts strictly newer.
+    "touch -t 202001010000 \"$sandbox/cli/a.av\" \"$sandbox/lib/b.av\" \\\n" +
+    "  \"$sandbox/runtime.c\" \"$sandbox/llvm_wrapper.c\"\n" +
+    "printf bin > \"$sandbox/bs2x\"; chmod +x \"$sandbox/bs2x\"\n" +
+    // Back-date the TARGET too — newer than the sources, but still firmly in
+    // the past. Creating it "now" put it in the same second as the `touch`
+    // below, and `source_strictly_newer_than` is deliberately `-gt`, so the
+    // tie short-circuited to fresh before the content check ever ran and the
+    // strict spec passed for the wrong reason (t-kdyj.7 is the same
+    // second-granularity hazard, from the other side).
+    "touch -t 202101010000 \"$sandbox/bs2x\"\n" +
+    "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh\n" +
+    "CLI_SRC_DIR=\"$sandbox/cli\"; LIB_SRC_DIR=\"$sandbox/lib\"\n" +
+    "BUILD_DIR=\"$sandbox/build\"; BOOTSTRAP_DIR=\"$sandbox\"\n" +
+    "RUNTIME_C=\"$sandbox/runtime.c\"\n"
+}
+
+fn srcfp_run(body: string) -> string {
+    let script = srcfp_sandbox() + body + "rm -rf \"$sandbox\"\n"
+    avra_shell_exec("bash -c '" + script.replace("'", "'\\''") + "' 2>&1")
+}
+
+spec "t-kdyj.10: compiler freshness is content-keyed, not mtime-only" {
+    then "a touched-but-unchanged source does NOT report stale (the rebase case)" {
+        // Exactly what `git rebase` does: rewrite the file, same bytes.
+        let out = srcfp_run(
+            "stamp_compiler_sources \"$sandbox/bs2x\"\n" +
+            "touch \"$sandbox/cli/a.av\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo VERDICT_STALE; else echo VERDICT_FRESH; fi\n")
+        // Assert the mtime really did move, or this passes for the boring
+        // reason that nothing was newer and the content check never ran.
+        out.contains("VERDICT_FRESH") && !out.contains("VERDICT_STALE")
+    }
+    then "the mtime gate really did fire — the fresh verdict came from content" {
+        // The guard on the guard. Without this, the spec above is satisfied by
+        // a `touch` that somehow left the mtime behind the target's, which
+        // proves nothing about content-keying.
+        let out = srcfp_run(
+            "stamp_compiler_sources \"$sandbox/bs2x\"\n" +
+            "touch \"$sandbox/cli/a.av\"\n" +
+            "newest=$(newest_source_mtime)\n" +
+            "tgt=$($STAT_MTIME \"$sandbox/bs2x\")\n" +
+            "if [ \"$newest\" -ge \"$tgt\" ]; then echo MTIME_FLAGGED; else echo MTIME_QUIET; fi\n" +
+            "if compiler_sources_changed \"$sandbox/bs2x\"; then echo CONTENT_CHANGED; else echo CONTENT_SAME; fi\n")
+        out.contains("MTIME_FLAGGED") && out.contains("CONTENT_SAME")
+            && !out.contains("MTIME_QUIET") && !out.contains("CONTENT_CHANGED")
+    }
+    then "a genuine content edit still reports stale" {
+        let out = srcfp_run(
+            "stamp_compiler_sources \"$sandbox/bs2x\"\n" +
+            "printf 'fn a() { changed }\\n' > \"$sandbox/cli/a.av\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo VERDICT_STALE; else echo VERDICT_FRESH; fi\n")
+        out.contains("VERDICT_STALE") && !out.contains("VERDICT_FRESH")
+    }
+    then "an ABSENT stamp reports stale — no evidence is not evidence of fresh" {
+        // A binary built before stamping existed, and the degraded path if a
+        // stamp write ever fails: fall back to the old mtime-only answer
+        // rather than claiming fresh.
+        let out = srcfp_run(
+            "touch \"$sandbox/cli/a.av\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo VERDICT_STALE; else echo VERDICT_FRESH; fi\n")
+        out.contains("VERDICT_STALE") && !out.contains("VERDICT_FRESH")
+    }
+    then "the STRICT predicate is content-keyed too — it is the reported path" {
+        // `suite_bs2_guard_test` drives `--bs2-stale-check`, which calls
+        // `source_strictly_newer_than`, NOT `source_newer_than`. Fixing only
+        // the build-decision sibling would leave the operator-visible half —
+        // the one that actually reddened the suite in this ticket's report —
+        // still mtime-only. Found by measuring end to end: the rebase probe
+        // still printed `stale` after the first predicate was fixed.
+        let out = srcfp_run(
+            "stamp_compiler_sources \"$sandbox/bs2x\"\n" +
+            "touch \"$sandbox/cli/a.av\"\n" +
+            "if source_strictly_newer_than \"$sandbox/bs2x\"; then echo VERDICT_STALE; else echo VERDICT_FRESH; fi\n" +
+            "printf 'fn a() { changed }\\n' > \"$sandbox/cli/a.av\"\n" +
+            "if source_strictly_newer_than \"$sandbox/bs2x\"; then echo EDIT_STALE; else echo EDIT_FRESH; fi\n")
+        out.contains("VERDICT_FRESH") && out.contains("EDIT_STALE")
+            && !out.contains("VERDICT_STALE") && !out.contains("EDIT_FRESH")
+    }
+    then "a fresh target with no stamp ADOPTS one, so the next rebase is a no-op" {
+        // Without this the stamp only ever appears after the next genuine
+        // relink, and the first rebase on an already-built tree still reports
+        // stale — measured: `make build-quick` on a fresh tree skips the link,
+        // so nothing stamped and `--bs2-stale-check` said `stale` after a
+        // content-preserving touch.
+        let out = srcfp_run(
+            // No stamp, and the target is newer than every source.
+            "if [ -f \"$sandbox/build/.bs2x.srcfp\" ]; then echo PRE_STAMPED; else echo PRE_ABSENT; fi\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo FIRST_STALE; else echo FIRST_FRESH; fi\n" +
+            "if [ -s \"$sandbox/build/.bs2x.srcfp\" ]; then echo ADOPTED; else echo NOT_ADOPTED; fi\n" +
+            // Now the rebase is a no-op because a baseline exists.
+            "touch \"$sandbox/cli/a.av\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo AFTER_STALE; else echo AFTER_FRESH; fi\n")
+        out.contains("PRE_ABSENT") && out.contains("FIRST_FRESH")
+            && out.contains("ADOPTED") && out.contains("AFTER_FRESH")
+            && !out.contains("NOT_ADOPTED") && !out.contains("AFTER_STALE")
+    }
+    then "an EMPTY stamp is re-adopted, not preserved — a torn write self-heals" {
+        // `-s`, not `-e`, and deliberately: empty is what a torn write looks
+        // like, it carries no evidence, and compiler_sources_changed already
+        // reads it as "changed". Preserving it would pin the target stale
+        // until the next relink instead of healing. Safe because adoption
+        // only runs where mtime has already proved the target newer than
+        // every source.
+        let out = srcfp_run(
+            ": > \"$sandbox/build/.bs2x.srcfp\"\n" +
+            "adopt_compiler_srcfp_if_absent \"$sandbox/bs2x\"\n" +
+            "if [ -s \"$sandbox/build/.bs2x.srcfp\" ]; then echo HEALED; else echo STILL_EMPTY; fi\n")
+        out.contains("HEALED") && !out.contains("STILL_EMPTY")
+    }
+    then "a source that cannot be hashed yields NO fingerprint, and reads as changed" {
+        // The obvious spelling turns an unhashable input into `<path>:` and
+        // the OUTER hash still succeeds — a stable fingerprint that says
+        // nothing about that file. Stamp and check would then agree with each
+        // other while agreeing about nothing: FRESH with no evidence.
+        //
+        // Uses a MISSING input, not `chmod 000`: the suite frequently runs as
+        // root, where chmod does not block reads at all, so the chmod spelling
+        // passed here without ever reaching the failure path — a guard that
+        // could not fail. Verified: chmod → FP_OK on this box, missing file →
+        // FP_FAILED.
+        let out = srcfp_run(
+            "stamp_compiler_sources \"$sandbox/bs2x\"\n" +
+            "RUNTIME_C=\"$sandbox/does_not_exist.c\"\n" +
+            "if compiler_sources_fp >/dev/null 2>&1; then echo FP_OK; else echo FP_FAILED; fi\n" +
+            "if compiler_sources_changed \"$sandbox/bs2x\"; then echo READS_CHANGED; else echo READS_SAME; fi\n")
+        out.contains("FP_FAILED") && out.contains("READS_CHANGED")
+            && !out.contains("FP_OK") && !out.contains("READS_SAME")
+    }
+    then "a failed fingerprint publishes NO stamp" {
+        // The write side of the same rule: if the digest cannot be computed,
+        // the stamp must stay absent rather than become a baseline that
+        // matches nothing in particular.
+        let out = srcfp_run(
+            "RUNTIME_C=\"$sandbox/does_not_exist.c\"\n" +
+            "stamp_compiler_sources \"$sandbox/bs2x\"\n" +
+            "if [ -s \"$sandbox/build/.bs2x.srcfp\" ]; then echo WROTE; else echo NO_STAMP; fi\n")
+        out.contains("NO_STAMP") && !out.contains("WROTE")
+    }
+    then "every gated link stamps a PRE-CAPTURED digest, never a post-hoc one" {
+        // A STRUCTURAL guard, because the behavioural one is not reachable: the
+        // ordering lives in `ensure_bs2`/`ensure_bs2_O0`/`ensure_bs2_debug`,
+        // which need a real seed compile and the live ./build/bs2 — the very
+        // thing the sandbox exists to avoid touching (t-gv3n). Same idiom as
+        // `--check-layout-boundary`: assert the source shape when the runtime
+        // check cannot fire.
+        //
+        // The invariant: a link site must write a digest sampled BEFORE the
+        // compile read the sources. Stamping after the link records any edit
+        // made in between as the baseline for a binary built from the previous
+        // bytes, so the next check calls a genuinely stale target fresh.
+        let src = avra_shell_exec("cat scripts/diagnose.sh")
+        // The bare form re-hashes at call time; at a gated link site that is
+        // exactly the post-hoc mistake.
+        !src.contains("stamp_compiler_sources \"$BS2\"")
+            && !src.contains("stamp_compiler_sources \"$BS2_O0\"")
+            && !src.contains("stamp_compiler_sources \"$BS2_DEBUG\"")
+            // ...and the pre-captured variables really are threaded through.
+            && src.contains("stamp_compiler_sources_value \"$BS2\" \"$pre_srcfp\"")
+            && src.contains("stamp_compiler_sources_value \"$BS2\" \"$retry_srcfp\"")
+            && src.contains("stamp_compiler_sources_value \"$BS2_O0\" \"$pre_srcfp\"")
+            && src.contains("stamp_compiler_sources_value \"$BS2_DEBUG\" \"$pre_srcfp\"")
+    }
+    then "adoption never OVERWRITES a valid stamp" {
+        // A baseline must only ever be established by a link or the first
+        // adoption; silently re-adopting would let a genuinely-stale target
+        // launder itself fresh the moment its mtime happened to lead.
+        let out = srcfp_run(
+            "printf 'deadbeef\\n' > \"$sandbox/build/.bs2x.srcfp\"\n" +
+            "adopt_compiler_srcfp_if_absent \"$sandbox/bs2x\"\n" +
+            "cat \"$sandbox/build/.bs2x.srcfp\"\n")
+        out.contains("deadbeef")
+    }
+    then "a C link input counts — editing runtime.c reports stale" {
+        // runtime.c is a compiler source (t-drl0): every gated binary links
+        // runtime.o, so its content must participate in the digest exactly as
+        // it does in the mtime set.
+        let out = srcfp_run(
+            "stamp_compiler_sources \"$sandbox/bs2x\"\n" +
+            "printf 'int c; int extra;\\n' > \"$sandbox/runtime.c\"\n" +
+            "if source_newer_than \"$sandbox/bs2x\"; then echo VERDICT_STALE; else echo VERDICT_FRESH; fi\n")
+        out.contains("VERDICT_STALE") && !out.contains("VERDICT_FRESH")
+    }
+}
