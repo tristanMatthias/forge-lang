@@ -120,8 +120,15 @@ fn fallback_lines(env: string, name: string, src: string, want_ok: bool) -> int 
 /// The EXPRESSION-only front end (`bs2 expr`, and `bs2 eval` alongside it): the
 /// one production command that reaches `parse_expression`, via
 /// `parse_expr_or_fail` -> `parse_expression_source` -> `parse_file_expression`.
+/// PIN every routing field, never just the one being measured. `expr_static`
+/// defaults ON and `expr_flip` defaults OFF, and the seam enters the generated
+/// parser on `expr_flip || expr_static` — so an ambient `AVRA_PARSER_EXPR_STATIC=0`
+/// is enough to send this probe down the HAND path and fail these assertions for a
+/// configuration reason that has nothing to do with the parser. Pinning both makes
+/// the row mean "the generated STATIC parser answered", which is what it claims:
+/// static=1 enters the branch, flip=0 selects the static parser over the executor.
 fn expr_cmd_fallbacks(name: string, src: string, want_ok: bool) -> int {
-    fallback_lines_cmd("AVRA_REFUSE_HAND_FALLBACK='*'", "expr", name, src, want_ok)
+    fallback_lines_cmd("AVRA_REFUSE_HAND_FALLBACK='*' AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0", "expr", name, src, want_ok)
 }
 
 /// Drive the EXPRESSION dispatcher in-process and count the marker lines the probe
@@ -256,5 +263,29 @@ spec "t-47hc.5: the fall-through probe is NOT a blind instrument (positive contr
     // being taken, not merely "this helper writes to a log".
     then "with the static expression parser ON the same entry logs nothing" {
         expr_entry_markers("ctl_off", false, true) == 0
+    }
+}
+
+spec "a recovered expression parse still reports its CAUSE, not just its diagnostics" {
+    // The direct `parse_file_expression` regression for the seam above. Removing the
+    // hand fall-through removed the accident that used to fill `error_message` (the
+    // hand re-parse reported through `report`, which sets it), so the documented
+    // "consult had_error / error_message for the cause" contract silently returned
+    // an empty string and the CLI printed a BLANK summary line under the frame.
+    //
+    // Asserted through the API rather than the CLI on purpose: the rendered frame
+    // still looked right the whole time, which is exactly why the regression was
+    // invisible until the summary line was read.
+    then "a malformed expression fills error_message with the position and reason" {
+        mut p = parser_new("1 +")
+        let r = p.parse_file_expression()
+        r.error_message != "" &&
+            r.error_message.contains("expected expression") &&
+            r.error_message.contains("1:4")
+    }
+    then "a VALID expression leaves it empty — the control that makes the row above mean something" {
+        mut q = parser_new("1 + 2")
+        let rq = q.parse_file_expression()
+        rq.error_message == ""
     }
 }

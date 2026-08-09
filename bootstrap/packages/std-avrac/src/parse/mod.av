@@ -3807,7 +3807,25 @@ impl Parser {
         let lc = self.store.lines.to_linecol(byte)
         let sp = span_at(byte, byte, lc.line, lc.col, self.file)
         self.bag = bag_report(self.bag, diag_error(code, message, sp))
-        self.had_error = true
+        // First error wins — the SAME backward-compat contract `report` keeps, and
+        // for the same reason: `ParseResult` / `ProgramParseResult` document
+        // `error_message` as where a caller consults the cause, and the CLI prints it
+        // as the one-line summary under the rendered frame. Setting only `had_error`
+        // left that field EMPTY for any parse whose first diagnostic came through
+        // this fn, which is every grammar-native one — the flip seams report here.
+        // It went unnoticed while the families still fell back, because the hand
+        // re-parse then reported through `report` and filled the message on its way
+        // past; the expression seam owning its recovery removed that accident and the
+        // summary line came out blank.
+        //
+        // At THIS byte's line/col, not the cursor's — the whole reason this fn
+        // exists is that the cursor is somewhere else (the item start), so borrowing
+        // `report`'s position would reintroduce the `broken.av:1:1` misattribution
+        // the byte-accurate span was added to fix.
+        if !self.had_error {
+            self.had_error = true
+            self.error_message = "parse error at ${string(lc.line)}:${string(lc.col)}: ${message}"
+        }
     }
 
     fn report(self, code: DiagCode, message: string) {
