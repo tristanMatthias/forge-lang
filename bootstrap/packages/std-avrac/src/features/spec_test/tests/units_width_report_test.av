@@ -1,0 +1,111 @@
+// uzs9.2 / t-kdyj.4: the in-shard worker width must be OBSERVABLE from a run.
+//
+// The gap this closes is not cosmetic. `AVRA_TEST_JOBS=1` takes
+// `run_units_sequential` — no threads at all — so an in-shard interleaving
+// race cannot fire. The three CI gates have been pinned to 1 since
+// 2026-07-18, which means every green run since has been green on that class
+// BY CONSTRUCTION. That is indistinguishable, from the output alone, from the
+// class being fixed. uzs9.2 spent six investigations partly on the strength of
+// "no recurrence in months of CI", which carried no information.
+//
+// So: a run states the width it achieved, and a detector can assert it.
+// Without this line any such detector is the guard-that-cannot-fail shape it
+// exists to catch.
+//
+// Driven by SHELLING OUT to a compiled multi-unit shard rather than by
+// inspecting `test_jobs()` in-process: the value of the env var is not the
+// claim — the claim is what a real run REPORTS. Reading the same function the
+// runner reads would pass whether or not the line is ever printed.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+
+/// Two spec FILES in one directory, so a `bs2 test <dir>` run assembles a
+/// shard with 2 units — the multi-unit condition the report is gated on.
+/// One file would take the `units.length == 1` path and print nothing, which
+/// is the behaviour asserted separately below.
+fn make_units_dir(dir: string, n: int) -> bool {
+    let _ = avra_shell_exec("mkdir -p '${dir}'")
+    mut i = 0
+    while i < n {
+        let body = "spec \"unit ${string(i)}\" {\n"
+            + "    given \"a trivial arm\" {\n"
+            + "        then \"it passes\" { true }\n"
+            + "    }\n"
+            + "}\n"
+        avra_selfhost_write_file("${dir}/u${string(i)}_test.av", body)
+        i = i + 1
+    }
+    true
+}
+
+fn run_at(dir: string, jobs: string) -> string {
+    // cwd at the bootstrap root: fixtures resolve @std from there, and a run
+    // from elsewhere manufactures unrelated failures (uzs9.2 comment 6).
+    avra_shell_exec("cd '${avra_shell_exec("pwd").trim()}' && "
+        + "AVRA_TEST_JOBS=${jobs} ./build/bs2 test '${dir}' 2>&1")
+}
+
+/// Did the shard actually RUN? Same discipline as bs2_stale_report_test: a
+/// content assertion against output that was never produced is a mismatch
+/// wearing the wrong name.
+fn shard_ran(out: string) -> bool {
+    if out.contains("[shard-summary]") { return true }
+    println("      [shard did not run] no [shard-summary]; captured "
+        + string(out.length) + " byte(s): " + out)
+    false
+}
+
+/// The reported worker count from the `[units]` line, or "" if absent.
+/// Whole line, parsed — not `contains("worker")`, which any prose satisfies.
+fn reported_workers(out: string) -> string {
+    for raw in out.split("\n") {
+        let line = raw.trim()
+        if line.starts_with("[units] ") && line.ends_with(" worker(s)") {
+            let tail = line.split(" across ")
+            if tail.length == 2 { return tail[1].replace(" worker(s)", "") }
+        }
+    }
+    ""
+}
+
+spec "a multi-unit shard reports the width it achieved (uzs9.2)" {
+    given "two units run at AVRA_TEST_JOBS=4" {
+        then "the run states 4 workers" {
+            let dir = "/tmp/avra_units_w4"
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            let _ = make_units_dir(dir, 2)
+            let out = run_at(dir, "4")
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            shard_ran(out) && reported_workers(out) == "4"
+        }
+    }
+
+    given "two units run at AVRA_TEST_JOBS=1" {
+        // The case the detector must be able to REJECT. At width 1 there is no
+        // interleaving, so a green run says nothing about the flake class —
+        // and the output now says so instead of looking identical to a real
+        // parallel run.
+        then "the run states 1 worker, not the requested-but-unused count" {
+            let dir = "/tmp/avra_units_w1"
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            let _ = make_units_dir(dir, 2)
+            let out = run_at(dir, "1")
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            shard_ran(out) && reported_workers(out) == "1"
+        }
+    }
+
+    given "a single-unit shard" {
+        // Fixture protection: every compile-and-run fixture in the suite is one
+        // unit. If this line leaked into those, it would change the captured
+        // output of hundreds of unrelated tests.
+        then "it reports nothing — there is no interleaving to describe" {
+            let dir = "/tmp/avra_units_solo"
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            let _ = make_units_dir(dir, 1)
+            let out = run_at(dir, "4")
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            shard_ran(out) && reported_workers(out) == "" && !out.contains("[units]")
+        }
+    }
+}
