@@ -48,7 +48,7 @@ fn parse_pattern(st: PState) -> CapVal {
 fn parse_opt_present(st: PState) -> CapVal {
     let _ = st.advance()
     let name = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
         CapVal.Tok(st.cur())
     }
     CapVal.PNode(st.store.pats.add_leaf(pattern_optional_present(capval_tok_text(name))))
@@ -64,7 +64,7 @@ fn parse_variant_pat(st: PState) -> CapVal {
     mut subs_list: List<PatId> = []
     let _ = st.advance()
     let name = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftParen {
@@ -74,7 +74,7 @@ fn parse_variant_pat(st: PState) -> CapVal {
             while st.cur().tk == Tk.Comma {
                 let _ = st.advance()
                 if st.cur().tk == Tk.Identifier { binds_list.push(st.advance()) } else {
-                    st.report_ident("expected IDENT")
+                    st.report_ident("expected `IDENT`")
                 }
             }
         } else if st.cur().tk == Tk.Dot {
@@ -85,7 +85,7 @@ fn parse_variant_pat(st: PState) -> CapVal {
             }
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected )")
+            st.report("expected `)`")
         }
     }
     if subs_list.length > 0 { CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(capval_tok_text(name), subs_list))) } else { CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(capval_tok_text(name), param_entries_from_toks(CapVal.Toks(binds_list), ValueType.Int)))) }
@@ -97,10 +97,10 @@ fn parse_ident_pat(st: PState) -> CapVal {
     if st.cur().tk == Tk.LeftParen {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { b = CapVal.Tok(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected `IDENT`")
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected )")
+            st.report("expected `)`")
         }
     }
     match b { .Nil -> CapVal.PNode(ident_pat_bare(st, capval_tok_text(name)))  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.TypePattern(capval_tok_text(name), capval_tok_text(b)))) }
@@ -119,7 +119,7 @@ fn parse_str_pat(st: PState) -> CapVal {
 fn parse_neg_pat(st: PState) -> CapVal {
     let _ = st.advance()
     let n = if (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) { CapVal.Tok(st.advance()) } else {
-        st.report("expected NUMBER")
+        st.report("expected `NUMBER`")
         CapVal.Tok(st.cur())
     }
     CapVal.PNode(pat_num_node(st, capval_tok_text(n), true))

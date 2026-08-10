@@ -28,7 +28,7 @@ spec "a multi-item One group is structural, not a terminal alternation" {
         // Both terminals get a real guard: the group is entered unguarded, so even
         // its leading `-` is checked rather than swallowed (emit_node_items idx_base).
         let src = emitted("r = \"+\" ( \"-\" \"*\" )")
-        src.contains("expected -") && src.contains("expected *")
+        src.contains("expected `-`") && src.contains("expected `*`")
     }
     then "the interpreter accepts the full sequence" {
         !errs("r = \"+\" ( \"-\" \"*\" )", "+ - *")

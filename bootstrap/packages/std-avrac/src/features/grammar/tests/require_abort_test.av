@@ -165,7 +165,7 @@ spec "t-47hc.24: @require on a rule reference composes with @try on BOTH sides o
         // past the rollback scaffold. The report fails the commit guard, and the rollback IS
         // the abort. Asserted as report-without-return, not merely "no return anywhere".
         let src = emitted(g_try_ref_precut())
-        src.contains("st.report(\"expected {\")") && !src.contains("error_node_silent")
+        src.contains("st.report(\"expected `{`\")") && !src.contains("error_node_silent")
     }
     then "a POST-cut required rule emits the s_cut-guarded abort" {
         let src = emitted(g_try_ref_postcut())

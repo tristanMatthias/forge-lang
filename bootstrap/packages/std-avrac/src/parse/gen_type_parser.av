@@ -21,7 +21,7 @@ fn parse_splice_type(st: PState) -> CapVal {
     mut opt: CapVal = CapVal.Nil
     let _ = st.advance()
     let sn = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Question {
@@ -61,7 +61,7 @@ fn parse_qualified_type(st: PState) -> CapVal {
     mut qopt: CapVal = CapVal.Nil
     let _ = st.advance()
     if st.cur().tk == Tk.Identifier { qname_list.push(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
     }
     if !(lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon)) {
         st.report("expected at least one repetition")
@@ -71,10 +71,10 @@ fn parse_qualified_type(st: PState) -> CapVal {
     while lookahead_ok("double_colon", st) && (st.cur().tk == Tk.Colon) {
         let _ = st.advance()
         if st.cur().tk == Tk.Colon { let _ = st.advance() } else {
-            st.report("expected :")
+            st.report("expected `:`")
         }
         if st.cur().tk == Tk.Identifier { qname_list.push(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected `IDENT`")
         }
     }
     if st.cur().tk == Tk.Less {
@@ -85,7 +85,7 @@ fn parse_qualified_type(st: PState) -> CapVal {
             qa_list.push(capval_to_texpr(st, parse_type_expr(st)))
         }
         if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
-            st.report("expected >")
+            st.report("expected `>`")
         }
     }
     if st.cur().tk == Tk.Question {
@@ -109,7 +109,7 @@ fn parse_fn_type(st: PState) -> CapVal {
             }
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected )")
+            st.report("expected `)`")
         }
     }
     if st.cur().tk == Tk.Arrow {
@@ -123,7 +123,7 @@ fn parse_dyn_type(st: PState) -> CapVal {
     mut opt: CapVal = CapVal.Nil
     let _ = st.advance()
     let t = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.Question {
@@ -136,7 +136,7 @@ fn parse_list_type(st: PState) -> CapVal {
     let _ = st.advance()
     let e = parse_type_expr(st)
     if st.cur().tk == Tk.RightBracket { let _ = st.advance() } else {
-        st.report("expected ]")
+        st.report("expected `]`")
     }
     CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, e)))
 }
@@ -152,7 +152,7 @@ fn parse_paren_type(st: PState) -> CapVal {
         }
     }
     if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-        st.report("expected )")
+        st.report("expected `)`")
     }
     mk_paren_type(t_list)
 }
@@ -165,7 +165,7 @@ fn parse_named_type(st: PState) -> CapVal {
     while st.cur().tk == Tk.Dot {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { name_list.push(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected `IDENT`")
         }
     }
     if st.cur().tk == Tk.Less {
@@ -176,7 +176,7 @@ fn parse_named_type(st: PState) -> CapVal {
             a_list.push(capval_to_texpr(st, parse_type_expr(st)))
         }
         if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
-            st.report("expected >")
+            st.report("expected `>`")
         }
     }
     if st.cur().tk == Tk.Question {
