@@ -1,0 +1,120 @@
+// The fixture-stdout cache must key on the environment that CHANGES a
+// fixture's output — otherwise `AVRA_RC_STRICT=1 bs2 test` replays captures
+// produced WITHOUT strict mode, and the run reports green having never
+// executed anything under the instrument it was invoked to apply.
+//
+// Measured on the pre-fix build against component_decl/tests/token_body_test.av:
+// a non-strict run published 5 captures, and the strict run that followed
+// created ZERO new ones — it served all five. That is the mechanism behind
+// t-k6lm (three green local strict suites over 937 warm captures while cold CI
+// failed identically twice) and behind CLAUDE.md's standing manual
+// `rm -rf build/cache/fixture_stdout`, which costs 1608s vs 506s.
+//
+// Driven by SHELLING OUT and counting published captures rather than by
+// recomputing the key: the claim is about what a real run DOES, and a test that
+// recomputed the formula would pass whether or not the cache consulted it.
+//
+// THREE isolation properties this spec had to learn the hard way:
+//
+//  1. It runs against a PRIVATE cache root (AVRA_FIXTURE_CACHE_DIR). The first
+//     version wiped the shared `build/cache/fixture_stdout`; shards run
+//     concurrently, so that deleted other fixtures' captures and `.lock` files
+//     mid-run and reddened an unrelated shard on CI (vtype_eq_no_fqn_tolerance
+//     …, 6922/6923) while passing locally.
+//  2. The baseline CLEARS `AVRA_RC_STRICT` explicitly. The rc-strict gate runs
+//     the whole suite under `AVRA_RC_STRICT=1`, so an inherited baseline would
+//     be strict too — making the strict/non-strict comparison a comparison of
+//     strict against itself, which fails outright rather than passing vacuously.
+//  3. Each driver run's EXIT STATUS is asserted. With `|| true` a failing
+//     `bs2 test` could still satisfy the count comparisons off pre-existing
+//     captures.
+
+use @std.avrac.core.{avra_shell_exec}
+
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_parse_int(s: string) -> int
+
+/// A fixture-driven test file — one that reaches `cached_fixture_run`, so it
+/// publishes captures. Asserted to exist rather than assumed: if this file is
+/// renamed the spec must fail loudly, not silently measure an empty directory
+/// and pass because 0 == 0.
+const DRIVER: string = "packages/std-avrac/src/features/component_decl/tests/token_body_test.av"
+
+/// Private per-spec capture root — never the shared one (see note 1 above).
+fn cache_dir() -> string { "/tmp/avra_fixture_cache_env_key" }
+
+fn capture_count() -> int {
+    avra_parse_int(avra_shell_exec("ls ${cache_dir()}/*.out 2>/dev/null | wc -l").trim())
+}
+
+/// Run the driver with `AVRA_RC_STRICT` set to `strict` ("" = explicitly
+/// cleared), against the private cache root. Returns the exit status; output
+/// goes to a log so a failure is diagnosable rather than a bare number.
+fn run_driver_status(strict: string) -> int {
+    let rc_env = if strict == "" { "env -u AVRA_RC_STRICT" } else { "env AVRA_RC_STRICT=${strict}" }
+    avra_shell_exec_status(
+        "${rc_env} AVRA_FIXTURE_CACHE_DIR='${cache_dir()}' "
+        + "./build/bs2 test ${DRIVER} > ${cache_dir()}.log 2>&1")
+}
+
+/// Status-asserted run: prints the driver log when it fails, so a red arm names
+/// its cause instead of just a count that did not move.
+fn run_driver_ok(strict: string) -> bool {
+    let st = run_driver_status(strict)
+    if st != 0 {
+        println("      [driver failed] status ${string(st)} for AVRA_RC_STRICT='${strict}'; log follows")
+        println(avra_shell_exec("cat ${cache_dir()}.log 2>/dev/null | tail -40"))
+    }
+    st == 0
+}
+
+fn reset_cache() {
+    let _ = avra_shell_exec("rm -rf ${cache_dir()} ${cache_dir()}.log")
+    let _ = avra_shell_exec("mkdir -p ${cache_dir()}")
+}
+
+spec "the fixture-stdout cache keys on output-affecting env (t-k6lm)" {
+    given "one driver, run under two different RC modes, in a private cache" {
+        // PRECONDITION FIRST. If the driver publishes nothing — renamed, or no
+        // longer fixture-driven — every count below is 0, the deltas are 0, and
+        // the spec would pass while measuring nothing. Asserted, not trusted.
+        then "the driver publishes captures at all — the precondition" {
+            reset_cache()
+            let ok = run_driver_ok("")
+            let n = capture_count()
+            if ok && n <= 0 {
+                println("      [precondition failed] ${DRIVER} published NO captures;")
+                println("      it is not fixture-driven any more, so this spec measures nothing.")
+            }
+            ok && n > 0
+        }
+
+        // The defect itself: a strict run must not be served a non-strict
+        // capture. Counted as NEW captures, since the strict run can reuse
+        // nothing and must publish its own.
+        then "a strict run does NOT reuse the non-strict captures" {
+            reset_cache()
+            let ok1 = run_driver_ok("")
+            let base = capture_count()
+            let ok2 = run_driver_ok("1")
+            let after = capture_count()
+            if ok1 && ok2 && after <= base {
+                println("      [stale hit] strict run published ${string(after - base)} new capture(s);")
+                println("      it replayed the non-strict output, so strict mode did not run.")
+            }
+            ok1 && ok2 && base > 0 && after > base
+        }
+
+        // The other half, and the reason the key is an ALLOWLIST rather than
+        // the whole environment: keying too broadly would make every run cold
+        // and quietly delete the cache's entire value.
+        then "an identical second run still HITS — the cache is not thrashed" {
+            reset_cache()
+            let ok1 = run_driver_ok("")
+            let first = capture_count()
+            let ok2 = run_driver_ok("")
+            let second = capture_count()
+            ok1 && ok2 && first > 0 && second == first
+        }
+    }
+}
