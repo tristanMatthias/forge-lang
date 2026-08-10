@@ -1,0 +1,85 @@
+// The fixture-stdout cache must key on the environment that CHANGES a
+// fixture's output — otherwise `AVRA_RC_STRICT=1 bs2 test` replays captures
+// produced WITHOUT strict mode, and the run reports green having never
+// executed anything under the instrument it was invoked to apply.
+//
+// This is not hypothetical. Measured on the pre-fix build against
+// component_decl/tests/token_body_test.av: a non-strict run published 5
+// captures, and the strict run that followed created ZERO new ones — it served
+// all five. That is the mechanism behind t-k6lm (three green local strict
+// suites over 937 warm captures while cold CI failed identically twice) and
+// behind CLAUDE.md's standing manual `rm -rf build/cache/fixture_stdout`,
+// which costs 1608s vs 506s on a full strict run.
+//
+// Driven by SHELLING OUT and counting published captures rather than by
+// inspecting the key function: the claim is about what a real run DOES, and a
+// test that recomputed the key formula would pass whether or not the cache
+// consulted it.
+
+use @std.avrac.core.{avra_shell_exec}
+
+/// A fixture-driven test file — one that reaches `cached_fixture_run`, so it
+/// publishes captures. Asserted to exist rather than assumed: if this file is
+/// renamed the spec must fail loudly, not silently measure an empty directory
+/// and pass because 0 == 0.
+const DRIVER: string = "packages/std-avrac/src/features/component_decl/tests/token_body_test.av"
+
+fn cache_dir() -> string { "build/cache/fixture_stdout" }
+
+fn capture_count() -> int {
+    let out = avra_shell_exec("ls ${cache_dir()}/*.out 2>/dev/null | wc -l")
+    avra_parse_int(out.trim())
+}
+
+extern fn avra_parse_int(s: string) -> int
+
+/// Run the driver under the given env prefix, return how many captures exist
+/// afterwards. `2>&1` and `|| true` so a driver failure surfaces as a capture
+/// count rather than aborting the spec.
+fn run_driver(env_prefix: string) -> int {
+    let _ = avra_shell_exec("${env_prefix} ./build/bs2 test ${DRIVER} > /dev/null 2>&1 || true")
+    capture_count()
+}
+
+spec "the fixture-stdout cache keys on output-affecting env (t-k6lm)" {
+    given "a cold cache, then the same driver run under two different RC modes" {
+        // PRECONDITION FIRST. If the driver publishes nothing — renamed, or no
+        // longer fixture-driven — every count below is 0 and the deltas are 0,
+        // so the spec would pass while measuring nothing at all. That is the
+        // failure shape this whole area keeps producing, so it is asserted
+        // rather than trusted.
+        then "the driver publishes captures at all — the precondition" {
+            let _ = avra_shell_exec("rm -rf ${cache_dir()}")
+            let n = run_driver("")
+            if n <= 0 {
+                println("      [precondition failed] ${DRIVER} published NO captures;")
+                println("      it is not fixture-driven any more, so this spec measures nothing.")
+            }
+            n > 0
+        }
+
+        // The defect itself: a strict run must not be served a non-strict
+        // capture. Counted as NEW captures, because the strict run legitimately
+        // reuses nothing and must therefore publish its own.
+        then "a strict run does NOT reuse the non-strict captures" {
+            let _ = avra_shell_exec("rm -rf ${cache_dir()}")
+            let base = run_driver("")
+            let after = run_driver("AVRA_RC_STRICT=1")
+            if after <= base {
+                println("      [stale hit] strict run published ${string(after - base)} new capture(s);")
+                println("      it replayed the non-strict output, so strict mode did not run.")
+            }
+            base > 0 && after > base
+        }
+
+        // The other half, and the reason the key is an ALLOWLIST rather than
+        // the whole environment: keying too broadly would make every run a
+        // cold run and quietly delete the cache's entire value.
+        then "an identical second run still HITS — the cache is not thrashed" {
+            let _ = avra_shell_exec("rm -rf ${cache_dir()}")
+            let first = run_driver("")
+            let second = run_driver("")
+            second == first && first > 0
+        }
+    }
+}

@@ -754,15 +754,50 @@ fn cached_fixture_capture(fixture_path: string, cmd: string, verb: string) -> st
 ///      caller still gets the (possibly wrong) output — overlapping
 ///      suite runs are already operator-forbidden — but the wrongness
 ///      can no longer OUTLIVE the overlap.
+/// Environment that CHANGES what a fixture emits, folded into the cache key.
+///
+/// Without this, `AVRA_RC_STRICT=1 bs2 test` REPLAYS captures produced without
+/// strict mode — so the run does not execute the fixtures under the very
+/// instrument it was invoked to apply, and reports green. Measured on
+/// `component_decl/tests/token_body_test.av`: a non-strict run published 5
+/// captures, and the strict run that followed created ZERO new ones. That is
+/// the mechanism behind t-k6lm's three green local strict suites over 937 warm
+/// captures while cold CI failed identically twice, and behind CLAUDE.md's
+/// standing instruction to `rm -rf build/cache/fixture_stdout` by hand (1608s
+/// vs 506s). The instrument was disabled by the cache, silently.
+///
+/// Deliberately a small ALLOWLIST, not "every AVRA_* var". The resource knobs
+/// — `AVRA_MEM_BUDGET_MB`, `AVRA_COMPILE_SLOT_DIR`/`_WIDTH`, `AVRA_SLOT_GATE_MB`
+/// — are set PER UNIT by the admission governor and vary run to run, so
+/// folding them in would key every capture uniquely and disable the cache
+/// outright. These affect scheduling, not what a fixture prints; the ones
+/// below affect the emitted IR or the runtime's behaviour, and so the output.
+fn fixture_env_fp() -> string {
+    mut s = ""
+    for name in [
+        "AVRA_RC_STRICT",         // poison-on-free + quarantine + foreign-release abort
+        "AVRA_VERIFY_RC",         // codegen/setup.av:588 — emits verification calls, changes IR
+        "AVRA_RC_NO_REGION",      // allocator path
+        "AVRA_RC_TRACE",          // emits trace output
+        "AVRA_CRASH_DETAIL",      // crash-report verbosity
+        "AVRA_COMPTIME_LOOP_LIMIT",
+        "AVRA_COMPTIME_MEM_LIMIT"
+    ] {
+        s = s + name + "=" + avra_process_env_get(name) + ";"
+    }
+    s
+}
+
 fn cached_fixture_capture_src(fixture_path: string, source: string?, cmd: string, verb: string) -> string {
     let cache_dir = fixture_stdout_cache_dir()
     let toolchain_fp = read_or_compute_toolchain_fp(cache_dir)
+    let env_fp = fixture_env_fp()
     // Optimistic lock-free fast path: hash the file as-is; a warm hit
     // returns in ~10ms with no lock traffic. (If a concurrent writer
     // is mid-clobber this hash keys a slot we simply won't find — the
     // locked path below re-hashes authoritatively.)
     let fixture_h = sha256_file(fixture_path)
-    let fast_key = sha256_hex("${toolchain_fp}:${fixture_h}:${fixture_path}:${verb}")
+    let fast_key = sha256_hex("${toolchain_fp}:${env_fp}:${fixture_h}:${fixture_path}:${verb}")
     let fast_path = "${cache_dir}/${fast_key}.out"
     if avra_selfhost_file_exists(fast_path) == 1 {
         // Serve only a capture the write gate would publish TODAY — the full
@@ -798,7 +833,7 @@ fn cached_fixture_capture_src(fixture_path: string, source: string?, cmd: string
     // The authoritative key: hashed AFTER lock + rewrite, so it names
     // the bytes the run will actually consume — never a clobberer's.
     let run_h = sha256_file(fixture_path)
-    let run_key = sha256_hex("${toolchain_fp}:${run_h}:${fixture_path}:${verb}")
+    let run_key = sha256_hex("${toolchain_fp}:${env_fp}:${run_h}:${fixture_path}:${verb}")
     let cache_path = "${cache_dir}/${run_key}.out"
     if lock_fd >= 0 && avra_selfhost_file_exists(cache_path) == 1 {
         let cached = avra_selfhost_read_file(cache_path)
