@@ -1,0 +1,105 @@
+// WHY: the expression hand parser is the LAST live parser oracle, and it is currently
+// earning its keep — so this file measures exactly what it is worth, and ratchets.
+//
+// The question this answers is "can the hand parser be deleted yet?", and as of t-bw9s
+// the answer is NO, with a number. Sweeping 35 expression forms through both engines
+// (`bs2 expr` default = the generated parser; `AVRA_PARSER_EXPR_STATIC=0
+// AVRA_PARSER_EXPR_FLIP=0` = the hand) finds NINE divergences, and in the ones worth
+// reading the generated parser's diagnostic is the WORSE of the two:
+//
+//     spawn f()   gen: "expected }"        (2:1)   hand: "expected `{` after spawn" (1:7)
+//     [1,         gen: "expected for"      (1:3)   hand: "expected expression"      (2:1)
+//     x is Foo    gen: "expected ."        (1:6)   hand: "expected `.Variant` after `is`"
+//     a in b      gen: "expected .."       (2:1)   hand: "expected `..` in range expression after `in`"
+//
+// `spawn f()` and `[1,` are the bad ones: "expected }" for a missing spawn block names
+// the wrong token at the wrong column, and "expected for" on an unterminated list is a
+// list-comprehension rule leaking into a plain list literal's error. Neither is a
+// theoretical difference — that is what a user sees today.
+//
+// Why this file exists rather than a note somewhere: the whole-program recovery corpus
+// CANNOT see any of it. `bs2 check` is driven by the generated declaration parser, which
+// parses expressions with its own rules and never calls `Parser.parse_expression` — so
+// the expression routing flags do nothing there, and that corpus compares native against
+// native (its own header says so). `bs2 expr` parses an expression DIRECTLY, which is the
+// one path where the two engines are still distinguishable. That makes this the only
+// live parser-differential guard left in the tree.
+//
+// It is a RATCHET, deliberately, and it is exact in both directions:
+//   * a NEW divergence fails — the generated parser regressed against the oracle
+//   * a FIXED divergence also fails — because the expected set is pinned by name, so
+//     closing one forces you to remove it here, and the list can only shrink
+// When the list reaches empty, the hand expression parser has no remaining signal and
+// deleting it is provable rather than hopeful. That is the exit condition; until then,
+// "delete the hand parser" costs the diagnostics above with nothing watching.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+/// One expression through one engine. `bs2 expr` (NOT `bs2 check`) because that is the
+/// only entry that reaches the expression ladder directly — see the header.
+fn expr_out(env: string, source: string) -> string {
+    let path = "/tmp/avra_expr_oracle.av"
+    write_fixture(path, source)
+    avra_shell_exec("${env} ./build/bs2 expr '${path}' 2>&1")
+}
+
+fn gen_out(source: string) -> string { expr_out("", source) }
+fn hand_out(source: string) -> string { expr_out("AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0", source) }
+
+/// The sweep corpus: valid forms first (where agreement is the norm), then malformed
+/// ones (where recovery is what differs). Add to this freely — a new input that agrees
+/// costs nothing, and one that diverges is exactly the signal this file is for.
+fn corpus() -> List<string> {
+    ["1 + 2 * 3", "f(x, y)", "[1, 2, 3]", "{a: 1, b: 2}", "x.y.z", "a ?? b", "a?.b",
+     "(x) -> x + 1", "(x: int) -> x", "if a { 1 } else { 2 }", "match v { 1 -> 2, _ -> 3 }",
+     "a |> f", "x is Foo", "a in b", "A { f: 1 }", "x with { y: 2 }", "\"s{a}t\"",
+     "1 +", "f(", "* 3", "(1) ->", "[1,", "{a:", "a ??", "match {", "if {", "x.",
+     "((((1))))", "a && b || c", "-x", "!y", "a..b", "spawn f()", "dyn T", "x as int"]
+}
+
+/// The PINNED divergence set (t-bw9s, measured at a28617c9). Shrinking this list is the
+/// point; it must never grow. Each entry is a diagnostic the generated parser gets
+/// meaningfully wrong or vaguer than the hand — see the header for the four worth reading.
+fn expected_divergences() -> List<string> {
+    ["x is Foo", "a in b", "f(", "[1,", "{a:", "match {", "if {", "spawn f()", "dyn T"]
+}
+
+fn diverges(source: string) -> bool { gen_out(source) != hand_out(source) }
+
+spec "t-bw9s: the expression hand oracle still has signal, and exactly this much" {
+    then "every pinned divergence still diverges — shrink this list as diagnostics are fixed" {
+        mut healed = ""
+        for src in expected_divergences() {
+            if !diverges(src) { healed = healed + "\n  FIXED (remove from expected_divergences): " + src }
+        }
+        if healed != "" {
+            println("the generated parser now AGREES with the hand on:" + healed)
+            println("that is good news — delete those entries and this row goes green.")
+        }
+        healed == ""
+    }
+
+    then "and nothing ELSE diverges — a new one means the generated parser regressed" {
+        mut fresh = ""
+        for src in corpus() {
+            mut pinned = false
+            for p in expected_divergences() { if p == src { pinned = true } }
+            if !pinned && diverges(src) { fresh = fresh + "\n  NEW divergence: " + src }
+        }
+        if fresh != "" {
+            println("the generated parser diverged from the hand oracle on:" + fresh)
+            println("compare with: ./build/bs2 expr FILE  vs  AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0 ./build/bs2 expr FILE")
+        }
+        fresh == ""
+    }
+
+    // The control. Without it both rows above pass on a broken harness: if `bs2 expr`
+    // stopped running, every output would be the empty string, nothing would "diverge",
+    // row 2 goes green — and row 1 would go red for the right-looking wrong reason.
+    // This asserts the sweep is actually parsing something.
+    then "the harness really runs — a valid expression produces real output" {
+        let out = gen_out("1 + 2 * 3")
+        out != "" && !out.contains("error[")
+    }
+}
