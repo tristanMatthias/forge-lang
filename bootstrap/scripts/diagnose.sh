@@ -4080,9 +4080,17 @@ mode_check_parser_flags() {
   # same tree — the lint would confirm a flag against itself, which is precisely the
   # circularity it exists to break. Comment lines are excluded for the same reason: a
   # commented-out read is not a read.
+  # Strip from `//` to end of line BEFORE extracting, so a trailing comment cannot
+  # donate a read: `fn r() {} // avra_process_env_get("AVRA_PARSER_MASKED")` used to
+  # register MASKED as live and thereby vouch for a dead pin of the same name. Leading
+  # `//` alone was never the whole comment surface.
+  #
+  # Stripping can only ever REMOVE a candidate read, so its failure direction is a flag
+  # reported dead while live — loud and immediately visible — never the silent reverse.
+  _cpf_strip_comments() { sed 's|//.*||'; }
   read_names=$(grep -rh "avra_process_env_get(\"$pat\")" "$src" --include='*.av' \
       --exclude='*_test.av' 2>/dev/null \
-    | grep -v '^[[:space:]]*//' \
+    | _cpf_strip_comments \
     | grep -o "avra_process_env_get(\"$pat\")" \
     | sed 's/.*("//; s/").*//' | sort -u)
   [ -n "$read_names" ] || die "check-parser-flags: found no routing env reads in production sources — the lint would pass vacuously"
@@ -4090,7 +4098,7 @@ mode_check_parser_flags() {
   # COMMENTS are exempt: prose that explains why a flag died (or pins a known vacuity,
   # as error_recovery_differential_test.av does) is exactly what should be written down.
   # Only a live PIN — a flag set on a real command line — can mislead a measurement.
-  _cpf_pins() { grep -v '^[[:space:]]*//' | grep -v '^[[:space:]]*#' | grep -o "$pat=[01]"; }
+  _cpf_pins() { _cpf_strip_comments | sed 's|#.*||' | grep -o "$pat=[01]"; }
   used_names=$( { grep -rh "$pat=[01]" "$src" --include='*_test.av' 2>/dev/null
                   grep -h "$pat=[01]" "$dsh" 2>/dev/null; } \
     | _cpf_pins | sed 's/=[01]$//' | sort -u)
@@ -4100,7 +4108,7 @@ mode_check_parser_flags() {
       err "check-parser-flags: DEAD flag pinned but never read by the compiler: $n"
       { grep -rn "$n=[01]" "$src" --include='*_test.av' 2>/dev/null
         grep -n "$n=[01]" "$dsh" 2>/dev/null; } \
-        | grep -v ':[[:space:]]*//' | grep -v ':[[:space:]]*#' | head -5 | sed 's/^/    /'
+        | grep -v '//.*'"$n" | grep -v '#.*'"$n" | head -5 | sed 's/^/    /'
       dead=$((dead + 1))
     fi
   done

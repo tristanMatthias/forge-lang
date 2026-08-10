@@ -75,6 +75,38 @@ spec "parser routing flags: every pinned flag is one the compiler reads" {
         rc != 0
     }
 
+    // A TRAILING comment is a comment too. The first cut excluded only lines whose
+    // FIRST characters were `//`, so `fn r() {} // avra_process_env_get("AVRA_X")`
+    // still registered X as live and vouched for a dead pin of that name. Same hole as
+    // the row above, one column to the right.
+    then "a READ inside a trailing comment cannot vouch for a dead pin" {
+        let tmp = "build/_parser_flag_trailing"
+        let _ = avra_shell_exec("rm -rf '${tmp}' && mkdir -p '${tmp}/packages/std-avrac/src/x/tests' '${tmp}/scripts'")
+        let dead = "AVRA_PARSER_" + "TRAILING"
+        let _ = avra_shell_exec("printf 'fn e() -> string { \"${dead}=0\" }\n' > '${tmp}/packages/std-avrac/src/x/tests/t_test.av'")
+        let _ = avra_shell_exec("printf 'fn r() { avra_process_env_get(\"AVRA_PARSER_EXPR_STATIC\") } // avra_process_env_get(\"${dead}\")\n' > '${tmp}/packages/std-avrac/src/x/live.av'")
+        let _ = avra_shell_exec("cp scripts/diagnose.sh '${tmp}/scripts/diagnose.sh'")
+        let rc = avra_shell_exec_status("cd '${tmp}' && bash scripts/diagnose.sh --check-parser-flags > /dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${tmp}'")
+        rc != 0
+    }
+
+    // The lint governs TWO name shapes — `AVRA_PARSER_*` and the standalone
+    // `AVRA_NO_STATIC_FALLBACK`. Only the first was mutation-covered, so an edit
+    // dropping the second from the pattern would pass every row in this file while
+    // silently un-guarding the flag whose 14 stale pins this ticket actually found.
+    then "the NON-prefixed routing flag is guarded too" {
+        let tmp = "build/_parser_flag_nsf"
+        let _ = avra_shell_exec("rm -rf '${tmp}' && mkdir -p '${tmp}/packages/std-avrac/src/x/tests' '${tmp}/scripts'")
+        let dead = "AVRA_NO_" + "STATIC_FALLBACK=1"
+        let _ = avra_shell_exec("printf 'fn e() -> string { \"${dead}\" }\n' > '${tmp}/packages/std-avrac/src/x/tests/n_test.av'")
+        let _ = avra_shell_exec("printf 'fn r() { avra_process_env_get(\"AVRA_PARSER_EXPR_STATIC\") }\n' > '${tmp}/packages/std-avrac/src/x/live.av'")
+        let _ = avra_shell_exec("cp scripts/diagnose.sh '${tmp}/scripts/diagnose.sh'")
+        let rc = avra_shell_exec_status("cd '${tmp}' && bash scripts/diagnose.sh --check-parser-flags > /dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${tmp}'")
+        rc != 0
+    }
+
     // Same shape, one line lower: a read that is COMMENTED OUT is not a read.
     then "a commented-out READ cannot vouch for a dead pin either" {
         let tmp = "build/_parser_flag_comment"

@@ -26,6 +26,29 @@ fn check_out(env: string, source: string) -> string {
 }
 
 fn dsl(source: string) -> string { check_out("", source) }
+
+/// t-bw9s — THERE IS NO HAND ORACLE AVAILABLE TO THIS FILE, and `agrees` below is
+/// therefore a self-comparison. Read this before trying to "restore" one.
+///
+/// The history: this pinned `AVRA_PARSER_DECL_FLIP=0`, which died with the declaration
+/// hand parser. The obvious repair — pin the EXPRESSION hand instead, since these are
+/// match-EXPRESSION cases — was tried and MEASURED, and it does not work. Under
+/// `bs2 check`, `AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0` produces
+/// byte-identical output to the default on every input tried, including
+/// `let a = (1) ->` — the documented hand-vs-generated divergence case — and logs zero
+/// `[hand-fallback]` markers under either setting.
+///
+/// The reason is structural: a whole-program compile is driven by the GENERATED
+/// declaration parser, which parses expressions with its own generated rules and never
+/// calls `Parser.parse_expression`. Those two flags gate that method, so nothing on this
+/// path ever consults them. The expression hand is reachable from `bs2 expr`, which
+/// parses an expression directly — not from `bs2 check`.
+///
+/// So `hand` is kept as an ALIAS, named for what it once selected, and the `agrees`
+/// rows below assert that the generated parser's F-code signature is stable rather than
+/// that two engines concur. What still has teeth here are the rows asserting a SPECIFIC
+/// signature (the `codes(out) == "..."` forms) — those fail if the generated parser's
+/// diagnostics change, which is the property this file actually guards.
 fn hand(source: string) -> string { check_out("", source) }
 
 // The occurrence-ordered F-code signature — set, order and count together.
