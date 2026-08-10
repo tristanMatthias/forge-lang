@@ -360,7 +360,8 @@ fn avra_expr_core() -> Grammar {
                    @expect("->", "expected `->` after pattern in quote arm")
                    @expect("}", "expected `}` after quote arm body") -> MkQuoteArm(lb, p, g, b)
   quote_expr   = "quote" ( k:("stmt" | "stmts" | "decl") )? @bump(quote_depth) body:block_expr -> MkQuote(k, body)
-  spawn_expr   = "spawn" body:block_expr -> MkSpawn(body)
+  spawn_expr   = "spawn" @require body:block_expr
+                 @expect("{", "expected `{` after spawn") -> MkSpawn(body)
   isolated_expr = "isolated" body:block_expr -> MkIsolated(body)
   block_expr   = "{" @on(allow_dot_postfix) stmts:declaration* "}" -> MkExprBlock(stmts)
   when_expr    = "when" "{" ( a:when_arm )* "}" -> MkWhen(a)

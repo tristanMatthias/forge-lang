@@ -62,7 +62,20 @@ fn corpus() -> List<string> {
 /// point; it must never grow. Each entry is a diagnostic the generated parser gets
 /// meaningfully wrong or vaguer than the hand — see the header for the four worth reading.
 fn expected_divergences() -> List<string> {
-    ["x is Foo", "a in b", "f(", "[1,", "{a:", "match {", "if {", "spawn f()", "dyn T"]
+    // 9 -> 8: `spawn f()` CONVERGED (t-bw9s). The generated rule was
+    // `spawn_expr = "spawn" body:block_expr` with no required-terminal message, so a
+    // missing block surfaced from wherever `block_expr` gave up — "expected }" at 2:1,
+    // naming the wrong token at the wrong column. It is now
+    // `"spawn" @require body:block_expr @expect("{", "expected `{` after spawn")`,
+    // byte-identical to the oracle. `@require` is safe on this reference specifically
+    // because `block_expr`'s FIRST set is the single token `{`; a broad FIRST set here
+    // is the exponential-backtracking trap CLAUDE.md documents.
+    //
+    // Note the @expect key: it binds to the TERMINAL ("{"), not the rule name
+    // ("block_expr"). Keyed on the rule it silently does not bind and you get the
+    // generic "expected {" — the position moves and the wording does not, which reads
+    // like a partial fix and is really an unbound annotation.
+    ["x is Foo", "a in b", "f(", "[1,", "{a:", "match {", "if {", "dyn T"]
 }
 
 fn diverges(source: string) -> bool { gen_out(source) != hand_out(source) }

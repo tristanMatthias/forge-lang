@@ -1452,6 +1452,10 @@ fn parse_quote_expr(st: PState) -> CapVal {
 fn parse_spawn_expr(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     let _ = st.advance()
+    if !(st.cur().tk == Tk.LeftBrace) {
+        st.report("expected `{` after spawn")
+        return CapVal.Node(st.error_node_silent())
+    }
     let body = parse_block_expr(st)
     mk_spawn(st, sp_start, body)
 }
