@@ -38,6 +38,7 @@ use @std.crypto.{sha256_hex, sha256_file}
 // only the first cached_fixture_capture call per process does the
 // sidecar + find-newer dance; every subsequent call returns the
 // memoized string immediately, saving a fork+exec per call.
+extern fn avra_process_env_get(name: string) -> string
 extern fn avra_test_toolchain_fp_get() -> string
 extern fn avra_test_toolchain_fp_set(fp: string)
 // Advisory lock serializing concurrent cold-misses on one fixture:
@@ -695,7 +696,24 @@ export fn cached_fixture_compile_and_run(fixture_path: string) -> string {
 /// source of truth for the layout: both the writer (cached_fixture_capture)
 /// and the `bs2 cache clear-failed` evictor compose their paths from this,
 /// so they can never disagree on where captures live.
-export fn fixture_stdout_cache_dir() -> string { "build/cache/fixture_stdout" }
+/// `AVRA_FIXTURE_CACHE_DIR` redirects the capture store to a private root.
+///
+/// This exists so a spec that must MUTATE the cache — create captures, count
+/// them, remove them — can do so without touching the shared one. Shards run
+/// concurrently, so a spec that `rm -rf`s the shared directory deletes other
+/// shards' captures AND their `.lock` files mid-run, which defeats the lock
+/// serialisation those fixtures depend on. That is not hypothetical: the first
+/// version of `fixture_cache_env_key_test` did exactly that and reddened an
+/// unrelated shard on CI (`vtype_eq_no_fqn_tolerance_test_x8_…`, 6922/6923)
+/// while passing locally, where the interleaving happened not to collide.
+///
+/// NOT part of the cache key: it changes where captures live, not what a
+/// fixture emits.
+export fn fixture_stdout_cache_dir() -> string {
+    let custom = avra_process_env_get("AVRA_FIXTURE_CACHE_DIR")
+    if custom != "" { return custom }
+    "build/cache/fixture_stdout"
+}
 
 /// fxfz: source directive a fixture embeds (as a comment) to opt into
 /// "stateful" cache treatment. Defined once so the producer (the fixture
