@@ -1,0 +1,164 @@
+# uzs9.2 / t-kdyj.4 — the in-shard interleaving DETECTOR.
+#
+# This workflow exists because the project currently has no way to observe the
+# uzs9.2 flake class at all, and the reason is circular.
+#
+# `f1005_nullable_omit_test` was hit twice (2026-07-09, #671 and #673) with the
+# gates at `AVRA_TEST_JOBS: "2"`. Nine days later `49571a5b` moved all three
+# gates 2 -> 1, inside an unrelated L6 PR, for memory. And `jobs <= 1` takes
+# `run_units_sequential` in features/spec_test/runner.av — no worker threads at
+# all. So since 2026-07-18 an in-shard interleaving race CANNOT fire on any
+# gate, and every green run has been green on this class by construction.
+#
+# The circularity: uzs9.2's own stated plan was that "the cheapest remaining
+# detector is CI itself". It is not a detector while the pin is 1, and the pin
+# will not move until the class is shown to be dead — which requires the
+# detector. Six investigations (175 suite iterations, 19.2M dense probes, 4000
+# co-scheduled batch runs, 800 under memory pressure, a runtime thread-safety
+# audit, an AVRA_RC_STRICT pass) all measured something OTHER than this.
+#
+# This breaks the circle without touching the gates. rc-strict, seed-train and
+# seed-train-verify stay pinned at 1 and in exact parity with each other, which
+# is what hama's rule protects. This job gates NOTHING — it is scheduled, so it
+# never attaches to a PR and never blocks a merge. It only accumulates samples
+# at a width the gates cannot reach.
+#
+# Sample arithmetic, since a bad version of this would be another
+# guard-that-cannot-fail: the flake was measured at ~2 hits in weeks of CI. A
+# nightly run yields ~7 samples/week, so a quiet quarter is genuine evidence
+# where today's quiet is worth literally nothing. It is not a proof of absence
+# and must not be quoted as one.
+#
+# When it does fire, the failure is self-attributing: one claim per `then`
+# (#1136) and `&&` chains naming their false conjunct (t-kdyj.5, #1144). The
+# two historical hits had neither, which is why they cost so much.
+name: interleaving-detector
+
+on:
+  schedule:
+    # 03:17 UTC daily. Off the hour on purpose — GitHub's scheduler queues
+    # heavily at :00 and a delayed start is a lost sample.
+    - cron: "17 3 * * *"
+  # Manual runs are how you accumulate samples faster than nightly when
+  # deciding t-kdyj.4, and how you re-check after a suspected fix.
+  workflow_dispatch:
+
+# Least privilege: builds and runs repository code — read only.
+permissions:
+  contents: read
+
+# Deliberately NOT cancel-in-progress: every completed run is a sample, and
+# cancelling one to start another destroys evidence. Concurrency is capped at
+# one so a manual burst queues rather than piling runners up.
+concurrency:
+  group: interleaving-detector
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    runs-on: ubuntu-24.04
+    # The suite runs WIDER here than on the pinned gates, so it is not slower
+    # than rc-strict; the same 60-minute ceiling applies for cold runners.
+    timeout-minutes: 60
+    steps:
+      # Pinned to a commit (what @v4 resolves to at pin time): tags are
+      # mutable and this workflow builds and runs repository code.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          # The class is a property of the integration branch, not of any PR.
+          ref: feat/crafting-intepreters
+          persist-credentials: false
+          # Full history: cache-seed resolves the pinned seed blob.
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-llvm
+
+      - uses: ./.github/actions/cache-seed
+
+      - name: Build bs2
+        run: bash bootstrap/scripts/diagnose.sh --build-bs2
+
+      # AVRA_TEST_JOBS is deliberately NOT set: the runner falls back to the
+      # machine's core count, which is the width a developer's plain `bs2 test`
+      # uses and the one no gate exercises.
+      # Records the suite's status and NEVER fails on it — the assertion step
+      # below owns the verdict, and it has to run even (especially) on a red
+      # suite, or the width check and the uzs9.2 pointer are skipped exactly
+      # when they matter.
+      #
+      # `set +e` around the pipeline is load-bearing, not decoration. GitHub's
+      # default shell is `bash -e {0}`, and the `set -o pipefail` here makes a
+      # failing `bs2 test` propagate through `tee` — so with `-e` still armed
+      # the step aborted at the pipeline, before writing `suite_rc`, and the
+      # dependent step was skipped as a consequence of the failing one.
+      # Verified by simulating the default shell:
+      #
+      #     $ bash -e step.sh   # `false | tee log`; echo suite_rc=...
+      #     step exit=1
+      #     (EMPTY — suite_rc never written)
+      #
+      # A detector whose failure path skips its own diagnostic is the shape
+      # this whole PR is about.
+      - name: Spec suite at the controller-chosen width
+        run: |
+          set -uo pipefail
+          cd bootstrap
+          set +e
+          ./build/bs2 test 2>&1 | tee ../detector.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "suite_rc=${rc}" >> "$GITHUB_ENV"
+          echo "suite exited ${rc}; the width assertion below owns the verdict"
+
+      # THE ASSERTION THAT MAKES A GREEN RUN MEAN ANYTHING.
+      #
+      # Without it this job is exactly the failure it was built to correct: if
+      # the suite ran every shard at width 1 — an env leak, a runner default
+      # change, a single-unit shard set — it would pass while exercising none
+      # of the interleaving, and its green would be recorded as a sample of a
+      # class it never touched. That is how "no recurrence since July" became
+      # load-bearing in the first place.
+      #
+      # `[units] N unit(s) across W worker(s)` is emitted per multi-unit shard
+      # by run_test_suite. At least one shard must report W >= 2.
+      #
+      # `if: always()` so a red suite still gets its width checked and its
+      # diagnostic printed, and `${suite_rc:-1}` so a missing status reads as
+      # FAILURE rather than success — fail-closed in both directions, matching
+      # the sentinel discipline this epic keeps arriving at.
+      - name: Assert the run actually exercised in-shard interleaving
+        if: always()
+        run: |
+          set -uo pipefail
+          suite_rc="${suite_rc:-1}"
+          if [ ! -f detector.log ]; then
+            echo "::error::no detector.log — the suite step did not run to the"
+            echo "::error::point of producing output; nothing can be concluded."
+            exit 1
+          fi
+          if ! grep -qE '^\[units\] [0-9]+ unit\(s\) across [0-9]+ worker\(s\)$' detector.log; then
+            echo "::error::no [units] width lines — this build cannot report its"
+            echo "::error::in-shard width, so a green suite proves nothing about uzs9.2."
+            exit 1
+          fi
+          widest=$(grep -oE 'across [0-9]+ worker\(s\)$' detector.log \
+                   | grep -oE '[0-9]+' | sort -n | tail -1)
+          echo "widest in-shard width observed: ${widest}"
+          if [ "${widest:-0}" -lt 2 ]; then
+            echo "::error::every shard ran at width ${widest} — no interleaving was"
+            echo "::error::exercised. A green result here is not a uzs9.2 sample."
+            exit 1
+          fi
+          # Only now does the suite's own result count.
+          if [ "${suite_rc}" -ne 0 ]; then
+            echo "::error::suite failed at width ${widest} — this is a uzs9.2 candidate."
+            echo "::error::The failing arm names itself (#1136 / t-kdyj.5); record it"
+            echo "::error::on forge-crafting-intepreters-uzs9.2 rather than re-running."
+            exit "${suite_rc}"
+          fi
+
+      # No artifact upload step: `actions/upload-artifact` is used nowhere else
+      # in this repo, so there is no already-vetted commit SHA to pin it to, and
+      # every action here is commit-pinned on purpose (tags are mutable). The
+      # log is in the job output via `tee` above, and the widths are echoed
+      # explicitly, so a sample is readable without it.

@@ -83,6 +83,39 @@ fn test_jobs() -> int {
 export fn run_test_suite(units: List<TestUnit>) {
     if units.length == 0 { return }
     let jobs = test_jobs()
+    // The ACHIEVED in-shard width, stated once per multi-unit shard.
+    //
+    // Until this line existed the width was unobservable from a run's output,
+    // and that gap has a cost: uzs9.2 (the f1005 interleaving flake) was hit
+    // twice at `AVRA_TEST_JOBS=2`, the pin moved 2->1 nine days later inside an
+    // unrelated PR, and `jobs <= 1` takes the sequential path below — no
+    // threads, so the class cannot fire. Every green CI run since has been
+    // green on that class BY CONSTRUCTION, which reads exactly like evidence
+    // the class is dead and is none.
+    //
+    // Reported so a run can be asked what it actually exercised rather than
+    // what it was assumed to. A detector that cannot show its own width is the
+    // same guard-that-cannot-fail shape it exists to catch.
+    //
+    // Single-unit runs stay silent: they have no interleaving to describe, and
+    // every compile-and-run fixture is one unit — so fixture output is
+    // untouched.
+    // min(jobs, units.length), NOT jobs: `run_units_parallel` spawns `jobs`
+    // workers but loads only `units.length` work items, so a 2-unit shard can
+    // never have more than 2 running at once however many threads exist. The
+    // ACHIEVED width is the smaller. Reporting `jobs` would let a detector bank
+    // a width the shard never reached — the same guard-that-cannot-fail shape
+    // this line exists to prevent (CodeRabbit on #1206).
+    if units.length > 1 {
+        let workers = if jobs <= 1 {
+            1
+        } else if jobs < units.length {
+            jobs
+        } else {
+            units.length
+        }
+        eprintln("[units] ${string(units.length)} unit(s) across ${string(workers)} worker(s)")
+    }
     if jobs <= 1 || units.length == 1 {
         run_units_sequential(units)
         return
