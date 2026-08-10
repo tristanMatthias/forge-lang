@@ -144,6 +144,35 @@ fn expected_divergences() -> List<string> {
     // sweep said `{a:` had closed and `if {` had not, and this harness says the exact
     // opposite. Both readings are of real inputs; they differ by one trailing byte. Only
     // the committed harness governs the count.
+    // ── ALL FIVE DIAGNOSED (t-bw9s) ──────────────────────────────────────────────
+    // Measured three-way at 27cb6e61, fixtures with NO trailing newline (this harness's
+    // shape — the set is newline-sensitive, see above). emit == executor on every one, so
+    // none of these is a lockstep bug; all five are generated-vs-HAND. Error COUNTS are
+    // part of the diagnosis and were the thing that separated the classes:
+    //
+    //   a in b    1 err hand / 2 gen. Messages IDENTICAL on all three engines. The extra
+    //             is a second F0040 "expected expression" — the "reports but does not
+    //             FAIL" class in CLAUDE.md: a rule reports and keeps going where the hand
+    //             propagates and stops. Fix at the rule that continues, not at the message.
+    //
+    //   [1,       1 err hand / 3 gen. gen "expected `for`" 1:3, hand "expected expression"
+    //             1:4. Both generated engines take the COMPREHENSION branch; the hand
+    //             treats it as an unterminated list. `list_comp_ahead` reads as returning
+    //             false for this input and runs as true — that gap is the bug, still
+    //             unexplained. Do NOT weaken the peek before explaining it.
+    //
+    //   f(        1 err each, same position 1:3. gen "expected `)` after arguments",
+    //   match {   hand "expected expression". Same shape at 1:8 for `match {`. Both are
+    //             the generated rule naming the CLOSING DELIMITER where the hand names
+    //             what you would type NEXT — an empty list whose close is missing. Likely
+    //             one shared cause in how an empty repetition reports; worth checking
+    //             whether both close together before fixing either alone.
+    //
+    //   {a:       2 errs each, FIRST diagnostic byte-identical. The whole divergence is
+    //             the SECOND one's frame header: `1:4` (gen) against `1:5` (hand) — an
+    //             off-by-one in the EOF column, one character in the rendered output.
+    //             Smallest of the five and the least likely to matter to a user; listed
+    //             last deliberately.
     ["a in b", "f(", "[1,", "{a:", "match {"]
 }
 
