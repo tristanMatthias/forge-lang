@@ -1503,7 +1503,7 @@ fn parse_block_expr(st: PState) -> CapVal {
     if __any_err { st.note_had_error() }
     st.set_modes(__modes_1)
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected `}`")
+        st.report("expected `}` after block expression")
     }
     mk_expr_block(st, sp_start, CapVal.SNodes(stmts_list))
 }

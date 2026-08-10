@@ -1,0 +1,99 @@
+// WHY: the lexer flip's string/comment MODES, and the proof they match the hand scanner
+// before anything is wired to them.
+//
+// `token_table.av` carried keywords, operators and char-class runs as data; the quote and
+// comment LEADS were explicitly deferred ("those are a later slice") because a string body
+// is not a scan-until. Two things interrupt it, and both are now table fields rather than
+// hand-written control flow:
+//
+//   escape  — `\` consumes the NEXT byte whatever it is, so `\"` does not close
+//   interp  — `{` SUSPENDS the scan so the parser can take the nested expression
+//
+// That reduces `"…"`, `` `…` ``, `'…'` and `r"…"` to one generator over four rows differing
+// only in those two fields. `/* … */` needed its own shape: the terminator is the close
+// that BALANCES, which no scan-until expresses, so `nest_run_rules` carries a depth
+// counter's worth of data.
+//
+// These scanners are NOT yet on the production path. That is deliberate and is what this
+// file is for: the hand lexer keeps scanning strings until the generated scanners are
+// proven equivalent HERE, so the swap is a separate, reviewable step with the evidence
+// already in the tree. Wiring first and testing after is how the emit/executor backtick
+// divergence survived months (t-bw9s).
+
+use @std.avrac.parse.{scan_dq_body, scan_tmpl_body, scan_sq_body, scan_raw_body, scan_block_comment}
+use @std.avrac.parse.{avra_bytes_from_string}
+
+fn dq(s: string) -> int { scan_dq_body(avra_bytes_from_string(s), 0) }
+fn tmpl(s: string) -> int { scan_tmpl_body(avra_bytes_from_string(s), 0) }
+fn sq(s: string) -> int { scan_sq_body(avra_bytes_from_string(s), 0) }
+fn raw(s: string) -> int { scan_raw_body(avra_bytes_from_string(s), 0) }
+fn blk(s: string) -> int { scan_block_comment(avra_bytes_from_string(s), 0) }
+
+spec "lexer flip: the generated string-body scanners stop where the hand lexer stops" {
+    // Exclusive end, like every other run in the table: the scanner stops BEFORE the
+    // close so the caller inspects `byte_at(src, end)` to learn WHY it stopped.
+    then "an ordinary body stops before its closing quote" {
+        dq("abc\"") == 3
+    }
+
+    then "and before an interpolation lead, so the parser can take over" {
+        dq("ab{x}\"") == 2
+    }
+
+    // The escape rule is the whole reason this is not a delim run.
+    then "an escaped quote does NOT close the body" {
+        // `a\"b"` — the `\"` is two bytes of body, so the stop is the LAST quote at 4.
+        dq("a\\\"b\"") == 4
+    }
+
+    then "an escaped brace does NOT suspend for interpolation" {
+        dq("a\\{b{") == 4
+    }
+
+    then "a trailing backslash at EOF does not read past the end" {
+        // The escape needs a byte after it; at EOF there is none, so the loop must not
+        // consume two and run off. Unterminated, so the stop is EOF.
+        dq("ab\\") == 3
+    }
+
+    then "an unterminated body stops at EOF, not past it" {
+        dq("abc") == 3
+    }
+
+    // Same generator, different rows — the point of making it data.
+    then "the template mode differs only in its delimiter" {
+        tmpl("ab`") == 2 && tmpl("ab{x}`") == 2
+    }
+
+    then "the char mode escapes but does NOT interpolate" {
+        // `{` is an ordinary body byte here, unlike dq_body.
+        sq("a'") == 1 && sq("a{b'") == 3 && sq("\\'x'") == 3
+    }
+
+    then "the raw mode does NOT escape — a backslash is a literal byte" {
+        // `a\"` : in dq_body the `\"` is escaped and the body continues; in raw_body the
+        // backslash is content and the quote CLOSES at 2. That difference is the rule row.
+        raw("a\\\"") == 2 && dq("a\\\"") == 3
+    }
+}
+
+spec "lexer flip: the generated block-comment scanner balances nesting" {
+    // INCLUSIVE end here, and the doc says why: there is nothing useful at the stop byte,
+    // unlike the string modes where the caller must distinguish close from interp.
+    then "a simple comment ends past its close" {
+        blk("/* x */") == 7
+    }
+
+    then "a NESTED comment does not end at the first close — the whole point" {
+        // A scan-until would stop at the inner `*/` (offset 12) and leave ` */` as source.
+        blk("/* a /* b */ c */") == 17
+    }
+
+    then "and nests deeper than one level" {
+        blk("/* /* /* */ */ */") == 17
+    }
+
+    then "an unbalanced comment runs to EOF rather than looping" {
+        blk("/* a /* b */") == 12
+    }
+}
