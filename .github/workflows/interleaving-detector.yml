@@ -19,15 +19,21 @@
 #
 # This breaks the circle without touching the gates. rc-strict, seed-train and
 # seed-train-verify stay pinned at 1 and in exact parity with each other, which
-# is what hama's rule protects. This job gates NOTHING — it is scheduled, so it
-# never attaches to a PR and never blocks a merge. It only accumulates samples
-# at a width the gates cannot reach.
+# is what hama's rule protects. This job gates NOTHING — it runs on push to the
+# integration branch and on a schedule, neither of which attaches to a PR, so it
+# never blocks a merge. It only accumulates samples at a width the gates cannot
+# reach.
 #
 # Sample arithmetic, since a bad version of this would be another
-# guard-that-cannot-fail: the flake was measured at ~2 hits in weeks of CI. A
-# nightly run yields ~7 samples/week, so a quiet quarter is genuine evidence
-# where today's quiet is worth literally nothing. It is not a proof of absence
-# and must not be quoted as one.
+# guard-that-cannot-fail: the flake was measured at ~2 hits in weeks of CI. One
+# run per integration merge yields samples at least as fast as the nightly cron
+# this originally specified, so a quiet quarter is genuine evidence where
+# today's quiet is worth literally nothing. It is not a proof of absence and
+# must not be quoted as one.
+#
+# The first version of this file was itself worth nothing on that scale: it was
+# schedule-only, `schedule` fires only from the DEFAULT branch, and this file is
+# not on it — so it ran zero times. See the `on:` block.
 #
 # When it does fire, the failure is self-attributing: one claim per `then`
 # (#1136) and `&&` chains naming their false conjunct (t-kdyj.5, #1144). The
@@ -35,12 +41,37 @@
 name: interleaving-detector
 
 on:
+  # THE TRIGGER THAT ACTUALLY FIRES. `schedule` below runs ONLY from the
+  # repository's DEFAULT branch (`main`), and this workflow lives on the
+  # integration branch — main is 4351 commits behind and carries no `.github`
+  # at all. So as shipped, the cron never fired: the workflow was not even
+  # registered with Actions (7 workflows listed, this one absent; its runs
+  # endpoint 404s) and it accrued ZERO samples while this ticket planned to
+  # read future quiet as evidence the flake class was dead. That is the
+  # guard-that-cannot-fail this file's own header warns against — arrived at
+  # through placement rather than logic.
+  #
+  # Every other workflow here is push/pull_request-triggered, which run from
+  # the pushed branch and the PR merge ref respectively; `schedule` is the one
+  # trigger with a default-branch requirement, and this was the one workflow
+  # using it. `diagnose.sh --check-ci-gates` now fails on an inert scheduled
+  # workflow so this cannot recur silently.
+  #
+  # This still gates NOTHING: a push run on the integration branch is not a PR
+  # check, so it cannot block a merge — the property the schedule was chosen
+  # for is preserved. Cadence changes from nightly to per-merge, which yields
+  # MORE samples, not fewer.
+  push:
+    branches: [feat/crafting-intepreters]
+  # Kept so the cron starts working the moment this file reaches the default
+  # branch (its checkout already pins the integration ref explicitly, so it is
+  # correct from either home). Until then it contributes nothing.
   schedule:
     # 03:17 UTC daily. Off the hour on purpose — GitHub's scheduler queues
     # heavily at :00 and a delayed start is a lost sample.
     - cron: "17 3 * * *"
-  # Manual runs are how you accumulate samples faster than nightly when
-  # deciding t-kdyj.4, and how you re-check after a suspected fix.
+  # Manual runs are how you accumulate samples faster than the automatic
+  # cadence when deciding t-kdyj.4, and how you re-check after a suspected fix.
   workflow_dispatch:
 
 # Least privilege: builds and runs repository code — read only.

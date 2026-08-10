@@ -135,6 +135,38 @@ spec "t-xkcw checkless-PR lint" {
         lint(d) == 0
     }
 
+    then "catches a schedule-ONLY workflow — `schedule` fires only from the default branch" {
+        // t-kdyj.4. The uzs9.2 interleaving detector shipped as schedule-only on
+        // the INTEGRATION branch. GitHub fires `schedule` only from the DEFAULT
+        // branch, which here carries no .github at all — so it never ran, was
+        // never even registered with Actions, and accrued zero samples while its
+        // ticket planned to read future quiet as evidence the flake was dead.
+        //
+        // This is the nastiest shape a guard can take: not wrong logic, wrong
+        // PLACEMENT, and the symptom is silence — indistinguishable from a
+        // detector that keeps passing.
+        let d = fresh("schedonly")
+        write_wf(d, "detector.yml",
+            "name: d\\non:\\n  schedule:\\n    - cron: \\\"17 3 * * *\\\"\\n  workflow_dispatch:\\njobs:\\n  a:\\n    runs-on: x\\n")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) != 0
+    }
+
+    then "allows a dormant schedule alongside a trigger that DOES fire here" {
+        // The positive control for the arm above, and the reason it is scoped to
+        // "cannot fire at all" rather than "mentions schedule": a cron kept for
+        // the day the file reaches the default branch is legitimate as long as
+        // something else fires from where it lives. Flagging that would be noise,
+        // and a noisy lint is how the next real violation gets waved through.
+        let d = fresh("schedplus")
+        write_wf(d, "detector.yml",
+            "name: d\\non:\\n  push:\\n    branches: [${INTEGRATION}]\\n  schedule:\\n    - cron: \\\"17 3 * * *\\\"\\njobs:\\n  a:\\n    runs-on: x\\n")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) == 0
+    }
+
     then "reads block-list YAML too, and ignores push-only workflows" {
         let d = fresh("blocklist")
         write_wf(d, "gate.yml",

@@ -184,6 +184,11 @@ LLVM_WRAPPER_O="$BUILD_DIR/llvm_wrapper.o"
 # branch against this branch's pristine seed. Override per-repo or
 # per-invocation with AVRA_INTEGRATION_BRANCH.
 INTEGRATION_BRANCH="${AVRA_INTEGRATION_BRANCH:-feat/crafting-intepreters}"
+# GitHub fires `schedule` ONLY from the DEFAULT branch — not from the branch the
+# workflow file lives on. Every gate here is push/pull_request-triggered (those
+# run from the pushed branch / PR merge ref), so this asymmetry stayed invisible
+# until a scheduled workflow landed on the integration branch and never ran.
+DEFAULT_BRANCH="${AVRA_DEFAULT_BRANCH:-main}"
 
 C_RED='\033[0;31m'
 C_GREEN='\033[0;32m'
@@ -4208,6 +4213,8 @@ mode_check_ci_gates() {
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", v)
             gsub(/^["\047]|["\047]$/, "", v)
             if (v == "pull_request") print "PR"
+            if (v == "schedule") print "SCHED"
+            if (v == "push") print "PUSH"
           }
         }
         next
@@ -4218,6 +4225,8 @@ mode_check_ci_gates() {
         ev = line; sub(/^[ ]*/, "", ev); sub(/:.*$/, "", ev)
         key = ""; keyind = -1
         if (ev == "pull_request") print "PR"
+        if (ev == "schedule") print "SCHED"
+        if (ev == "push") print "PUSH"
         next
       }
       if (ev != "pull_request") next
@@ -4234,10 +4243,24 @@ mode_check_ci_gates() {
       }
     }'
 
-  local allows="" ignores="" guards=0 guard_files="" unfiltered="" f out a g
+  local allows="" ignores="" guards=0 guard_files="" unfiltered="" scheduled="" f out a g
   for f in "$wf"/*.yml "$wf"/*.yaml; do
     [ -e "$f" ] || continue
     out=$(awk "$extract" "$f")
+    # Collected before the pull_request filter below: such a workflow has NO
+    # pull_request trigger by definition, which is exactly why it would
+    # otherwise fall straight through this lint.
+    #
+    # Only workflows that CANNOT FIRE AT ALL from where they live are flagged:
+    # `schedule` with no push and no pull_request. A dormant `schedule` sitting
+    # alongside a working push trigger is legitimate (it starts contributing if
+    # the file ever reaches the default branch), so flagging that would be noise
+    # — and noise in a lint is how the next real one gets ignored.
+    if printf '%s\n' "$out" | grep -qx 'SCHED' \
+       && ! printf '%s\n' "$out" | grep -qx 'PUSH' \
+       && ! printf '%s\n' "$out" | grep -qx 'PR'; then
+      scheduled="$scheduled$(basename "$f")"$'\n'
+    fi
     printf '%s\n' "$out" | grep -qx 'PR' || continue
     a=$(printf '%s\n' "$out" | sed -n 's/^ALLOW //p')
     g=$(printf '%s\n' "$out" | sed -n 's/^IGNORE //p')
@@ -4281,7 +4304,44 @@ mode_check_ci_gates() {
     exit 1
   fi
 
-  ok "check-ci-gates: every PR base is covered — gates allowlist [$(printf '%s' "$allow_set" | tr '\n' ' ')], guard covers the rest"
+  # A `schedule` trigger fires ONLY from the default branch. Every workflow here
+  # lives on the integration branch, so a scheduled workflow is INERT unless it
+  # is also on the default branch — it never runs, reports nothing, and its
+  # silence reads exactly like a passing detector (t-kdyj.4: the uzs9.2
+  # interleaving detector shipped this way and accrued zero samples while its
+  # ticket planned to read future quiet as evidence the flake class was dead).
+  #
+  # FAIL CLOSED: presence on the default branch must be positively demonstrated.
+  # An unresolvable ref is NOT a pass — "I could not check" and "it is fine" are
+  # the distinction this whole class of bug lives in.
+  if [ -n "$scheduled" ]; then
+    local dref="" cand
+    for cand in "origin/$DEFAULT_BRANCH" "$DEFAULT_BRANCH"; do
+      if git -C "$REPO_DIR" rev-parse --verify -q "$cand^{commit}" >/dev/null 2>&1; then dref="$cand"; break; fi
+    done
+    if [ -z "$dref" ]; then
+      err "check-ci-gates: cannot verify scheduled workflow(s) — no ref for the default branch '$DEFAULT_BRANCH' (tried origin/$DEFAULT_BRANCH and $DEFAULT_BRANCH)."
+      err "  A scheduled workflow runs ONLY from the default branch, so this cannot be assumed. Fetch it (git fetch origin $DEFAULT_BRANCH) or set AVRA_DEFAULT_BRANCH."
+      printf '%s' "$scheduled" | sed 's/^/  /' >&2
+      exit 1
+    fi
+    local missing="" wfrel base
+    wfrel=${wf#"$REPO_DIR"/}
+    while IFS= read -r base; do
+      [ -n "$base" ] || continue
+      git -C "$REPO_DIR" cat-file -e "$dref:$wfrel/$base" 2>/dev/null || missing="$missing  $base"$'\n'
+    done <<EOF
+$scheduled
+EOF
+    if [ -n "$missing" ]; then
+      err "check-ci-gates: scheduled workflow(s) absent from the default branch ($dref) — their \`schedule\` trigger NEVER fires, so they gate nothing and their silence is indistinguishable from success (t-kdyj.4):"
+      printf '%s' "$missing" >&2
+      err "  Fix: put the workflow on the default branch (checking out the intended ref explicitly), or give it a trigger that fires from the branch it lives on (push/pull_request)."
+      exit 1
+    fi
+  fi
+
+  ok "check-ci-gates: every PR base is covered — gates allowlist [$(printf '%s' "$allow_set" | tr '\n' ' ')], guard covers the rest$([ -n "$scheduled" ] && printf '; %s scheduled workflow(s) present on %s' "$(printf '%s' "$scheduled" | grep -c .)" "$dref")"
 }
 
 main() {
