@@ -755,6 +755,13 @@ SEED MANAGEMENT
                          and it BYPASSES the runtime ICE, so only this source lint
                          catches a reintroduction. [dir] defaults to the codegen
                          tree; the guard test passes a temp dir.
+  --check-parser-flags
+                         t-bw9s dead-flag lint. Every AVRA_PARSER_* name pinned in a
+                         mode string (diagnose.sh's PARSER_MODE_*, any *_test.av) must
+                         be one the compiler actually reads via avra_process_env_get.
+                         A pin nothing reads selects no parser, so the probe compares a
+                         path against itself and still prints an authoritative-looking
+                         row — how AVRA_PARSER_DECL_FLIP survived its own deletion.
   --check-ci-gates [dir]
                          t-xkcw checkless-PR lint. Every gate is filtered to PRs
                          based on the integration branch, so a STACKED PR runs no
@@ -4066,6 +4073,97 @@ mode_check_layout_boundary() {
 #
 # $1 (optional) = workflows dir to scan (defaults to the real one; the guard
 # test points it at temp dirs holding planted violations).
+# ── t-bw9s: no DEAD parser routing flag may be pinned anywhere ────────────────
+#
+# `AVRA_PARSER_DECL_FLIP` outlived the field it switched. Nothing read it, so pinning
+# it selected nothing — but it sat in four `PARSER_MODE_*` strings, in CLAUDE.md's
+# parser table as "the HAND parser — the oracle", and in 14 test files building a
+# `..._hand` mode out of it. Each read as a routing choice and made none, which is the
+# worst kind of measurement: it succeeds, it looks authoritative, and it compares a
+# path against itself.
+#
+# The general invariant, so the next flag to die cannot repeat it: every `AVRA_PARSER_*`
+# name pinned in a mode string must be one the compiler actually reads.
+mode_check_parser_flags() {
+  local src="$REPO_DIR/bootstrap/packages/std-avrac/src"
+  [ -d "$src" ] || src="$REPO_DIR/packages/std-avrac/src"
+  [ -d "$src" ] || die "check-parser-flags: cannot locate compiler src"
+  local dsh="$REPO_DIR/bootstrap/scripts/diagnose.sh"
+  [ -f "$dsh" ] || dsh="$REPO_DIR/scripts/diagnose.sh"
+
+  # The routing names this lint governs. AVRA_NO_STATIC_FALLBACK is in scope because it
+  # is the same kind of switch and died the same way (t-47hc.4.3 removed the interpreter
+  # re-parse fallback); scoping the lint to `AVRA_PARSER_*` alone let a second dead pin
+  # sit in fn_where_clause_native_test.av untouched while the lint reported all-clear.
+  # GROUPED deliberately: alternation binds looser than concatenation in BRE, so an
+  # ungrouped `A\|B` used as "$pat=[01]" attaches the `=[01]` to B alone and A then
+  # matches a bare mention — every prose reference to a flag got reported as a pin.
+  local pat='\(AVRA_PARSER_[A-Z][A-Z_]*\|AVRA_NO_STATIC_FALLBACK\)'
+  local read_names used_names dead=0 n
+
+  # READS come from PRODUCTION sources only. Scanning *_test.av here would let a
+  # test-only `avra_process_env_get("AVRA_X")` vouch for a dead `AVRA_X=0` pin in the
+  # same tree — the lint would confirm a flag against itself, which is precisely the
+  # circularity it exists to break. Comment lines are excluded for the same reason: a
+  # commented-out read is not a read.
+  # Strip from `//` to end of line BEFORE extracting, so a trailing comment cannot
+  # donate a read: `fn r() {} // avra_process_env_get("AVRA_PARSER_MASKED")` used to
+  # register MASKED as live and thereby vouch for a dead pin of the same name. Leading
+  # `//` alone was never the whole comment surface.
+  #
+  # Stripping can only ever REMOVE a candidate read, so its failure direction is a flag
+  # reported dead while live — loud and immediately visible — never the silent reverse.
+  # Strip comments OUTSIDE string literals only. `sed 's|//.*||'` was wrong in a way
+  # that matters: `let u = "http://x"` truncates at the `//` inside the literal, so a
+  # live `avra_process_env_get` later on that line vanishes and its flag is reported
+  # dead. Quote-aware, backslash-escape-aware, handling `//` and `#` in one pass.
+  _cpf_strip_comments() {
+    awk '{
+      out = ""; ins = 0; i = 1; n = length($0)
+      while (i <= n) {
+        c = substr($0, i, 1)
+        if (ins) {
+          if (c == "\\") { out = out c substr($0, i + 1, 1); i += 2; continue }
+          if (c == "\"") { ins = 0 }
+          out = out c; i++; continue
+        }
+        if (c == "\"") { ins = 1; out = out c; i++; continue }
+        if (c == "#") { break }
+        if (c == "/" && substr($0, i + 1, 1) == "/") { break }
+        out = out c; i++
+      }
+      print out
+    }'
+  }
+  read_names=$(grep -rh "avra_process_env_get(\"$pat\")" "$src" --include='*.av' \
+      --exclude='*_test.av' 2>/dev/null \
+    | _cpf_strip_comments \
+    | grep -o "avra_process_env_get(\"$pat\")" \
+    | sed 's/.*("//; s/").*//' | sort -u)
+  [ -n "$read_names" ] || die "check-parser-flags: found no routing env reads in production sources — the lint would pass vacuously"
+
+  # COMMENTS are exempt: prose that explains why a flag died (or pins a known vacuity,
+  # as error_recovery_differential_test.av does) is exactly what should be written down.
+  # Only a live PIN — a flag set on a real command line — can mislead a measurement.
+  _cpf_pins() { _cpf_strip_comments | grep -o "$pat=[01]"; }
+  used_names=$( { grep -rh "$pat=[01]" "$src" --include='*_test.av' 2>/dev/null
+                  grep -h "$pat=[01]" "$dsh" 2>/dev/null; } \
+    | _cpf_pins | sed 's/=[01]$//' | sort -u)
+
+  for n in $used_names; do
+    if ! printf '%s\n' "$read_names" | grep -qx "$n"; then
+      err "check-parser-flags: DEAD flag pinned but never read by the compiler: $n"
+      { grep -rn "$n=[01]" "$src" --include='*_test.av' 2>/dev/null
+        grep -n "$n=[01]" "$dsh" 2>/dev/null; } \
+        | grep -v '//.*'"$n" | grep -v '#.*'"$n" | head -5 | sed 's/^/    /'
+      dead=$((dead + 1))
+    fi
+  done
+
+  [ "$dead" -eq 0 ] || die "check-parser-flags: $dead dead parser flag(s) pinned — a pin that selects nothing is a measurement that proves nothing"
+  ok "check-parser-flags: every pinned routing flag is read by production compiler sources ($(printf '%s\n' "$read_names" | grep -c .) live name(s))"
+}
+
 mode_check_ci_gates() {
   local wf="${1:-$REPO_DIR/.github/workflows}"
   [ -d "$wf" ] || die "check-ci-gates: dir not found: $wf"
@@ -4247,6 +4345,7 @@ main() {
     --seed-self-contained) seed_is_self_contained "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
     --check-layout-boundary) mode_check_layout_boundary "$@" ;;
+    --check-parser-flags) mode_check_parser_flags "$@" ;;
     --check-ci-gates)     mode_check_ci_gates "$@" ;;
     --check-typeck-collect-boundary) mode_check_typeck_collect_boundary "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
@@ -5391,19 +5490,35 @@ dt_run_equiv_check() {
 # command exercises is the difference between a real measurement and a false
 # one (CLAUDE.md keeps the table). Both modes below set EVERY routing field
 # explicitly rather than only the one that distinguishes their mode: set just
-# one and the others stay ambient, so running under `AVRA_PARSER_DECL_FLIP=0`
-# collapses several modes onto the hand and the probe compares it against
-# itself — the vacuity class these probes exist to detect.
+# one and the others stay ambient, so a run that pins only (say)
+# `AVRA_PARSER_EXPR_STATIC=0` collapses several modes onto the hand and the
+# probe compares it against itself — the vacuity class these probes exist to
+# detect.
 # t-47hc.4.3 — `AVRA_NO_STATIC_FALLBACK` is GONE from these strings because the thing it
 # switched off no longer exists: the interpreter re-parse fallback is deleted, so the
 # static generated parser IS the production declaration path. EMIT and PROD therefore
 # name the same engine now and the probe prints two identical rows for them — kept
 # separate deliberately, so that if a fallback is ever reintroduced the probe shows it
 # rather than hiding it behind a collapsed row.
-PARSER_MODE_HAND="AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_EMIT="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_PROD="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_EXEC="AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=1"
+#
+# t-bw9s — `AVRA_PARSER_DECL_FLIP` is GONE for the same reason, one step further along:
+# the compiler does not read it AT ALL any more (`parse/mod.av` has exactly one decl env
+# read, `AVRA_PARSER_DECL_STATIC`). It died with the `@hand(decl_hand)` leaf, and pinning
+# a variable nothing reads does not select a parser — it just reads as though it does.
+#
+# That matters for what `hand` below now MEANS, and the honest answer is narrower than
+# the name: with the dead pin dropped, HAND and EMIT differ only in the EXPR fields, so
+# `hand` is the hand parser for EXPRESSIONS and STATEMENTS and is the GENERATED parser
+# for DECLARATIONS. There is no decl hand left to compare against — `parse_declaration`
+# has no flip branch to take. A decl-level divergence therefore CANNOT be caught by
+# these probes, and a `hand` vs `emit` agreement on a decl-only input is vacuous
+# (`error_recovery_differential_test.av` documents the same collapse for its corpus and
+# pins it with a dedicated spec). The rows are kept — they are still a real oracle for
+# the expression and statement families, which is most of what the probes are used for.
+PARSER_MODE_HAND="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_EMIT="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_PROD="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_EXEC="AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=1"
 
 # Resolve the probe's input to a file: `-f <path>` uses it directly, otherwise
 # the argument IS the source text.
@@ -5432,7 +5547,7 @@ mode_parser_probe() {
   # shellcheck disable=SC2086  # $1 is a `VAR=x VAR=y` list; env needs it SPLIT.
   _pp_run() { env $1 "$BS2" check "$fix" 2>&1 | sed 's/.\[[0-9;]*m//g' | grep -oE 'error.F[0-9]+.: .*' | tr '\n' '|'; }
   printf 'src : %s\n' "$(tr '\n' ' ' < "$fix")"
-  printf 'hand: %s\n' "$(_pp_run "$PARSER_MODE_HAND")"
+  printf 'hand (expr/stmt only — no decl hand exists): %s\n' "$(_pp_run "$PARSER_MODE_HAND")"
   printf 'emit: %s\n' "$(_pp_run "$PARSER_MODE_EMIT")"
   printf 'prod: %s\n' "$(_pp_run "$PARSER_MODE_PROD")"
   printf 'exec: %s\n' "$(_pp_run "$PARSER_MODE_EXEC")"
@@ -5461,7 +5576,7 @@ mode_parser_tree() {
   local h e x
   h=$(_pt_run "$PARSER_MODE_HAND"); e=$(_pt_run "$PARSER_MODE_EMIT"); x=$(_pt_run "$PARSER_MODE_EXEC")
   printf 'src : %s\n' "$(tr '\n' ' ' < "$fix")"
-  printf 'hand [%s err rows]: %s\n' "$(_pt_errs "$h")" "$(printf '%s' "$h" | tr '\n' ' ')"
+  printf 'hand (expr/stmt only) [%s err rows]: %s\n' "$(_pt_errs "$h")" "$(printf '%s' "$h" | tr '\n' ' ')"
   printf 'emit [%s err rows]: %s\n' "$(_pt_errs "$e")" "$(printf '%s' "$e" | tr '\n' ' ')"
   printf 'exec [%s err rows]: %s\n' "$(_pt_errs "$x")" "$(printf '%s' "$x" | tr '\n' ' ')"
 }

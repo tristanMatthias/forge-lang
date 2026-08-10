@@ -326,7 +326,7 @@ export type Parser = {
     // — the path to promoting the expression flip on. Read once at construction,
     // settable by tests. Default OFF until proven byte-identical on the full selfhost.
     mut expr_static: bool,
-    // ps3t.6.7 Phase 2 — the STATIC declaration parser: when set (with decl_flip on),
+    // ps3t.6.7 Phase 2 — the STATIC declaration parser: when set,
     // parse_declaration drives the CHECKED-IN generated static parser
     // (parse/gen_decl_parser.av's parse_declaration, via run_static_decl) instead of
     // the Grammar-tree interpreter (run_dsl_decl_at_shared / exec_rule). Same PState +
@@ -342,8 +342,10 @@ export type Parser = {
     // only), so the common valid case keeps the straight-line win while error trees
     // stay byte-identical without chasing them through emit. AVRA_PARSER_DECL_STATIC=0
     // routes back to the interpreter unconditionally (still the differential oracle).
-    // Only active when decl_flip is on (the escape hatch AVRA_PARSER_DECL_FLIP=0
-    // disables both, dropping to the pure hand parser).
+    // t-bw9s: there is no `decl_flip` gate above this and no escape hatch below it.
+    // Both are gone — the DSL declaration path is UNCONDITIONAL (see parse_declaration),
+    // so this flag alone chooses static-vs-interpreter and there is no way to reach a
+    // hand declaration parser, because none exists.
     mut decl_static: bool,
     // ps3t.6.7 Step G slice 4 — statement-family swap-in: when true,
     // parse_statement delegates the whole statement to the grammar-DSL
@@ -356,23 +358,19 @@ export type Parser = {
     // lazily, once, exactly like dsl_expr_grammar.
     mut stmt_flip: bool,
     mut dsl_stmt_grammar: Grammar?,
-    // ps3t.6.7 Step G slice 4b — declaration/whole-program-family swap-in: when
-    // true, parse_declaration delegates to the grammar-DSL (avra_decl_flip_grammar:
-    // @hand(decl_hand) for the doc/annotation/export wrapping + decl keywords +
-    // component-vs-expr IDENT disambiguation, and the proven statement grammar for
-    // the non-declaration fall-through), with a hand fallback on any DSL error.
-    // Read once at construction, settable by tests. Default OFF until proven
-    // byte-identical on the full selfhost, then promoted (like type/pat_flip).
+    // ps3t.6.7 Step G slice 4b — the declaration/whole-program grammar, now the
+    // ONLY declaration parser: parse_declaration delegates to the grammar-DSL
+    // (avra_decl_flip_grammar) unconditionally. The `@hand(decl_hand)` leaf it used to
+    // route wrapping/keywords/IDENT-disambiguation through is DELETED, and so is the
+    // hand fallback on DSL error — the grammar owns valid input and recovery alike.
+    // (The function keeps its `_flip_` name; there is no flip flag left to match it.)
     // dsl_decl_grammar caches avra_decl_flip_grammar() lazily, once.
     mut dsl_decl_grammar: Grammar?,
-    // ps3t.6.7 slice 5a — DIAGNOSTIC hook (AVRA_NO_STATIC_FALLBACK=1, default OFF).
-    // When set, parse_declaration/parse_statement do NOT re-parse a failed static
-    // parse with the interpreter; the static parser's RAW error-recovery tree is
-    // used verbatim. Default OFF keeps production byte-identical (the fallback is
-    // still the incumbent byte-identical error path). This is the observability the
-    // error-recovery differential oracle needs to measure + close the static
-    // parser's error-tree gap vs the interpreter/hand oracle (the slice-5 crux),
-    // before the interpreter fallback can be retired.
+    // (The `AVRA_NO_STATIC_FALLBACK` diagnostic hook that was documented here is gone:
+    // t-47hc.4.3 retired the interpreter re-parse fallback it switched off, so there is
+    // no field, no read, and nothing to toggle. The static parser's recovery tree IS
+    // production's. Pinning the name is a no-op and `diagnose.sh --check-parser-flags`
+    // now rejects it, along with any other routing flag nothing reads.)
     // ps3t.6.7 flip: ONE reusable @hand delegate for the expression leaves, created
     // once per file (avoids build_registry() ~53 registrations per leaf — the OOM).
     // Before each flip expression its cursor+line state is SYNCED to this parser's
@@ -900,16 +898,15 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // byte-identity proof promotes it (like type/pat_flip).
         stmt_flip: avra_process_env_get("AVRA_PARSER_STMT_FLIP") == "1",
         dsl_stmt_grammar: null,
-        // ps3t.6.7 Step G slice 5.4 — PROMOTED default-ON: the grammar-DSL is now
-        // the production parser. decl_flip is the OUTER flip — it drives the whole
-        // TOP-LEVEL dispatch (declaration vs statement vs expr-stmt) through the
-        // DSL. Each item is then routed to a @hand leaf whose shared hand-delegate
-        // (ensure_hand_delegate) is a SINGLE-LEVEL, PURE-HAND oracle (its own
-        // stmt_flip/decl_flip are OFF), so it parses the item — signature AND
-        // nested body — by hand; bodies do NOT re-enter the DSL through the
-        // delegate. Proven byte-identical over the full selfhost + corpus. Escape
-        // hatch AVRA_PARSER_DECL_FLIP=0 routes back to the hand RD driver, which
-        // stays the @hand leaf implementation + DSL-error fallback + test oracle.
+        // ps3t.6.7 Step G slice 5.4, then t-47hc — the grammar-DSL drives the whole
+        // TOP-LEVEL dispatch (declaration vs statement vs expr-stmt), and does so
+        // UNCONDITIONALLY: there is no decl flip flag, and no `AVRA_PARSER_DECL_FLIP`
+        // escape hatch back to a hand RD driver. Both went with the `@hand(decl_hand)`
+        // leaf. The shared hand-delegate (ensure_hand_delegate) still exists for the
+        // leaves that remain in family-isolated grammar views, and is still a
+        // SINGLE-LEVEL PURE-HAND parser (its own stmt_flip/pat_flip are OFF) so bodies
+        // do not re-enter the DSL through it. Proven byte-identical over the full
+        // selfhost + corpus.
         dsl_decl_grammar: null,
         // ps3t.6.7 slice 5a diagnostic hook — default OFF (byte-identical production).
         hand_delegate: null,
@@ -1059,12 +1056,12 @@ impl Parser {
     }
 
     fn parse_declaration(self) -> Result<StmtId, string> {
-        // ps3t.6.7 Step G slice 4b declaration-family swap-in — mirror
-        // parse_statement's flip: delegate the whole declaration to the grammar-DSL
-        // (@hand(decl_hand) for true declarations + the wrapping/dispatch, the
-        // proven statement grammar for the non-declaration fall-through), threading
-        // this parser's live modes + the shared @hand delegate, then resync to the
-        // stop byte. A DSL error falls through to the authoritative hand parser.
+        // ps3t.6.7 Step G slice 4b declaration-family swap-in, as it stands after
+        // t-47hc: delegate the whole declaration to the grammar-DSL — native rules for
+        // the declaration keywords and the wrapping/dispatch, the proven statement
+        // grammar for the non-declaration fall-through — threading this parser's live
+        // modes + the shared @hand delegate, then resync to the stop byte. There is no
+        // `@hand(decl_hand)` arm and no fall-through to a hand parser; see below.
         // t-47hc.5 — the DSL path is UNCONDITIONAL. There is no `if self.decl_flip` and
         // no hand tail below it, because `parse_declaration_hand` is DELETED: the grammar
         // owns the declaration family outright. What sat here was the swap-in oracle AND
@@ -1396,12 +1393,13 @@ impl Parser {
             // the SAME source, so re-materialising it (parser_new_with_store already
             // ran avra_bytes_from_string on it) would duplicate the whole-source
             // buffer for nothing, exactly the per-file waste `features`/`grammar_toks`
-            // sharing above avoids. decl_flip is default-ON, so this delegate is real.
+            // sharing above avoids. The DSL decl path is unconditional, so this
+            // delegate is always real.
             d.source_bytes = self.source_bytes
             // ps3t.6.7 Slice 5.4 (promoted production flip): the delegate does NOT
             // flip its bodies — every flip toggle is OFF, so it is a SINGLE-LEVEL,
             // PURE-HAND parser. When the outer flip routes a top-level item to a
-            // @hand leaf (run_hand_stmt → d.parse_declaration_hand), `d` parses the
+            // @hand leaf (run_hand_stmt), `d` parses the
             // WHOLE item — signature AND nested body — by hand, exactly as the
             // hand-only oracle would. This is what makes the production flip
             // byte-identical on EVERY path, including error recovery: a single
@@ -1425,7 +1423,8 @@ impl Parser {
             // disable pat_flip too so nested match patterns parse via parse_pattern_or_hand
             // directly, not the Grammar-tree interpreter (byte-identical, but the interpreter
             // on the oracle path is pointless: on failure it falls to the same hand parser).
-            // Matches expr_flip/decl_flip/stmt_flip already being off here.
+            // Matches expr_flip/stmt_flip already being off here (there is no
+            // decl flip flag to turn off — the DSL decl path is unconditional).
             d.pat_flip = false
             self.hand_delegate = d
         }
@@ -1610,9 +1609,11 @@ impl Parser {
         self.dsl_stmt_grammar ?? avra_stmt_flip_grammar()
     }
 
-    /// The DSL declaration grammar (`declaration = @hand(decl_hand) | statement`
-    /// over the composed statement + expression grammars), built at most once per
-    /// parser — the declaration sibling of dsl_statement_grammar.
+    /// The DSL declaration grammar — the native declaration rules over the composed
+    /// statement + expression grammars, falling through to `statement`. Built at most
+    /// once per parser; the declaration sibling of dsl_statement_grammar. (It read
+    /// `declaration = @hand(decl_hand) | statement` until t-47hc routed every keyword
+    /// natively and deleted the leaf.)
     fn dsl_declaration_grammar(self) -> Grammar {
         if self.dsl_decl_grammar == null {
             self.dsl_decl_grammar = avra_decl_flip_grammar()

@@ -15,7 +15,8 @@
 // must fail IDENTICALLY. Asserting the capability instead would have made this file a
 // test of the type checker that fails for reasons the parser cannot fix.
 //
-// Every assertion runs on all three paths — hand (the oracle), the EMIT-generated
+// Every assertion runs on all three paths — hand (the EXPRESSION oracle; declarations
+// parse natively on every leg), the EMIT-generated
 // static parser, and the EXECUTOR — because the two recovery oracles both disable the
 // fallback and would leave interpreter behaviour unmeasured (t-zrn3).
 
@@ -38,9 +39,15 @@ fn run_out(name: string, env: string, src: string) -> string {
     "__status=${rc}\n" + avra_selfhost_read_file(log)
 }
 
-fn hand_env() -> string { "AVRA_PARSER_DECL_FLIP=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
-fn emit_env() -> string { "AVRA_PARSER_DECL_FLIP=1 AVRA_NO_STATIC_FALLBACK=1 AVRA_PARSER_EXPR_STATIC=1" }
-fn exec_env() -> string { "AVRA_PARSER_DECL_FLIP=1 AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1" }
+/// The EXPRESSION hand parser — a genuinely distinct engine, unlike the dead
+/// `AVRA_PARSER_DECL_FLIP` pin this used to carry alongside it (t-bw9s). Note what it
+/// therefore covers: `where`-clause DECLARATIONS parse natively on every leg here,
+/// because no hand declaration parser exists to compare against. What this leg still
+/// oracles is the expression/statement content inside them, which is real coverage —
+/// just narrower than "the hand parser answers this test".
+fn hand_env() -> string { "AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
+fn emit_env() -> string { "AVRA_PARSER_EXPR_STATIC=1" }
+fn exec_env() -> string { "AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1" }
 
 /// Every path RUNS the program and prints the same thing. Running (not merely
 /// compiling) is the point: a where clause that parsed but dropped its bounds would

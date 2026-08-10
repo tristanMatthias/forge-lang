@@ -1439,7 +1439,10 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 let lit = rule_first_literal(g, name)
                 let key = if lit != "" { lit } else { name }
                 let exp = expect_for(annots, key)
-                let rmsg = if exp.found { exp.msg } else { "expected ${key}" }
+                // Backticked to match the executor's `handle_missing` (executor.av). See
+                // the note at the terminal site below: the "message is discarded" premise
+                // that justified the bare form is gone.
+                let rmsg = if exp.found { exp.msg } else { "expected `${key}`" }
                 // The F-CODE travels with the message here too (t-47hc.5) — a `@require`
                 // on a REF is the same missing-token report as on a terminal, and `if cond
                 // expr` (the hand's F0010) reaches it through this arm, not that one.
@@ -1477,7 +1480,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 let lit = rule_first_literal(g, name)
                 let key = if lit != "" { lit } else { name }
                 let exp = expect_for(annots, key)
-                let smsg = if exp.found { exp.msg } else { "expected ${key}" }
+                let smsg = if exp.found { exp.msg } else { "expected `${key}`" }
                 // An IDENT position keeps the hand's reserved-keyword diagnostic (so07.2),
                 // the same split `handle_missing` makes in the interpreter.
                 let srep = if key == "IDENT" { "st.report_ident(\"${smsg}\")" }
@@ -1710,10 +1713,19 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     let cond = if t == ">" { "(" + base_cond + " || st.cur().text == \">>\")" } else { base_cond }
     let adv = if t == ">" { "(if st.cur().text == \">>\" { st.split_gt() } else { st.advance() })" } else { "st.advance()" }
     let exp = expect_for(annots, t)
-    // The message is DISCARDED on the production fallback (only had_error matters),
-    // so a plain `expected <t>` (no backticks) is deterministic; a group has no
-    // single lexeme (t == "") → a generic label.
-    let msg = if exp.found { exp.msg } else if t == "" { "expected token" } else { "expected ${t}" }
+    // BACKTICKED, matching the executor's `handle_missing` (executor.av ~4570).
+    //
+    // This read "the message is DISCARDED on the production fallback (only had_error
+    // matters), so a plain `expected <t>` (no backticks) is deterministic" — true when
+    // written, and false now. The interpreter re-parse fallback went in t-47hc.4.3 and
+    // the expression hand fallback in #1201, so the generated parser's message IS what
+    // the user sees. The bare form was reaching users as `expected }` / `expected for`
+    // while the executor said `` expected `}` `` for the same input — one input, two
+    // generated engines, two spellings (t-bw9s).
+    //
+    // A group has no single lexeme (t == "") → a generic label, unbackticked because
+    // there is no lexeme to quote.
+    let msg = if exp.found { exp.msg } else if t == "" { "expected token" } else { "expected `${t}`" }
     // so07.2 / 1rzz: an IDENT binding position keeps the hand parser's
     // RESERVED-KEYWORD diagnostic ("`move` is a reserved keyword …") instead of
     // reporting the generic `@expect` message at a `Tk.KwReserved` token. Routed via

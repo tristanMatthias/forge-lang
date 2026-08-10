@@ -13,7 +13,7 @@ export fn parse_name_or_splice(st: PState) -> CapVal {
     if st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) {
         let _ = st.advance()
         let sn = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected `IDENT`")
             CapVal.Tok(st.cur())
         }
         return mk_splice_name(st, capval_tok_text(sn))
@@ -737,14 +737,14 @@ fn parse_letdes_decl(st: PState) -> CapVal {
         m = CapVal.Tok(st.advance())
     }
     if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
-        st.report("expected (")
+        st.report("expected `(`")
     }
     if st.cur().tk == Tk.Identifier {
         n_list.push(st.advance())
         while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             if st.cur().tk == Tk.Identifier { n_list.push(st.advance()) } else {
-                st.report_ident("expected IDENT")
+                st.report_ident("expected `IDENT`")
             }
         }
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
@@ -1446,7 +1446,7 @@ fn parse_comp_paren_decl(st: PState) -> CapVal {
 fn parse_comp_impl_inst(st: PState) -> CapVal {
     let _ = st.advance()
     let iname = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
         CapVal.Tok(st.cur())
@@ -1630,15 +1630,15 @@ fn parse_comp_inst(st: PState) -> CapVal {
     mut body_list: List<StmtId> = []
     let _ = st.advance()
     let n = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
         CapVal.Tok(st.cur())
     }
     let i = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-        st.report("expected {")
+        st.report("expected `{`")
     }
     while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
         let __bdiag0 = st.diags.length
@@ -1682,11 +1682,11 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
     mut body_list: List<StmtId> = []
     let n = CapVal.Tok(st.advance())
     let i = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-        st.report("expected {")
+        st.report("expected `{`")
     }
     while lookahead_ok("cfg_pair_value", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
         let __bdiag0 = st.diags.length
@@ -1728,15 +1728,15 @@ fn parse_bare_comp_inst(st: PState) -> CapVal {
 fn parse_bare_comp_inst_raw(st: PState) -> CapVal {
     let rn = CapVal.Tok(st.advance())
     let ri = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
         CapVal.Tok(st.cur())
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-        st.report("expected {")
+        st.report("expected `{`")
     }
     let rb = CapVal.Tok(rawbrace_scan(st, "component"))
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}`")
     }
     mk_raw_component_block_g(st, capval_tok_text(rn), capval_tok_text(ri), capval_tok_text(rb))
 }
@@ -1751,7 +1751,7 @@ fn parse_config_pair(st: PState) -> CapVal {
     if lookahead_ok("cfg_pair_eq", st) && (st.cur().tk == Tk.Identifier) {
         let k = CapVal.Tok(st.advance())
         if st.cur().tk == Tk.Equal { let _ = st.advance() } else {
-            st.report("expected =")
+            st.report("expected `=`")
         }
         let v = parse_expression(st)
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
@@ -2904,7 +2904,7 @@ fn parse_trait_decl(st: PState) -> CapVal {
                     }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
-                    st.report("expected >")
+                    st.report("expected `>`")
                 }
             }
             if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
@@ -3090,7 +3090,7 @@ fn parse_method_member(st: PState) -> CapVal {
                 }
                 if __any_err { st.note_had_error() }
                 if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-                    st.report("expected }")
+                    st.report("expected `}`")
                 }
             }
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
@@ -3136,7 +3136,7 @@ fn parse_impl_decl(st: PState) -> CapVal {
                     }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
-                    st.report("expected >")
+                    st.report("expected `>`")
                 }
             }
             if !(st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Identifier) {
@@ -3164,7 +3164,7 @@ fn parse_impl_decl(st: PState) -> CapVal {
                     }
                 }
                 if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
-                    st.report("expected >")
+                    st.report("expected `>`")
                 }
             }
             if st.cur().text == "for" {
@@ -3194,7 +3194,7 @@ fn parse_impl_decl(st: PState) -> CapVal {
                         }
                     }
                     if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
-                        st.report("expected >")
+                        st.report("expected `>`")
                     }
                 }
             }
@@ -3533,7 +3533,7 @@ fn parse_block(st: PState) -> CapVal {
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}`")
     }
     mk_block(st, 0 - 1, stmts_list)
 }
@@ -3570,7 +3570,7 @@ fn parse_stmt_block(st: PState) -> CapVal {
     }
     if __any_err { st.note_had_error() }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected }")
+        st.report("expected `}`")
     }
     mk_block(st, 0 - 1, stmts_list)
 }
@@ -3626,13 +3626,13 @@ fn parse_for_binding(st: PState) -> CapVal {
         while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
             if st.cur().tk == Tk.Identifier { names_list.push(st.advance()) } else {
-                st.report_ident("expected IDENT")
+                st.report_ident("expected `IDENT`")
             }
         }
         if st.cur().tk == Tk.Comma { let _ = st.advance() }
     }
     if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-        st.report("expected )")
+        st.report("expected `)`")
     }
     mk_for_binding(lp, CapVal.Toks(names_list))
 }
@@ -3671,7 +3671,7 @@ fn parse_match_stmt(st: PState) -> CapVal {
         mut a_list: List<WhenArm> = []
         let _ = st.advance()
         if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected {")
+            st.report("expected `{`")
         }
         while st.cur().text == "_" || tok_starts_expr_leaf(st.cur()) {
             a_list.push(capval_to_when_arm(st, parse_match_when_arm(st)))
@@ -3746,7 +3746,7 @@ fn parse_iflet_stmt(st: PState) -> CapVal {
     let _ = st.advance()
     let tmp = CapVal.Tok(gensym_token(st, "iflet"))
     if st.cur().text == "let" { let _ = st.advance() } else {
-        st.report("expected let")
+        st.report("expected `let`")
     }
     let b = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
         st.report_ident("expected a binding name after `if let`")
@@ -3808,7 +3808,7 @@ fn parse_for_stmt(st: PState) -> CapVal {
         mut hi: CapVal = CapVal.Nil
         let _ = st.advance()
         let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected `IDENT`")
             CapVal.Tok(st.cur())
         }
         if st.cur().text == "in" { let _ = st.advance() } else {
@@ -3837,7 +3837,7 @@ fn parse_match_when_arm(st: PState) -> CapVal {
     if st.cur().text == "_" {
         let _ = st.advance()
         if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-            st.report("expected ->")
+            st.report("expected `->`")
         }
         let __modes_2 = st.modes
         st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
@@ -3848,7 +3848,7 @@ fn parse_match_when_arm(st: PState) -> CapVal {
     if tok_starts_expr_leaf(st.cur()) {
         let c = parse_expression(st)
         if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-            st.report("expected ->")
+            st.report("expected `->`")
         }
         let __modes_2 = st.modes
         st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
@@ -3876,7 +3876,7 @@ fn parse_match_arm(st: PState) -> CapVal {
             g = parse_expression(st)
         }
         if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-            st.report("expected ->")
+            st.report("expected `->`")
         }
         let __modes_3 = st.modes
         st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
@@ -3910,7 +3910,7 @@ fn parse_match_table_stmt(st: PState) -> CapVal {
     let subj = parse_expression(st)
     st.set_modes(__modes_1)
     if st.cur().text == "table" { let _ = st.advance() } else {
-        st.report("expected table")
+        st.report("expected `table`")
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected `{` after match table")
@@ -3918,12 +3918,12 @@ fn parse_match_table_stmt(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.Identifier { let _ = st.advance() } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
     }
     while st.cur().tk == Tk.Pipe {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { cols_list.push(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected `IDENT`")
         }
     }
     while tok_starts_pattern(st.cur()) {
@@ -3963,7 +3963,7 @@ fn parse_match_table_expr(st: PState) -> CapVal {
     let subj = parse_expression(st)
     st.set_modes(__modes_1)
     if st.cur().text == "table" { let _ = st.advance() } else {
-        st.report("expected table")
+        st.report("expected `table`")
     }
     if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
         st.report("expected `{` after match table")
@@ -3971,12 +3971,12 @@ fn parse_match_table_expr(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     if st.cur().tk == Tk.Identifier { let _ = st.advance() } else {
-        st.report_ident("expected IDENT")
+        st.report_ident("expected `IDENT`")
     }
     while st.cur().tk == Tk.Pipe {
         let _ = st.advance()
         if st.cur().tk == Tk.Identifier { cols_list.push(st.advance()) } else {
-            st.report_ident("expected IDENT")
+            st.report_ident("expected `IDENT`")
         }
     }
     while tok_starts_pattern(st.cur()) {

@@ -1,0 +1,136 @@
+// WHY: a routing flag can outlive the field it switched, and nothing notices.
+//
+// `AVRA_PARSER_DECL_FLIP` did exactly that. It selected the hand declaration parser
+// until `@hand(decl_hand)` was deleted; after that the compiler stopped reading the
+// name entirely, but the name stayed — in `diagnose.sh`'s four `PARSER_MODE_*`
+// strings, in CLAUDE.md's parser table as "the HAND parser — the oracle", and in 14
+// test files building a `..._hand` mode out of it.
+//
+// Nothing broke, which is the problem. A pin nothing reads does not error; it selects
+// no parser, the run succeeds, and the row it produces looks exactly like a hand-parser
+// row while being the generated parser answering. A 2026-08-09 session compared "hand
+// vs generated" expression recovery through that flag, got agreement on every input,
+// and reported parity — from a comparison that was partly a path against itself.
+//
+// So the invariant is liveness, checked generally rather than for one name: every
+// `AVRA_PARSER_*` flag PINNED in a mode string must be one the compiler actually reads
+// via `avra_process_env_get`. Comments are exempt — prose explaining why a flag died,
+// or pinning a known vacuity, is what should be written down. Only a live pin misleads.
+//
+// The lint lives in diagnose.sh (rule 10, centralized); this spec is the suite's wiring.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+spec "parser routing flags: every pinned flag is one the compiler reads" {
+    then "the liveness lint passes on the current tree" {
+        let log = "build/_parser_flag_liveness.log"
+        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-parser-flags > '${log}' 2>&1")
+        if rc != 0 {
+            println("--- check-parser-flags output:")
+            println(avra_shell_exec("cat '${log}' 2>/dev/null"))
+        }
+        rc == 0
+    }
+
+    // The control. Without it the row above is a guard that cannot fail: a lint whose
+    // extraction silently matches nothing reports the same green as a clean tree, and
+    // this whole file would then be documenting an invariant it never checks — the
+    // exact failure mode the flag itself got away with.
+    then "and it FAILS when a dead pin is reintroduced" {
+        let tmp = "build/_parser_flag_mutant"
+        let _ = avra_shell_exec("rm -rf '${tmp}' && mkdir -p '${tmp}/packages/std-avrac/src/x/tests' '${tmp}/scripts'")
+        // A mutant tree: one spec file pinning a flag the compiler does not read, plus
+        // the real env reads copied in so the lint's own "found no reads" guard is not
+        // what fires. Pinned on a CODE line, since comment lines are exempt by design.
+        // COMPOSED, never written whole: this file is itself inside the tree the lint
+        // scans, so a literal dead-flag pin here would (correctly) trip it. Composing
+        // keeps the invariant exemption-free — an allowlist is precisely the hole that
+        // let AVRA_PARSER_DECL_FLIP outlive its own deletion.
+        let dead = "AVRA_PARSER_" + "DECL_FLIP=0"
+        let _ = avra_shell_exec("printf 'fn e() -> string { \"${dead}\" }\\n' > '${tmp}/packages/std-avrac/src/x/tests/mutant_test.av'")
+        let _ = avra_shell_exec("printf 'fn r() { avra_process_env_get(\"AVRA_PARSER_EXPR_STATIC\") }\\n' > '${tmp}/packages/std-avrac/src/x/live.av'")
+        let _ = avra_shell_exec("cp scripts/diagnose.sh '${tmp}/scripts/diagnose.sh'")
+        let rc = avra_shell_exec_status("cd '${tmp}' && bash scripts/diagnose.sh --check-parser-flags > /dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${tmp}'")
+        rc != 0
+    }
+
+    // ── every mutant below builds a tree that MIRRORS the real layout ────────────
+    //
+    // `REPO_DIR` is three levels up from diagnose.sh, so a tree rooted at
+    // `<tmp>/scripts/diagnose.sh` resolves REPO_DIR to <tmp>'s PARENT and the lint dies
+    // with "cannot locate compiler src" — exit 1, for a setup error rather than a
+    // detection. The first cut of this file did exactly that, and because every row
+    // asserted only `rc != 0`, all of them passed while testing nothing. The lint was
+    // fine; these rows were the vacuous thing, which is the failure this whole file is
+    // about, reproduced inside its own guard.
+    //
+    // `mutant_tree` therefore builds `<tmp>/bootstrap/{scripts,packages/std-avrac/src}`,
+    // and seeds live reads for the three flags diagnose.sh itself pins — without them
+    // the copied script's own PARSER_MODE_* lines read as dead and every row fails for
+    // yet another wrong reason.
+    fn mutant_tree(tmp: string, extra_live: string, pin_src: string) {
+        let _ = avra_shell_exec("rm -rf '${tmp}' && mkdir -p '${tmp}/bootstrap/packages/std-avrac/src/x/tests' '${tmp}/bootstrap/scripts'")
+        let _ = avra_shell_exec("printf 'fn r() {\\n avra_process_env_get(\"AVRA_PARSER_DECL_STATIC\")\\n avra_process_env_get(\"AVRA_PARSER_EXPR_STATIC\")\\n avra_process_env_get(\"AVRA_PARSER_EXPR_FLIP\")\\n${extra_live}\\n}\\n' > '${tmp}/bootstrap/packages/std-avrac/src/x/live.av'")
+        let _ = avra_shell_exec("printf '%s\\n' '${pin_src}' > '${tmp}/bootstrap/packages/std-avrac/src/x/tests/m_test.av'")
+        let _ = avra_shell_exec("cp scripts/diagnose.sh '${tmp}/bootstrap/scripts/diagnose.sh'")
+    }
+
+    fn lint_rc(tmp: string) -> int {
+        let rc = avra_shell_exec_status("cd '${tmp}/bootstrap' && bash scripts/diagnose.sh --check-parser-flags > /dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${tmp}'")
+        rc
+    }
+
+    then "a dead pin FAILS the lint" {
+        let dead = "AVRA_PARSER_" + "DEADFLAG"
+        mutant_tree("build/_pf_dead", "", "fn e() -> string { \"${dead}=0\" }")
+        lint_rc("build/_pf_dead") != 0
+    }
+
+    // A test-only READ must not vouch for a dead pin: the read and the pin sit in the
+    // SAME test file, and reads are harvested from production sources only.
+    then "a test-only READ cannot vouch for a dead pin" {
+        let dead = "AVRA_PARSER_" + "MASKED"
+        mutant_tree("build/_pf_mask", "",
+            "fn e() -> string { \"${dead}=0\" }\nfn q() { avra_process_env_get(\"${dead}\") }")
+        lint_rc("build/_pf_mask") != 0
+    }
+
+    // A read that is COMMENTED OUT is not a read — leading `//`.
+    then "a commented-out READ cannot vouch for a dead pin" {
+        let dead = "AVRA_PARSER_" + "COMMENTED"
+        mutant_tree("build/_pf_cmt", "// avra_process_env_get(\"${dead}\")",
+            "fn e() -> string { \"${dead}=0\" }")
+        lint_rc("build/_pf_cmt") != 0
+    }
+
+    // ...and a TRAILING comment is a comment too, which excluding only comment-LED lines
+    // missed.
+    then "a READ in a trailing comment cannot vouch for a dead pin" {
+        let dead = "AVRA_PARSER_" + "TRAILING"
+        mutant_tree("build/_pf_trail", "  let z = 1 // avra_process_env_get(\"${dead}\")",
+            "fn e() -> string { \"${dead}=0\" }")
+        lint_rc("build/_pf_trail") != 0
+    }
+
+    // The lint governs TWO name shapes; only `AVRA_PARSER_*` was covered, so an edit
+    // dropping the standalone one would pass every other row here.
+    then "the NON-prefixed routing flag is guarded too" {
+        let dead = "AVRA_NO_" + "STATIC_FALLBACK"
+        mutant_tree("build/_pf_nsf", "", "fn e() -> string { \"${dead}=1\" }")
+        lint_rc("build/_pf_nsf") != 0
+    }
+
+    // The one row that asserts SUCCESS, and the reason the stripper is quote-aware:
+    // `//` inside a string literal does not open a comment. `sed 's|//.*||'` truncated
+    // `"http://x"` and discarded the live read after it, reporting a LIVE flag as dead.
+    // Every other row proves the lint can fail; this one proves it does not overfire.
+    then "a `//` inside a string literal does not hide the read after it" {
+        let live = "AVRA_PARSER_" + "EXPR_STATIC"
+        mutant_tree("build/_pf_url", "  let u = \"http://x\"",
+            "fn e() -> string { \"${live}=1\" }")
+        lint_rc("build/_pf_url") == 0
+    }
+}

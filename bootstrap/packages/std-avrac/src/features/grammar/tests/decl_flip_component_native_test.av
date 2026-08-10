@@ -29,10 +29,14 @@ fn check_out(name: string, env: string, src: string) -> string {
 fn clean(out: string) -> bool { out.contains("__status=0\n") }
 
 fn clean_all_paths(name: string, src: string) -> bool {
+    // t-bw9s: two DISTINCT routings survive here — production (the generated static
+    // parser) and the grammar EXECUTOR. The `_emit` and `_hand` legs pinned
+    // AVRA_NO_STATIC_FALLBACK and AVRA_PARSER_DECL_FLIP; both flags are dead (the
+    // interpreter re-parse fallback went in t-47hc.4.3, the decl hand parser with the
+    // `@hand(decl_hand)` leaf), so those legs had become empty-env duplicates of
+    // `_dflt`. Keeping them would report four paths while exercising two.
     clean(check_out("${name}_dflt", "", src)) &&
-        clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
-        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
-        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src))
 }
 
 spec "t-47hc slice A: the component definition is emitted as a native rule" {
@@ -131,14 +135,12 @@ spec "t-47hc slice A: definition forms parse and REGISTER on all four paths" {
             "}\n" +
             "sql q { SELECT * FROM t WHERE x > 1 }\n" +
             "fn main() { println(\"ok\") }\n"
+        // Two distinct routings (t-bw9s): the `_emit` and `_hand` legs pinned flags
+        // that no longer exist, leaving them empty-env duplicates of `_dflt`.
         let d = check_out("raw_dflt", "", src)
-        let e = check_out("raw_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
         let x = check_out("raw_exec", "AVRA_PARSER_DECL_STATIC=0", src)
-        let h = check_out("raw_hand", "AVRA_PARSER_DECL_FLIP=0", src)
         d.contains("error[F4101]") && !d.contains("error[F0001]") &&
-            e.contains("error[F4101]") && !e.contains("error[F0001]") &&
-            x.contains("error[F4101]") && !x.contains("error[F0001]") &&
-            h.contains("error[F4101]") && !h.contains("error[F0001]")
+            x.contains("error[F4101]") && !x.contains("error[F0001]")
     }
 
     then "an EMPTY component and an empty config/children still parse clean" {

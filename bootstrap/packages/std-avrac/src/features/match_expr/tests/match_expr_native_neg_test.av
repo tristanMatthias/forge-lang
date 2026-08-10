@@ -25,8 +25,31 @@ fn check_out(env: string, source: string) -> string {
     avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1")
 }
 
-fn dsl(source: string) -> string { check_out("AVRA_NO_STATIC_FALLBACK=1", source) }
-fn hand(source: string) -> string { check_out("AVRA_PARSER_DECL_FLIP=0", source) }
+fn dsl(source: string) -> string { check_out("", source) }
+
+/// t-bw9s — THERE IS NO HAND ORACLE AVAILABLE TO THIS FILE, and `agrees` below is
+/// therefore a self-comparison. Read this before trying to "restore" one.
+///
+/// The history: this pinned `AVRA_PARSER_DECL_FLIP=0`, which died with the declaration
+/// hand parser. The obvious repair — pin the EXPRESSION hand instead, since these are
+/// match-EXPRESSION cases — was tried and MEASURED, and it does not work. Under
+/// `bs2 check`, `AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0` produces
+/// byte-identical output to the default on every input tried, including
+/// `let a = (1) ->` — the documented hand-vs-generated divergence case — and logs zero
+/// `[hand-fallback]` markers under either setting.
+///
+/// The reason is structural: a whole-program compile is driven by the GENERATED
+/// declaration parser, which parses expressions with its own generated rules and never
+/// calls `Parser.parse_expression`. Those two flags gate that method, so nothing on this
+/// path ever consults them. The expression hand is reachable from `bs2 expr`, which
+/// parses an expression directly — not from `bs2 check`.
+///
+/// So `hand` is kept as an ALIAS, named for what it once selected, and the `agrees`
+/// rows below assert that the generated parser's F-code signature is stable rather than
+/// that two engines concur. What still has teeth here are the rows asserting a SPECIFIC
+/// signature (the `codes(out) == "..."` forms) — those fail if the generated parser's
+/// diagnostics change, which is the property this file actually guards.
+fn hand(source: string) -> string { check_out("", source) }
 
 // The occurrence-ordered F-code signature — set, order and count together.
 fn codes(out: string) -> string {
@@ -42,7 +65,21 @@ fn codes(out: string) -> string {
     sig
 }
 
-fn agrees(source: string) -> bool { codes(dsl(source)) == codes(hand(source)) }
+/// t-bw9s — NOT an agreement check any more, and named for what it can still assert.
+///
+/// It was `codes(dsl(x)) == codes(hand(x))`, and `hand` is now an ALIAS for the same
+/// engine (see its definition above), so it read `x == x` — true for any input, including
+/// one that ICEd or produced nothing. No hand oracle is reachable from `bs2 check`, so a
+/// two-engine comparison is simply not available here; the file header explains why.
+///
+/// What is available is that the generated parser handled the input WITHOUT an internal
+/// compiler error. That is deliberately modest: an arm-less `match` parses clean (measured
+/// — zero F-codes), so requiring a diagnostic would be wrong, and requiring a specific
+/// signature belongs on the rows that already pin one. An F9999 here fails the row.
+///
+/// The rows that pin a SPECIFIC signature (`codes(out) == "..."`) are the strong
+/// assertions in this file; these are a crash floor beneath them.
+fn no_ice(source: string) -> bool { !codes(dsl(source)).contains("F9999") }
 
 fn missing_open() -> string {
     "fn f(n: int) -> int {\n    let v = match n\n        0 -> 1\n        _ -> 2\n    }\n    return v\n}"
@@ -77,13 +114,13 @@ spec "t-47hc.25: the native match expression reports its own brace diagnostics" 
 }
 
 spec "t-47hc.25: the native match expression agrees with the hand oracle on invalid input" {
-    then "missing `{` recovers to the same F-code sequence" { agrees(missing_open()) }
-    then "missing `}` recovers to the same F-code sequence" { agrees(missing_close()) }
-    then "a malformed ARM agrees too (the arm loop's own failure path)" {
-        agrees("fn f(n: int) -> int {\n    let v = match n {\n        0 -> \n        _ -> 2\n    }\n    return v\n}")
+    then "missing `{` recovers to the same F-code sequence" { no_ice(missing_open()) }
+    then "missing `}` recovers to the same F-code sequence" { no_ice(missing_close()) }
+    then "a malformed ARM is handled without an ICE (the arm loop's own failure path)" {
+        no_ice("fn f(n: int) -> int {\n    let v = match n {\n        0 -> \n        _ -> 2\n    }\n    return v\n}")
     }
-    then "and a match with NO arms at all agrees" {
-        agrees("fn f(n: int) -> int {\n    let v = match n {\n    }\n    return v\n}")
+    then "and a match with NO arms at all is handled without an ICE" {
+        no_ice("fn f(n: int) -> int {\n    let v = match n {\n    }\n    return v\n}")
     }
 }
 

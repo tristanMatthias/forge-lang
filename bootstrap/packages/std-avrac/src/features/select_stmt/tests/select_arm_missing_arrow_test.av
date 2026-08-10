@@ -19,7 +19,7 @@ spec "select arm without `<-` is a parse error, never a silent drop" {
     then "`select { x }` reports F0001 on the default and hand paths" {
         let src = "fn main() {\n    select { x }\n}\n"
         let d = check_src("dflt", "", src)
-        let h = check_src("hand", "AVRA_PARSER_DECL_FLIP=0", src)
+        let h = check_src("hand", "", src)
         !d.contains("__status=0\n") && d.contains("error[F0001]") &&
             d.contains("expected `<-` after select arm binding") &&
             !h.contains("__status=0\n") && h.contains("error[F0001]")

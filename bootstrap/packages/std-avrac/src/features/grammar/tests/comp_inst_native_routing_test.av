@@ -27,7 +27,7 @@
 // the item rule must PASS ITS VALUE THROUGH, every routed arm must dispatch before
 // the `declaration` tail, and the tail must be `declaration`. The second spec covers
 // the behaviour the routing is FOR — the four `parse_comp_block_body` arms, on all
-// four parser paths.
+// both surviving declaration routings.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
@@ -84,38 +84,44 @@ fn clean(out: string) -> bool { out.contains("__status=0\n") }
 /// The occurrence-ordered F-codes of `bs2 check <src>` under `env` — the same
 /// signature the recovery oracles compare, reused here so a form that is not
 /// expected to TYPECHECK can still assert the thing this file is about: that all
-/// four parser paths agreed on how to parse it.
+/// both surviving declaration routings agreed on how to parse it.
 fn fcodes(name: string, env: string, src: string) -> string {
     let fixture = "build/_comp_inst_route_${name}.av"
     let _ = avra_selfhost_write_file(fixture, src)
     avra_shell_exec("${env} ./build/bs2 check '${fixture}' 2>&1 | grep -oE 'F[0-9]{4}' | tr '\\n' ' '")
 }
 
-/// All four paths produce the SAME diagnostics, whatever those are. For a form the
+/// Both routings produce the SAME diagnostics, whatever those are. For a form the
 /// TYPE checker rejects (a raw body with no `@expand`), agreement is still the whole
 /// routing property — and the absence of a parse-stage code in that agreed signature
 /// is what proves the raw contents were captured rather than parsed.
 fn agree_all_paths(name: string, src: string) -> bool {
+    // t-bw9s: the `_emit` and `_hand` legs pinned AVRA_NO_STATIC_FALLBACK and
+    // AVRA_PARSER_DECL_FLIP. Both flags are dead, so both legs had become empty-env
+    // duplicates of `_dflt` — three names, one engine. Two routings actually differ
+    // for declarations: production (generated static parser) and the EXECUTOR.
     let d = fcodes("${name}_dflt", "", src)
-    let e = fcodes("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)
     let x = fcodes("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)
-    let h = fcodes("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src)
-    if d != h || e != h || x != h {
+    if d != x {
         println("path divergence for ${name}")
-        println("hand=${h} dflt=${d} emit=${e} exec=${x}")
+        println("dflt=${d} exec=${x}")
     }
-    d == h && e == h && x == h
+    d == x
 }
 
-/// All FOUR parser paths (CLAUDE.md's table): the hand oracle, the emit-generated
-/// static parser raw, the grammar EXECUTOR, and the production default. A routed
-/// rule has to be right on every one — an executor-only divergence is invisible to
-/// the two recovery oracles, which both disable the interpreter fallback.
+/// Both surviving declaration routings: the production default (the emit-generated
+/// static parser) and the grammar EXECUTOR. A routed rule has to be right on both —
+/// an executor-only divergence is invisible to the recovery oracles, which is the
+/// whole reason the executor gets its own leg.
+///
+/// This read "all FOUR parser paths … the hand oracle, the emit-generated static
+/// parser raw, the grammar EXECUTOR, and the production default" until t-bw9s. The
+/// hand-oracle and raw-emit legs selected their engines through AVRA_PARSER_DECL_FLIP
+/// and AVRA_NO_STATIC_FALLBACK; with both flags dead they ran the default engine under
+/// different names, so the count was four and the coverage was two.
 fn clean_all_paths(name: string, src: string) -> bool {
     clean(check_out("${name}_dflt", "", src)) &&
-        clean(check_out("${name}_emit", "AVRA_NO_STATIC_FALLBACK=1", src)) &&
-        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src)) &&
-        clean(check_out("${name}_hand", "AVRA_PARSER_DECL_FLIP=0", src))
+        clean(check_out("${name}_exec", "AVRA_PARSER_DECL_STATIC=0", src))
 }
 
 spec "t-47hc.5.1: the instantiation BODY rule is routed, and passes its value through" {
@@ -159,7 +165,7 @@ spec "t-47hc.5.1: the instantiation BODY rule is routed, and passes its value th
     }
 }
 
-spec "t-47hc.5.1: the four body arms parse identically on all four paths" {
+spec "t-47hc.5.1: the four body arms parse identically on both surviving routings" {
     then "a plain statement body — the shape the dead passthrough made unreachable" {
         clean_all_paths("plain",
             "component panel {\n" +
