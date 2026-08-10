@@ -42,19 +42,76 @@ fn sandbox_script(backdate_target: bool) -> string {
         "    \"$sandbox/runtime.c\" \"$sandbox/llvm_wrapper.c\"\n" +
         "printf bin > \"$sandbox/bs2x\"; chmod +x \"$sandbox/bs2x\"\n" +
         stamp +
-        "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh\n" +
+        // FAIL CLOSED, and the ordering is the whole point: nothing may print
+        // BEGIN until the reporter is known to exist. Without these two exits
+        // a failed `source` still reached `echo BEGIN; mode_…; echo END rc=$?`
+        // and emitted `BEGIN` / `END rc=127` around a `command not found` —
+        // both sentinels present, reporter never run, `sandbox_ran` satisfied.
+        // That is the precondition accepting exactly the case it exists to
+        // reject (CodeRabbit on #1204).
+        "AVRA_DIAGNOSE_NO_MAIN=1 source scripts/diagnose.sh || exit 90\n" +
+        "type mode_bs2_stale_report >/dev/null 2>&1 || exit 91\n" +
         // Every input the reporter reads, redirected into the sandbox — the
         // real tree must not participate in either direction.
         "CLI_SRC_DIR=\"$sandbox/cli\"; LIB_SRC_DIR=\"$sandbox/lib\"\n" +
         "RUNTIME_C=\"$sandbox/runtime.c\"; BOOTSTRAP_DIR=\"$sandbox\"\n" +
         "BS2=\"$sandbox/bs2x\"\n" +
-        "echo \"BEGIN\"; mode_bs2_stale_report; echo \"END rc=$?\"\n" +
+        "echo \"BEGIN\"\n" +
+        // Captured, not read inline: `echo \"END rc=$?\"` is correct only while
+        // nothing sits between the two, which is an invariant a later edit
+        // silently breaks.
+        "mode_bs2_stale_report; rc=$?\n" +
+        "echo \"END rc=$rc\"\n" +
         "rm -rf \"$sandbox\"\n"
 }
 
 fn run_sandbox(backdate_target: bool) -> string {
     let script = sandbox_script(backdate_target)
     avra_shell_exec("bash -c '" + script.replace("'", "'\\''") + "' 2>&1")
+}
+
+/// The reporter's own exit status, read from the `END rc=` sentinel, or "" if
+/// the sandbox never got that far.
+///
+/// Whole LINES, in ORDER — not substrings. A substring test answers yes to any
+/// output that merely mentions the markers, and the reporter quotes source
+/// paths, so "contains BEGIN" is not the same question as "printed BEGIN".
+///
+/// This is also why the status is read from the sentinel rather than from the
+/// outer `bash -c`: the sentinel carries `mode_bs2_stale_report`'s status,
+/// while the shell's is dominated by the trailing `rm -rf`. The two answer
+/// different questions and only the first one is this file's subject.
+fn sandbox_end_rc(out: string) -> string {
+    mut began = false
+    for raw in out.split("\n") {
+        let line = raw.trim()
+        if line == "BEGIN" { began = true }
+        else if began && line.starts_with("END rc=") { return line.replace("END rc=", "") }
+    }
+    ""
+}
+
+/// Did the sandbox RUN? The script brackets its work with `BEGIN` and
+/// `END rc=`, so output missing either sentinel means the run never reached
+/// the reporter — it is not evidence about what the reporter printed.
+///
+/// This is t-fafu's first acceptance bullet, and it exists because the two
+/// cases were indistinguishable. The observed failure was
+/// `it tells the reader what to do about it`, which reads as "the reporter
+/// dropped its advice line" and was nothing of the kind: `newest_source_entry`
+/// had taken SIGPIPE and the reporter bailed before printing anything at all.
+/// The investigation started from the wrong end because the output said so.
+///
+/// Used as the FIRST conjunct of every assertion over sandbox output, so
+/// t-kdyj.5's conjunct naming reports `false: sandbox_ran(out)` — a diagnosis
+/// — instead of a content mismatch against output that was never produced.
+/// The captured bytes go to the shard log on the failing run, so a recurrence
+/// is diagnosable from that run rather than needing a second one.
+fn sandbox_ran(out: string) -> bool {
+    if sandbox_end_rc(out) != "" { return true }
+    println("      [sandbox did not run] no ordered BEGIN/END rc= sentinel lines; captured "
+        + string(out.length) + " byte(s): " + out)
+    false
 }
 
 /// The last non-blank, non-comment line of the shell function opened by
@@ -92,28 +149,48 @@ spec "the runner says so when bs2 predates a compiler source (t-kdyj.10)" {
             // (`touch -t 202001010000` on the target, `...0001` on the
             // sources), and fmt_epoch renders local time from a local-time
             // touch, so the round-trip is timezone-stable.
-            out.contains("[stale]")
+            sandbox_ran(out)
+                && out.contains("[stale]")
                 && out.contains("bs2x")
                 && (out.contains("a.av") || out.contains("b.av"))
                 && out.contains("(00:00:00)")
                 && out.contains("(00:01:00)")
         }
         then "it tells the reader what to do about it" {
-            run_sandbox(true).contains("rebuild before trusting this run")
+            let out = run_sandbox(true)
+            sandbox_ran(out) && out.contains("rebuild before trusting this run")
         }
         // Reporting must never GATE. A non-zero rc here would propagate into
         // the runner's startup path, turning an advisory note into a failure.
+        //
+        // Asserted on the PARSED status, not `contains("END rc=0")` — that
+        // substring is satisfied by any line mentioning it, and the sentinel is
+        // the one thing here that must be read exactly. `sandbox_ran` still
+        // leads, so a run that died before the reporter says
+        // `false: sandbox_ran(out)` rather than being confused with a run that
+        // reached the reporter and got a non-zero status back.
         then "it still exits 0 — this reports, it does not gate" {
-            run_sandbox(true).contains("END rc=0")
+            let out = run_sandbox(true)
+            sandbox_ran(out) && sandbox_end_rc(out) == "0"
         }
     }
     given "a target newer than every sandbox source" {
         // The negative control. Without this the positive case above would be
         // satisfied by a reporter that prints unconditionally, which is a
         // guard that cannot fail.
+        //
+        // `sandbox_ran` leads here for the same reason it does above, and the
+        // discrimination is sharper in this direction: a sandbox that never
+        // ran produces no `[stale]` either, so it satisfies the FIRST clause of
+        // the old assertion. The adjacency check caught it — but reported it as
+        // "the output was not exactly BEGIN/END", which describes a reporter
+        // that printed something. Leading with the sentinels separates
+        // "did not run" from "ran and printed".
         then "it says nothing at all" {
             let out = run_sandbox(false)
-            !out.contains("[stale]") && out.contains("BEGIN\nEND rc=0")
+            sandbox_ran(out)
+                && !out.contains("[stale]")
+                && out.contains("BEGIN\nEND rc=0")
         }
     }
     given "the scan's exit status under pipefail" {
@@ -154,7 +231,13 @@ spec "the runner says so when bs2 predates a compiler source (t-kdyj.10)" {
             // passed, and review still (reasonably) read it as a mismatch —
             // an assertion whose correctness depends on where a comment wraps
             // is one reflow away from silently inverting.
-            last_stmt_of(src, "newest_source_entry() {") == "return 0"
+            // Same precondition discipline as `sandbox_ran`: `last_stmt_of`
+            // answers "" for a source it could not find the header in AND for
+            // one it never received, so an unreadable script would fail as a
+            // content mismatch against a function it never looked at.
+            src.contains("newest_source_entry() {")
+                && src.contains("newest_source_mtime() {")
+                && last_stmt_of(src, "newest_source_entry() {") == "return 0"
                 && last_stmt_of(src, "newest_source_mtime() {") == "return 0"
         }
     }
