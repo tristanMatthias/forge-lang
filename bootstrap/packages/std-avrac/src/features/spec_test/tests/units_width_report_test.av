@@ -69,14 +69,33 @@ fn reported_workers(out: string) -> string {
 }
 
 spec "a multi-unit shard reports the width it achieved (uzs9.2)" {
-    given "two units run at AVRA_TEST_JOBS=4" {
-        then "the run states 4 workers" {
-            let dir = "/tmp/avra_units_w4"
+    // BOTH sides of the min are covered, because the reported number is only
+    // meaningful if it tracks whichever limit actually binds. A test of one
+    // side alone passes against a report of the wrong quantity.
+    given "more units than workers — 4 units at AVRA_TEST_JOBS=2" {
+        then "the run states 2, the width the worker count allows" {
+            let dir = "/tmp/avra_units_jobs_bind"
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            let _ = make_units_dir(dir, 4)
+            let out = run_at(dir, "2")
+            let _ = avra_shell_exec("rm -rf '${dir}'")
+            shard_ran(out) && reported_workers(out) == "2"
+        }
+    }
+
+    given "more workers than units — 2 units at AVRA_TEST_JOBS=4" {
+        // The case that made this report a liar. `run_units_parallel` spawns 4
+        // worker threads but loads only 2 work items, so at most 2 units are
+        // ever in flight; reporting 4 would credit the shard with interleaving
+        // it cannot have performed, and the detector would bank that as a
+        // sample. Reported width is min(jobs, units), not jobs.
+        then "the run states 2, the width the unit count allows — not 4" {
+            let dir = "/tmp/avra_units_units_bind"
             let _ = avra_shell_exec("rm -rf '${dir}'")
             let _ = make_units_dir(dir, 2)
             let out = run_at(dir, "4")
             let _ = avra_shell_exec("rm -rf '${dir}'")
-            shard_ran(out) && reported_workers(out) == "4"
+            shard_ran(out) && reported_workers(out) == "2"
         }
     }
 
