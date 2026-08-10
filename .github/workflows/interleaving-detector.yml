@@ -81,12 +81,34 @@ jobs:
       # AVRA_TEST_JOBS is deliberately NOT set: the runner falls back to the
       # machine's core count, which is the width a developer's plain `bs2 test`
       # uses and the one no gate exercises.
+      # Records the suite's status and NEVER fails on it — the assertion step
+      # below owns the verdict, and it has to run even (especially) on a red
+      # suite, or the width check and the uzs9.2 pointer are skipped exactly
+      # when they matter.
+      #
+      # `set +e` around the pipeline is load-bearing, not decoration. GitHub's
+      # default shell is `bash -e {0}`, and the `set -o pipefail` here makes a
+      # failing `bs2 test` propagate through `tee` — so with `-e` still armed
+      # the step aborted at the pipeline, before writing `suite_rc`, and the
+      # dependent step was skipped as a consequence of the failing one.
+      # Verified by simulating the default shell:
+      #
+      #     $ bash -e step.sh   # `false | tee log`; echo suite_rc=...
+      #     step exit=1
+      #     (EMPTY — suite_rc never written)
+      #
+      # A detector whose failure path skips its own diagnostic is the shape
+      # this whole PR is about.
       - name: Spec suite at the controller-chosen width
         run: |
           set -uo pipefail
           cd bootstrap
+          set +e
           ./build/bs2 test 2>&1 | tee ../detector.log
-          echo "suite_rc=${PIPESTATUS[0]}" >> "$GITHUB_ENV"
+          rc=${PIPESTATUS[0]}
+          set -e
+          echo "suite_rc=${rc}" >> "$GITHUB_ENV"
+          echo "suite exited ${rc}; the width assertion below owns the verdict"
 
       # THE ASSERTION THAT MAKES A GREEN RUN MEAN ANYTHING.
       #
@@ -99,9 +121,21 @@ jobs:
       #
       # `[units] N unit(s) across W worker(s)` is emitted per multi-unit shard
       # by run_test_suite. At least one shard must report W >= 2.
+      #
+      # `if: always()` so a red suite still gets its width checked and its
+      # diagnostic printed, and `${suite_rc:-1}` so a missing status reads as
+      # FAILURE rather than success — fail-closed in both directions, matching
+      # the sentinel discipline this epic keeps arriving at.
       - name: Assert the run actually exercised in-shard interleaving
+        if: always()
         run: |
           set -uo pipefail
+          suite_rc="${suite_rc:-1}"
+          if [ ! -f detector.log ]; then
+            echo "::error::no detector.log — the suite step did not run to the"
+            echo "::error::point of producing output; nothing can be concluded."
+            exit 1
+          fi
           if ! grep -qE '^\[units\] [0-9]+ unit\(s\) across [0-9]+ worker\(s\)$' detector.log; then
             echo "::error::no [units] width lines — this build cannot report its"
             echo "::error::in-shard width, so a green suite proves nothing about uzs9.2."
