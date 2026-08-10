@@ -57,6 +57,21 @@ fn run_sandbox(backdate_target: bool) -> string {
     avra_shell_exec("bash -c '" + script.replace("'", "'\\''") + "' 2>&1")
 }
 
+/// The last non-blank, non-comment line of the shell function opened by
+/// `header`, trimmed. Used to assert a function's final statement without
+/// depending on how its comments happen to wrap.
+fn last_stmt_of(src: string, header: string) -> string {
+    let after = src.split(header)
+    if after.length < 2 { return "" }
+    let body = after[1].split("\n}")[0]
+    mut last = ""
+    for raw in body.split("\n") {
+        let line = raw.trim()
+        if line != "" && !line.starts_with("#") { last = line }
+    }
+    last
+}
+
 spec "the runner says so when bs2 predates a compiler source (t-kdyj.10)" {
     given "a target strictly older than the sandbox sources" {
         then "it names both paths and both timestamps" {
@@ -130,8 +145,17 @@ spec "the runner says so when bs2 predates a compiler source (t-kdyj.10)" {
             // Each helper's contract is "print the value, or print nothing";
             // neither ever signalled failure through its status, and every
             // caller distinguishes the two by testing for an empty string.
-            src.contains("# genuine producer failure still surfaces as empty output, exactly as before.\n  return 0")
-                && src.contains("# is unaffected: head already received its line before the producer died.\n  return 0")
+            //
+            // Asserted by extracting each function BODY and checking its last
+            // statement, rather than by matching the surrounding comment text.
+            // A comment-matching assertion is hostage to line WRAPPING: the
+            // first draft searched for "# is unaffected: …", which is correct
+            // only because "The VALUE" happens to end the previous line. It
+            // passed, and review still (reasonably) read it as a mismatch —
+            // an assertion whose correctness depends on where a comment wraps
+            // is one reflow away from silently inverting.
+            last_stmt_of(src, "newest_source_entry() {") == "return 0"
+                && last_stmt_of(src, "newest_source_mtime() {") == "return 0"
         }
     }
 }
