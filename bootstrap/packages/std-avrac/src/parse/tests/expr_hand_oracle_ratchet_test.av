@@ -161,12 +161,35 @@ fn expected_divergences() -> List<string> {
     //             false for this input and runs as true — that gap is the bug, still
     //             unexplained. Do NOT weaken the peek before explaining it.
     //
-    //   f(        1 err each, same position 1:3. gen "expected `)` after arguments",
-    //   match {   hand "expected expression". Same shape at 1:8 for `match {`. Both are
-    //             the generated rule naming the CLOSING DELIMITER where the hand names
-    //             what you would type NEXT — an empty list whose close is missing. Likely
-    //             one shared cause in how an empty repetition reports; worth checking
-    //             whether both close together before fixing either alone.
+    //   f(        CAUSE CONFIRMED, with a control. The divergence is EMPTY-LIST-ONLY:
+    //
+    //                 f(     DIFF   gen "expected `)` after arguments" / hand "expected expression"
+    //                 f(1    SAME   both "expected `)` after arguments"
+    //                 f(1,   SAME   both "expected expression"
+    //
+    //             So it is not the message that is wrong — it is which failure surfaces
+    //             when the list is EMPTY. The rule is
+    //               "(" ( @onfail(bail) a:call_arg (…)* ("," )? )? @require ")"
+    //             and the arg group is OPTIONAL, so on `f(` it simply does not match and
+    //             control falls to `@require ")"`. The hand instead TRIES an argument and
+    //             reports what it wanted. Fixing means making the group non-skippable when
+    //             the next token cannot close the list — a `@peek` + `@require` shape —
+    //             and that touches EVERY call site in the grammar (four `@expect(")",
+    //             "expected `)` after arguments")` rules alone), so it wants its own pass
+    //             with the corpus watched, not a drive-by edit.
+    //
+    //   match {   NOT the same cause, despite looking identical at first. THREE gaps:
+    //
+    //                 match {      gen "expected `}` after match arms" / hand "expected expression"
+    //                 match x {    gen "expected `}` after match arms" / hand "expected `.`,
+    //                              `_`, literal, or type pattern to start pattern"
+    //                 match x { 1  gen "expected `->`" 1:12 / hand "expected `->` after
+    //                              pattern" 1:11  — message AND position
+    //
+    //             The first is the empty-list shape above; the second is a missing
+    //             pattern-start message the hand spells out in full; the third is both a
+    //             wording and an off-by-one. Grouping this with `f(` and fixing "them"
+    //             together would have closed one third of it and looked done.
     //
     //   {a:       2 errs each, FIRST diagnostic byte-identical. The whole divergence is
     //             the SECOND one's frame header: `1:4` (gen) against `1:5` (hand) — an
