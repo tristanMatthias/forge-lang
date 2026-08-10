@@ -101,4 +101,37 @@ spec "the runner says so when bs2 predates a compiler source (t-kdyj.10)" {
             !out.contains("[stale]") && out.contains("BEGIN\nEND rc=0")
         }
     }
+    given "the scan's exit status under pipefail" {
+        // t-fafu, the load-dependent silence. `newest_source_entry` ends with
+        //
+        //     compiler_source_paths | while read p; do … break; done
+        //
+        // and the `break` stops READING, so the still-writing producer can take
+        // SIGPIPE and exit 141. This file runs under `set -o pipefail` (line
+        // 12), which promotes that into the pipeline's status and therefore the
+        // FUNCTION's — and the caller is `entry=$(…) || return 0`, so the
+        // reporter bailed SILENTLY on a genuinely stale tree. Measured: 7
+        // silent runs in 90 concurrent probes, 0 in 150 after the fix. It also
+        // explains the two unexplained "no output" readings recorded on
+        // t-kdyj.10.
+        //
+        // STRUCTURAL, not behavioural, and the limit is worth stating: the
+        // trigger is scheduling pressure — whether the producer is still
+        // running when the reader breaks — not anything the test can arrange.
+        // Two constructions were tried and BOTH failed to discriminate: a
+        // 400-source sandbox (producer fills the 64KB pipe buffer and exits
+        // cleanly; ENTRY_RC=0 on 8/8 runs with the bug restored) and a plain
+        // repeat of the small sandbox. A concurrent probe reproduces it at
+        // only ~8%, so as a gate it would be flaky in the direction that
+        // matters — passing while broken. Asserting the source shape is the
+        // honest guard here, same idiom as --check-layout-boundary.
+        then "both scan helpers end with an explicit `return 0`" {
+            let src = avra_shell_exec("cat scripts/diagnose.sh")
+            // Each helper's contract is "print the value, or print nothing";
+            // neither ever signalled failure through its status, and every
+            // caller distinguishes the two by testing for an empty string.
+            src.contains("# genuine producer failure still surfaces as empty output, exactly as before.\n  return 0")
+                && src.contains("# is unaffected: head already received its line before the producer died.\n  return 0")
+        }
+    }
 }

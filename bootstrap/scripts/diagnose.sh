@@ -396,6 +396,14 @@ compiler_sources_changed() {
 # silently start disagreeing about what counts as a source.
 newest_source_mtime() {
   compiler_source_paths | tr '\n' '\0' | xargs -0 $STAT_MTIME 2>/dev/null | sort -rn | head -1
+  # Same SIGPIPE-under-pipefail hazard as newest_source_entry below: `head -1`
+  # stops reading after one line, so `sort` (and behind it xargs/find) can exit
+  # 141 and pipefail promotes that to this function's status. Harmless today —
+  # every caller assigns the output and tests it for emptiness rather than
+  # checking the status — but the next caller to write `|| return` would
+  # inherit the same silent-bail bug, so pin the contract here too. The VALUE
+  # is unaffected: head already received its line before the producer died.
+  return 0
 }
 
 # ONE definition of "what counts as a compiler source", emitted as PATHS so
@@ -428,6 +436,24 @@ newest_source_entry() {
       break
     fi
   done
+  # t-fafu. The `break` above stops READING, so the still-writing
+  # `compiler_source_paths` takes SIGPIPE and exits 141 — and this file runs
+  # under `set -o pipefail` (line 12), which promotes that into the pipeline's
+  # status and therefore this FUNCTION's status. The caller is
+  # `entry=$(newest_source_entry) || return 0`, so the reporter then bailed
+  # SILENTLY on a genuinely stale tree.
+  #
+  # Whether the producer has finished writing before the break is a race, which
+  # is why it only showed up under load: measured 7 silent runs in 90 concurrent
+  # probes (and 4/90 on the pre-t-kdyj.10 script, so this predates that work).
+  # It is also what the two unexplained "no output" readings recorded on
+  # t-kdyj.10 were.
+  #
+  # This function's contract is "print the entry, or print nothing" — it never
+  # signalled failure through its status, and the caller already distinguishes
+  # the two by testing for an empty string. Making that explicit is the fix; a
+  # genuine producer failure still surfaces as empty output, exactly as before.
+  return 0
 }
 
 # STRICT sibling of source_newer_than (`-gt`, not `-ge`): true only when a
