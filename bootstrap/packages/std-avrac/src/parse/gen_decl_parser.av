@@ -4,7 +4,7 @@
 // declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_is_error_expr, capval_is_error_stmt, error_stmt_of, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_if_let_stmt, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_arm_return, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_fn_decl_where_g, mk_where_param, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_assoc_type_def, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_stamp_stmt_at, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, mk_let_destructure_g, gensym_token, mk_splice_name, mk_plain_name, mk_parallel_g, mk_select_g, mk_select_arm_g, capval_to_select_arm, mk_spec_block_g, mk_given_block_g, mk_then_block_g, mk_comp_config_g, mk_children_slot_g, mk_comp_field_g, mk_component_def_g, mk_component_paren_def_g, mk_trait_list, mk_comp_body_marker, mk_comp_config_list, mk_children_slot_list, mk_comp_config_pair_g, mk_component_block_g, mk_raw_component_block_g, mk_method_shorthand_g, rawbrace_scan, capval_to_comp_config_pair, capval_to_comp_config_pair_list, capval_to_comp_config, capval_to_children_slot, capval_tok_texts, capval_to_ann, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off}
+use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_is_error_expr, capval_is_error_stmt, error_stmt_of, capval_to_arm, run_hand_expr, run_hand_stmt, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_if_let_stmt, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_splice_arm, mk_arm_return, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_fn_decl_where_g, mk_where_param, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_assoc_type_def, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_stamp_stmt_at, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, mk_let_destructure_g, gensym_token, mk_splice_name, mk_plain_name, mk_parallel_g, mk_select_g, mk_select_arm_g, capval_to_select_arm, mk_spec_block_g, mk_given_block_g, mk_then_block_g, mk_comp_config_g, mk_children_slot_g, mk_comp_field_g, mk_component_def_g, mk_component_paren_def_g, mk_trait_list, mk_comp_body_marker, mk_comp_config_list, mk_children_slot_list, mk_comp_config_pair_g, mk_component_block_g, mk_raw_component_block_g, mk_method_shorthand_g, rawbrace_scan, capval_to_comp_config_pair, capval_to_comp_config_pair_list, capval_to_comp_config, capval_to_children_slot, capval_tok_texts, capval_to_ann, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off}
 use core.{ExprId, Stmt, MatchArm, SelectArm, CompConfig, CompConfigPair, ChildrenSlot, Tk, SrcPos, TypeParamEntry, Annotation}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -3238,13 +3238,21 @@ fn parse_impl_decl(st: PState) -> CapVal {
             }
             if st.cur().text == "for" {
                 let _ = st.advance()
-                if st.cur().tk == Tk.Identifier { ifortn = CapVal.Tok(st.advance()) } else {
-                    st.report_ident("expected type name after `for`")
+                if !(st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Identifier) {
+                    st.report("expected type name after `for`")
                     if s_cut {
                         st.set_abort_prop(true)
                     return CapVal.Node(st.error_node_silent())
                     }
                 }
+                st.set_abort_prop(false)
+                let __rres1 = parse_name_or_splice(st)
+                if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
+                    if s_cut {
+                        return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                ifortn = __rres1
                 if st.cur().tk == Tk.Less {
                     let _ = st.advance()
                     if tok_starts_type(st.cur()) {
@@ -3760,7 +3768,7 @@ fn parse_match_stmt(st: PState) -> CapVal {
             st.set_abort_prop(true)
             return CapVal.Node(st.error_node_silent())
         }
-        while tok_starts_pattern(st.cur()) {
+        while st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || tok_starts_pattern(st.cur()) {
             arms_list.push(capval_to_arm(st, parse_match_arm(st)))
             if st.cur().tk == Tk.Comma { let _ = st.advance() }
         }
@@ -3921,20 +3929,28 @@ fn parse_match_when_arm(st: PState) -> CapVal {
 }
 
 fn parse_match_arm(st: PState) -> CapVal {
-    mut g: CapVal = CapVal.Nil
-    let p = parse_pattern_or(st)
-    if st.cur().text == "if" {
+    if st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) {
         let _ = st.advance()
-        g = parse_expression(st)
+        let t = parse_unary(st)
+        return mk_splice_arm(st, t)
     }
-    if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-        st.report("expected ->")
+    if tok_starts_pattern(st.cur()) {
+        mut g: CapVal = CapVal.Nil
+        let p = parse_pattern_or(st)
+        if st.cur().text == "if" {
+            let _ = st.advance()
+            g = parse_expression(st)
+        }
+        if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+            st.report("expected ->")
+        }
+        let __modes_3 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
+        let b = parse_arm_body(st)
+        st.set_modes(__modes_3)
+        return mk_arm(st, p, g, b)
     }
-    let __modes_3 = st.modes
-    st.set_modes(modes_with_flag_off(st.modes, "allow_dot_postfix"))
-    let b = parse_arm_body(st)
-    st.set_modes(__modes_3)
-    mk_arm(st, p, g, b)
+    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_arm_body(st: PState) -> CapVal {

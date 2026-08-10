@@ -1158,7 +1158,12 @@ export fn avra_stmt_grammar() -> Grammar {
   // grammar-text-only. The PRODUCTION views get it from the shared fragment (t-47hc.25).
   match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
-  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
+  // `~target` splices a `List<MatchArm>` here (qa6i probe 2). FIRST here is `~`, which
+  // starts no pattern, so it leads the alternation without ambiguity. `@when(in_quote_body)`
+  // is the same gate the expression-level splice branches use — outside a quote the
+  // marker is bitwise-not and must fall through to the ordinary arm.
+  match_arm     = @when(in_quote_body) "~" t:unary -> MkSpliceArm(t)
+                | p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
   defer_stmt    = "defer" e:expression -> MkDefer(e)
   errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
   return_stmt   = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> MkReturn(e)
@@ -1487,7 +1492,11 @@ export fn avra_decl_dispatch_grammar() -> Grammar {
 export fn avra_type_grammar() -> Grammar {
     let gp = grammar {
   type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
-  type_atom  = qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
+  // `~name` splices a string-valued local into a type here (qa6i probe 3). FIRST is `~`,
+  // which starts no other type atom, and `@when(in_quote_body)` is the gate — outside a
+  // quote this is a parse error, exactly as the hand has it.
+  type_atom  = @when(in_quote_body) "~" sn:IDENT -> MkSpliceType(sn)
+             | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
   qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
   fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
   dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)
@@ -1509,7 +1518,11 @@ export fn avra_type_grammar() -> Grammar {
 export fn avra_type_flip_grammar() -> Grammar {
     let gp = grammar {
   type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
-  type_atom  = qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
+  // `~name` splices a string-valued local into a type here (qa6i probe 3). FIRST is `~`,
+  // which starts no other type atom, and `@when(in_quote_body)` is the gate — outside a
+  // quote this is a parse error, exactly as the hand has it.
+  type_atom  = @when(in_quote_body) "~" sn:IDENT -> MkSpliceType(sn)
+             | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
   qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
   fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
   dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)
@@ -1595,7 +1608,8 @@ export fn avra_program_grammar() -> Grammar {
   continue_stmt = "continue" -> Continue()
   expr_stmt   = es:expression -> ExprStmt(es)
   type_expr   = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
-  type_atom   = qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
+  type_atom   = @when(in_quote_body) "~" sn:IDENT -> MkSpliceType(sn)
+              | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
   qualified_type = "@" qn:IDENT ( @peek(double_colon) ":" ":" qn:IDENT )+ ( "<" qargs:type_expr ( "," qargs:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qn, qargs, qopt)
   fn_type     = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" tr:type_expr )? -> MkFn(lp, p, tr)
   dyn_type    = "dyn" dt:IDENT ( opt:"?" )? -> TyDyn(dt, opt)

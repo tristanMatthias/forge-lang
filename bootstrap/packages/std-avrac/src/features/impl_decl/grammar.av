@@ -33,7 +33,7 @@ export fn avra_impl_decl_grammar() -> Grammar {
   // token, so one shared annotation set could only ever carry one of them. A group
   // branch's annotations now MERGE with the inherited ones rather than replacing them,
   // which is what makes a second message expressible at all.
-  impl_decl   = @try "impl" @cut ( "<" ( tparam ( "," tparam )* )? ">" )? @require itn:IDENT ( "<" ( type_expr ( "," type_expr )* )? ">" )? ( "for" @require ifortn:IDENT ( "<" ( type_expr ( "," type_expr )* )? ">" )? @expect("IDENT", "expected type name after `for`") )? @require "{" ( @peek(not_rbrace) @gate imethods:impl_member )* @require "}"
+  impl_decl   = @try "impl" @cut ( "<" ( tparam ( "," tparam )* )? ">" )? @require itn:IDENT ( "<" ( type_expr ( "," type_expr )* )? ">" )? ( "for" @require ifortn:name_or_splice ( "<" ( type_expr ( "," type_expr )* )? ">" )? @expect("name_or_splice", "expected type name after `for`") )? @require "{" ( @peek(not_rbrace) @gate imethods:impl_member )* @require "}"
                 @expect("IDENT", "expected type name after `impl`")
                 @expect("{", "expected `{` after impl type name")
                 @expect("}", "expected `}` after impl block") -> MkImpl(itn, ifortn, imethods)

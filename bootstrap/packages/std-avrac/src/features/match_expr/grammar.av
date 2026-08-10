@@ -65,7 +65,16 @@ export fn avra_match_arm_grammar() -> Grammar {
     let gp = grammar {
   match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
-  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:arm_body -> MkArm(p, g, b)
+  // `~target` splices a `List<MatchArm>` here (qa6i probe 2) — the marker the hand's
+  // `parse_match_arm_list` answered with a SENTINEL arm. FIRST is `~`, which starts no
+  // pattern, so it leads without ambiguity, and `@when(in_quote_body)` is the same gate
+  // the expression-level splice branches use: outside a quote `~` is bitwise-not and
+  // must fall through to the ordinary arm.
+  //
+  // This had no native branch at all until now, which is why `quote_splice_arm_list_test`
+  // failed with `expected `}` after match arms` once the arm rule went native.
+  match_arm     = @when(in_quote_body) "~" t:unary -> MkSpliceArm(t)
+                | p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:arm_body -> MkArm(p, g, b)
   // `MatchArm.body_id` is an ExprId and `return` is a STATEMENT, so the hand bridges the
   // two by wrapping: `Expr.Block([Stmt.Return(v)])`. With the body as `expression` alone,
   // every `-> return v` in the compiler fell through to `@hand(decl_hand)` — 17 of the 22
