@@ -1082,6 +1082,24 @@ the whole stack (attributing lower slices' divergences, including
 already-labelled `intended-ir-change` ones, to the top PR) or become unmerged
 unvalidated code; revisit only by defining the OLD side first.
 
+**A `schedule` trigger fires ONLY from the DEFAULT branch — and this repo's CI does
+not live there.** `main` is the default branch, is ~4351 commits behind, and carries
+no `.github` at all; every workflow lives on the integration branch. That works for
+every gate because they are `pull_request`-triggered (they run from the PR merge ref)
+or `push`-triggered (from the pushed branch). `schedule` is the one trigger with a
+default-branch requirement, so a scheduled workflow committed to the integration
+branch **never runs** — it is not even registered with Actions (`list_workflows`
+omits it; its `/runs` endpoint 404s). The uzs9.2 interleaving detector shipped this
+way (#1206) and accrued **zero** samples while t-kdyj.4 planned to read its future
+quiet as evidence the flake class was dead. That is the worst shape a guard can
+take: the logic is right, the PLACEMENT is wrong, and the symptom is silence —
+identical to a detector that keeps passing. `--check-ci-gates` now fails on a
+workflow that **cannot fire at all** from where it lives (a `schedule` with no
+`push` and no `pull_request`); a dormant cron alongside a working trigger is fine.
+Diagnosing one of these: check `git ls-tree origin/main .github/` before believing
+a scheduled workflow runs, and note that "it has never run" is NOT evidence on its
+own if no cron time has elapsed yet — the placement rule is.
+
 ## Session Completion
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
