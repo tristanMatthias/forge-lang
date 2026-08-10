@@ -19,7 +19,7 @@
 // (parse/gen_operator_scanner.av) is what production consumes. RELATIVE imports:
 // this is an in-package compiler-src module (absolute `@std.avrac.` self-imports
 // double-expand the package — F4012).
-use parse.{operator_rules, keyword_rules, char_run_rules, delim_run_rules, LitRule, CharRun, DelimRun, byte_at, ascii_const_name}
+use parse.{operator_rules, keyword_rules, char_run_rules, delim_run_rules, str_run_rules, nest_run_rules, LitRule, CharRun, DelimRun, StrRun, NestRun, byte_at, ascii_const_name}
 use core.{Tk, tk_name}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
@@ -351,6 +351,26 @@ fn run_symbol_import_list() -> string {
         if !run_list_has(syms, dr[k].term) { syms.push(dr[k].term) }
         k = k + 1
     }
+    // The string-body and nesting rules name constants too — a missing one is an
+    // undefined-symbol HARD error in the generated file, not a warning, so the import
+    // list is derived from the rules rather than written out by hand.
+    let sr = str_run_rules()
+    mut m = 0
+    while m < sr.length {
+        if !run_list_has(syms, sr[m].close) { syms.push(sr[m].close) }
+        if sr[m].interp != "" && !run_list_has(syms, sr[m].interp) { syms.push(sr[m].interp) }
+        if sr[m].escape && !run_list_has(syms, "BACKSLASH") { syms.push("BACKSLASH") }
+        m = m + 1
+    }
+    let nr = nest_run_rules()
+    mut q = 0
+    while q < nr.length {
+        if !run_list_has(syms, nr[q].open_a) { syms.push(nr[q].open_a) }
+        if !run_list_has(syms, nr[q].open_b) { syms.push(nr[q].open_b) }
+        if !run_list_has(syms, nr[q].close_a) { syms.push(nr[q].close_a) }
+        if !run_list_has(syms, nr[q].close_b) { syms.push(nr[q].close_b) }
+        q = q + 1
+    }
     mut out = ""
     mut j = 0
     while j < syms.length {
@@ -363,6 +383,102 @@ fn run_symbol_import_list() -> string {
 
 /// The import header of the generated run-scanner module — `byte_at` + the `cc_is_*`
 /// classifiers its loops call. RELATIVE imports (F4012). No `Tk`: a run returns an int.
+// ── The STRING-BODY scanner generator ─────────────────────────────
+// The delim run's escape-and-interpolation-aware sibling. A plain scan-until cannot do a
+// string body: `\"` must not close it, and `{` must SUSPEND it so the parser can handle
+// the nested expression and resume. Both are fields on the rule, so the difference
+// between `"…"`, `` `…` ``, `'…'` and `r"…"` is data rather than four hand-written loops.
+//
+// Exclusive end, like every other run here: the scanner stops BEFORE the close, the
+// interp lead, or EOF, and the caller inspects `byte_at(src, end)` to learn which. An
+// escape consumes TWO bytes (the backslash and whatever follows, including a close
+// delimiter or a newline), which is what makes `"a\"b"` one string rather than two.
+
+/// Emit one `scan_<name>(src, start) -> int` for a string-body run.
+fn emit_str_scanner(rule: StrRun) -> string {
+    mut stop = "byte_at(src, end) == " + rule.close
+    if rule.interp != "" {
+        stop = stop + " || byte_at(src, end) == " + rule.interp
+    }
+    mut esc = ""
+    if rule.escape {
+        esc = "        // An escape consumes the backslash AND the byte after it, so a\n" +
+              "        // `\\` + close does not terminate and `\\` + interp does not suspend.\n" +
+              "        if byte_at(src, end) == BACKSLASH && byte_at(src, end + 1) != -1 {\n" +
+              "            end = end + 2\n" +
+              "            continue\n" +
+              "        }\n"
+    }
+    "/// GENERATED string-body scanner for the `" + rule.name + "` mode. Stops BEFORE the\n" +
+    "/// close delimiter, the interpolation lead, or EOF (exclusive end).\n" +
+    "export fn scan_" + rule.name + "(src: bytes, start: int) -> int {\n" +
+    "    mut end = start\n" +
+    "    while byte_at(src, end) != -1 {\n" +
+    esc +
+    "        if " + stop + " { return end }\n" +
+    "        end = end + 1\n" +
+    "    }\n" +
+    "    end\n" +
+    "}\n"
+}
+
+/// The generated string-body bodies — one `scan_<name>` per str_run_rules() entry.
+export fn emit_str_scanner_source() -> string {
+    let rules = str_run_rules()
+    mut out = ""
+    mut i = 0
+    while i < rules.length {
+        if i > 0 { out = out + "\n" }
+        out = out + emit_str_scanner(rules[i])
+        i = i + 1
+    }
+    out
+}
+
+// ── The NESTING scanner generator ─────────────────────────────────
+// `/* … */` is the one construct no scan-until can express: the terminator is the close
+// that BALANCES, not the first one. A depth counter is the entire difference.
+
+/// Emit one `scan_<name>(src, start) -> int` for a nesting run. INCLUSIVE end (past the
+/// balancing close) — unlike the other runs there is nothing useful at the stop byte, and
+/// an unbalanced open simply runs to EOF.
+fn emit_nest_scanner(rule: NestRun) -> string {
+    "/// GENERATED nesting scanner for `" + rule.name + "`. Returns the offset PAST the\n" +
+    "/// balancing close, or EOF if the nesting never balances.\n" +
+    "export fn scan_" + rule.name + "(src: bytes, start: int) -> int {\n" +
+    "    mut end = start\n" +
+    "    mut depth = 0\n" +
+    "    while byte_at(src, end) != -1 {\n" +
+    "        if byte_at(src, end) == " + rule.open_a + " && byte_at(src, end + 1) == " + rule.open_b + " {\n" +
+    "            depth = depth + 1\n" +
+    "            end = end + 2\n" +
+    "            continue\n" +
+    "        }\n" +
+    "        if byte_at(src, end) == " + rule.close_a + " && byte_at(src, end + 1) == " + rule.close_b + " {\n" +
+    "            depth = depth - 1\n" +
+    "            end = end + 2\n" +
+    "            if depth == 0 { return end }\n" +
+    "            continue\n" +
+    "        }\n" +
+    "        end = end + 1\n" +
+    "    }\n" +
+    "    end\n" +
+    "}\n"
+}
+
+/// The generated nesting bodies — one `scan_<name>` per nest_run_rules() entry.
+export fn emit_nest_scanner_source() -> string {
+    let rules = nest_run_rules()
+    mut out = ""
+    mut i = 0
+    while i < rules.length {
+        if i > 0 { out = out + "\n" }
+        out = out + emit_nest_scanner(rules[i])
+        i = i + 1
+    }
+    out
+}
+
 export fn gen_run_scanner_header() -> string {
     "// GENERATED by `bash scripts/diagnose.sh --emit-regen-run` — DO NOT EDIT BY HAND.\n" +
     "// Source of truth: char_run_rules() in parse/token_table.av (compiled to byte-run\n" +
@@ -374,5 +490,6 @@ export fn gen_run_scanner_header() -> string {
 /// The COMPLETE text of parse/gen_run_scanner.av: header + char-class run bodies +
 /// delimited run bodies.
 export fn gen_run_scanner_file() -> string {
-    gen_run_scanner_header() + emit_run_scanner_source() + "\n" + emit_delim_scanner_source()
+    gen_run_scanner_header() + emit_run_scanner_source() + "\n" + emit_delim_scanner_source() +
+        "\n" + emit_str_scanner_source() + "\n" + emit_nest_scanner_source()
 }

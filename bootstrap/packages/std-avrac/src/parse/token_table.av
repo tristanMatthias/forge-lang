@@ -236,3 +236,53 @@ export fn delim_run_rules() -> List<DelimRun> {
         DelimRun { name: "to_eol", term: "LF" },
     ]
 }
+
+/// t-bw9s / lexer flip — the STRING-BODY runs.
+///
+/// The third rule shape, and the one `delim_run_rules`' doc calls "a later slice": a
+/// quote LEAD opens a MODE, and the body inside it is not a plain scan-until because two
+/// things interrupt it. An ESCAPE (`\`) consumes the next byte whatever it is, so a
+/// `\"` does not close the string; and an INTERPOLATION lead (`{`) suspends the scan so
+/// the parser can take over for a nested expression and resume after.
+///
+/// Both are expressible as data, which is what makes this a table rule rather than
+/// hand-written control flow: `escape` says whether `\` is honoured, `interp` names the
+/// byte that suspends (or "" for a mode that has none). The generated scanner stops
+/// BEFORE the close, the interp lead, or EOF, exclusive-end like every other run here —
+/// so the caller inspects `byte_at(src, end)` to learn WHICH, exactly as it does for a
+/// delim run.
+///
+/// The four modes, and why they differ only in these two fields:
+///   dq_body    `"…"`  escapes, interpolates   — the ordinary string
+///   tmpl_body  `` `…` ``  escapes, interpolates — template literal, different delimiter
+///   sq_body    `'…'`  escapes, NO interpolation — char literal
+///   raw_body   `r"…"` NO escapes, NO interpolation — raw string, `\` is a literal byte
+export type StrRun = { name: string, close: string, escape: bool, interp: string }
+
+/// The string-body runs, compiled to `scan_<name>(src, start) -> int` by
+/// parse/emit_lex.av. Single source of truth for what interrupts a string body.
+export fn str_run_rules() -> List<StrRun> {
+    [
+        StrRun { name: "dq_body",   close: "DQUOTE",   escape: true,  interp: "LBRACE" },
+        StrRun { name: "tmpl_body", close: "BACKTICK", escape: true,  interp: "LBRACE" },
+        StrRun { name: "sq_body",   close: "SQUOTE",   escape: true,  interp: "" },
+        StrRun { name: "raw_body",  close: "DQUOTE",   escape: false, interp: "" },
+    ]
+}
+
+/// t-bw9s / lexer flip — the NESTING runs.
+///
+/// `/* … */` is the one lexer construct that a scan-until cannot express at all: the
+/// terminator is not the first `*/`, it is the one that balances. A depth counter is the
+/// whole difference, and it is data too — `open`/`close` are two-byte sequences, so the
+/// rule carries both bytes of each.
+export type NestRun = { name: string, open_a: string, open_b: string, close_a: string, close_b: string }
+
+/// The nesting runs, compiled to `scan_<name>(src, start) -> int`. The returned end is
+/// AFTER the balancing close (inclusive), because unlike the other runs there is nothing
+/// useful for the caller to inspect at the stop byte — an unbalanced comment runs to EOF.
+export fn nest_run_rules() -> List<NestRun> {
+    [
+        NestRun { name: "block_comment", open_a: "SLASH", open_b: "STAR", close_a: "STAR", close_b: "SLASH" },
+    ]
+}
