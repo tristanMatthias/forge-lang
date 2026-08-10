@@ -1165,7 +1165,22 @@ impl Parser {
         // out, which is exactly the hand's inner-then-outer order for
         // `fn f() { let x = (1 + 2 * 3`: the `)` from inside the expression, then the
         // function's `}`. Merging afterwards inverted it.
+        // ADOPT the delegate's first-error state, not just its diagnostics (t-bw9s).
+        // `bag_merge` moves `d.bag` across and nothing else, so two things went wrong:
+        // a delegate that reported while `dsl.diags` was EMPTY left `error_message`
+        // blank (the bag had the diagnostic, the documented "consult error_message for
+        // the cause" field did not), and when BOTH reported, the delegate's diagnostic
+        // was merged FIRST while the grammar's was the first to reach `report_at_span`
+        // — so first-error-wins recorded the later one. Same class as the empty
+        // `error_message` this seam produced in #1201: the bag and the summary field
+        // disagreeing about what happened.
+        let d_had_error = d.had_error
+        let d_error_message = d.error_message
         self.bag = bag_merge(self.bag, d.bag)
+        if !self.had_error && d_had_error {
+            self.had_error = true
+            self.error_message = d_error_message
+        }
         if true {
             mut gi = 0
             while gi < dsl.diags.length {
@@ -1564,7 +1579,22 @@ impl Parser {
             // the recovery oracle compares the ORDERED F-code signature, so both the
             // source order and the per-rule codes are observable.
             self.copy_cursor_from(d)
+            // ADOPT the delegate's first-error state, not just its diagnostics (t-bw9s).
+            // `bag_merge` moves `d.bag` across and nothing else, so two things went wrong:
+            // a delegate that reported while `dsl.diags` was EMPTY left `error_message`
+            // blank (the bag had the diagnostic, the documented "consult error_message for
+            // the cause" field did not), and when BOTH reported, the delegate's diagnostic
+            // was merged FIRST while the grammar's was the first to reach `report_at_span`
+            // — so first-error-wins recorded the later one. Same class as the empty
+            // `error_message` this seam produced in #1201: the bag and the summary field
+            // disagreeing about what happened.
+            let d_had_error = d.had_error
+            let d_error_message = d.error_message
             self.bag = bag_merge(self.bag, d.bag)
+            if !self.had_error && d_had_error {
+                self.had_error = true
+                self.error_message = d_error_message
+            }
             mut gi = 0
             while gi < dsl.diags.length {
                 let gd = dsl.diags[gi]

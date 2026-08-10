@@ -4,7 +4,7 @@
 // The question this answers is "can the hand parser be deleted yet?", and as of t-bw9s
 // the answer is NO, with a number. Sweeping 35 expression forms through both engines
 // (`bs2 expr` with the generated route pinned vs `AVRA_PARSER_EXPR_STATIC=0
-// AVRA_PARSER_EXPR_FLIP=0` = the hand) started at NINE divergences and is now at EIGHT.
+// AVRA_PARSER_EXPR_FLIP=0` = the hand) started at NINE divergences and is now at FIVE.
 //
 // Closed so far:
 //     spawn f()   was: gen "expected }" (2:1) / hand "expected `{` after spawn" (1:7).
