@@ -480,8 +480,36 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree_all("component C inst { component D }\nfn f() -> int { 1 }")
     }
 
+    // ── THE ONE PLACE THE HAND IS NO LONGER THE ORACLE (t-47hc.4.3) ──────────────────
+    //
+    // A bare `@`. The hand's `parse_annotations` takes `current_lexeme` as the annotation
+    // NAME without requiring an identifier, so `@` followed by `fn` builds an annotation
+    // literally named `fn`, then fails on what follows — two diagnostics, F0040 then
+    // F0013. `annot = "@" @require n:IDENT` cannot express that looseness, and encoding
+    // it would mean teaching the grammar that any token whatsoever is a legal annotation
+    // name.
+    //
+    // So this is a DESIGN CALL, not a parity bug, and it was made deliberately: the
+    // stricter rule wins and the oracle moves for this ONE input. `@fn` naming an
+    // annotation `fn` is not behaviour worth preserving.
+    //
+    // Asserted rather than deleted. BOTH sides are pinned, so this goes red if the native
+    // answer drifts OR if the hand is ever fixed to match — either way someone should
+    // come back and re-read this note.
+    spec "t-47hc.4.3: a bare `@` — the deliberate oracle move" {
+        given "the native path reports the strict single diagnostic" {
+            static_raw("@\nfn f() -> int { 1 }") == "F0040 "
+        }
+        given "the production path agrees with it" {
+            default_path("@\nfn f() -> int { 1 }") == "F0040 "
+        }
+        then "and the HAND still reports its looser two — this IS the divergence" {
+            hand_oracle("@\nfn f() -> int { 1 }") == "F0040 F0013 "
+        }
+    }
+
+    // Every other wrapper form still answers to the hand; the list loses only the bare `@`.
     then "malformed decl wrappers (the routed prefixes), on all three paths" {
-        agree_all("@\nfn f() -> int { 1 }") &&
         agree_all("@foo(\nfn f() -> int { 1 }") &&
         agree_all("@foo(,)\nfn f() -> int { 1 }") &&
         agree_all("@foo)\nfn f() -> int { 1 }") &&
@@ -1147,8 +1175,8 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         // parsers were right and the corpus entry was wrong; those moved to the
         // valid-input tree pin below.
         agree_bad("export export fn g() -> int { 1 }\nfn f() -> int { 1 }") &&
-        // A bare `@`, an unterminated arg list, an empty arg, a stray close paren.
-        agree_bad("@\nfn f() -> int { 1 }") &&
+        // An unterminated arg list, an empty arg, a stray close paren. The bare `@` that
+        // led this list is the deliberate oracle move — pinned in its own spec above.
         agree_bad("@foo(\nfn f() -> int { 1 }") &&
         agree_bad("@foo(,)\nfn f() -> int { 1 }") &&
         agree_bad("@foo)\nfn f() -> int { 1 }") &&

@@ -2280,6 +2280,33 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return st.cur().text == ":" && st.pos + 1 < st.toks.length &&
             st.toks[st.pos + 1].text == ":" && st.toks[st.pos + 1].pos == st.cur().pos + 1
     }
+    // `annot_lead` — the cursor is on an `@` that begins an ANNOTATION, not a QUALIFIED
+    // REFERENCE. The two share a lead token and the hand tells them apart by POSITION,
+    // which is the whole reason this cond exists (t-47hc.4.3, the decl_hand deletion).
+    //
+    // The hand's answer for `@name` depends on where it sits: at EXPRESSION position
+    // (`let x = @foo`) it reports the helpful "a qualified reference is `@pkg::mod::name`";
+    // at DECLARATION position (`@inline` with nothing after it) it reports F0040. Before
+    // the delegate was deleted that split came for free — `annot_decl`'s `@try` rolled a
+    // declaration-position miss back into `@hand(decl_hand)`. With the leaf gone the
+    // rollback lands on `statement` instead, which parses the `@` as a qualified-reference
+    // EXPRESSION and reports the expression-position message at declaration position.
+    //
+    // So the rule commits only when the `@` cannot be a qualified reference: a `::` after
+    // the package name means the expression path owns it and this rule must DECLINE. A
+    // bare `@` (no IDENT at all) is still ours — that is the `annot`'s own `@require` to
+    // report on, and it is what keeps F0040 as the first message the hand also gives.
+    if cond == "annot_lead" {
+        if st.cur().tk != Tk.At { return false }
+        if st.pos + 1 >= st.toks.length { return true }
+        if st.toks[st.pos + 1].kind != "IDENT" { return true }
+        if st.pos + 3 >= st.toks.length { return true }
+        // `@pkg::` — the qualified-reference form, adjacency-checked exactly as
+        // `double_colon` checks it so a spaced `: :` is not mistaken for `::`.
+        let c1 = st.toks[st.pos + 2]
+        let c2 = st.toks[st.pos + 3]
+        return !(c1.text == ":" && c2.text == ":" && c2.pos == c1.pos + 1)
+    }
     // Bare "the cursor is on an IDENT" (t-47hc.5). The where-entry list needs exactly
     // this and nothing narrower: `parse_where_entries` enters on `check(Tk.Identifier)`
     // alone, so `where T Trait` (no colon) DOES enter and then reports the missing `:`.
@@ -3631,7 +3658,15 @@ export fn rawbrace_scan(st: PState, tag: string) -> Token {
     mut depth = 1
     while true {
         if st.at_end() {
-            st.report("unterminated `${tag} { }` block — no balancing `}` before end of file")
+            // The `component` tag IS the hand's `body: TokenStream` capture: the hand's
+            // `capture_balanced_brace_body` names the FIELD, not the rule, and that is the
+            // wording this diagnostic is recognised by. While the leaf existed the hand
+            // produced it and the scan's differing wording never surfaced; the scan is the
+            // only reporter now, so it has to say the same thing. (The hand also names the
+            // component — `… block for `sql`` — which is not threaded into the scan, so the
+            // wording matches up to that identifier.)
+            let what = if tag == "component" { "body: TokenStream" } else { "${tag} { }" }
+            st.report("unterminated `${what}` block — no balancing `}` before end of file")
             return Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
         }
         if st.cur().tk == Tk.LeftBrace { depth = depth + 1 }

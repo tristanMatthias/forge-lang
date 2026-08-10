@@ -63,7 +63,7 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
     then "spec_decl dispatches BEFORE the decl_hand gate — else it would be dead code" {
         let src = decl_src()
         let spec_at = src.index_of("parse_spec_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let hand_at = src.index_of("parse_statement(st)")
         // The dispatcher reaches `spec_decl` by a DIRECT predictive call now, not the
         // speculative `s_last = …` bookkeeping it used to emit: `spec_decl`'s `@try`
         // moved INSIDE the rule, because a `@cut`'s commit flag is per-rule-invocation

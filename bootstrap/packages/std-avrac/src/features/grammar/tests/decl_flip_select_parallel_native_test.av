@@ -63,7 +63,7 @@ spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
         let src = decl_src()
         let sel_at = src.index_of("parse_select_decl(st)")
         let par_at = src.index_of("parse_parallel_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let hand_at = src.index_of("parse_statement(st)")
         // BOTH reach the dispatcher by a direct predictive `return parse_X(st)` now:
         // each one's `@try` lives INSIDE its rule (a `@cut`'s commit flag is
         // per-rule-invocation and cannot reach a caller's `@try`), so neither lowers to

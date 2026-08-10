@@ -67,7 +67,7 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         let let_at = src.index_of("parse_let_decl(st)")
         let mut_at = src.index_of("parse_mut_decl(st)")
         let const_at = src.index_of("parse_const_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let hand_at = src.index_of("parse_statement(st)")
         let_at >= 0 && mut_at >= 0 && const_at >= 0 && hand_at >= 0 &&
             let_at < hand_at && mut_at < hand_at && const_at < hand_at
     }
@@ -112,9 +112,13 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        // The `decl_hand` gate this was measured against is GONE (t-47hc.4.3), so there
+        // is no second landmark to order the tail after — the tail is simply the last
+        // thing `parse_declaration` does. Asserting PRESENCE is the whole remaining
+        // claim; the ordering conjunct would now compare the tail against itself and
+        // pass vacuously, which is worse than not asserting it.
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        tail_at >= 0 && src.index_of("run_hand_stmt(\"decl_hand\"") < 0
     }
 
     then "the destructure rule is PREDICTIVE and dispatches BEFORE let_decl and the hand gate" {
@@ -132,7 +136,7 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         let src = decl_src()
         let des_at = src.index_of("parse_letdes_decl(st)")
         let let_at = src.index_of("parse_let_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let hand_at = src.index_of("parse_statement(st)")
         // The gate is emitted at the DISPATCH SITE, not inside the rule: a leading
         // `@peek` is the branch's FIRST guard, so emit hoists it to the caller and the
         // rule fn body starts at the `let`. Asserted as the exact guarded dispatch, so

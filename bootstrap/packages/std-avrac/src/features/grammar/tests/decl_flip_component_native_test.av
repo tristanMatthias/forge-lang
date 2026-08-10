@@ -64,7 +64,7 @@ spec "t-47hc slice A: the component definition is emitted as a native rule" {
         let src = decl_src()
         let disp = emitted_rule_body(src, "fn parse_declaration(st: PState) -> CapVal")
         let comp_at = disp.index_of("parse_comp_header(st)")
-        let hand_at = disp.index_of("run_hand_stmt(\"decl_hand\"")
+        let hand_at = disp.index_of("parse_statement(st)")
         disp != "" &&
             !disp.contains("s_last = parse_comp_header(st)") &&
             src.contains("fn parse_comp_header(st: PState) -> CapVal") &&

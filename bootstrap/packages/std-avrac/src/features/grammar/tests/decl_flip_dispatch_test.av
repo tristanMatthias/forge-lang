@@ -520,7 +520,12 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // Uses the same recovery anchor as the discriminating assertion below, so this
         // control cannot go vacuous when a form graduates — the failure that retired
         // the previous fixture (see BARE_IDENT_COMP_INST).
-        refused_here("*", "wildcard", MALFORMED_DECL()) &&
+        // INVERTED (t-47hc.4.3). This asserted that `*` refuses the one form still
+        // reaching a leaf. There are no production leaves left — `--hand-leaves` reports
+        // 0 — so `*` refuses NOTHING, and that is the milestone rather than a failure.
+        // CONTROLLED against the pinned seed: `Foo bar { x: 1 }` parses clean under BOTH
+        // compilers, so only the refusal signal moved, not behaviour.
+        !refused_here("*", "wildcard", MALFORMED_DECL()) &&
         // ...and the SAME wildcard reports NOTHING for a valid file that merely IMPORTS.
         //
         // HONEST LABEL: this case does NOT fail against the previous filter *here*, and
@@ -572,7 +577,13 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // in the recovery spec below), so keeping it here would have been a guard that
         // cannot fail — the precise vacuity this half exists to prevent. `fn` stays,
         // for the statement-body reason recorded on MALFORMED_DECL.
-        !native_without_delegate("malformed_let", MALFORMED_DECL()) &&
+        // The `MALFORMED_DECL()` anchor is RETIRED from this control. It discriminated
+        // via the REFUSAL, not via a parse failure — `Foo bar { x: 1 }` parses clean on
+        // the pinned seed too — so with no leaf to refuse it can no longer come back
+        // false, and a conjunct that cannot fail is worse than an absent one. The three
+        // below keep the anti-vacuity role honestly: each is a form that must FAIL to
+        // parse, so this control still goes red if a routed rule starts silently
+        // accepting its malformed input.
         !native_without_delegate("malformed_type", "type Foo = {\n") &&
         !native_without_delegate("malformed_component", "component C {\n") &&
         !native_without_delegate("malformed_fn", "fn foo(\n") &&
@@ -794,6 +805,8 @@ spec "t-myz7: the decl_hand frontier — what still depends on the leaf" {
         // stopped being true as each keyword took a `@cut` — a committed rule owns its
         // recovery and never rolls back — and `let = 5` refusing ZERO times is the
         // measurement that says so.
-        refused_here("decl_hand", "bare_inst_still_needs_leaf", "Foo bar { x: 1 }\nfn f() -> int { 1 }")
+        // The bare instantiation was the LAST form reaching `decl_hand`. It does not
+        // reach it any more because the leaf is gone, so the assertion flips.
+        !refused_here("decl_hand", "bare_inst_still_needs_leaf", "Foo bar { x: 1 }\nfn f() -> int { 1 }")
     }
 }

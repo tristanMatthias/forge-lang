@@ -640,7 +640,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // Neither is about the leaf; both are wrappers that need to OWN their inner's failure,
   // the same lesson every routed keyword taught. Recorded here rather than attempted in
   // the routing slice because cluster 1 is a design decision about the oracle, not a fix.
-  declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | export_decl | @try doc_decl | mdoc_decl | @try annot_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | @try bare_comp_inst_raw | @try bare_comp_inst | @peek(decl_lead) @hand(decl_hand) | statement
+  declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | export_decl | doc_decl | mdoc_decl | annot_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | bare_comp_inst_raw | @try bare_comp_inst | statement
   // `export <decl>` — the first of `decl_hand`'s prefix WRAPPERS to go native.
   //
   // The inner is NOT `declaration`: the hand's export branch looks the NEXT token's
@@ -706,7 +706,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // the `statement` tail, which is not a declaration. Same `@try`/bare split, same
   // order (`let_decl` before `letdes_decl` for the reason `declaration` records), so
   // the two alternations cannot disagree about who owns a keyword.
-  exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | @peek(decl_table_kw) @hand(decl_hand)
+  exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header
   // The remaining three prefix wrappers (t-47hc Phase 4), same shape as `export_decl`
   // with ONE deliberate difference: their inner IS recursive. The hand's doc and
   // annotation branches re-enter `parse_declaration` (unlike export's direct table
@@ -731,12 +731,38 @@ fn avra_decl_edge_grammar() -> Grammar {
   // the arg list is the call-suffix group verbatim, because on the hand side it IS
   // parse_arg_list_ids (allow_dot_postfix on via call_arg's own `@on`, no it-sugar
   // toggle — annotations read the ambient mode, exactly like a plain `f(args)` call).
-  doc_decl       = d:DOC ( d:DOC )* dd:docable_decl -> MkDocAnnotated(d, dd)
+  // t-47hc.4.3 — `doc_decl` OWNS its inner's failure, the SECOND of the two wrapper
+  // rules the `decl_hand` deletion left holding nothing. Before the deletion a doc
+  // comment over a malformed inner rolled back into `@hand(decl_hand)`, which reported
+  // the inner's error and stopped. With the leaf gone the rollback lands on the
+  // `statement` tail, which re-parses `/// d` as an expression and reports a SPURIOUS
+  // F0040 ahead of the inner's real one — `/// d` over `let x: = 1` came out
+  // `F0040 F0001` against the hand's bare `F0001`.
+  //
+  // `@try` at the front so the `@cut` has a branch to commit (the `export_decl` shape);
+  // past a cut the branch owns its diagnostics, so the inner's failure propagates
+  // verbatim and nothing re-reports. The `@expect` is REQUIRED by the validator because
+  // `docable_decl`'s FIRST is a disjunction, and it is what keeps a LONE `/// doc` at
+  // EOF answering the hand's F0040 rather than a bare syntax error.
+  doc_decl       = @try d:DOC ( d:DOC )* @cut @require dd:docable_decl
+                   @expect("docable_decl", "expected expression", F0040) -> MkDocAnnotated(d, dd)
   docable_decl   = di:wrapped_inner -> MkStampAt(di)
   mdoc_decl      = m:MODDOC ( m:MODDOC )* -> MkModuleDoc(m)
-  annot_decl     = an:annot ( an:annot )* ad:annotable_decl -> MkAnnotatedArgs(an, ad)
+  // t-47hc.4.3 — `annot_decl` OWNS its inner's failure, because after the `decl_hand`
+  // deletion there is nothing below it to own one. `@peek(annot_lead)` decides
+  // annotation-vs-qualified-reference predictively (see the cond for why the hand's
+  // answer is position-dependent), and the `@cut` after the first annotation is what
+  // turns "no declaration follows" into the hand's F0040 instead of a rollback into the
+  // expression path's qualified-reference message.
+  annot_decl     = @try @peek(annot_lead) @cut an:annot ( an:annot )* @require ad:annotable_decl
+                   @expect("annotable_decl", "expected expression", F0040) -> MkAnnotatedArgs(an, ad)
   annotable_decl = ai:wrapped_inner -> MkStampAt(ai)
-  annot          = "@" n:IDENT ( "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" )? -> MkAnn(n, a)
+  // The name is `@require`d with the hand's F0040 so a BARE `@` reports what the hand
+  // reports. It cannot be spelled as the leading item's FIRST-set guard: `"@"` is that
+  // guard, and the name is the item after it.
+  annot          = "@" @require n:IDENT ( "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" )?
+                   @expect("IDENT", "expected expression", F0040)
+                   @expect(")", "expected expression", F0040) -> MkAnn(n, a)
   // `component_decl` is in this set (t-myz7): an ANNOTATED or DOC-COMMENTED
   // component had no native path, so `@expand(expand_cli) component cli {}` fell to
   // `@hand(decl_hand)` — 157 sites in packages/cli/src/main.av, the last form still
@@ -745,7 +771,7 @@ fn avra_decl_edge_grammar() -> Grammar {
   // native and `@expand` on a `fn` was fine. Its FIRST (`component`) collides with
   // nothing else here, and `wrapped_inner` is shared by both `annot_decl` and
   // `doc_decl`, so this covers the doc-comment form too.
-  wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | @try comp_header | @try use_decl | @try mod_decl | export_decl | @try doc_decl | @try annot_decl | letdes_decl | let_decl | @try mut_decl | @try const_decl
+  wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | @try comp_header | @try use_decl | @try mod_decl | export_decl | doc_decl | annot_decl | letdes_decl | let_decl | mut_decl | @try const_decl
   // The `let` / `mut` / `const` BINDINGS (t-47hc Phase 4) — the highest-traffic
   // residue of `@hand(decl_hand)`: every binding statement in every routed body
   // used to detour through the hand delegate. The rules mirror the hand parsers
@@ -1015,7 +1041,18 @@ fn avra_decl_edge_grammar() -> Grammar {
   // raw arms above: a `body: TokenStream` component captures its instance body
   // verbatim rather than parsing it.
   bare_comp_inst     = @peek(bare_comp_inst) n:IDENT i:IDENT "{" ( @onfail(bail) p:config_pair )* @onfail(abort) body:comp_block_item* @require "}" @expect("}", "expected `}` at end of component block") -> MkComponentBlock(n, i, p, body)
-  bare_comp_inst_raw = @peek(bare_comp_inst_raw) rn:IDENT ri:IDENT "{" rb:@rawbrace(component) "}" -> MkRawComponentBlock(rn, ri, rb)
+  // OWNS its failure past the opening brace (t-47hc.4.3). The `decl_hand` leaf used to
+  // catch an unbalanced raw body and name it (`unterminated `body: TokenStream` block`);
+  // with the leaf gone a `@try` rollback lands on `statement`, which reports a bare
+  // F0001 and loses the name. Committing after `{` keeps the rawbrace scanner's own
+  // diagnostic. `@try` moves INTO the rule so the `@cut` has a branch to commit.
+  // OWNS its failure past the opening brace (t-47hc.4.3). `rawbrace_scan` DOES report an
+  // unterminated body — but as a `@try`d REFERENCE the whole branch rolled back on the
+  // missing closer and took the diagnostic with it, leaving the `statement` tail to
+  // report a bare `expected `}``. The leaf used to paper over this: the hand re-parsed
+  // and produced the named error. Committing after `{` keeps the scan's own diagnostic,
+  // which is the only reporter left. `@try` moves INTO the rule so `@cut` has a branch.
+  bare_comp_inst_raw = @try @peek(bare_comp_inst_raw) rn:IDENT ri:IDENT "{" @cut rb:@rawbrace(component) "}" -> MkRawComponentBlock(rn, ri, rb)
   config_pair = @peek(cfg_pair_value) k:IDENT v:expression ","? -> MkCompConfigPair(k, v)
               | @peek(cfg_pair_eq) k:IDENT "=" v:expression ","? -> MkCompConfigPair(k, v)
   // The four arms of the hand's parse_comp_block_body, routed (t-47hc.5.1 B2b).

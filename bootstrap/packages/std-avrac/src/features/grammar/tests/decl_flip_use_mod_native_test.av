@@ -56,7 +56,7 @@ spec "t-47hc slice 10.1: `use` and `mod` are emitted as native rules" {
         let src = decl_src()
         let use_at = src.index_of("parse_use_decl(st)")
         let mod_at = src.index_of("parse_mod_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let hand_at = src.index_of("parse_statement(st)")
         use_at >= 0 && mod_at >= 0 && hand_at >= 0 && use_at < hand_at && mod_at < hand_at
     }
 
@@ -84,9 +84,13 @@ spec "t-47hc slice 10.1: `use` and `mod` are emitted as native rules" {
         // remain `parse_statement(st)`; a future increment that deletes decl_hand
         // has to keep it that way.
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        // The `decl_hand` gate this was measured against is GONE (t-47hc.4.3), so there
+        // is no second landmark to order the tail after — the tail is simply the last
+        // thing `parse_declaration` does. Asserting PRESENCE is the whole remaining
+        // claim; the ordering conjunct would now compare the tail against itself and
+        // pass vacuously, which is worse than not asserting it.
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        tail_at >= 0 && src.index_of("run_hand_stmt(\"decl_hand\"") < 0
     }
 }
 

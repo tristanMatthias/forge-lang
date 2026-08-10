@@ -92,7 +92,7 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" 
     then "parse_type_decl exists and dispatches BEFORE the decl_hand gate" {
         let src = decl_src()
         let type_at = src.index_of("parse_type_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let hand_at = src.index_of("parse_statement(st)")
         src.contains("fn parse_type_decl(st: PState) -> CapVal") &&
             type_at >= 0 && hand_at >= 0 && type_at < hand_at
     }
@@ -128,9 +128,12 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" 
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        // The `decl_hand` gate this was ordered against is GONE (t-47hc.4.3), so the tail
+        // is simply the last thing `parse_declaration` does. Asserting PRESENCE is the
+        // whole remaining claim; the ordering conjunct would compare the tail against
+        // itself and pass vacuously.
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        tail_at >= 0 && src.index_of("run_hand_stmt(\"decl_hand\"") < 0
     }
 }
 

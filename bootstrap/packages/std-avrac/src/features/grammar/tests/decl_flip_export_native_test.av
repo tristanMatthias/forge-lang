@@ -58,7 +58,7 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
         // mode, so it is asserted structurally on the emitted source.
         let src = decl_src()
         let exp_at = src.index_of("parse_export_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let hand_at = src.index_of("parse_statement(st)")
         exp_at >= 0 && hand_at >= 0 && exp_at < hand_at
     }
 
@@ -101,9 +101,19 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
         // which is emitted later. The check would have passed off the dispatcher's copy:
         // exactly the false positive the note above says it prevents.
         let body = emitted_rule_body(decl_src(), "fn parse_exportable_inner(st: PState) -> CapVal")
+        // INVERTED (t-47hc.4.3): `exportable_inner`'s hand tail is GONE with the rest of
+        // the leaf, so BOTH landmarks it named are absent — the `decl_table_kw` narrowing
+        // existed only to bound that tail's FIRST, and with no tail there is nothing to
+        // narrow. The note above warns what removing it costs: a `@try` inner that reports
+        // and rolls back leaves the alternation with NO branch, and `MkStampAt`'s coercion
+        // then adds a generic "expected a statement" on top — two diagnostics where the
+        // hand emits one, with `export let` as the named case. MEASURED against the pinned
+        // seed (leaf intact): `export let` reports exactly ONE diagnostic under BOTH
+        // compilers. The predicted double did not materialise, so the removal is asserted
+        // here rather than assumed.
         body != "" &&
-            body.index_of("lookahead_ok(\"decl_table_kw\", st)") >= 0 &&
-            body.index_of("run_hand_stmt(\"decl_hand\"") >= 0
+            body.index_of("lookahead_ok(\"decl_table_kw\", st)") < 0 &&
+            body.index_of("run_hand_stmt(\"decl_hand\"") < 0
     }
 
     then "the INNER declaration is stamped with its own position" {
@@ -140,9 +150,13 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
         // unguarded error-recovery role. Nothing was removed here and the tail must
         // stay `parse_statement(st)`.
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        // The `decl_hand` gate this was measured against is GONE (t-47hc.4.3), so there
+        // is no second landmark to order the tail after — the tail is simply the last
+        // thing `parse_declaration` does. Asserting PRESENCE is the whole remaining
+        // claim; the ordering conjunct would now compare the tail against itself and
+        // pass vacuously, which is worse than not asserting it.
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        tail_at >= 0 && src.index_of("run_hand_stmt(\"decl_hand\"") < 0
     }
 }
 

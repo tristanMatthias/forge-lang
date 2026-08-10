@@ -63,7 +63,7 @@ spec "t-47hc Phase 4: the doc / module-doc / annotation wrappers are emitted as 
         let doc_at = src.index_of("parse_doc_decl(st)")
         let mdoc_at = src.index_of("parse_mdoc_decl(st)")
         let ann_at = src.index_of("parse_annot_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        let hand_at = src.index_of("parse_statement(st)")
         doc_at >= 0 && mdoc_at >= 0 && ann_at >= 0 && hand_at >= 0 &&
             doc_at < hand_at && mdoc_at < hand_at && ann_at < hand_at
     }
@@ -81,8 +81,16 @@ spec "t-47hc Phase 4: the doc / module-doc / annotation wrappers are emitted as 
         // form the native rules cannot express (`@foo let x = 1`, a keyword-named
         // `@type`, `//!` under `@a`) would be parsed WRONG instead of handed back.
         let src = decl_src()
-        src.contains("s_last = parse_doc_decl(st)") &&
-            src.contains("s_last = parse_annot_decl(st)") &&
+        // BOTH wrappers commit now (t-47hc.4.3), by DIFFERENT routes: `doc_decl` via
+        // `@try … @cut`, `annot_decl` via the predictive `@peek(annot_lead)`. Neither
+        // emits the speculative `s_last = …`; a branch that commits has no rollback to
+        // emit. The note above reasons that a committed wrapper answers a lone `/// doc`
+        // with F0001 instead of the hand's F0040 — true of a BARE commit, not of this
+        // one, because `doc_decl` declares `@expect("docable_decl", …, F0040)` and the
+        // expect supplies the code. MEASURED on all four paths: a lone `/// doc` at EOF
+        // answers F0040 on every one.
+        src.contains("return parse_doc_decl(st)") &&
+            src.contains("return parse_annot_decl(st)") &&
             !src.contains("s_last = parse_mdoc_decl(st)") &&
             src.contains("return parse_mdoc_decl(st)") &&
             src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
@@ -128,9 +136,13 @@ spec "t-47hc Phase 4: the doc / module-doc / annotation wrappers are emitted as 
         // unguarded error-recovery role. Nothing was removed here and the tail must
         // stay `parse_statement(st)`.
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
+        // The `decl_hand` gate this was measured against is GONE (t-47hc.4.3), so there
+        // is no second landmark to order the tail after — the tail is simply the last
+        // thing `parse_declaration` does. Asserting PRESENCE is the whole remaining
+        // claim; the ordering conjunct would now compare the tail against itself and
+        // pass vacuously, which is worse than not asserting it.
         let tail_at = src.index_of("    parse_statement(st)\n}")
-        tail_at >= 0 && hand_at >= 0 && tail_at > hand_at
+        tail_at >= 0 && src.index_of("run_hand_stmt(\"decl_hand\"") < 0
     }
 }
 
