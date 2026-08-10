@@ -4169,6 +4169,39 @@ mode_check_parser_flags() {
   ok "check-parser-flags: every pinned routing flag is read by production compiler sources ($(printf '%s\n' "$read_names" | grep -c .) live name(s))"
 }
 
+# True when a workflow's `push` trigger can fire from INTEGRATION_BRANCH — the
+# branch this repo's workflow files actually live on. Unfiltered push fires
+# everywhere; `branches` must list a matching pattern; `branches-ignore` must NOT
+# match. Patterns go through `case`, so GitHub's `*` / `**` globs work (bash `*`
+# spans `/`, which is deliberately the permissive reading: this feeds a HARD
+# error, and a lint that guesses wrong should err toward staying quiet).
+push_fires_here() {
+  local out="$1" pat allow ignore
+  printf '%s\n' "$out" | grep -qx 'PUSH' || return 1
+  allow=$(printf '%s\n' "$out" | sed -n 's/^PUSHALLOW //p')
+  ignore=$(printf '%s\n' "$out" | sed -n 's/^PUSHIGNORE //p')
+  if [ -n "$allow" ]; then
+    while IFS= read -r pat; do
+      [ -n "$pat" ] || continue
+      # shellcheck disable=SC2254  # glob patterns are the point
+      case "$INTEGRATION_BRANCH" in $pat) return 0 ;; esac
+    done <<EOF
+$allow
+EOF
+    return 1
+  fi
+  if [ -n "$ignore" ]; then
+    while IFS= read -r pat; do
+      [ -n "$pat" ] || continue
+      # shellcheck disable=SC2254
+      case "$INTEGRATION_BRANCH" in $pat) return 1 ;; esac
+    done <<EOF
+$ignore
+EOF
+  fi
+  return 0
+}
+
 mode_check_ci_gates() {
   local wf="${1:-$REPO_DIR/.github/workflows}"
   [ -d "$wf" ] || die "check-ci-gates: dir not found: $wf"
@@ -4185,6 +4218,15 @@ mode_check_ci_gates() {
       # gawk/mawk extension — the lint must not depend on which awk is installed.
       gsub(/^["\047]|["\047]$/, "", v)
       if (v == "") return
+      # `ev` is the enclosing event (awk globals): pull_request filters keep the
+      # bare ALLOW/IGNORE names the coverage proof below reads, push filters get
+      # their own so a push that cannot fire here is distinguishable from one
+      # that can.
+      if (ev == "push") {
+        if (k == "branches")        print "PUSHALLOW " v
+        else if (k == "branches-ignore") print "PUSHIGNORE " v
+        return
+      }
       if (k == "branches")        print "ALLOW " v
       else if (k == "branches-ignore") print "IGNORE " v
     }
@@ -4229,7 +4271,7 @@ mode_check_ci_gates() {
         if (ev == "push") print "PUSH"
         next
       }
-      if (ev != "pull_request") next
+      if (ev != "pull_request" && ev != "push") next
       if (keyind >= 0 && i > keyind) {
         if (line ~ /^[[:space:]]*-/) { v = line; sub(/^[[:space:]]*-[[:space:]]*/, "", v); emit(key, v) }
         next
@@ -4252,13 +4294,19 @@ mode_check_ci_gates() {
     # otherwise fall straight through this lint.
     #
     # Only workflows that CANNOT FIRE AT ALL from where they live are flagged:
-    # `schedule` with no push and no pull_request. A dormant `schedule` sitting
-    # alongside a working push trigger is legitimate (it starts contributing if
-    # the file ever reaches the default branch), so flagging that would be noise
-    # — and noise in a lint is how the next real one gets ignored.
+    # `schedule` with no usable push and no pull_request. A dormant `schedule`
+    # sitting alongside a working push trigger is legitimate (it starts
+    # contributing if the file ever reaches the default branch), so flagging that
+    # would be noise — and noise in a lint is how the next real one gets ignored.
+    #
+    # A push trigger only counts when it can actually match the branch these
+    # workflows live on. `push: branches: [main]` emits PUSH but fires from a
+    # branch whose tree has no workflow file, so it is exactly as inert as the
+    # bare `schedule` this check exists to catch — accepting it would reopen the
+    # hole one level up.
     if printf '%s\n' "$out" | grep -qx 'SCHED' \
-       && ! printf '%s\n' "$out" | grep -qx 'PUSH' \
-       && ! printf '%s\n' "$out" | grep -qx 'PR'; then
+       && ! printf '%s\n' "$out" | grep -qx 'PR' \
+       && ! push_fires_here "$out"; then
       scheduled="$scheduled$(basename "$f")"$'\n'
     fi
     printf '%s\n' "$out" | grep -qx 'PR' || continue

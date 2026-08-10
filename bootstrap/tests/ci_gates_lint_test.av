@@ -167,6 +167,41 @@ spec "t-xkcw checkless-PR lint" {
         lint(d) == 0
     }
 
+    then "catches schedule + a push filter that can never match this branch" {
+        // CodeRabbit on #1209, and the same bug one level up: the first version
+        // of this check treated ANY push trigger as proof the workflow runs. A
+        // `push: branches: [main]` fires only from a branch whose tree has no
+        // workflow file, so it is exactly as inert as the bare schedule — and
+        // the lint written to catch inert workflows would have waved it through.
+        let d = fresh("schedpushmain")
+        write_wf(d, "detector.yml",
+            "name: d\\non:\\n  push:\\n    branches: [main]\\n  schedule:\\n    - cron: \\\"17 3 * * *\\\"\\njobs:\\n  a:\\n    runs-on: x\\n")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) != 0
+    }
+
+    then "catches a push whose branches-ignore excludes the branch it lives on" {
+        let d = fresh("schedpushignore")
+        write_wf(d, "detector.yml",
+            "name: d\\non:\\n  push:\\n    branches-ignore: [${INTEGRATION}]\\n  schedule:\\n    - cron: \\\"17 3 * * *\\\"\\njobs:\\n  a:\\n    runs-on: x\\n")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) != 0
+    }
+
+    then "accepts a glob push filter that does match — the matcher isn't blanket-rejecting" {
+        // Positive control for the two arms above: without it they would still
+        // pass if the branch matcher rejected everything, which is the failure
+        // mode that turns a lint into an obstacle rather than a check.
+        let d = fresh("schedpushglob")
+        write_wf(d, "detector.yml",
+            "name: d\\non:\\n  push:\\n    branches: [feat/**]\\n  schedule:\\n    - cron: \\\"17 3 * * *\\\"\\njobs:\\n  a:\\n    runs-on: x\\n")
+        gate(d, "gate.yml", INTEGRATION)
+        guard(d, "stacked.yml", INTEGRATION)
+        lint(d) == 0
+    }
+
     then "reads block-list YAML too, and ignores push-only workflows" {
         let d = fresh("blocklist")
         write_wf(d, "gate.yml",
