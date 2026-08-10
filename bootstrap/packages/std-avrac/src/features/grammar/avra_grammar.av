@@ -104,11 +104,13 @@ fn avra_expr_core() -> Grammar {
   logic_or      = l:logic_and ( op:("||" | "or") r:logic_and )* -> fold_logical(l, op, r)
   logic_and     = l:equality ( op:("&&" | "and") r:equality )* -> fold_logical(l, op, r)
   equality      = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)
-  eq_tail       = "is" "." v:IDENT -> mk_is(v)
+  eq_tail       = "is" "." v:IDENT
+                  @expect(".", "expected `.Variant` after `is`") -> mk_is(v)
                 | "in" ir:in_rhs -> ir
                 | ( op:("==" | "!=") r:bitor )+ -> mk_eqchain(op, r)
   in_rhs        = "[" ( a:expression ( "," a:expression )* )? "]" -> mk_inlist(a)
-                | s:bitor ".." e:bitor -> mk_inrange(s, e)
+                | s:bitor ".." e:bitor
+                  @expect("..", "expected `..` in range expression after `in`") -> mk_inrange(s, e)
   bitor      = l:bitxor ( op:("|") r:bitxor )* -> fold_binary(l, op, r)
   bitxor     = l:bitand ( op:("^") r:bitand )* -> fold_binary(l, op, r)
   bitand     = l:comparison ( op:("&") r:comparison )* -> fold_binary(l, op, r)

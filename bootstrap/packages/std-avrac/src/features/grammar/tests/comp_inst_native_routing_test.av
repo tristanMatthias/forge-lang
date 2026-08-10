@@ -27,7 +27,7 @@
 // the item rule must PASS ITS VALUE THROUGH, every routed arm must dispatch before
 // the `declaration` tail, and the tail must be `declaration`. The second spec covers
 // the behaviour the routing is FOR — the four `parse_comp_block_body` arms, on all
-// four parser paths.
+// both surviving declaration routings.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
@@ -84,14 +84,14 @@ fn clean(out: string) -> bool { out.contains("__status=0\n") }
 /// The occurrence-ordered F-codes of `bs2 check <src>` under `env` — the same
 /// signature the recovery oracles compare, reused here so a form that is not
 /// expected to TYPECHECK can still assert the thing this file is about: that all
-/// four parser paths agreed on how to parse it.
+/// both surviving declaration routings agreed on how to parse it.
 fn fcodes(name: string, env: string, src: string) -> string {
     let fixture = "build/_comp_inst_route_${name}.av"
     let _ = avra_selfhost_write_file(fixture, src)
     avra_shell_exec("${env} ./build/bs2 check '${fixture}' 2>&1 | grep -oE 'F[0-9]{4}' | tr '\\n' ' '")
 }
 
-/// All four paths produce the SAME diagnostics, whatever those are. For a form the
+/// Both routings produce the SAME diagnostics, whatever those are. For a form the
 /// TYPE checker rejects (a raw body with no `@expand`), agreement is still the whole
 /// routing property — and the absence of a parse-stage code in that agreed signature
 /// is what proves the raw contents were captured rather than parsed.
@@ -165,7 +165,7 @@ spec "t-47hc.5.1: the instantiation BODY rule is routed, and passes its value th
     }
 }
 
-spec "t-47hc.5.1: the four body arms parse identically on all four paths" {
+spec "t-47hc.5.1: the four body arms parse identically on both surviving routings" {
     then "a plain statement body — the shape the dead passthrough made unreachable" {
         clean_all_paths("plain",
             "component panel {\n" +

@@ -3,19 +3,22 @@
 //
 // The question this answers is "can the hand parser be deleted yet?", and as of t-bw9s
 // the answer is NO, with a number. Sweeping 35 expression forms through both engines
-// (`bs2 expr` default = the generated parser; `AVRA_PARSER_EXPR_STATIC=0
-// AVRA_PARSER_EXPR_FLIP=0` = the hand) finds NINE divergences, and in the ones worth
-// reading the generated parser's diagnostic is the WORSE of the two:
+// (`bs2 expr` with the generated route pinned vs `AVRA_PARSER_EXPR_STATIC=0
+// AVRA_PARSER_EXPR_FLIP=0` = the hand) started at NINE divergences and is now at EIGHT.
 //
-//     spawn f()   gen: "expected }"        (2:1)   hand: "expected `{` after spawn" (1:7)
-//     [1,         gen: "expected for"      (1:3)   hand: "expected expression"      (2:1)
-//     x is Foo    gen: "expected ."        (1:6)   hand: "expected `.Variant` after `is`"
-//     a in b      gen: "expected .."       (2:1)   hand: "expected `..` in range expression after `in`"
+// Closed so far:
+//     spawn f()   was: gen "expected }" (2:1) / hand "expected `{` after spawn" (1:7).
+//                 The rule carried no required-terminal message, so a missing block
+//                 surfaced from wherever `block_expr` gave up — wrong token, wrong
+//                 column. CONVERGED; see the note on the pinned list below.
 //
-// `spawn f()` and `[1,` are the bad ones: "expected }" for a missing spawn block names
-// the wrong token at the wrong column, and "expected for" on an unterminated list is a
-// list-comprehension rule leaking into a plain list literal's error. Neither is a
-// theoretical difference — that is what a user sees today.
+// Still open, worst first:
+//     [1,         gen: "expected `for`"   (1:3)   hand: "expected expression"  (2:1)
+//     match {     gen: "expected `}` after match arms"  hand: "expected expression"
+//     f(          gen: "expected `)` after arguments"   hand: "expected expression"
+//
+// `[1,` is the bad one: a list-comprehension rule leaking into a plain list literal's
+// error. That is what a user sees today, and it is diagnosed (not guessed) at the pin.
 //
 // Why this file exists rather than a note somewhere: the whole-program recovery corpus
 // CANNOT see any of it. `bs2 check` is driven by the generated declaration parser, which
@@ -44,7 +47,11 @@ fn expr_out(env: string, source: string) -> string {
     avra_shell_exec("${env} ./build/bs2 expr '${path}' 2>&1")
 }
 
-fn gen_out(source: string) -> string { expr_out("", source) }
+/// PINNED, not ambient. `gen_out` read `expr_out("", …)` in the first cut, which is the
+/// exact defect this file's own PR is about: an ambient `AVRA_PARSER_EXPR_STATIC=0` would
+/// make BOTH sides the hand parser and every row below would compare it with itself and
+/// pass. Naming the route is the whole discipline.
+fn gen_out(source: string) -> string { expr_out("AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0", source) }
 fn hand_out(source: string) -> string { expr_out("AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0", source) }
 
 /// The sweep corpus: valid forms first (where agreement is the norm), then malformed
@@ -75,6 +82,23 @@ fn expected_divergences() -> List<string> {
     // ("block_expr"). Keyed on the rule it silently does not bind and you get the
     // generic "expected {" — the position moves and the wording does not, which reads
     // like a partial fix and is really an unbound annotation.
+    //
+    // `x is Foo` and `a in b` are now MESSAGE-identical and SPAN-divergent — a smaller
+    // class than the rest, and worth knowing before someone re-opens them. Both carry
+    // `@expect` annotations now, so all three engines say
+    // `expected `.Variant` after `is`` / `expected `..` in range expression after `in``
+    // at the same line:col. What still differs is the rendered CARET WIDTH:
+    //
+    //     gen : ·      ┬            (a point span, 1 column)
+    //     hand: ·      ─┬─          (3 columns — the width of the offending token `Foo`)
+    //
+    // So the generated parser points AT the error and the hand UNDERLINES the token it
+    // choked on. That is a span-construction difference in the generated reporter, not a
+    // missing annotation, and no `@expect` will close it.
+    //
+    // Recorded because the message fix LOOKS complete from a `grep "parse error"` — the
+    // one-line summary is byte-identical. Only the full rendered output shows the gap,
+    // which is why the sweep compares whole output and not the summary line.
     //
     // NEXT ONE DIAGNOSED, not yet fixed — `[1,` (t-bw9s). Do the three-way before
     // touching it, because the two-way reading points at the wrong engine:

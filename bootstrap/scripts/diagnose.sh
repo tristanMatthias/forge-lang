@@ -4087,7 +4087,28 @@ mode_check_parser_flags() {
   #
   # Stripping can only ever REMOVE a candidate read, so its failure direction is a flag
   # reported dead while live — loud and immediately visible — never the silent reverse.
-  _cpf_strip_comments() { sed 's|//.*||'; }
+  # Strip comments OUTSIDE string literals only. `sed 's|//.*||'` was wrong in a way
+  # that matters: `let u = "http://x"` truncates at the `//` inside the literal, so a
+  # live `avra_process_env_get` later on that line vanishes and its flag is reported
+  # dead. Quote-aware, backslash-escape-aware, handling `//` and `#` in one pass.
+  _cpf_strip_comments() {
+    awk '{
+      out = ""; ins = 0; i = 1; n = length($0)
+      while (i <= n) {
+        c = substr($0, i, 1)
+        if (ins) {
+          if (c == "\\") { out = out c substr($0, i + 1, 1); i += 2; continue }
+          if (c == "\"") { ins = 0 }
+          out = out c; i++; continue
+        }
+        if (c == "\"") { ins = 1; out = out c; i++; continue }
+        if (c == "#") { break }
+        if (c == "/" && substr($0, i + 1, 1) == "/") { break }
+        out = out c; i++
+      }
+      print out
+    }'
+  }
   read_names=$(grep -rh "avra_process_env_get(\"$pat\")" "$src" --include='*.av' \
       --exclude='*_test.av' 2>/dev/null \
     | _cpf_strip_comments \
@@ -4098,7 +4119,7 @@ mode_check_parser_flags() {
   # COMMENTS are exempt: prose that explains why a flag died (or pins a known vacuity,
   # as error_recovery_differential_test.av does) is exactly what should be written down.
   # Only a live PIN — a flag set on a real command line — can mislead a measurement.
-  _cpf_pins() { _cpf_strip_comments | sed 's|#.*||' | grep -o "$pat=[01]"; }
+  _cpf_pins() { _cpf_strip_comments | grep -o "$pat=[01]"; }
   used_names=$( { grep -rh "$pat=[01]" "$src" --include='*_test.av' 2>/dev/null
                   grep -h "$pat=[01]" "$dsh" 2>/dev/null; } \
     | _cpf_pins | sed 's/=[01]$//' | sort -u)
