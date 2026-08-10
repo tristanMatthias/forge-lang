@@ -75,6 +75,26 @@ fn expected_divergences() -> List<string> {
     // ("block_expr"). Keyed on the rule it silently does not bind and you get the
     // generic "expected {" — the position moves and the wording does not, which reads
     // like a partial fix and is really an unbound annotation.
+    //
+    // NEXT ONE DIAGNOSED, not yet fixed — `[1,` (t-bw9s). Do the three-way before
+    // touching it, because the two-way reading points at the wrong engine:
+    //
+    //   generated : "expected for"    at 1:3
+    //   executor  : "expected `for`"  at 1:3
+    //   hand      : "expected expression" at 2:1
+    //
+    // Emit and the executor AGREE, so this is not an emit bug — BOTH generated engines
+    // enter the comprehension branch for `[1,` while the hand treats it as an
+    // unterminated list literal. The branch guard is
+    // `@peek(list_comp_ahead) "[" @require cb:list_comp`, and `list_comp_ahead`
+    // (executor.av) scans for a `for` at depth 1 and should return false here — reading
+    // it says false, running it says true, and that gap is the actual bug to find. Do
+    // not "fix" it by weakening the peek until the disagreement is explained.
+    //
+    // Second, smaller find in the same measurement: emit renders the required-terminal
+    // message as `expected for` and the executor as `expected \`for\`` — the backticks
+    // differ between the two GENERATED engines. That is its own lockstep defect and is
+    // invisible to any two-way probe that compares only one of them against the hand.
     ["x is Foo", "a in b", "f(", "[1,", "{a:", "match {", "if {", "dyn T"]
 }
 
