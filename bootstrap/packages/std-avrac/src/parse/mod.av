@@ -1181,9 +1181,9 @@ impl Parser {
                 // answer null and keep the previous `set_error` default.
                 let dc = syntax_diag_code(gd.code)
                 if dc != null {
-                    self.report_at_byte(dc!, gd.msg, gd.byte)
+                    self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
                 } else {
-                    self.report_at_byte(DiagCode.SyntaxError, gd.msg, gd.byte)
+                    self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
                 }
                 gi = gi + 1
             }
@@ -1570,9 +1570,9 @@ impl Parser {
                 let gd = dsl.diags[gi]
                 let dc = syntax_diag_code(gd.code)
                 if dc != null {
-                    self.report_at_byte(dc!, gd.msg, gd.byte)
+                    self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
                 } else {
-                    self.report_at_byte(DiagCode.SyntaxError, gd.msg, gd.byte)
+                    self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
                 }
                 gi = gi + 1
             }
@@ -3805,8 +3805,18 @@ impl Parser {
     /// Line/column come from the store's line index — the same one the executor's
     /// same-line predicates read, so the two cannot disagree about where a byte is.
     fn report_at_byte(self, code: DiagCode, message: string, byte: int) {
+        self.report_at_span(code, message, byte, byte)
+    }
+
+    /// The span-carrying form. `report_at_byte` is the point-span shorthand; a caller with
+    /// the offending token's extent should use this, so the rendered caret UNDERLINES the
+    /// token the way the hand parser's `span_at(current_start, current, …)` always has.
+    /// Four ratchet entries (t-bw9s) were message-identical to the hand and still diverged
+    /// purely on caret width — `┬` against `─┬─` — which the one-line summary cannot show.
+    fn report_at_span(self, code: DiagCode, message: string, byte: int, end_byte: int) {
         let lc = self.store.lines.to_linecol(byte)
-        let sp = span_at(byte, byte, lc.line, lc.col, self.file)
+        let e = if end_byte > byte { end_byte } else { byte }
+        let sp = span_at(byte, e, lc.line, lc.col, self.file)
         self.bag = bag_report(self.bag, diag_error(code, message, sp))
         // First error wins — the SAME backward-compat contract `report` keeps, and
         // for the same reason: `ParseResult` / `ProgramParseResult` document

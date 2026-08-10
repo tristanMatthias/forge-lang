@@ -553,7 +553,12 @@ export fn default_expr_modes() -> ExprModes {
 /// rendered at the first token of the declaration rather than where it was raised, and
 /// on a merged module parse `broken.av:2:9` came out `broken.av:1:1`. Invisible while
 /// the routed rules rolled back and let the hand report.
-export type GDiag = { code: string, msg: string, at: int, byte: int }
+/// `end_byte` is the offending token's END, so the rendered caret UNDERLINES the token
+/// instead of pointing at its first column (t-bw9s). The hand parser has always built
+/// `span_at(current_start, current, …)`; the seam built `span_at(byte, byte, …)` — a
+/// point — so four ratchet entries were message-identical to the hand and still diverged,
+/// visible only in the frame (`┬` vs `─┬─`) and never in the one-line summary.
+export type GDiag = { code: string, msg: string, at: int, byte: int, end_byte: int }
 
 /// t-myz7 ABORT PROPAGATION (`abort_prop`). A generated `parse_X` that aborts can
 /// only `return` from ITSELF; its CALLER cannot tell an abort from an ordinary
@@ -648,7 +653,7 @@ impl PState {
         // is global, and it re-coded ~40 specs across keywords that had nothing to do
         // with the change. Leaving the code blank keeps the single-diagnostic paths
         // reading the `diag_code` slot exactly as they always have.
-        self.diags.push(GDiag { code: "", msg, at: self.pos, byte: self.cur().pos })
+        self.diags.push(GDiag { code: "", msg, at: self.pos, byte: self.cur().pos, end_byte: self.cur().pos + self.cur().text.length })
         self.had_error = true
     }
 
@@ -706,7 +711,7 @@ impl PState {
     /// which is the same widen-then-spend discipline slice B1 used for the raw-source
     /// lookahead cores.
     fn report_coded(self, code: string, msg: string) {
-        self.diags.push(GDiag { code, msg, at: self.pos, byte: self.cur().pos })
+        self.diags.push(GDiag { code, msg, at: self.pos, byte: self.cur().pos, end_byte: self.cur().pos + self.cur().text.length })
         self.had_error = true
     }
 
@@ -4063,7 +4068,7 @@ fn boundary_diags(st: PState) -> List<GDiag> {
     if st.had_error {
         mut i = 0
         while i < st.diags.length {
-            rule_diags.push(GDiag { code: resolved_diag_code(st, i), msg: st.diags[i].msg, at: st.diags[i].at, byte: st.diags[i].byte })
+            rule_diags.push(GDiag { code: resolved_diag_code(st, i), msg: st.diags[i].msg, at: st.diags[i].at, byte: st.diags[i].byte, end_byte: st.diags[i].end_byte })
             i = i + 1
         }
     }
@@ -4072,7 +4077,7 @@ fn boundary_diags(st: PState) -> List<GDiag> {
     mut lex: List<GDiag> = []
     for ld in st.lex_diags {
         if ld.at >= st.first_pos && ld.at <= st.pos {
-            lex.push(GDiag { code: ld.code, msg: ld.msg, at: ld.at, byte: if ld.at < st.toks.length { st.toks[ld.at].pos } else { 0 } })
+            lex.push(GDiag { code: ld.code, msg: ld.msg, at: ld.at, byte: if ld.at < st.toks.length { st.toks[ld.at].pos } else { 0 }, end_byte: if ld.at < st.toks.length { st.toks[ld.at].pos + st.toks[ld.at].text.length } else { 0 } })
         }
     }
     if lex.length == 0 { return rule_diags }

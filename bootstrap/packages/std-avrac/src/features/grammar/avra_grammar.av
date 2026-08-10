@@ -365,7 +365,8 @@ fn avra_expr_core() -> Grammar {
   spawn_expr   = "spawn" @require body:block_expr
                  @expect("{", "expected `{` after spawn") -> MkSpawn(body)
   isolated_expr = "isolated" body:block_expr -> MkIsolated(body)
-  block_expr   = "{" @on(allow_dot_postfix) stmts:declaration* "}" -> MkExprBlock(stmts)
+  block_expr   = "{" @on(allow_dot_postfix) stmts:declaration* "}"
+                 @expect("}", "expected `}` after block expression") -> MkExprBlock(stmts)
   when_expr    = "when" "{" ( a:when_arm )* "}" -> MkWhen(a)
   // t-47hc.25 — the EXPRESSION `match`, mirroring the already-native match_stmt. Same
   // three shapes, same gates, all of them already proven on the statement side:

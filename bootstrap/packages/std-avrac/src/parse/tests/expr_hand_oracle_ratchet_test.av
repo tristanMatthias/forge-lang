@@ -119,7 +119,32 @@ fn expected_divergences() -> List<string> {
     // message as `expected for` and the executor as `expected \`for\`` — the backticks
     // differ between the two GENERATED engines. That is its own lockstep defect and is
     // invisible to any two-way probe that compares only one of them against the hand.
-    ["x is Foo", "a in b", "f(", "[1,", "{a:", "match {", "if {", "dyn T"]
+    // 8 -> 5 (t-bw9s). Three closed by TWO fixes, both found by triaging the set by CAUSE
+    // rather than working down it in order:
+    //
+    //   `x is Foo`, `dyn T` — SPAN, not message. Both were already message-identical to
+    //     the hand and still diverged, purely in the rendered caret: `┬` where the hand
+    //     draws `─┬─`. `GDiag` carried only a start byte and the seam built
+    //     `span_at(byte, byte, …)`, a point; it carries the token's end now and
+    //     `report_at_span` underlines the token, which is what the hand's
+    //     `span_at(current_start, current, …)` always did. Invisible to a `grep "parse
+    //     error"` — the one-line summary was byte-identical the whole time.
+    //
+    //   `{a:` — the block's closing brace had no `@expect`, so a missing `}` reported the
+    //     bare terminal. `block_expr` names it now, same shape as the `spawn` fix. It is
+    //     STILL PINNED, though, because the divergence is NEWLINE-SENSITIVE: `{a:` with a
+    //     trailing newline now agrees, and without one it does not. An ad-hoc sweep using
+    //     `printf '%s\n'` therefore reported it closed while this file — whose fixtures
+    //     carry no trailing newline — still saw it diverge, and the two disagreed by one
+    //     byte of input. THIS harness is the authority for the count; a throwaway script
+    //     is not, and the discrepancy is the reason to say so out loud.
+    //   `if {` — closed by that same `block_expr` message (an `if` body IS a block_expr).
+    //
+    // Newline sensitivity cut BOTH ways here, which is worth stating plainly: an ad-hoc
+    // sweep said `{a:` had closed and `if {` had not, and this harness says the exact
+    // opposite. Both readings are of real inputs; they differ by one trailing byte. Only
+    // the committed harness governs the count.
+    ["a in b", "f(", "[1,", "{a:", "match {"]
 }
 
 fn diverges(source: string) -> bool { gen_out(source) != hand_out(source) }
