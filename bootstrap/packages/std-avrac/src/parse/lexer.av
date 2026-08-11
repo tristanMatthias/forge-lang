@@ -7,7 +7,7 @@ use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
-use parse.{scan_operator, classify_keyword, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
+use parse.{scan_operator, classify_keyword, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, scan_raw_body, scan_tmpl_body, scan_block_comment, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
 use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
@@ -134,10 +134,11 @@ impl Parser {
         // Backtick template: content up to the closing `` ` `` is verbatim (no escapes,
         // no interpolation) — ONE slice, no per-char char_at alloc.
         let sb = self.source_bytes
+        // The BOUND is the generated scan_tmpl_body (parse/gen_run_scanner.av, compiled
+        // from str_run_rules()): a template body is VERBATIM, so it stops only at the
+        // closing backtick. take_run_nl, not take_run — a template may span newlines.
         let cstart = self.current
-        while !self.is_at_end() && byte_at(sb, self.current) != BACKTICK {
-            self.advance_byte()
-        }
+        self.take_run_nl(scan_tmpl_body(sb, self.current))
         if self.is_at_end() {
             self.report(DiagCode.UnterminatedTemplate, "unterminated template string")
             self.set_current(Tk.Error, "")
@@ -163,6 +164,27 @@ impl Parser {
     fn take_run(self, end: int) {
         self.column = self.column + (end - self.current)
         self.current = end
+    }
+
+    // Consume a run that MAY CONTAIN NEWLINES — the string-body twin of take_run.
+    //
+    // take_run advances the column by the run length, which is only correct for a run that
+    // cannot hold an LF (idents, digits, to-eol). A string body CAN span a newline (`"a\nb"`
+    // lexes fine, and multiline bodies are the normal case), so using take_run there would
+    // silently drift line/column for every token after the string. This walks the span so
+    // the LF accounting is exactly advance_byte's, while the BOUND still comes from the
+    // generated scanner — which is the part of the flip that matters.
+    fn take_run_nl(self, end: int) {
+        while self.current < end {
+            let b = byte_at(self.source_bytes, self.current)
+            self.current = self.current + 1
+            if b == LF {
+                self.line = self.line + 1
+                self.column = 1
+            } else {
+                self.column = self.column + 1
+            }
+        }
     }
 
     // Advance one byte, tracking line/column exactly like advance_char (strings and
@@ -360,23 +382,12 @@ impl Parser {
                 self.take_run(scan_to_eol(sb, self.current))
             } else if b == SLASH && byte_at(sb, self.current + 1) == STAR {
                 // Block comment with nesting: /* ... /* ... */ ... */
-                self.advance_byte()  // consume /
-                self.advance_byte()  // consume *
-                mut depth = 1
-                while depth > 0 && !self.is_at_end() {
-                    let bc = byte_at(sb, self.current)
-                    if bc == SLASH && byte_at(sb, self.current + 1) == STAR {
-                        self.advance_byte()
-                        self.advance_byte()
-                        depth = depth + 1
-                    } else if bc == STAR && byte_at(sb, self.current + 1) == SLASH {
-                        self.advance_byte()
-                        self.advance_byte()
-                        depth = depth - 1
-                    } else {
-                        self.advance_byte()
-                    }
-                }
+                // The BOUND is the generated scan_block_comment — the compiled form of the
+                // nesting rule, called AT the opening `/*` (it counts that one itself) and
+                // returning PAST the balancing close, or EOF when the nesting never
+                // balances. The hand loop left an unbalanced comment at EOF without
+                // reporting; landing on EOF here is the same silence.
+                self.take_run_nl(scan_block_comment(sb, self.current))
             } else {
                 return
             }
@@ -624,18 +635,13 @@ impl Parser {
             return
         }
         // Single-line raw string: r"..."
+        // The BOUND is the generated scan_raw_body, whose `stop_nl` encodes exactly the
+        // rule below: a single-line raw string may not span a newline. The scanner reports
+        // only WHERE it stopped, so the diagnostic stays here — landing on EOF or on the
+        // LF is the same "unterminated raw string" the hand loop raised.
         let run_start = self.current
-        while !self.is_at_end() {
-            let b = byte_at(sb, self.current)
-            if b == DQUOTE { break }
-            if b == LF {
-                self.report(DiagCode.UnterminatedString, "unterminated raw string")
-                self.set_current(Tk.Error, "")
-                return
-            }
-            self.advance_byte()
-        }
-        if self.is_at_end() {
+        self.take_run_nl(scan_raw_body(sb, self.current))
+        if self.is_at_end() || byte_at(sb, self.current) == LF {
             self.report(DiagCode.UnterminatedString, "unterminated raw string")
             self.set_current(Tk.Error, "")
             return
