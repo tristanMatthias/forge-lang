@@ -667,20 +667,18 @@ impl Parser {
             // is newlines by definition.
             let run_start = self.current
             self.take_run_nl(scan_raw_ml_body(sb, self.current))
-            while !self.is_at_end() {
-                if byte_at(sb, self.current) == DQUOTE && byte_at(sb, self.current + 1) == DQUOTE && byte_at(sb, self.current + 2) == DQUOTE {
-                    let content = self.slice(run_start, self.current)
-                    self.advance_byte()
-                    self.advance_byte()
-                    self.advance_byte()
-                    let stripped = multiline_strip_indent(content)
-                    self.set_current(Tk.String, "\"" + stripped + "\"")
-                    return
-                }
-                self.advance_byte()
+            // The scanner already stopped ON the close or at EOF, so there is nothing left
+            // to search for — landing at EOF IS the unterminated case.
+            if self.is_at_end() {
+                self.report(DiagCode.UnterminatedString, "unterminated raw multiline string (missing closing r\"\"\")")
+                self.set_current(Tk.Error, "")
+                return
             }
-            self.report(DiagCode.UnterminatedString, "unterminated raw multiline string (missing closing r\"\"\")")
-            self.set_current(Tk.Error, "")
+            let content = self.slice(run_start, self.current)
+            self.advance_byte()
+            self.advance_byte()
+            self.advance_byte()
+            self.set_current(Tk.String, "\"" + multiline_strip_indent(content) + "\"")
             return
         }
         // Single-line raw string: r"..."
