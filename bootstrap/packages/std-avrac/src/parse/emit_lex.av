@@ -361,6 +361,7 @@ fn run_symbol_import_list() -> string {
         if sr[m].interp_a != "" && !run_list_has(syms, sr[m].interp_a) { syms.push(sr[m].interp_a) }
         if sr[m].interp_b != "" && !run_list_has(syms, sr[m].interp_b) { syms.push(sr[m].interp_b) }
         if sr[m].escape && !run_list_has(syms, "BACKSLASH") { syms.push("BACKSLASH") }
+        if sr[m].stop_nl && !run_list_has(syms, "LF") { syms.push("LF") }
         m = m + 1
     }
     let nr = nest_run_rules()
@@ -403,6 +404,12 @@ fn emit_str_scanner(rule: StrRun) -> string {
     if rule.interp_a != "" {
         stop = stop + " || (byte_at(src, end) == " + rule.interp_a +
                " && byte_at(src, end + 1) == " + rule.interp_b + ")"
+    }
+    // A mode that may not span a newline stops at LF as well as at its close. The hand
+    // reports there; the scanner only reports the BOUND, so the caller keeps the
+    // diagnostic — matching where the hand stops is the whole contract.
+    if rule.stop_nl {
+        stop = stop + " || byte_at(src, end) == LF"
     }
     mut esc = ""
     if rule.escape {

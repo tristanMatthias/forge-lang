@@ -20,12 +20,11 @@
 // already in the tree. Wiring first and testing after is how the emit/executor backtick
 // divergence survived months (t-bw9s).
 
-use @std.avrac.parse.{scan_dq_body, scan_tmpl_body, scan_sq_body, scan_raw_body, scan_block_comment}
+use @std.avrac.parse.{scan_dq_body, scan_tmpl_body, scan_raw_body, scan_block_comment}
 use @std.avrac.parse.{avra_bytes_from_string}
 
 fn dq(s: string) -> int { scan_dq_body(avra_bytes_from_string(s), 0) }
 fn tmpl(s: string) -> int { scan_tmpl_body(avra_bytes_from_string(s), 0) }
-fn sq(s: string) -> int { scan_sq_body(avra_bytes_from_string(s), 0) }
 fn raw(s: string) -> int { scan_raw_body(avra_bytes_from_string(s), 0) }
 fn blk(s: string) -> int { scan_block_comment(avra_bytes_from_string(s), 0) }
 
@@ -85,10 +84,13 @@ spec "lexer flip: the generated string-body scanners stop where the hand lexer s
         tmpl("a\\`") == 2
     }
 
-    then "the char mode escapes but does NOT interpolate" {
-        // `{` is an ordinary body byte here, unlike dq_body.
-        sq("a'") == 1 && sq("a{b'") == 3 && sq("\\'x'") == 3
-    }
+    // The char-mode row is GONE, and its absence is the point. `'x'` is a CHARACTER
+    // literal, not a string: `lexer.av scan_char_literal` reads exactly one codepoint (or
+    // one escape pair) and then REQUIRES the closing quote, so `'abc'` is an error rather
+    // than a 3-byte body. The `sq_body` rule this row exercised described a scan-until-quote
+    // lexer that does not exist in this language — the third instance of that defect here,
+    // after the interpolation lead and the backtick mode. The behaviour it misdescribed is
+    // now pinned against the REAL lexer in lex_scanner_differential_test.
 
     then "the raw mode does NOT escape — a backslash is a literal byte" {
         // `a\"` : in dq_body the `\"` is escaped and the body continues; in raw_body the

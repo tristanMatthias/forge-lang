@@ -255,7 +255,10 @@ export fn delim_run_rules() -> List<DelimRun> {
 /// The four modes, and why they differ only in these two fields:
 ///   dq_body    `"…"`  escapes, interpolates   — the ordinary string
 ///   tmpl_body  `` `…` ``  escapes, interpolates — template literal, different delimiter
-///   sq_body    `'…'`  escapes, NO interpolation — char literal
+///   (there is deliberately NO sq_body: `'x'` is a CHARACTER literal, not a string
+///   body. `lexer.av scan_char_literal` reads exactly ONE codepoint — or one escape
+///   pair — and then REQUIRES the closing quote, so `'abc'` is an error, not a
+///   3-byte body. A scan-until-quote run describes no lexer in this language.)
 ///   raw_body   `r"…"` NO escapes, NO interpolation — raw string, `\` is a literal byte
 /// `interp_a`/`interp_b` are the TWO bytes of the interpolation lead. The lead is `${`,
 /// not a bare `{` — a lone `{` inside a string is an ORDINARY character (spec §Strings:
@@ -263,21 +266,27 @@ export fn delim_run_rules() -> List<DelimRun> {
 /// original shape here and it was WRONG: it would have stopped the body at every literal
 /// brace, so `"a{b}"` would have tokenised as a suspended interpolation. Both bytes must
 /// match to suspend; `interp_a == ""` means the mode does not interpolate at all.
-export type StrRun = { name: string, close: string, escape: bool, interp_a: string, interp_b: string }
+/// `stop_nl` marks a mode whose body may NOT span a newline. A single-line raw string is
+/// the one such mode: `lexer.av scan_raw_string` reports F0002 `unterminated raw string`
+/// at an LF, where an ordinary `"…"` body runs straight through one. Without this the
+/// generated `scan_raw_body` walked past the newline to a closing quote on a LATER line —
+/// a different tokenisation, and the same "describes a lexer that does not exist" defect
+/// the interpolation lead and the backtick mode each had.
+export type StrRun = { name: string, close: string, escape: bool, interp_a: string, interp_b: string, stop_nl: bool }
 
 /// The string-body runs, compiled to `scan_<name>(src, start) -> int` by
 /// parse/emit_lex.av. Single source of truth for what interrupts a string body.
 export fn str_run_rules() -> List<StrRun> {
     [
-        StrRun { name: "dq_body",   close: "DQUOTE",   escape: true,  interp_a: "DOLLAR", interp_b: "LBRACE" },
+        StrRun { name: "dq_body",   close: "DQUOTE",   escape: true,  interp_a: "DOLLAR", interp_b: "LBRACE", stop_nl: false },
         // A backtick template is VERBATIM in the production lexer (lexer.av
         // scan_template_token scans straight to the closing backtick): no escapes and no
-        // interpolation. This rule declared both, which did not describe any lexer that
-        // exists — the spec reserves backticks for future use, so the hand's behaviour is
-        // the only definition there is, and the table now matches it.
-        StrRun { name: "tmpl_body", close: "BACKTICK", escape: false, interp_a: "",       interp_b: "" },
-        StrRun { name: "sq_body",   close: "SQUOTE",   escape: true,  interp_a: "",       interp_b: "" },
-        StrRun { name: "raw_body",  close: "DQUOTE",   escape: false, interp_a: "",       interp_b: "" },
+        // interpolation. The spec reserves backticks, so the hand's behaviour is the only
+        // definition there is.
+        StrRun { name: "tmpl_body", close: "BACKTICK", escape: false, interp_a: "",       interp_b: "",       stop_nl: false },
+        // A single-line raw string STOPS AT A NEWLINE — see `stop_nl` above. `r"""…"""`
+        // is a separate multiline form the hand handles on its own path, not this run.
+        StrRun { name: "raw_body",  close: "DQUOTE",   escape: false, interp_a: "",       interp_b: "",       stop_nl: true  },
     ]
 }
 
