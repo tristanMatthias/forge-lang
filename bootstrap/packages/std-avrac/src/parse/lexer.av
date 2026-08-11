@@ -190,17 +190,6 @@ impl Parser {
             self.advance_byte()
             self.advance_byte()
             while !self.is_at_end() {
-                // An escape consumes the backslash AND the byte after it — the same rule
-                // scan_ml_body applies to the OUTER body. Without it `\"""` reads as a
-                // close: the escaped quote is skipped over, the two quotes behind it pair
-                // with it, and the nested literal ends early, which then corrupts the
-                // brace tracking that resumes after it. The two must agree, or the region
-                // and its bounds disagree about where the nested string stopped.
-                if byte_at(sb, self.current) == BACKSLASH && byte_at(sb, self.current + 1) != -1 {
-                    self.advance_byte()
-                    self.advance_byte()
-                    continue
-                }
                 if byte_at(sb, self.current) == DQUOTE
                     && byte_at(sb, self.current + 1) == DQUOTE
                     && byte_at(sb, self.current + 2) == DQUOTE {

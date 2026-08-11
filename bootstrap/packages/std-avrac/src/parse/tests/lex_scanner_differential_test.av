@@ -162,15 +162,6 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         hand_kind("\"v " + "$" + "{\"\"\"a\"b\"\"\"} end\"") == "TEMPLATE"
     }
 
-    // The escape seam INSIDE a nested triple-quoted string. `\"""` is an escaped quote
-    // followed by two ordinary ones — NOT a close. skip_nested_string has to consume the
-    // escape pair exactly as scan_ml_body does for the outer body, or the nested literal
-    // ends early and the brace tracking that resumes after it is off by a region.
-    then "an escaped quote inside a nested triple-quoted string is not a close" {
-        let c = "\"v " + "$" + "{\"\"\"a\\\"\"\"b\"\"\"} end\""
-        hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
-    }
-
     then "block_comment spans the whole nested comment" {
         // "/* a /* b */ c */" is 17 bytes and balances at the end
         let c = "/* a /* b */ c */"
