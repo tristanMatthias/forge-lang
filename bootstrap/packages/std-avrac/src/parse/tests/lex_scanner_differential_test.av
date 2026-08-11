@@ -162,6 +162,27 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         hand_kind("\"v " + "$" + "{\"\"\"a\"b\"\"\"} end\"") == "TEMPLATE"
     }
 
+    // ml_body now supplies the BOUNDS for `"""…"""` literal segments. These rows pin the
+    // seam the same way the dq_body ones do: independent offsets, and the real lexer's
+    // token kind — never scanner-against-a-lexer-that-calls-the-scanner.
+    then "a multiline literal with embedded quotes lexes whole" {
+        // The body holds a lone `"` and a `""`; only THREE close it.
+        let c = "\"\"\"a\"b\"\"c\"\"\""
+        hand_kind(c) == "STRING" && hand_end(c) == c.length
+    }
+
+    then "a multiline literal with interpolation lexes as one TEMPLATE" {
+        let c = "\"\"\"a" + "$" + "{x}b\"\"\""
+        hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
+    }
+
+    // The escape seam: scan_ml_body consumes escape pairs, so `\"` inside a multiline body
+    // must not be mistaken for the start of the close.
+    then "an escaped quote inside a multiline body does not close it" {
+        let c = "\"\"\"a\\\"\"\"\""
+        hand_kind(c) == "STRING" && hand_end(c) == c.length
+    }
+
     then "block_comment spans the whole nested comment" {
         // "/* a /* b */ c */" is 17 bytes and balances at the end
         let c = "/* a /* b */ c */"
