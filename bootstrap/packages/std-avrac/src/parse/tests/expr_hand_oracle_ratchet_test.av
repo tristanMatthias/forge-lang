@@ -161,24 +161,40 @@ fn expected_divergences() -> List<string> {
     // sweep said `{a:` had closed and `if {` had not, and this harness says the exact
     // opposite. Both readings are of real inputs; they differ by one trailing byte. Only
     // the committed harness governs the count.
-    // ── ALL FIVE DIAGNOSED (t-bw9s) ──────────────────────────────────────────────
+    // ── THE FIVE, AS DIAGNOSED AND THEN RESOLVED (t-bw9s) ───────────────────────────
+    // HISTORICAL. Kept because the diagnosis is what made the split below possible, and
+    // because two entries record a wrong reading worth not repeating. Current state:
+    // `a in b` and `[1,` are FIXED (generated parser was at fault); `f(`, `match {` and
+    // `{a:` moved to `hand_defects()` (the HAND is at fault). `expected_divergences()` is
+    // empty, so what follows is a record, not a work queue.
     // Measured three-way at 27cb6e61, fixtures with NO trailing newline (this harness's
     // shape — the set is newline-sensitive, see above). emit == executor on every one, so
     // none of these is a lockstep bug; all five are generated-vs-HAND. Error COUNTS are
     // part of the diagnosis and were the thing that separated the classes:
     //
-    //   a in b    1 err hand / 2 gen. Messages IDENTICAL on all three engines. The extra
-    //             is a second F0040 "expected expression" — the "reports but does not
-    //             FAIL" class in CLAUDE.md: a rule reports and keeps going where the hand
-    //             propagates and stops. Fix at the rule that continues, not at the message.
+    //   a in b    FIXED. The diagnosis held exactly: the fix was at the rule that
+    //             continues, not at the message. `@require` on `..` in `in_rhs` makes a
+    //             missing `..` terminal, so the rule stops instead of going on to parse
+    //             the range's RHS at EOF and reporting a second time.
     //
-    //   [1,       1 err hand / 3 gen. gen "expected `for`" 1:3, hand "expected expression"
-    //             1:4. Both generated engines take the COMPREHENSION branch; the hand
-    //             treats it as an unterminated list. `list_comp_ahead` reads as returning
-    //             false for this input and runs as true — that gap is the bug, still
-    //             unexplained. Do NOT weaken the peek before explaining it.
+    //   [1,       FIXED, and the "still unexplained" gap has its explanation. The note was
+    //             right to forbid weakening the peek — the peek was never wrong. Its arm in
+    //             `lookahead_ok` ended in a BARE `false` instead of `return false`, and
+    //             nested inside `if cond == ...` that is a no-op expression: the predicate
+    //             fell through every later arm and out to the function's final `true`. It
+    //             "read as false and ran as true" because it never returned at all. The
+    //             executor reaches the same arm through a returning path, which is why
+    //             emit == executor and the gap looked engine-wide rather than emitted.
+    //             Second cause, same input: with the peek fixed the element parse still
+    //             reported and continued into the `]` check — `@onfail(bail)` on the
+    //             post-comma element ends the rule at the first report.
     //
-    //   f(        CAUSE CONFIRMED, with a control. The divergence is EMPTY-LIST-ONLY:
+    //   f(        MOVED TO hand_defects(). The analysis below stands as a description of
+    //             how you would change the GENERATED side — but you should not: `f()`
+    //             parses, so the hand's "expected expression" states a requirement the
+    //             language does not have. Kept because the empty-list mechanism is real
+    //             and will matter if the call rule is reshaped for another reason.
+    //             CAUSE CONFIRMED, with a control. The divergence is EMPTY-LIST-ONLY:
     //
     //                 f(     DIFF   gen "expected `)` after arguments" / hand "expected expression"
     //                 f(1    SAME   both "expected `)` after arguments"
@@ -195,7 +211,13 @@ fn expected_divergences() -> List<string> {
     //             "expected `)` after arguments")` rules alone), so it wants its own pass
     //             with the corpus watched, not a drive-by edit.
     //
-    //   match {   NOT the same cause, despite looking identical at first. THREE gaps:
+    //   match {   MOVED TO hand_defects() — but ONLY the pinned `match {` row. Read the
+    //             three shapes below before generalising: `match x {` and `match x { 1`
+    //             are NOT in `corpus()`, are not tracked here, and on those two the HAND
+    //             looks BETTER (it spells out the pattern-start set; its column is the
+    //             earlier one). "The hand is wrong about `match {`" is not "the hand is
+    //             wrong about match". Those two remain unmeasured.
+    //             NOT the same cause, despite looking identical at first. THREE gaps:
     //
     //                 match {      gen "expected `}` after match arms" / hand "expected expression"
     //                 match x {    gen "expected `}` after match arms" / hand "expected `.`,
@@ -208,7 +230,11 @@ fn expected_divergences() -> List<string> {
     //             wording and an off-by-one. Grouping this with `f(` and fixing "them"
     //             together would have closed one third of it and looked done.
     //
-    //   {a:       2 errs each, FIRST diagnostic byte-identical. The whole divergence is
+    //   {a:       MOVED TO hand_defects(). "Least likely to matter" was right about user
+    //             impact and wrong about which side to fix: len+1 is the EOF column every
+    //             other row uses, so gen's 1:4 is correct and the hand's 1:5 is past end
+    //             of input.
+    //             2 errs each, FIRST diagnostic byte-identical. The whole divergence is
     //             the SECOND one's frame header: `1:4` (gen) against `1:5` (hand) — an
     //             off-by-one in the EOF column, one character in the rendered output.
     //             Smallest of the five and the least likely to matter to a user; listed
