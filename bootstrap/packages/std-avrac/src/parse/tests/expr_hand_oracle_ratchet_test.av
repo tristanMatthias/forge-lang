@@ -286,6 +286,13 @@ spec "t-bw9s: the expression hand oracle still has signal, and exactly this much
         if !gen_out("f(").contains("expected `)` after arguments") { bad = bad + "\n  f( : generated side no longer names the closer" }
         if !gen_out("match {").contains("expected `}` after match arms") { bad = bad + "\n  match { : generated side no longer names the closer" }
         if !gen_out("{a:").contains("1:4") { bad = bad + "\n  {a: : generated side no longer reports EOF at len+1" }
+        // And the HAND side, which is the half that was missing. `diverges` above only
+        // proves the two disagree — it stays green if the hand drifts to some THIRD wrong
+        // answer, and then the row's documented justification describes behaviour that no
+        // longer exists. These pin the exact defect each row was exempted for.
+        if !hand_out("f(").contains("expected expression") { bad = bad + "\n  f( : hand no longer claims an expression is required" }
+        if !hand_out("match {").contains("expected expression") { bad = bad + "\n  match { : hand no longer claims an expression is required" }
+        if !hand_out("{a:").contains("1:5") { bad = bad + "\n  {a: : hand no longer reports EOF one past end of input" }
         if bad != "" { println("hand-defect rows changed:" + bad) }
         bad == ""
     }
@@ -294,9 +301,14 @@ spec "t-bw9s: the expression hand oracle still has signal, and exactly this much
     // rather than asserted in a comment: if either of these ever stops parsing, the
     // hand's message was right all along and those rows belong back in the gen list.
     then "the forms that make the hand's message wrong really do parse" {
+        // Checked on BOTH parsers: the claim is about the LANGUAGE (no expression is
+        // required in either position), so a form only one engine accepts would not
+        // establish it. If the hand ever rejects these, its message was right after all
+        // and those rows belong back in the gen list.
         let empty_call = gen_out("f()")
         let empty_match = gen_out("match x { }")
-        !empty_call.contains("error[") && !empty_match.contains("error[")
+        !empty_call.contains("error[") && !empty_match.contains("error[") &&
+            !hand_out("f()").contains("error[") && !hand_out("match x { }").contains("error[")
     }
 
     // The control. Without it both rows above pass on a broken harness: if `bs2 expr`
