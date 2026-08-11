@@ -12,11 +12,17 @@
 // place moves BOTH sides together and the row still passes — the same tautology this file
 // was written to escape, re-entered through the wiring.
 //
-// So every row below pins an INDEPENDENT expected position — a byte offset derived from the
-// input by hand, not from either implementation — and then asserts BOTH sides against it:
+// So every row below pins INDEPENDENT expected offsets — derived by hand from the input, not
+// from either implementation — and asserts both sides against them:
 //
-//   1. the scanner returns that offset, and
-//   2. the real lexer's token extent agrees (kind + the pos of the token after it).
+//   1. the scanner returns the expected SEGMENT boundary, and
+//   2. the real lexer reports the expected KIND and COMPLETE-TOKEN extent.
+//
+// Those are two different offsets, and conflating them would be its own quiet error. For an
+// ordinary body they coincide up to the delimiter: the segment ends at the closing quote and
+// the token one byte later. For an INTERPOLATED string they do not — `scan_dq_body` stops at
+// the first `${` (the interpolation row below: offset 2), while the whole literal keeps going
+// and lexes as ONE template ending at the final quote.
 //
 // Two implementations agreeing with an external constant is evidence. Two implementations
 // agreeing with each other, when one calls the other, is not.
@@ -43,9 +49,10 @@ fn hand_kind(src: string) -> string {
 
 spec "the generated body scanners stop where the PRODUCTION lexer stops" {
 
-    // Every row: `expect` is computed BY HAND from the input, and both the scanner and the
-    // real lexer are checked against it. `body_end` is the offset of the closing delimiter;
-    // the token therefore ends one byte later.
+    // Every expected offset is computed BY HAND from the input. For an ordinary body the
+    // scanner stops at the closing delimiter and the token ends one byte later; for an
+    // interpolated one the scanner stops at the first `${` while the token runs to the final
+    // quote, so those rows assert the two separately.
 
     then "dq_body agrees with an independent expectation on ordinary bodies" {
         // "abc"  -> body 1..4, close at 4, token ends 5
