@@ -177,6 +177,7 @@ fn parse_in_rhs(st: PState) -> CapVal {
         let s = parse_bitor(st)
         if st.cur().tk == Tk.DotDot { let _ = st.advance() } else {
             st.report("expected `..` in range expression after `in`")
+            return CapVal.Node(st.error_node_silent())
         }
         let e = parse_bitor(st)
         return CapVal.Node(mk_inrange_expr(st, s, e))
@@ -1682,7 +1683,12 @@ fn parse_list_expr(st: PState) -> CapVal {
             a_list.push(capval_to_expr(st, parse_expression(st)))
             while lookahead_ok("comma_not_rbracket", st) && (st.cur().tk == Tk.Comma) {
                 let _ = st.advance()
-                a_list.push(capval_to_expr(st, parse_expression(st)))
+                let __bdiag1 = st.diags.length
+                let __bres1 = parse_expression(st)
+                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
+                    return CapVal.Node(st.error_node_silent())
+                }
+                a_list.push(capval_to_expr(st, __bres1))
             }
             if st.cur().tk == Tk.Comma {
                 let _ = st.advance()

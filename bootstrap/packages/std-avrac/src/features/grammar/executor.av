@@ -2369,7 +2369,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
             else if depth == 1 && t.text == "for" { return true }
             i = i + 1
         }
-        false
+        return false
     }
     if cond == "paren_lambda_ahead" {
         // The UNTYPED branch's gate: `( … ) ->` AND a token after the `->` that can

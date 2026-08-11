@@ -12,13 +12,30 @@
 //                 surfaced from wherever `block_expr` gave up — wrong token, wrong
 //                 column. CONVERGED; see the note on the pinned list below.
 //
-// Still open, worst first:
-//     [1,         gen: "expected `for`"   (1:3)   hand: "expected expression"  (2:1)
-//     match {     gen: "expected `}` after match arms"  hand: "expected expression"
-//     f(          gen: "expected `)` after arguments"   hand: "expected expression"
+// Still open where the GENERATED parser is at fault: NONE. The last two closed were
+// `[1,` and `a in b`, and both were one defect wearing different clothes — a rule that
+// REPORTED and then kept parsing, so one mistake reached the user as two or three
+// diagnostics:
 //
-// `[1,` is the bad one: a list-comprehension rule leaking into a plain list literal's
-// error. That is what a user sees today, and it is diagnosed (not guessed) at the pin.
+//     [1,      was 3 errors ("expected `for`", "expected variable name after `for`",
+//              "expected `]` after list") against the hand's 1. TWO causes stacked:
+//              (a) `lookahead_ok`'s `list_comp_ahead` arm ended in a BARE `false` instead
+//                  of `return false`. Nested inside `if cond == ...`, that is a no-op
+//                  expression, so the predicate fell through every later arm and out to
+//                  the function's final `true` — the peek was dead and EVERY `[` entered
+//                  the comprehension branch. The executor was unaffected (it reads the
+//                  same arm through a path that returns), which is why the interpreter
+//                  agreed and only the generated parser leaked `for`.
+//              (b) with that fixed the element parse still reported and continued, so the
+//                  `]` check reported again. `@onfail(bail)` on the post-comma element
+//                  ends the rule at the first report, which is what the hand's `?` does.
+//     a in b   was 2 errors: the `..` terminal reported and the rule went on to parse the
+//              range's RHS at EOF. `@require` on `..` makes the miss terminal.
+//
+// The remaining three are NOT this. They are rows where the generated parser is RIGHT and
+// the hand is WRONG, which no amount of work on the generated side can close — see
+// `hand_defects` below for the evidence per row. That distinction is the whole reason
+// this file now carries two lists instead of one.
 //
 // Why this file exists rather than a note somewhere: the whole-program recovery corpus
 // CANNOT see any of it. `bs2 check` is driven by the generated declaration parser, which
@@ -196,7 +213,34 @@ fn expected_divergences() -> List<string> {
     //             off-by-one in the EOF column, one character in the rendered output.
     //             Smallest of the five and the least likely to matter to a user; listed
     //             last deliberately.
-    ["a in b", "f(", "[1,", "{a:", "match {"]
+    []
+}
+
+/// The OTHER kind of divergence, and the reason this file needed a second list.
+///
+/// A row here is one where the GENERATED parser is RIGHT and the HAND is WRONG. It can
+/// never be closed by fixing the generated parser — doing that would mean making a
+/// correct diagnostic worse to match a buggy oracle. `expected_divergences` above cannot
+/// express that, so pinning these there would have left the ratchet unable to reach
+/// empty by any honest route.
+///
+/// Each is asserted on BOTH sides below, which is what makes the claim falsifiable: the
+/// row goes red if the generated parser drifts, AND it goes red if the hand is ever fixed
+/// to agree. Same discipline as the bare-`@` annotation case in the declaration parser.
+///
+///   f(         hand: "expected expression". `f()` PARSES — `(call f ())` — so no
+///              expression is required after `(`, and the hand states a requirement that
+///              does not exist. gen names the real one: the call must be closed.
+///   match {    hand: "expected expression". `match x { }` PARSES — `(match-expr x ())` —
+///              so no arm is required either; and an arm starts with a PATTERN, which is
+///              not an expression. gen names the closer.
+///   {a:        the second diagnostic's frame header. Every EOF diagnostic in the corpus
+///              sits at column len+1 (`[1,` len 3 -> 1:4; `a in b` len 6 -> 1:7). gen
+///              puts it at 1:4 for a 3-char source; the hand says 1:5, one PAST end of
+///              input. Measured across three inputs, the hand is +1 whenever the block
+///              has content and correct when it is empty (`{` -> 1:2).
+fn hand_defects() -> List<string> {
+    ["f(", "{a:", "match {"]
 }
 
 fn diverges(source: string) -> bool { gen_out(source) != hand_out(source) }
@@ -219,6 +263,7 @@ spec "t-bw9s: the expression hand oracle still has signal, and exactly this much
         for src in corpus() {
             mut pinned = false
             for p in expected_divergences() { if p == src { pinned = true } }
+            for p in hand_defects() { if p == src { pinned = true } }
             if !pinned && diverges(src) { fresh = fresh + "\n  NEW divergence: " + src }
         }
         if fresh != "" {
@@ -226,6 +271,32 @@ spec "t-bw9s: the expression hand oracle still has signal, and exactly this much
             println("compare with: ./build/bs2 expr FILE  vs  AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0 ./build/bs2 expr FILE")
         }
         fresh == ""
+    }
+
+    // The hand-defect rows, asserted in BOTH directions. `diverges` alone would be
+    // satisfied by any difference at all, including the generated parser regressing into
+    // some third wrong answer — so each row also pins that the generated side still says
+    // the thing that makes it the correct one.
+    then "each hand defect still diverges, and the generated side is still the right one" {
+        mut bad = ""
+        for src in hand_defects() {
+            if !diverges(src) { bad = bad + "\n  AGREES now (hand fixed? move it out of hand_defects): " + src }
+        }
+        // The specific claim per row, not just "they differ".
+        if !gen_out("f(").contains("expected `)` after arguments") { bad = bad + "\n  f( : generated side no longer names the closer" }
+        if !gen_out("match {").contains("expected `}` after match arms") { bad = bad + "\n  match { : generated side no longer names the closer" }
+        if !gen_out("{a:").contains("1:4") { bad = bad + "\n  {a: : generated side no longer reports EOF at len+1" }
+        if bad != "" { println("hand-defect rows changed:" + bad) }
+        bad == ""
+    }
+
+    // The counter-evidence for the two `expected expression` rows above, run as a test
+    // rather than asserted in a comment: if either of these ever stops parsing, the
+    // hand's message was right all along and those rows belong back in the gen list.
+    then "the forms that make the hand's message wrong really do parse" {
+        let empty_call = gen_out("f()")
+        let empty_match = gen_out("match x { }")
+        !empty_call.contains("error[") && !empty_match.contains("error[")
     }
 
     // The control. Without it both rows above pass on a broken harness: if `bs2 expr`

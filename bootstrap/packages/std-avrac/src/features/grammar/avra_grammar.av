@@ -109,7 +109,7 @@ fn avra_expr_core() -> Grammar {
                 | "in" ir:in_rhs -> ir
                 | ( op:("==" | "!=") r:bitor )+ -> mk_eqchain(op, r)
   in_rhs        = "[" ( a:expression ( "," a:expression )* )? "]" -> mk_inlist(a)
-                | s:bitor ".." e:bitor
+                | s:bitor @require ".." e:bitor
                   @expect("..", "expected `..` in range expression after `in`") -> mk_inrange(s, e)
   bitor      = l:bitxor ( op:("|") r:bitxor )* -> fold_binary(l, op, r)
   bitxor     = l:bitand ( op:("^") r:bitand )* -> fold_binary(l, op, r)
@@ -455,7 +455,7 @@ fn avra_expr_core() -> Grammar {
   list_expr    = @peek(list_comp_ahead) "[" @require cb:list_comp @require "]"
                  @expect("list_comp", "expected a comprehension body")
                  @expect("]", "expected `]` after list") -> cb
-               | "[" ( a:expression ( @peek(comma_not_rbracket) "," a:expression )* ( "," )? )? @require "]"
+               | "[" ( a:expression ( @peek(comma_not_rbracket) "," @onfail(bail) a:expression )* ( "," )? )? @require "]"
                  @expect("]", "expected `]` after list") -> MkListLit(a)
   list_comp    = b:expression "for" @require v:IDENT @require "in" c:expression ( "if" f:expression )?
                  @expect("IDENT", "expected variable name after `for`")
