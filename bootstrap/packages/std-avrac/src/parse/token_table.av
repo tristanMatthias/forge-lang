@@ -257,16 +257,27 @@ export fn delim_run_rules() -> List<DelimRun> {
 ///   tmpl_body  `` `…` ``  escapes, interpolates — template literal, different delimiter
 ///   sq_body    `'…'`  escapes, NO interpolation — char literal
 ///   raw_body   `r"…"` NO escapes, NO interpolation — raw string, `\` is a literal byte
-export type StrRun = { name: string, close: string, escape: bool, interp: string }
+/// `interp_a`/`interp_b` are the TWO bytes of the interpolation lead. The lead is `${`,
+/// not a bare `{` — a lone `{` inside a string is an ORDINARY character (spec §Strings:
+/// "a bare `{` is an ordinary character and needs no escape"). A one-byte lead was the
+/// original shape here and it was WRONG: it would have stopped the body at every literal
+/// brace, so `"a{b}"` would have tokenised as a suspended interpolation. Both bytes must
+/// match to suspend; `interp_a == ""` means the mode does not interpolate at all.
+export type StrRun = { name: string, close: string, escape: bool, interp_a: string, interp_b: string }
 
 /// The string-body runs, compiled to `scan_<name>(src, start) -> int` by
 /// parse/emit_lex.av. Single source of truth for what interrupts a string body.
 export fn str_run_rules() -> List<StrRun> {
     [
-        StrRun { name: "dq_body",   close: "DQUOTE",   escape: true,  interp: "LBRACE" },
-        StrRun { name: "tmpl_body", close: "BACKTICK", escape: true,  interp: "LBRACE" },
-        StrRun { name: "sq_body",   close: "SQUOTE",   escape: true,  interp: "" },
-        StrRun { name: "raw_body",  close: "DQUOTE",   escape: false, interp: "" },
+        StrRun { name: "dq_body",   close: "DQUOTE",   escape: true,  interp_a: "DOLLAR", interp_b: "LBRACE" },
+        // A backtick template is VERBATIM in the production lexer (lexer.av
+        // scan_template_token scans straight to the closing backtick): no escapes and no
+        // interpolation. This rule declared both, which did not describe any lexer that
+        // exists — the spec reserves backticks for future use, so the hand's behaviour is
+        // the only definition there is, and the table now matches it.
+        StrRun { name: "tmpl_body", close: "BACKTICK", escape: false, interp_a: "",       interp_b: "" },
+        StrRun { name: "sq_body",   close: "SQUOTE",   escape: true,  interp_a: "",       interp_b: "" },
+        StrRun { name: "raw_body",  close: "DQUOTE",   escape: false, interp_a: "",       interp_b: "" },
     ]
 }
 

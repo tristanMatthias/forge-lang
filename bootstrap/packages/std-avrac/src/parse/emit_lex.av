@@ -358,7 +358,8 @@ fn run_symbol_import_list() -> string {
     mut m = 0
     while m < sr.length {
         if !run_list_has(syms, sr[m].close) { syms.push(sr[m].close) }
-        if sr[m].interp != "" && !run_list_has(syms, sr[m].interp) { syms.push(sr[m].interp) }
+        if sr[m].interp_a != "" && !run_list_has(syms, sr[m].interp_a) { syms.push(sr[m].interp_a) }
+        if sr[m].interp_b != "" && !run_list_has(syms, sr[m].interp_b) { syms.push(sr[m].interp_b) }
         if sr[m].escape && !run_list_has(syms, "BACKSLASH") { syms.push("BACKSLASH") }
         m = m + 1
     }
@@ -397,8 +398,11 @@ fn run_symbol_import_list() -> string {
 /// Emit one `scan_<name>(src, start) -> int` for a string-body run.
 fn emit_str_scanner(rule: StrRun) -> string {
     mut stop = "byte_at(src, end) == " + rule.close
-    if rule.interp != "" {
-        stop = stop + " || byte_at(src, end) == " + rule.interp
+    // BOTH bytes of the lead must match. A one-byte test would stop the body at every
+    // literal `{`, which is an ordinary character in a string.
+    if rule.interp_a != "" {
+        stop = stop + " || (byte_at(src, end) == " + rule.interp_a +
+               " && byte_at(src, end + 1) == " + rule.interp_b + ")"
     }
     mut esc = ""
     if rule.escape {

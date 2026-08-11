@@ -36,8 +36,16 @@ spec "lexer flip: the generated string-body scanners stop where the hand lexer s
         dq("abc\"") == 3
     }
 
-    then "and before an interpolation lead, so the parser can take over" {
-        dq("ab{x}\"") == 2
+    // The lead is `${`, not a bare `{`. A lone brace is an ORDINARY body byte — this
+    // row asserted the one-byte reading and was the reason the scanner could not be
+    // wired: it would have suspended every string containing a literal brace.
+    then "and before the TWO-BYTE interpolation lead, so the parser can take over" {
+        dq("ab" + "$" + "{x}\"") == 2
+    }
+
+    then "a BARE brace is ordinary content — it does NOT suspend" {
+        // `ab{x}"` — nothing here opens an interpolation, so the stop is the quote at 5.
+        dq("ab{x}\"") == 5
     }
 
     // The escape rule is the whole reason this is not a delim run.
@@ -46,8 +54,13 @@ spec "lexer flip: the generated string-body scanners stop where the hand lexer s
         dq("a\\\"b\"") == 4
     }
 
-    then "an escaped brace does NOT suspend for interpolation" {
-        dq("a\\{b{") == 4
+    // Escaping a brace is no longer a thing to test — a bare brace never suspended in
+    // the first place once the lead is two bytes. What IS still worth pinning is that an
+    // escape before the DOLLAR neutralises the lead.
+    then "an escaped dollar does NOT open an interpolation" {
+        // `a\$ {`-ish: the `\$` is consumed as an escape pair, so the following `{`
+        // stands alone and is ordinary — the body runs to EOF.
+        dq("a\\" + "$" + "{b") == 5
     }
 
     then "a trailing backslash at EOF does not read past the end" {
@@ -60,9 +73,16 @@ spec "lexer flip: the generated string-body scanners stop where the hand lexer s
         dq("abc") == 3
     }
 
-    // Same generator, different rows — the point of making it data.
-    then "the template mode differs only in its delimiter" {
-        tmpl("ab`") == 2 && tmpl("ab{x}`") == 2
+    // NOT "the same but for the delimiter" — that is what this row used to claim, and it
+    // described no lexer that exists. `lexer.av scan_template_token` scans straight to the
+    // closing backtick: a backtick body is VERBATIM, with neither escapes nor
+    // interpolation. The spec reserves backticks for future use, so the hand's behaviour
+    // is the only definition there is.
+    then "the template mode is VERBATIM — no escapes, no interpolation" {
+        tmpl("ab`") == 2 &&
+        tmpl("ab{x}`") == 5 &&
+        tmpl("ab" + "$" + "{x}`") == 6 &&
+        tmpl("a\\`") == 2
     }
 
     then "the char mode escapes but does NOT interpolate" {

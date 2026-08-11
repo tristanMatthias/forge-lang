@@ -749,7 +749,7 @@ The authoritative spec is `docs/2026_04_18_FULL_SPEC.md`. Key v1.0 requirements:
 ### Syntax (spec Axis 28)
 - **No semicolons** — newline-sensitive
 - **Braces** — `{}` delimit blocks
-- **Strings** — `"..."` with `{expr}` interpolation, `"""..."""` multiline, `r"..."` raw
+- **Strings** — `"..."` with `${expr}` interpolation (the lead is TWO bytes; a bare `{` is ordinary content), `"""..."""` multiline, `r"..."` raw
 - **Closures** — `(x) -> body`, `it` pronoun
 - **Pipe** — `|>` desugars to function call
 - **Comments** — `//`, `/* nested */`, `///` doc, `//!` module doc
