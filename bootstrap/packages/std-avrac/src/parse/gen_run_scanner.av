@@ -85,6 +85,34 @@ export fn scan_raw_body(src: bytes, start: int) -> int {
     end
 }
 
+/// GENERATED string-body scanner for the `ml_body` mode. Stops BEFORE the
+/// close delimiter, the interpolation lead, or EOF (exclusive end).
+export fn scan_ml_body(src: bytes, start: int) -> int {
+    mut end = start
+    while byte_at(src, end) != -1 {
+        // An escape consumes the backslash AND the byte after it, so a
+        // `\` + close does not terminate and `\` + interp does not suspend.
+        if byte_at(src, end) == BACKSLASH && byte_at(src, end + 1) != -1 {
+            end = end + 2
+            continue
+        }
+        if (byte_at(src, end) == DQUOTE && byte_at(src, end + 1) == DQUOTE && byte_at(src, end + 2) == DQUOTE) || (byte_at(src, end) == DOLLAR && byte_at(src, end + 1) == LBRACE) { return end }
+        end = end + 1
+    }
+    end
+}
+
+/// GENERATED string-body scanner for the `raw_ml_body` mode. Stops BEFORE the
+/// close delimiter, the interpolation lead, or EOF (exclusive end).
+export fn scan_raw_ml_body(src: bytes, start: int) -> int {
+    mut end = start
+    while byte_at(src, end) != -1 {
+        if (byte_at(src, end) == DQUOTE && byte_at(src, end + 1) == DQUOTE && byte_at(src, end + 2) == DQUOTE) { return end }
+        end = end + 1
+    }
+    end
+}
+
 /// GENERATED nesting scanner for `block_comment`. Returns the offset PAST the
 /// balancing close, or EOF if the nesting never balances.
 export fn scan_block_comment(src: bytes, start: int) -> int {

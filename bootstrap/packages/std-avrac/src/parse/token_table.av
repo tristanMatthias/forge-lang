@@ -272,21 +272,29 @@ export fn delim_run_rules() -> List<DelimRun> {
 /// generated `scan_raw_body` walked past the newline to a closing quote on a LATER line —
 /// a different tokenisation, and the same "describes a lexer that does not exist" defect
 /// the interpolation lead and the backtick mode each had.
-export type StrRun = { name: string, close: string, escape: bool, interp_a: string, interp_b: string, stop_nl: bool }
+/// `close_rep` is how many CONSECUTIVE close bytes end the body — 1 for `"…"`, 3 for the
+/// triple-quoted forms. A one-byte close cannot express `"""…"""`: the body of a multiline
+/// string contains ordinary `"` bytes, so stopping at the first one would truncate it.
+export type StrRun = { name: string, close: string, escape: bool, interp_a: string, interp_b: string, stop_nl: bool, close_rep: int }
 
 /// The string-body runs, compiled to `scan_<name>(src, start) -> int` by
 /// parse/emit_lex.av. Single source of truth for what interrupts a string body.
 export fn str_run_rules() -> List<StrRun> {
     [
-        StrRun { name: "dq_body",   close: "DQUOTE",   escape: true,  interp_a: "DOLLAR", interp_b: "LBRACE", stop_nl: false },
+        StrRun { name: "dq_body",   close: "DQUOTE",   escape: true,  interp_a: "DOLLAR", interp_b: "LBRACE", stop_nl: false, close_rep: 1 },
         // A backtick template is VERBATIM in the production lexer (lexer.av
         // scan_template_token scans straight to the closing backtick): no escapes and no
         // interpolation. The spec reserves backticks, so the hand's behaviour is the only
         // definition there is.
-        StrRun { name: "tmpl_body", close: "BACKTICK", escape: false, interp_a: "",       interp_b: "",       stop_nl: false },
-        // A single-line raw string STOPS AT A NEWLINE — see `stop_nl` above. `r"""…"""`
-        // is a separate multiline form the hand handles on its own path, not this run.
-        StrRun { name: "raw_body",  close: "DQUOTE",   escape: false, interp_a: "",       interp_b: "",       stop_nl: true  },
+        StrRun { name: "tmpl_body", close: "BACKTICK", escape: false, interp_a: "",       interp_b: "",       stop_nl: false, close_rep: 1 },
+        // A single-line raw string STOPS AT A NEWLINE — see `stop_nl` above. The triple
+        // -quoted raw form is a separate rule below, not this one.
+        StrRun { name: "raw_body",  close: "DQUOTE",   escape: false, interp_a: "",       interp_b: "",       stop_nl: true,  close_rep: 1 },
+        // `"""…"""` — same escape and interpolation rules as `"…"`, but closed by THREE
+        // quotes, which is what `close_rep` exists for. It spans newlines by definition.
+        StrRun { name: "ml_body",   close: "DQUOTE",   escape: true,  interp_a: "DOLLAR", interp_b: "LBRACE", stop_nl: false, close_rep: 3 },
+        // `r"""…"""` — triple-quoted AND raw: no escapes, no interpolation, spans newlines.
+        StrRun { name: "raw_ml_body", close: "DQUOTE", escape: false, interp_a: "",       interp_b: "",       stop_nl: false, close_rep: 3 },
     ]
 }
 
