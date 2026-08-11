@@ -7,7 +7,7 @@ use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
-use parse.{scan_operator, classify_keyword, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, scan_raw_body, scan_tmpl_body, scan_block_comment, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
+use parse.{scan_operator, classify_keyword, scan_dq_body, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, scan_raw_body, scan_tmpl_body, scan_block_comment, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
 use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
@@ -436,14 +436,65 @@ impl Parser {
         // because that region is copied VERBATIM, it simply joins the surrounding run.
         mut content = "\""
         mut has_interpolation = false
-        mut brace_depth = 0
         mut run_start = self.current
+        // BOUNDS from the generated scan_dq_body, CONTENT still built here. The two were
+        // one loop because the old code answered "where does this end" and "what does it
+        // say" with the same byte walk; they are separable, but NOT by stop-set alone —
+        // scan_dq_body deliberately CONSUMES escape pairs (so `\"` and `\${` do not end
+        // or suspend the body), while content resolution must stop at every backslash.
+        // So the scanner bounds each literal SEGMENT and the escape walk runs inside it.
         while !self.is_at_end() {
-            let b = byte_at(sb, self.current)
-            // Inside ${...}: track braces, skip nested strings. Advance only — the
-            // verbatim region is captured by the surrounding run's slice on exit.
-            if brace_depth > 0 {
-                if b == DQUOTE {
+            // One literal segment: up to the closing quote, an interpolation lead, or EOF.
+            let seg_end = scan_dq_body(sb, self.current)
+            while self.current < seg_end {
+                if byte_at(sb, self.current) == BACKSLASH {
+                    content = content + self.slice(run_start, self.current)
+                    self.advance_byte()
+                    // Only reachable at EOF: a backslash before seg_end always had its
+                    // pair consumed by the scanner, which is what keeps the two in step.
+                    if self.current >= seg_end {
+                        run_start = self.current
+                        break
+                    }
+                    let ep = self.current
+                    let esc = self.advance_byte()
+                    if esc == LOWER_N { content = content + "\n" }
+                    else if esc == LOWER_T { content = content + "\t" }
+                    else if esc == LOWER_R { content = content + "\r" }
+                    else if esc == BACKSLASH { content = content + "\\" }
+                    else if esc == DQUOTE { content = content + "\"" }
+                    else if esc == DIGIT_0 { content = content + "\0" }
+                    else if esc == LOWER_X {
+                        let hp = self.current
+                        self.advance_byte()
+                        self.advance_byte()
+                        content = content + avra_char_from_hex(self.slice(hp, hp + 1), self.slice(hp + 1, hp + 2))
+                    }
+                    else { content = content + "\\" + self.slice(ep, ep + 1) }
+                    run_start = self.current
+                } else {
+                    self.advance_byte()
+                }
+            }
+            if self.is_at_end() { break }
+            if byte_at(sb, self.current) == DQUOTE {
+                content = content + self.slice(run_start, self.current)
+                break
+            }
+            // `${` — the scanner stops here and the interpolation region is ours: it is
+            // not a string body at all but balanced braces with nested strings skipped,
+            // and no run rule describes it. run_start stays just past the `${` so the
+            // region is copied VERBATIM by the next flush, exactly as before.
+            content = content + self.slice(run_start, self.current)
+            has_interpolation = true
+            content = content + "$" + "{"
+            self.advance_byte()
+            self.advance_byte()
+            run_start = self.current
+            mut brace_depth = 1
+            while brace_depth > 0 && !self.is_at_end() {
+                let ib = byte_at(sb, self.current)
+                if ib == DQUOTE {
                     self.advance_byte()
                     while !self.is_at_end() && byte_at(sb, self.current) != DQUOTE {
                         if byte_at(sb, self.current) == BACKSLASH { self.advance_byte() }
@@ -452,47 +503,8 @@ impl Parser {
                     if !self.is_at_end() { self.advance_byte() }
                     continue
                 }
-                if b == LBRACE { brace_depth = brace_depth + 1 }
-                if b == RBRACE { brace_depth = brace_depth - 1 }
-                self.advance_byte()
-                continue
-            }
-            // Outside ${}: check for end of string or start of interpolation
-            if b == DQUOTE {
-                content = content + self.slice(run_start, self.current)
-                break
-            }
-            if b == DOLLAR && byte_at(sb, self.current + 1) == LBRACE {
-                content = content + self.slice(run_start, self.current)
-                has_interpolation = true
-                brace_depth = 1
-                content = content + "$" + "{"
-                self.advance_byte()
-                self.advance_byte()
-                run_start = self.current
-                continue
-            }
-            if b == BACKSLASH {
-                content = content + self.slice(run_start, self.current)
-                self.advance_byte()
-                if self.is_at_end() { break }
-                let ep = self.current
-                let esc = self.advance_byte()
-                if esc == LOWER_N { content = content + "\n" }
-                else if esc == LOWER_T { content = content + "\t" }
-                else if esc == LOWER_R { content = content + "\r" }
-                else if esc == BACKSLASH { content = content + "\\" }
-                else if esc == DQUOTE { content = content + "\"" }
-                else if esc == DIGIT_0 { content = content + "\0" }
-                else if esc == LOWER_X {
-                    let hp = self.current
-                    self.advance_byte()
-                    self.advance_byte()
-                    content = content + avra_char_from_hex(self.slice(hp, hp + 1), self.slice(hp + 1, hp + 2))
-                }
-                else { content = content + "\\" + self.slice(ep, ep + 1) }
-                run_start = self.current
-            } else {
+                if ib == LBRACE { brace_depth = brace_depth + 1 }
+                if ib == RBRACE { brace_depth = brace_depth - 1 }
                 self.advance_byte()
             }
         }

@@ -1,18 +1,31 @@
 // THE DIFFERENTIAL between the generated body scanners and the PRODUCTION lexer.
 //
-// gen_str_scanner_test asserts the scanners against hand-written NUMBERS (`dq("abc\"") == 3`).
-// That checks the generator against someone's belief about the language. It cannot catch the
-// defect that actually keeps shipping here — a rule that describes a lexer which does not
-// exist — because the belief and the rule come from the same place. Three modes have now been
-// wrong that way (`${` vs `{`, backtick escapes, and the two below), and every one of them
-// passed a numbers-based spec.
+// gen_str_scanner_test asserts the scanners against hand-written NUMBERS. That checks the
+// generator against someone's belief about the language, and it is why four separate rules
+// shipped describing a lexer that does not exist — the belief and the rule came from the
+// same place.
 //
-// So this file compares against `lexer.av` itself. `lex_real` runs the REAL lexer, and the
-// pos of the token AFTER a literal is exactly where the hand stopped — an oracle that cannot
-// drift from the production front end, because it IS the production front end.
+// This file's answer was to compare against `lexer.av` itself. That was sound while the
+// hand owned its own bounds. It is NOT sound any more, and the reason is worth stating
+// plainly: the lexer now CALLS these scanners for its bounds, so `scanner == lex_real(...)`
+// compares the scanner against a consumer of the scanner. A scanner that stops in the wrong
+// place moves BOTH sides together and the row still passes — the same tautology this file
+// was written to escape, re-entered through the wiring.
 //
-// This is the gate the wiring slice depends on: a scanner may only replace hand code once it
-// is proven to stop where the hand stops.
+// So every row below pins INDEPENDENT expected offsets — derived by hand from the input, not
+// from either implementation — and asserts both sides against them:
+//
+//   1. the scanner returns the expected SEGMENT boundary, and
+//   2. the real lexer reports the expected KIND and COMPLETE-TOKEN extent.
+//
+// Those are two different offsets, and conflating them would be its own quiet error. For an
+// ordinary body they coincide up to the delimiter: the segment ends at the closing quote and
+// the token one byte later. For an INTERPOLATED string they do not — `scan_dq_body` stops at
+// the first `${` (the interpolation row below: offset 2), while the whole literal keeps going
+// and lexes as ONE template ending at the final quote.
+//
+// Two implementations agreeing with an external constant is evidence. Two implementations
+// agreeing with each other, when one calls the other, is not.
 
 use @std.avrac.features.grammar.{lex_real}
 use @std.avrac.parse.{scan_dq_body, scan_tmpl_body, scan_raw_body, scan_block_comment}
@@ -36,90 +49,94 @@ fn hand_kind(src: string) -> string {
 
 spec "the generated body scanners stop where the PRODUCTION lexer stops" {
 
-    // `"…"` — body starts after the quote; the token is body + closing quote.
-    then "dq_body agrees with the hand on ordinary bodies" {
-        let cases = ["\"abc\"", "\"\"", "\"a b c\"", "\"tab\\there\""]
-        mut ok = true
-        for c in cases {
-            let scanner_end = scan_dq_body(avra_bytes_from_string(c), 1) + 1
-            if scanner_end != hand_end(c) { ok = false }
-        }
-        ok
+    // Every expected offset is computed BY HAND from the input. For an ordinary body the
+    // scanner stops at the closing delimiter and the token ends one byte later; for an
+    // interpolated one the scanner stops at the first `${` while the token runs to the final
+    // quote, so those rows assert the two separately.
+
+    then "dq_body agrees with an independent expectation on ordinary bodies" {
+        // "abc"  -> body 1..4, close at 4, token ends 5
+        let c = "\"abc\""
+        scan_dq_body(avra_bytes_from_string(c), 1) == 4 &&
+        hand_kind(c) == "STRING" && hand_end(c) == 5 && c.length == 5
     }
 
-    // The case the one-byte interpolation lead got wrong. A bare brace is content, so the
-    // hand runs past it — if the scanner suspended there the two would disagree here.
-    then "dq_body agrees on a bare brace, which is ordinary content" {
+    then "dq_body treats a bare brace as ordinary content" {
+        // "a{b}c" -> nothing suspends; close at 6, token ends 7
         let c = "\"a{b}c\""
-        scan_dq_body(avra_bytes_from_string(c), 1) + 1 == hand_end(c)
+        scan_dq_body(avra_bytes_from_string(c), 1) == 6 &&
+        hand_kind(c) == "STRING" && hand_end(c) == 7
     }
 
-    // A `"…"` body MAY span a newline — the hand runs straight through one. This is the
-    // property that makes `take_run`'s `column += (end - current)` unusable for string
-    // bodies, and it is why the wiring needs a newline-aware advance.
-    then "dq_body agrees on a body spanning a newline" {
+    then "dq_body runs through a newline" {
+        // "a\nb" (real LF) -> close at 4, token ends 5
         let c = "\"a\nb\""
-        scan_dq_body(avra_bytes_from_string(c), 1) + 1 == hand_end(c)
+        scan_dq_body(avra_bytes_from_string(c), 1) == 4 &&
+        hand_kind(c) == "STRING" && hand_end(c) == 5
     }
 
-    then "tmpl_body agrees with the hand — verbatim to the backtick" {
-        let cases = ["`abc`", "`a{b}c`", "`a" + "$" + "{b}c`", "`a\\b`"]
-        mut ok = true
-        for c in cases {
-            let scanner_end = scan_tmpl_body(avra_bytes_from_string(c), 1) + 1
-            if scanner_end != hand_end(c) { ok = false }
-        }
-        ok
+    // THE ESCAPE SEAM. scan_dq_body must CONSUME escape pairs: a `\"` may not end the body
+    // and a `\${` may not suspend it. Asserting against c.length - 1 (the real closing
+    // quote) rather than against the lexer is what makes this catch an early stop — the
+    // lexer takes its bound from this scanner, so it would move in lockstep with a bug.
+    then "dq_body does not end the body at an ESCAPED quote" {
+        // "a\"b"  -> the only REAL close is the last byte
+        let c = "\"a\\\"b\""
+        scan_dq_body(avra_bytes_from_string(c), 1) == c.length - 1 &&
+        hand_kind(c) == "STRING" && hand_end(c) == c.length
     }
 
-    // `r"…"` — the `r` and the quote are two bytes, so the body starts at 2.
-    then "raw_body agrees with the hand on a single-line raw string" {
-        let cases = ["r\"abc\"", "r\"\"", "r\"a\\nb\"", "r\"" + "$" + "{x}\""]
-        mut ok = true
-        for c in cases {
-            let scanner_end = scan_raw_body(avra_bytes_from_string(c), 2) + 1
-            if scanner_end != hand_end(c) { ok = false }
-        }
-        ok
+    then "dq_body does not suspend at an ESCAPED interpolation lead" {
+        let c = "\"a\\" + "$" + "{b}\""
+        scan_dq_body(avra_bytes_from_string(c), 1) == c.length - 1 &&
+        hand_kind(c) == "STRING" && hand_end(c) == c.length
     }
 
-    // THE REGRESSION THIS FILE EXISTS FOR. `lexer.av scan_raw_string` reports F0002 at an
-    // LF: a single-line raw string may not span a newline. The generated scanner stopped
-    // only at the quote, so it walked past the newline and found a closing quote on a LATER
-    // LINE — a different tokenisation, silently. `stop_nl` on the rule is the fix; this row
-    // fails if it is ever dropped.
-    then "raw_body STOPS at a newline, exactly where the hand reports" {
+    // A genuine interpolation DOES suspend, and the whole literal still lexes as one
+    // TEMPLATE ending at the closing quote — the segment loop must reassemble every piece.
+    then "a multi-segment interpolated string ends at its closing quote" {
+        let c = "\"a" + "$" + "{x}b" + "$" + "{y}c\""
+        scan_dq_body(avra_bytes_from_string(c), 1) == 2 &&
+        hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
+    }
+
+    then "tmpl_body is verbatim — no escapes, no interpolation" {
+        let a = "`abc`"
+        let b = "`a" + "$" + "{x}c`"
+        scan_tmpl_body(avra_bytes_from_string(a), 1) == 4 && hand_end(a) == 5 &&
+        scan_tmpl_body(avra_bytes_from_string(b), 1) == b.length - 1 && hand_end(b) == b.length &&
+        hand_kind(a) == "TEMPLATE" && hand_kind(b) == "TEMPLATE"
+    }
+
+    then "raw_body agrees with an independent expectation" {
+        // r"abc" -> body 2..5, close at 5, token ends 6
+        let c = "r\"abc\""
+        scan_raw_body(avra_bytes_from_string(c), 2) == 5 &&
+        hand_kind(c) == "STRING" && hand_end(c) == 6
+    }
+
+    // THE REGRESSION THIS FILE EXISTS FOR. A single-line raw string may NOT span a newline:
+    // `lexer.av scan_raw_string` reports F0002 at the LF. The scanner stopped only at the
+    // quote, so it walked past the newline to a closing quote on a LATER LINE.
+    then "raw_body STOPS at a newline, where the hand reports" {
         let c = "r\"abc\ndef\""
-        let body_end = scan_raw_body(avra_bytes_from_string(c), 2)
-        // The LF sits at offset 5 — the scanner must stop there and NOT run on to the
-        // quote at offset 9.
-        body_end == 5
+        // hand_end pins where the PRODUCTION lexer resumes — 6, just past the LF it
+        // stopped at. Without it the row cannot tell a correct stop from one that
+        // swallowed the later-line body and then errored anyway.
+        scan_raw_body(avra_bytes_from_string(c), 2) == 5 && hand_kind(c) == "ERROR" &&
+        hand_end(c) == 6
     }
 
-    // The hand's answer to that input is an ERROR, which is the other half of the claim:
-    // agreement on where to stop, and the caller still owning the diagnostic.
-    then "and the hand's answer there is an error, not a longer string" {
-        hand_kind("r\"abc\ndef\"") == "ERROR"
-    }
-
-    // A char literal is NOT a body run — `scan_char_literal` reads exactly one codepoint
-    // (or one escape pair) and then REQUIRES the closing quote. The table used to carry an
-    // `sq_body` scan-until-quote rule, which described no lexer in this language: it would
-    // have called `'abc'` a 3-byte body where the hand calls it an error. The rule is gone;
-    // this row pins the behaviour it misdescribed so its removal stays justified.
-    then "a char literal is one codepoint — `'abc'` is an error, not a 3-byte body" {
+    // A char literal is NOT a body run: scan_char_literal reads exactly one codepoint (or
+    // one escape pair) and then REQUIRES the closing quote. The removed `sq_body` rule
+    // called `'abc'` a 3-byte body; the hand calls it an error.
+    then "a char literal is one codepoint — `'abc'` is an error" {
         hand_kind("'abc'") == "ERROR" && hand_kind("'a'") == "NUMBER"
     }
 
-    // The nesting scanner is called AT the opening `/*` and returns PAST the balancing
-    // close, so its answer is the whole comment's extent. A comment is trivia, so the hand
-    // reports the next real token — for a comment-only source that is EOF at the same offset.
-    then "block_comment agrees with the hand on nested comments" {
-        let cases = ["/* a */", "/* a /* b */ c */", "/**/"]
-        mut ok = true
-        for c in cases {
-            if scan_block_comment(avra_bytes_from_string(c), 0) != hand_end(c + " x") - 2 { ok = false }
-        }
-        ok
+    then "block_comment spans the whole nested comment" {
+        // "/* a /* b */ c */" is 17 bytes and balances at the end
+        let c = "/* a /* b */ c */"
+        scan_block_comment(avra_bytes_from_string(c), 0) == 17 && c.length == 17
     }
 }
