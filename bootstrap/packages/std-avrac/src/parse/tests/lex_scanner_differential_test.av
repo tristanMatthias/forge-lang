@@ -62,6 +62,30 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         scan_dq_body(avra_bytes_from_string(c), 1) + 1 == hand_end(c)
     }
 
+    // dq_body is now the BOUND for each literal segment of a string, with escape
+    // resolution running inside it. The two stay in step only because the scanner
+    // CONSUMES escape pairs: a `\"` must not end the body and a `\${` must not suspend
+    // it, or the segment would close early and the content walk would resolve escapes
+    // past its own end. These rows pin that agreement at the seam.
+    then "dq_body does not end the body at an ESCAPED quote" {
+        let c = "\"a\\\"b\""
+        scan_dq_body(avra_bytes_from_string(c), 1) + 1 == hand_end(c)
+    }
+
+    then "dq_body does not suspend at an ESCAPED interpolation lead" {
+        // `"a\${b}"` — the `\$` is an escape pair, so no interpolation opens and the
+        // body runs to the closing quote.
+        let c = "\"a\\" + "$" + "{b}\""
+        scan_dq_body(avra_bytes_from_string(c), 1) + 1 == hand_end(c)
+    }
+
+    // A string with interpolation lexes to a TEMPLATE, and its extent is still the whole
+    // literal — the segment loop must reassemble every piece and land on the closing quote.
+    then "a multi-segment interpolated string ends where the hand ends it" {
+        let c = "\"a" + "$" + "{x}b" + "$" + "{y}c\""
+        hand_kind(c) == "TEMPLATE" && lex_real(c)[1].pos == c.length
+    }
+
     then "tmpl_body agrees with the hand — verbatim to the backtick" {
         let cases = ["`abc`", "`a{b}c`", "`a" + "$" + "{b}c`", "`a\\b`"]
         mut ok = true
