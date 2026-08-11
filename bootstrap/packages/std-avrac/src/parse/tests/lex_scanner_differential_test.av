@@ -149,7 +149,9 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
 
     // `r"""…"""` — triple-quoted AND raw: no escapes, no interpolation, spans newlines.
     then "raw_ml_body is verbatim to the triple close" {
-        let c = "a" + "$" + "{x}\\n\"\"\""
+        // A REAL newline, not the two bytes `\\n` — the claim is that a raw multiline body
+        // SPANS newlines, and a literal backslash-n would not have tested that at all.
+        let c = "a" + "$" + "{x}\n\"\"\""
         scan_raw_ml_body(avra_bytes_from_string(c), 0) == c.length - 3
     }
 
@@ -158,6 +160,15 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
     // whole literal reported unterminated. Pre-existing — the base compiler still fails this.
     then "a nested triple-quoted string inside an interpolation keeps the outer literal whole" {
         hand_kind("\"v " + "$" + "{\"\"\"a\"b\"\"\"} end\"") == "TEMPLATE"
+    }
+
+    // The escape seam INSIDE a nested triple-quoted string. `\"""` is an escaped quote
+    // followed by two ordinary ones — NOT a close. skip_nested_string has to consume the
+    // escape pair exactly as scan_ml_body does for the outer body, or the nested literal
+    // ends early and the brace tracking that resumes after it is off by a region.
+    then "an escaped quote inside a nested triple-quoted string is not a close" {
+        let c = "\"v " + "$" + "{\"\"\"a\\\"\"\"b\"\"\"} end\""
+        hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
     }
 
     then "block_comment spans the whole nested comment" {
