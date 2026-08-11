@@ -465,19 +465,6 @@ impl Parser {
                     else if esc == DQUOTE { content = content + "\"" }
                     else if esc == DIGIT_0 { content = content + "\0" }
                     else if esc == LOWER_X {
-                        // `\x` needs TWO hex digits, and they must lie inside this segment.
-                        // scan_dq_body only consumes the `\x` pair, so an incomplete escape
-                        // like `"\x"` would otherwise advance twice past seg_end — eating the
-                        // closing quote and lexing on into the next token. Pre-existing (the
-                        // same unguarded pair-advance is in the base compiler, which answers
-                        // `"\x"` with a cascading `unterminated string`); it is fixed here
-                        // rather than carried forward into a path that now has a bound to
-                        // respect.
-                        if self.current + 1 >= seg_end {
-                            self.report(DiagCode.SyntaxError, "incomplete `\\x` escape — expected two hex digits")
-                            self.set_current(Tk.Error, "")
-                            return
-                        }
                         let hp = self.current
                         self.advance_byte()
                         self.advance_byte()

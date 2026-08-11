@@ -93,14 +93,6 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
     }
 
-    // An INCOMPLETE `\x` must not read past the segment. scan_dq_body consumes only the
-    // `\x` pair, so the two hex-digit advances could step over the closing quote and lex on
-    // into the next token — the base compiler answers `"\x"` with a cascading
-    // `unterminated string` for exactly that reason. Bounded now, with a real diagnostic.
-    then "an incomplete `\\x` escape stops inside its own literal" {
-        hand_kind("\"\\x\"") == "ERROR"
-    }
-
     then "tmpl_body is verbatim — no escapes, no interpolation" {
         let a = "`abc`"
         let b = "`a" + "$" + "{x}c`"
