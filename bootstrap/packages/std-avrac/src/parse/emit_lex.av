@@ -398,14 +398,7 @@ fn run_symbol_import_list() -> string {
 
 /// Emit one `scan_<name>(src, start) -> int` for a string-body run.
 fn emit_str_scanner(rule: StrRun) -> string {
-    // The close is `close_rep` CONSECUTIVE bytes. For a triple-quoted body the first two
-    // quotes are ordinary content, so a one-byte test would truncate at the first `"`.
     mut stop = "byte_at(src, end) == " + rule.close
-    if rule.close_rep == 3 {
-        stop = "(byte_at(src, end) == " + rule.close +
-               " && byte_at(src, end + 1) == " + rule.close +
-               " && byte_at(src, end + 2) == " + rule.close + ")"
-    }
     // BOTH bytes of the lead must match. A one-byte test would stop the body at every
     // literal `{`, which is an ordinary character in a string.
     if rule.interp_a != "" {

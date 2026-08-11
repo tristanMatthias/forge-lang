@@ -98,7 +98,7 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         let b = "`a" + "$" + "{x}c`"
         scan_tmpl_body(avra_bytes_from_string(a), 1) == 4 && hand_end(a) == 5 &&
         scan_tmpl_body(avra_bytes_from_string(b), 1) == b.length - 1 && hand_end(b) == b.length &&
-        hand_kind(a) == "TEMPLATE"
+        hand_kind(a) == "TEMPLATE" && hand_kind(b) == "TEMPLATE"
     }
 
     then "raw_body agrees with an independent expectation" {
@@ -113,7 +113,11 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
     // quote, so it walked past the newline to a closing quote on a LATER LINE.
     then "raw_body STOPS at a newline, where the hand reports" {
         let c = "r\"abc\ndef\""
-        scan_raw_body(avra_bytes_from_string(c), 2) == 5 && hand_kind(c) == "ERROR"
+        // hand_end pins where the PRODUCTION lexer resumes — 6, just past the LF it
+        // stopped at. Without it the row cannot tell a correct stop from one that
+        // swallowed the later-line body and then errored anyway.
+        scan_raw_body(avra_bytes_from_string(c), 2) == 5 && hand_kind(c) == "ERROR" &&
+        hand_end(c) == 6
     }
 
     // A char literal is NOT a body run: scan_char_literal reads exactly one codepoint (or
