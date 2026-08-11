@@ -28,7 +28,7 @@
 // agreeing with each other, when one calls the other, is not.
 
 use @std.avrac.features.grammar.{lex_real}
-use @std.avrac.parse.{scan_dq_body, scan_tmpl_body, scan_raw_body, scan_block_comment}
+use @std.avrac.parse.{scan_dq_body, scan_tmpl_body, scan_raw_body, scan_ml_body, scan_raw_ml_body, scan_block_comment}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
 
@@ -132,6 +132,32 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
     // called `'abc'` a 3-byte body; the hand calls it an error.
     then "a char literal is one codepoint — `'abc'` is an error" {
         hand_kind("'abc'") == "ERROR" && hand_kind("'a'") == "NUMBER"
+    }
+
+    // `"""…"""` — close_rep 3. The body may contain ORDINARY quotes, which is exactly what a
+    // one-byte close could not express: it would stop at the first `"` and truncate.
+    then "ml_body stops only at THREE quotes, not at an embedded one" {
+        // `a"b` then the closing triple — the lone quote at offset 1 must not stop it.
+        let c = "a\"b\"\"\""
+        scan_ml_body(avra_bytes_from_string(c), 0) == 3
+    }
+
+    then "ml_body still suspends at an interpolation lead" {
+        let c = "ab" + "$" + "{x}\"\"\""
+        scan_ml_body(avra_bytes_from_string(c), 0) == 2
+    }
+
+    // `r"""…"""` — triple-quoted AND raw: no escapes, no interpolation, spans newlines.
+    then "raw_ml_body is verbatim to the triple close" {
+        let c = "a" + "$" + "{x}\\n\"\"\""
+        scan_raw_ml_body(avra_bytes_from_string(c), 0) == c.length - 3
+    }
+
+    // THE INTERPOLATION FIX. A nested TRIPLE-quoted string inside `${…}` may contain
+    // ordinary quotes; matching the close at one byte consumed the outer delimiter and the
+    // whole literal reported unterminated. Pre-existing — the base compiler still fails this.
+    then "a nested triple-quoted string inside an interpolation keeps the outer literal whole" {
+        hand_kind("\"v " + "$" + "{\"\"\"a\"b\"\"\"} end\"") == "TEMPLATE"
     }
 
     then "block_comment spans the whole nested comment" {
