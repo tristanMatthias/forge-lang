@@ -364,6 +364,19 @@ fn run_symbol_import_list() -> string {
         if sr[m].stop_nl && !run_list_has(syms, "LF") { syms.push("LF") }
         m = m + 1
     }
+    let ir = interp_run_rules()
+    mut q = 0
+    while q < ir.length {
+        if !run_list_has(syms, ir[q].open_a) { syms.push(ir[q].open_a) }
+        if !run_list_has(syms, ir[q].open_b) { syms.push(ir[q].open_b) }
+        if !run_list_has(syms, ir[q].close) { syms.push(ir[q].close) }
+        if ir[q].skip_strings {
+            if !run_list_has(syms, "DQUOTE") { syms.push("DQUOTE") }
+            if !run_list_has(syms, "BACKSLASH") { syms.push("BACKSLASH") }
+            if !run_list_has(syms, ir[q].raw_prefix) { syms.push(ir[q].raw_prefix) }
+        }
+        q = q + 1
+    }
     let nr = nest_run_rules()
     mut q = 0
     while q < nr.length {
@@ -484,6 +497,82 @@ fn emit_nest_scanner(rule: NestRun) -> string {
     "}\n"
 }
 
+fn emit_interp_scanner(rule: InterpRun) -> string {
+    mut skip = ""
+    if rule.skip_strings {
+        // A nested string literal is skipped WHOLE, because a brace inside it is content:
+        // `${"}"}` must not close at that `}`. Both delimiter widths, and escapes consumed
+        // at each — an escaped quote is not a close. A raw nested string (`r"…"`) takes NO
+        // escapes, so it is matched first and skipped without them.
+        skip = "        if byte_at(src, end) == " + rule.raw_prefix + " && byte_at(src, end + 1) == DQUOTE {\n" +
+               "            end = end + 2\n" +
+               "            while byte_at(src, end) != -1 && byte_at(src, end) != DQUOTE { end = end + 1 }\n" +
+               "            if byte_at(src, end) != -1 { end = end + 1 }\n" +
+               "            continue\n" +
+               "        }\n" +
+               "        if byte_at(src, end) == DQUOTE {\n" +
+               "            if byte_at(src, end + 1) == DQUOTE && byte_at(src, end + 2) == DQUOTE {\n" +
+               "                end = end + 3\n" +
+               "                while byte_at(src, end) != -1 {\n" +
+               "                    if byte_at(src, end) == BACKSLASH && byte_at(src, end + 1) != -1 {\n" +
+               "                        end = end + 2\n" +
+               "                        continue\n" +
+               "                    }\n" +
+               "                    if byte_at(src, end) == DQUOTE && byte_at(src, end + 1) == DQUOTE && byte_at(src, end + 2) == DQUOTE {\n" +
+               "                        end = end + 3\n" +
+               "                        break\n" +
+               "                    }\n" +
+               "                    end = end + 1\n" +
+               "                }\n" +
+               "                continue\n" +
+               "            }\n" +
+               "            end = end + 1\n" +
+               "            while byte_at(src, end) != -1 && byte_at(src, end) != DQUOTE {\n" +
+               "                if byte_at(src, end) == BACKSLASH && byte_at(src, end + 1) != -1 {\n" +
+               "                    end = end + 2\n" +
+               "                    continue\n" +
+               "                }\n" +
+               "                end = end + 1\n" +
+               "            }\n" +
+               "            if byte_at(src, end) != -1 { end = end + 1 }\n" +
+               "            continue\n" +
+               "        }\n"
+    }
+    "/// GENERATED interpolation-region scanner for `" + rule.name + "`. `start` is AT the\n" +
+    "/// opening lead; returns the offset PAST the balancing close, or EOF if it never\n" +
+    "/// balances. Depth counts BARE opens, which are not the same bytes as the lead.\n" +
+    "export fn scan_" + rule.name + "(src: bytes, start: int) -> int {\n" +
+    "    mut end = start\n" +
+    "    if byte_at(src, end) == " + rule.open_a + " && byte_at(src, end + 1) == " + rule.open_b + " {\n" +
+    "        end = end + 2\n" +
+    "    }\n" +
+    "    mut depth = 1\n" +
+    "    while byte_at(src, end) != -1 {\n" +
+    skip +
+    "        if byte_at(src, end) == " + rule.depth_open + " { depth = depth + 1 }\n" +
+    "        if byte_at(src, end) == " + rule.close + " {\n" +
+    "            depth = depth - 1\n" +
+    "            if depth == 0 { return end + 1 }\n" +
+    "        }\n" +
+    "        end = end + 1\n" +
+    "    }\n" +
+    "    end\n" +
+    "}\n"
+}
+
+/// The generated interpolation-region bodies — one per interp_run_rules() entry.
+export fn emit_interp_scanner_source() -> string {
+    let rules = interp_run_rules()
+    mut out = ""
+    mut i = 0
+    while i < rules.length {
+        if i > 0 { out = out + "\n" }
+        out = out + emit_interp_scanner(rules[i])
+        i = i + 1
+    }
+    out
+}
+
 /// The generated nesting bodies — one `scan_<name>` per nest_run_rules() entry.
 export fn emit_nest_scanner_source() -> string {
     let rules = nest_run_rules()
@@ -509,5 +598,6 @@ export fn gen_run_scanner_header() -> string {
 /// delimited run bodies.
 export fn gen_run_scanner_file() -> string {
     gen_run_scanner_header() + emit_run_scanner_source() + "\n" + emit_delim_scanner_source() +
-        "\n" + emit_str_scanner_source() + "\n" + emit_nest_scanner_source()
+        "\n" + emit_str_scanner_source() + "\n" + emit_nest_scanner_source() +
+        "\n" + emit_interp_scanner_source()
 }

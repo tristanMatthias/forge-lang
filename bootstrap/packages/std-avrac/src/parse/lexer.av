@@ -7,7 +7,7 @@ use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
-use parse.{scan_operator, classify_keyword, scan_dq_body, scan_ml_body, scan_raw_ml_body, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, scan_raw_body, scan_tmpl_body, scan_block_comment, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
+use parse.{scan_operator, classify_keyword, scan_dq_body, scan_ml_body, scan_raw_ml_body, scan_interp_region, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, scan_raw_body, scan_tmpl_body, scan_block_comment, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
 use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
@@ -174,42 +174,6 @@ impl Parser {
     // silently drift line/column for every token after the string. This walks the span so
     // the LF accounting is exactly advance_byte's, while the BOUND still comes from the
     // generated scanner — which is the part of the flip that matters.
-    // Skip a nested string literal inside a `${…}` region, at EITHER delimiter width.
-    //
-    // A triple-quoted body may contain ordinary `"` bytes — `${"""a"b"""}` is valid — so the
-    // close has to be matched at the width it OPENED with. Treating every quote as a
-    // one-byte delimiter (what both interpolation regions used to do) consumes the two
-    // opening quotes separately, stops at the embedded `"`, and then eats the outer closing
-    // delimiter, so the whole literal reports `unterminated string`. Pre-existing; the
-    // interpolation region is shared by `"…"` and `"""…"""` alike, so the fix belongs here
-    // once rather than in each caller.
-    fn skip_nested_string(self) {
-        let sb = self.source_bytes
-        if byte_at(sb, self.current + 1) == DQUOTE && byte_at(sb, self.current + 2) == DQUOTE {
-            self.advance_byte()
-            self.advance_byte()
-            self.advance_byte()
-            while !self.is_at_end() {
-                if byte_at(sb, self.current) == DQUOTE
-                    && byte_at(sb, self.current + 1) == DQUOTE
-                    && byte_at(sb, self.current + 2) == DQUOTE {
-                    self.advance_byte()
-                    self.advance_byte()
-                    self.advance_byte()
-                    return
-                }
-                self.advance_byte()
-            }
-            return
-        }
-        self.advance_byte()
-        while !self.is_at_end() && byte_at(sb, self.current) != DQUOTE {
-            if byte_at(sb, self.current) == BACKSLASH { self.advance_byte() }
-            if !self.is_at_end() { self.advance_byte() }
-        }
-        if !self.is_at_end() { self.advance_byte() }
-    }
-
     fn take_run_nl(self, end: int) {
         while self.current < end {
             let b = byte_at(self.source_bytes, self.current)
@@ -527,17 +491,11 @@ impl Parser {
             self.advance_byte()
             self.advance_byte()
             run_start = self.current
-            mut brace_depth = 1
-            while brace_depth > 0 && !self.is_at_end() {
-                let ib = byte_at(sb, self.current)
-                if ib == DQUOTE {
-                    self.skip_nested_string()
-                    continue
-                }
-                if ib == LBRACE { brace_depth = brace_depth + 1 }
-                if ib == RBRACE { brace_depth = brace_depth - 1 }
-                self.advance_byte()
-            }
+            // The region's extent comes from the generated scan_interp_region: balanced
+            // braces with nested string literals skipped whole, at either delimiter width
+            // and with escapes consumed. The bytes are copied VERBATIM by the next flush,
+            // so only the extent is needed here.
+            self.take_run_nl(scan_interp_region(sb, self.current - 2))
         }
 
         if self.is_at_end() {
@@ -632,17 +590,11 @@ impl Parser {
             self.advance_byte()
             self.advance_byte()
             run_start = self.current
-            mut brace_depth = 1
-            while brace_depth > 0 && !self.is_at_end() {
-                let ib = byte_at(sb, self.current)
-                if ib == DQUOTE {
-                    self.skip_nested_string()
-                    continue
-                }
-                if ib == LBRACE { brace_depth = brace_depth + 1 }
-                if ib == RBRACE { brace_depth = brace_depth - 1 }
-                self.advance_byte()
-            }
+            // The region's extent comes from the generated scan_interp_region: balanced
+            // braces with nested string literals skipped whole, at either delimiter width
+            // and with escapes consumed. The bytes are copied VERBATIM by the next flush,
+            // so only the extent is needed here.
+            self.take_run_nl(scan_interp_region(sb, self.current - 2))
         }
         self.report(DiagCode.UnterminatedString, "unterminated multiline string (missing closing \"\"\")")
         self.set_current(Tk.Error, "")

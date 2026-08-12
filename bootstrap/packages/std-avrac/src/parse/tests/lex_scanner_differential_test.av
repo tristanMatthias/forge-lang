@@ -28,7 +28,7 @@
 // agreeing with each other, when one calls the other, is not.
 
 use @std.avrac.features.grammar.{lex_real}
-use @std.avrac.parse.{scan_dq_body, scan_tmpl_body, scan_raw_body, scan_ml_body, scan_raw_ml_body, scan_block_comment}
+use @std.avrac.parse.{scan_dq_body, scan_tmpl_body, scan_raw_body, scan_ml_body, scan_raw_ml_body, scan_block_comment, scan_interp_region}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
 
@@ -181,6 +181,35 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
     then "an escaped quote inside a multiline body does not close it" {
         let c = "\"\"\"a\\\"\"\"\""
         hand_kind(c) == "STRING" && hand_end(c) == c.length
+    }
+
+    // scan_interp_region owns the `${…}` extent now. `start` is AT the `${`; the returned
+    // end is PAST the balancing `}`. Depth counts BARE braces, and nested string literals
+    // are skipped WHOLE — a brace inside one is content, not a close.
+    then "interp_region balances bare braces" {
+        // `$`0 `{`1 `a`2 `{`3 `b`4 `}`5 `c`6 `}`7 — the balancing brace is at 7, so PAST it is 8.
+        let c = "$" + "{a{b}c}rest"
+        scan_interp_region(avra_bytes_from_string(c), 0) == 8
+    }
+
+    then "a brace inside a nested string is content, not a close" {
+        // Without literal-skipping this stops at the `}` INSIDE the quotes, at offset 4.
+        let c = "$" + "{\"}\"}rest"
+        scan_interp_region(avra_bytes_from_string(c), 0) == 6
+    }
+
+    // t-4im8 case 2: a RAW nested string takes no escapes. Treating its trailing `\` as an
+    // escape swallowed the closing quote and ran the region on to EOF.
+    then "a raw nested string takes no escapes" {
+        let c = "$" + "{r\"a\\\"}rest"
+        scan_interp_region(avra_bytes_from_string(c), 0) == 8
+    }
+
+    // t-4im8 case 1: an escaped quote inside a nested TRIPLE-quoted string is not a close.
+    then "escapes are consumed inside a nested triple-quoted string" {
+        // `${`->2, `"""` opens->5, `a`->6, `\"` escape pair->8, `"""` closes->11, `}` at 11 -> 12.
+        let c = "$" + "{\"\"\"a\\\"\"\"\"}rest"
+        scan_interp_region(avra_bytes_from_string(c), 0) == 12
     }
 
     then "block_comment spans the whole nested comment" {

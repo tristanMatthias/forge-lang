@@ -305,6 +305,38 @@ export type NestRun = { name: string, open_a: string, open_b: string, close_a: s
 /// The nesting runs, compiled to `scan_<name>(src, start) -> int`. The returned end is
 /// AFTER the balancing close (inclusive), because unlike the other runs there is nothing
 /// useful for the caller to inspect at the stop byte — an unbalanced comment runs to EOF.
+/// An INTERPOLATION region — `${ … }` inside a string body. It is not a body run and not a
+/// NestRun, and the three ways it differs are exactly why it stayed hand-written until now:
+///
+///   - the open is TWO bytes (`${`) and the close is ONE (`}`). NestRun's are both two.
+///   - depth counts on BARE `{` / `}`, which are different bytes from the open pair.
+///     NestRun counts its own open/close sequences.
+///   - it must SKIP nested string literals whole, at either delimiter width, because a
+///     brace inside one is content — `${"}"}` must not close at that `}`. NestRun has no
+///     notion of a nested literal.
+///
+/// `skip_strings` turns that last part on. `raw_prefix` names the byte that marks a raw
+/// nested string (`r"…"`), which takes no escapes — without it a raw nested string gets
+/// escape handling applied to it and mis-scans.
+export type InterpRun = {
+    name: string,
+    open_a: string, open_b: string,
+    close: string,
+    depth_open: string,
+    skip_strings: bool,
+    raw_prefix: string
+}
+
+/// The interpolation regions, compiled to `scan_<name>(src, start) -> int`. `start` is AT
+/// the opening `${`; the returned end is AFTER the balancing `}`, or EOF if it never
+/// balances — the NestRun convention, since there is nothing useful at the stop byte.
+export fn interp_run_rules() -> List<InterpRun> {
+    [
+        InterpRun { name: "interp_region", open_a: "DOLLAR", open_b: "LBRACE", close: "RBRACE",
+                    depth_open: "LBRACE", skip_strings: true, raw_prefix: "LOWER_R" },
+    ]
+}
+
 export fn nest_run_rules() -> List<NestRun> {
     [
         NestRun { name: "block_comment", open_a: "SLASH", open_b: "STAR", close_a: "STAR", close_b: "SLASH" },
