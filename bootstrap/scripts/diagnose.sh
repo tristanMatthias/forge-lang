@@ -957,6 +957,93 @@ seed_lock_field() {
 # Every failure RETURNS non-zero (with the reason on stderr) instead
 # of die-ing: callers decide severity — the build path aborts, while
 # --seed-merge falls through to its next candidate seed.
+# Retry flags for every seed fetch, as a word-split string.
+#
+# --retry-all-errors is curl >= 7.71. An older curl (macOS still ships 7.64)
+# treats it as an unknown option and exits 2 BEFORE making a request, which
+# would look exactly like a dead URL and route every fetch down the fallback.
+# Probe once per process and memoize.
+SEED_CURL_RETRY=""
+seed_curl_retry() {
+  if [ -z "$SEED_CURL_RETRY" ]; then
+    if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+      SEED_CURL_RETRY="--retry 5 --retry-all-errors --retry-delay 2"
+    else
+      SEED_CURL_RETRY="--retry 5 --retry-delay 2"
+    fi
+  fi
+  printf '%s' "$SEED_CURL_RETRY"
+}
+
+# Secondary route to a pinned release artifact: the GitHub REST API.
+#
+# `releases/download/…` is served by release-assets.githubusercontent.com,
+# a DIFFERENT edge from api.github.com — and it fails independently of the
+# release being healthy. Measured 2026-08-12: for ~an hour every CI job died
+# here on `503` then `curl (56) connection died`, while the same URL served
+# 200 / 7462300 bytes from a dev box and the API handed back byte-identical
+# content. A pinned toolchain that a single CDN edge can halt is not pinned.
+#
+# Eligibility is by URL SHAPE, so a lock pointing at any other host produces
+# no request at all. The token (when present) goes ONLY to the API host this
+# function builds itself — never to the lock's URL — so the "no credentials
+# to lock-controlled hosts" rule at the call site is preserved. Integrity is
+# unchanged: the caller still verifies the sha256 pin over whatever arrives.
+#
+# AVRA_SEED_API_BASE is the test seam: with it set, any */releases/download/*
+# URL is eligible, which lets the spec drive this whole path from file://
+# URLs and keeps the suite hermetic.
+seed_fetch_via_api() {
+  local url="$1" out="$2"
+  command -v jq >/dev/null 2>&1 || return 1
+
+  local api="${AVRA_SEED_API_BASE:-}"
+  if [ -n "$api" ]; then
+    case "$url" in */releases/download/*) ;; *) return 1 ;; esac
+  else
+    api="https://api.github.com"
+    case "$url" in https://github.com/*/releases/download/*) ;; *) return 1 ;; esac
+  fi
+
+  # <base>/<owner>/<repo>/releases/download/<tag>/<file>. The tag itself
+  # contains a slash (`seed/v534`), so the FILE is the last component and
+  # everything between `download/` and it is the tag.
+  local before="${url%%/releases/download/*}"
+  local repo_part="${before##*/}"
+  local owner_head="${before%/*}"
+  local owner_part="${owner_head##*/}"
+  local tail_part="${url#*/releases/download/}"
+  local file="${tail_part##*/}"
+  local tag="${tail_part%/*}"
+  [ -n "$owner_part" ] && [ -n "$repo_part" ] && [ -n "$tag" ] && [ -n "$file" ] \
+    || return 1
+
+  local auth=()
+  local tok="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+  [ -n "$tok" ] && auth=(-H "Authorization: Bearer $tok")
+
+  warn "primary seed URL failed — retrying the same artifact via the GitHub API"
+  local retry=""
+  case "$api" in http://*|https://*) retry=$(seed_curl_retry) ;; esac
+  local meta
+  # shellcheck disable=SC2086  # word-splitting the retry flags is intended
+  meta=$(curl -fsSL $retry --connect-timeout 15 --max-time 60 \
+              ${auth[@]+"${auth[@]}"} \
+              "$api/repos/$owner_part/$repo_part/releases/tags/$tag" 2>/dev/null) \
+    || return 1
+  local asset
+  asset=$(printf '%s' "$meta" \
+            | jq -r --arg n "$file" '.assets[]? | select(.name == $n) | .url' \
+            | head -1)
+  [ -n "$asset" ] && [ "$asset" != "null" ] || return 1
+  local asset_retry=""
+  case "$asset" in http://*|https://*) asset_retry=$(seed_curl_retry) ;; esac
+  # shellcheck disable=SC2086  # word-splitting the retry flags is intended
+  curl -fsSL $asset_retry --connect-timeout 15 --max-time 600 \
+       -H "Accept: application/octet-stream" ${auth[@]+"${auth[@]}"} \
+       -o "$out" "$asset"
+}
+
 fetch_seed_from_lock() {
   [ $# -eq 2 ] || die "usage: fetch_seed_from_lock <lockfile> <dest.ll>"
   local lock="$1" dest="$2"
@@ -1001,7 +1088,19 @@ fetch_seed_from_lock() {
     # file, and shipping a credential to an attacker-controlled host is
     # how tokens leak. Release assets on this (public) repo download
     # anonymously; integrity comes from the sha256 pin, not the channel.
-    if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 600 -o "$gz" "$url"; then
+    # --retry-all-errors because the observed CDN failure alternates between
+    # a 5xx (which bare --retry covers) and a dropped connection mid-transfer
+    # (which it does not) — retrying only half of a flapping edge is the same
+    # as not retrying it.
+    # Retries are for a flapping NETWORK. A file:// path that cannot be
+    # opened will not open on the fifth try, and retrying it would put ten
+    # seconds into every dead-URL case in the spec.
+    local retry=""
+    case "$url" in http://*|https://*) retry=$(seed_curl_retry) ;; esac
+    # shellcheck disable=SC2086  # word-splitting the retry flags is intended
+    if ! curl -fsSL $retry \
+              --connect-timeout 15 --max-time 600 -o "$gz" "$url" \
+       && ! seed_fetch_via_api "$url" "$gz"; then
       rm -f "$gz"
       err "seed fetch failed: $url"
       err "Offline? A previously materialized seed/seed.ll keeps working; otherwise"
