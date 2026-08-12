@@ -514,25 +514,6 @@ fn expr_is_upper_ident(e: Expr) -> bool {
     }
 }
 
-/// Convert a list of Ident expressions into a `List<ParamEntry>` (for lambda
-/// parsing). `(x, y) -> ...` parses the parens as expressions first,
-/// then reinterprets the Ident names as parameter names once `->`
-/// is seen.
-fn exprs_to_params(store: NodeStore, ids: List<ExprId>) -> List<ParamEntry> {
-    mut out: List<ParamEntry> = []
-    for id in ids {
-        let name = match store.exprs.get(id) {
-            .Ident(n) -> n
-            .QualifiedIdent(n) -> n
-            _ -> "_"
-        }
-        // No type syntax exists in this position (the typed-lambda path goes
-        // through parse_param_list) — no type was written, so no row backs it.
-        out.push(ParamEntry { name: name, vtype: ValueType.Unknown, ty_id: none })
-    }
-    out
-}
-
 /// True iff `expr` is something that could syntactically be the
 /// callee of `expr(args)` — bare ident, qualified ident, or a field
 /// access (method call). Used by the postfix-call gate.
@@ -2231,26 +2212,6 @@ impl Parser {
         }
     }
 
-
-    fn parse_tuple_rest(self) -> Result<ArgListIds, string> {
-        // After the first comma in a tuple. Parse remaining elements.
-        mut ids: List<ExprId> = []
-        mut keep_going = true
-        while keep_going {
-            if self.check(Tk.RightParen) {
-                keep_going = false
-            } else {
-                let eid = self.parse_expression()?
-                ids.push(eid)
-                if self.check(Tk.Comma) {
-                    self.advance()
-                } else {
-                    keep_going = false
-                }
-            }
-        }
-        .Ok(ArgListIds { ids: ids })
-    }
 
     fn parse_block_expression(self) -> Result<ExprId, string> {
         let sp_start = self.current_start
