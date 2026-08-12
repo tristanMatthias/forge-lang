@@ -3032,13 +3032,11 @@ fn hand_first_guard(hf: string) -> string {
     // DORMANT (no live grammar references @hand(lambda_body), so unemitted today).
     if hf == "lambda_body" { return "tok_starts_expr_leaf(st.cur())" }
     if hf == "lambda_block_body" { return tk_guard("{") }
-    // ps3t.6.7 Phase 2 — the whole-statement / whole-declaration dispatch FIRST
-    // sets, mirroring executor.hand_starts("stmt_hand" / "decl_hand") exactly so
-    // the generated static parser routes to run_hand_stmt on the same tokens the
-    // interpreter flip does (byte-identical dispatch).
-    if hf == "stmt_hand" {
-        return "st.cur().text == \"{\" || st.cur().text == \"if\" || st.cur().text == \"while\" || st.cur().text == \"return\""
-    }
+    // ps3t.6.7 Phase 2 — the whole-declaration dispatch FIRST set, mirroring
+    // executor.hand_starts("decl_hand") exactly so the generated static parser
+    // routes to run_hand_stmt on the same tokens the interpreter flip does
+    // (byte-identical dispatch). The `stmt_hand` twin went with its leaf in
+    // t-47hc.37 — no grammar referenced it, and the parser it named is deleted.
     if hf == "decl_hand" {
         return "st.cur().kind == \"IDENT\" || st.cur().kind == \"DOC\" || st.cur().kind == \"MODDOC\" || st.cur().text == \"@\" || st.cur().text == \"export\" || st.cur().text == \"fn\" || st.cur().text == \"type\" || st.cur().text == \"enum\" || st.cur().text == \"trait\" || st.cur().text == \"impl\" || st.cur().text == \"use\" || st.cur().text == \"mod\" || st.cur().text == \"const\" || st.cur().text == \"let\" || st.cur().text == \"mut\" || st.cur().text == \"extern\" || st.cur().text == \"shape\" || st.cur().text == \"spec\" || st.cur().text == \"parallel\" || st.cur().text == \"select\" || st.cur().text == \"component\""
     }

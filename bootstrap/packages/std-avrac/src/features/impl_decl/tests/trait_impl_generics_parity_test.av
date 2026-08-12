@@ -101,7 +101,6 @@ fn hand_only_program(src: string) -> string {
     p.type_static = false
     p.pat_flip = false
     p.pat_static = false
-    p.stmt_flip = false
     p.expr_flip = false
     let r = p.parse_file_program()
     if r.had_error != 0 { return "<hand parse error>" }

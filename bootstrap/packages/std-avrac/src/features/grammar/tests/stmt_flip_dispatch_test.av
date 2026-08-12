@@ -1,56 +1,95 @@
-// ps3t.6.7 Step G slice 4 — the STATEMENT-family FLIP dispatch
-// (parse_statement → grammar-DSL run_dsl_stmt_at_shared).
+// ps3t.6.7 Step G slice 4 / t-47hc.37 — the STATEMENT-family ENGINE differential.
 //
-// parse_statement routes through run_dsl_stmt_at_shared (the inverse-@hand
-// statement runner over avra_stmt_flip_grammar's `statement` rule) when the
-// parser's `stmt_flip` field is set, falling back to the hand parser
-// (parse_statement_hand) on a DSL error. The field is read once from
-// AVRA_PARSER_STMT_FLIP at construction but is a plain `mut bool` a test can set
-// directly — exercising the flip path with no process-env dependency (the
-// full-selfhost flip proof is memory-heavy and lives in the promotion step; this
-// pins the dispatch + fallback wiring + the break/continue/native-match/
-// @hand(stmt_hand)/expr_stmt routing).
+// `parse_statement` is UNCONDITIONAL now: it runs the statement grammar through
+// run_dsl_stmt_at_shared (the tree INTERPRETER over avra_stmt_flip_grammar's
+// `statement` rule) and owns its own recovery. The `stmt_flip` field and the hand
+// dispatcher `parse_statement_hand` it used to fall through to are both DELETED.
 //
-// Parity = same tree AND same accept/reject: for every VALID statement form the
-// flip path (DSL) and the hand path (parse_statement_hand — called explicitly so
-// it stays a real hand baseline under an eventual promoted default) build the
-// same Stmt; for INVALID forms both must REJECT. flip_stmt/hand_stmt return the
-// SAME "<err>" sentinel on a parse error, so a mutual rejection is agreement.
-// Both sides render through the same TOTAL render_stmt_id, so equal trees ⇒
-// equal strings regardless of the renderer's format (no golden strings).
+// WHICH TWO ENGINES THIS COMPARES, because the answer is not obvious and getting it
+// wrong makes the file vacuous:
+//
+//   INTERPRETER — `parse_statement`, above.
+//   GENERATED   — `parse_declaration` driving the CHECKED-IN static parser. The
+//                 statement rules ARE generated: avra_decl_dispatch_grammar composes
+//                 avra_stmt_dispatch_grammar into the declaration one, so they are
+//                 emitted into parse/gen_decl_parser.av (parse_statement at :3467,
+//                 called 6x) and `declaration` carries a `statement` tail. A bare
+//                 statement therefore reaches the generated statement rules through
+//                 the declaration entry. There is no separate gen_stmt_parser.av file
+//                 — which is a packaging fact, not an absence of an implementation,
+//                 and mistaking the two is what t-47hc.37's retracted first draft did.
+//
+// Parity = same tree AND same accept/reject: for every VALID statement form both
+// engines build the same Stmt; for INVALID forms both must REJECT. Both helpers
+// return the SAME "<err>" sentinel, so a mutual rejection is agreement, and both
+// render through the same TOTAL render_stmt_id, so equal trees ⇒ equal strings (no
+// golden strings).
+//
+// ONE ASYMMETRY, deliberate and asserted below rather than papered over: `let` is a
+// DECLARATION in this grammar (`--parser-frontier` reports it native), so
+// `parse_statement` declines it while the declaration entry accepts it. That is the
+// two entries having different jobs, not the two engines disagreeing.
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id}
 
+/// The INTERPRETER engine, through the statement entry.
+///
+/// `.Ok` is NOT the same question as "parsed cleanly". Both entries distinguish a
+/// whole-item failure (`.Err`) from an already-recovered BODY error, so a partial
+/// tree can come back `.Ok` with `had_error` set — and rendering it would let the
+/// parity helpers below compare two RECOVERIES and call it agreement. Raised in
+/// review on PR #1221.
 fn flip_stmt(src: string) -> string {
     mut p = parser_new(src)
-    p.stmt_flip = true
     match p.parse_statement() {
-        .Ok(id) -> render_stmt_id(p.store, id)
+        .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }
 
-fn hand_stmt(src: string) -> string {
+/// The GENERATED engine, through the declaration entry (whose `statement` tail
+/// reaches the generated statement rules). `decl_static` is pinned rather than left
+/// ambient — an ambient flag would let this collapse onto the interpreter and the
+/// whole file would compare a path against itself.
+fn gen_stmt(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_statement_hand() {
-        .Ok(id) -> render_stmt_id(p.store, id)
+    p.decl_static = true
+    match p.parse_declaration() {
+        .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }
 
+/// Valid-form parity: both engines must PARSE and render the SAME Stmt. Bare equality
+/// would pass on a mutual `<err>` — which is how a valid-form group goes vacuous without
+/// a single assertion changing. Raised in review on PR #1221.
 fn agree(src: string) -> bool {
-    flip_stmt(src) == hand_stmt(src)
+    let flip = flip_stmt(src)
+    flip != "<err>" && flip == gen_stmt(src)
 }
 
-spec "ps3t.6.7 G.4: parse_statement flip dispatch == hand path (stmt_flip field)" {
-    given "the field toggles the path (sanity: flip really took the DSL branch)" {
-        then "flip builds a real tree and agrees with hand for a representative form" {
+/// Reject parity: both engines must return the SHARED sentinel.
+fn both_reject(src: string) -> bool {
+    flip_stmt(src) == "<err>" && gen_stmt(src) == "<err>"
+}
+
+spec "t-47hc.37: parse_statement (interpreter) == the generated statement rules" {
+    given "both engines really run (sanity: neither side is an error node)" {
+        then "a representative form builds a real tree on both" {
             flip_stmt("if x { break }") != "<err>" &&
-            flip_stmt("if x { break }") == hand_stmt("if x { break }")
+            gen_stmt("if x { break }") != "<err>" &&
+            flip_stmt("if x { break }") == gen_stmt("if x { break }")
+        }
+    }
+    // The asymmetry named in the header, PINNED so it cannot drift into a silent
+    // divergence: `let` belongs to the declaration entry, not the statement one.
+    given "`let` is a declaration, so the two ENTRIES differ (not the two engines)" {
+        then "parse_statement declines it and parse_declaration accepts it" {
+            flip_stmt("let x = 1") == "<err>" && gen_stmt("let x = 1") != "<err>"
         }
     }
     given "the DSL-native leaves (break / continue)" {
-        then "each agrees with hand" {
+        then "each agrees across engines" {
             agree("break") && agree("continue")
         }
     }
@@ -73,13 +112,20 @@ spec "ps3t.6.7 G.4: parse_statement flip dispatch == hand path (stmt_flip field)
             agree("match { ok -> a\n _ -> b }")
         }
     }
-    given "forms outside the native statement set (let/mut/const are DECL keywords)" {
-        // let/mut/const dispatch through parse_declaration, not parse_statement,
-        // so at parse_statement position they take the expr_stmt / hand-fallback
-        // path. The point is only that the flip and the hand path AGREE on them —
-        // whichever path each ends up on, the outcome is identical.
-        then "each still agrees between flip and hand" {
-            agree("let x = 1") && agree("mut y = 2") && agree("const Z = 3")
+    given "let / mut / const are DECLARATION keywords — the ENTRIES differ, not the engines" {
+        // This used to assert `agree(…)` on all three, on the reasoning that "whichever
+        // path each ends up on, the outcome is identical". That held while the second
+        // helper was `parse_statement_hand`, which shares parse_statement's entry and so
+        // declined them too. It does NOT hold against the DECLARATION entry, which owns
+        // these keywords natively (`--parser-frontier`: let / const native). Asserting
+        // agreement here would now be asserting that two entries with different jobs
+        // answer the same, and the honest form is to pin the split.
+        // `let` is pinned in its own `given` above, so this row carries the two the
+        // group name promises and the earlier one does not — `mut` was named here and
+        // never tested until review caught it.
+        then "parse_statement declines each and parse_declaration accepts each" {
+            flip_stmt("mut y = 2") == "<err>" && gen_stmt("mut y = 2") != "<err>" &&
+            flip_stmt("const Z = 3") == "<err>" && gen_stmt("const Z = 3") != "<err>"
         }
     }
     given "native lookahead-gated blocks and brace-expression fallback" {
@@ -95,7 +141,7 @@ spec "ps3t.6.7 G.4: parse_statement flip dispatch == hand path (stmt_flip field)
     }
     given "reject parity: both parsers reject the same malformed statement" {
         then "a dangling operator rejects on both" {
-            flip_stmt("= 5") == "<err>" && hand_stmt("= 5") == "<err>"
+            both_reject("= 5")
         }
     }
 }

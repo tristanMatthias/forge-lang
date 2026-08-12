@@ -48,7 +48,11 @@ fn known_stmt_leaves() -> List<string> {
     // delegate (`parse_declaration_hand`) no longer exists, so it resolves to nothing and
     // asserting it "resolves in the statement half" could only ever fail. The list is the
     // registry's contract, so a retired leaf leaves it rather than being special-cased.
-    ["component_decl", "let_stmt", "return_stmt", "match_table", "stmt_hand"]
+    // t-47hc.37 — `stmt_hand` retired with `parse_statement_hand`. No grammar
+    // referenced it, and the list is the registry's contract, so it leaves rather
+    // than being special-cased (a retired leaf left here force-unwraps to null and
+    // ABORTS the spec, which the runner reports as "crashed", not "failed").
+    ["component_decl", "let_stmt", "return_stmt", "match_table"]
 }
 
 fn run_render(input: string) -> string {
@@ -72,12 +76,13 @@ spec "t-47hc.7: a hand leaf's delegate is a FREE FUNCTION VALUE over the parse s
     then "a statement delegate binds to `fn(Parser) -> Result<StmtId, string>`" {
         // t-47hc.5 — was `decl_hand`, which is DELETED; `hand_stmt_leaf` answers null for
         // it now and the `!` below aborted the spec (SIGABRT, not a failure — which is how
-        // it survived a standalone run reporting "14/14 passed, 1 crashed").
-        // `stmt_hand` is the same class and still registered, so the seam property this
-        // pins — a delegate is a VALUE, bindable to an explicit fn type — is unchanged.
-        let leaf = hand_stmt_leaf("stmt_hand")
+        // it survived a standalone run reporting "14/14 passed, 1 crashed"). It then moved
+        // to `stmt_hand`, which t-47hc.37 retired for the same reason. `let_stmt` is the
+        // same class and still registered, so the seam property this pins — a delegate is
+        // a VALUE, bindable to an explicit fn type — is unchanged.
+        let leaf = hand_stmt_leaf("let_stmt")
         let run: fn(Parser) -> Result<StmtId, string> = leaf!.run
-        leaf!.name == "stmt_hand" && run == leaf!.run
+        leaf!.name == "let_stmt" && run == leaf!.run
     }
     then "each leaf record reports its OWN name (the lookup key round-trips)" {
         mut ok = true
@@ -164,8 +169,22 @@ spec "t-sjf9: the emitter's CapVal kind agrees with the dispatcher's class" {
         }
         ok
     }
-    then "`stmt_hand` — the leaf the omitted entry got wrong — is a statement to both" {
-        is_hand_stmt_leaf("stmt_hand") && hand_kind("stmt_hand") == "stmt"
+    // Raised in review on PR #1221, TWICE, and the second round is the useful one.
+    // A row asserting `let_stmt` here could not fail — the loop above already walks
+    // every entry of known_stmt_leaves() with the same predicate — so it was repointed
+    // at an unknown name and titled "neither class to EITHER consumer". That title was
+    // wrong about `hand_kind`, which is `if is_hand_stmt_leaf(hf) { "stmt" } else
+    // { "expr" }`: it is a two-way SPLIT with `expr` as its DEFAULT, not a validator,
+    // so an unregistered name comes back "expr" and `!= "stmt"` passes trivially.
+    // Replacing one vacuous row with another is the failure this file exists to catch.
+    //
+    // The closed-world question therefore belongs to the MEMBERSHIP predicates, which
+    // do answer it, and hand_kind's own contract here is the default. Both halves can
+    // fail: a catch-all in either table breaks the first, a third answer or a flipped
+    // default breaks the second.
+    then "an unknown name is in NEITHER leaf table, and hand_kind defaults it to expr" {
+        !is_hand_stmt_leaf("no_such_leaf") && !is_hand_expr_leaf("no_such_leaf")
+            && hand_kind("no_such_leaf") == "expr"
     }
 }
 

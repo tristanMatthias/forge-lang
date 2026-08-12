@@ -1,37 +1,51 @@
-// t-47hc.13 S1 — grammar-native `while` on the PRODUCTION stmt-flip path.
+// t-47hc.13 S1 — grammar-native `while`, as an ENGINE differential.
 //
-// while_stmt = "while" @off(allow_struct_lit) c:expression body:@hand(stmt_hand)
+// while_stmt = "while" @off(allow_struct_lit) c:expression body:braced_block
 //              -> While(c, body)
 //
-// Differential parity (the stmt_flip_dispatch_test pattern): for every while form
-// the FLIP path (p.stmt_flip=true → run_dsl_stmt_at_shared over avra_stmt_flip_grammar,
-// now with while_stmt) and the HAND path (parse_statement_hand → parse_while_statement)
-// must build the SAME Stmt, rendered through the TOTAL render_stmt_id (no golden
-// strings). The make-or-break case is `while foo { }`: the hand parser sets
-// allow_struct_lit=false in the condition, so `foo` is a bare ident and `{ }` is the
-// body — NOT a struct literal `foo {}`. @off(allow_struct_lit) must reproduce that
-// through the expression's @hand(brace_expr) delegate, or the two diverge.
+// THIS FILE WAS VACUOUS AND IS FIXED HERE (t-47hc.37). Its header described a FLIP
+// path vs a HAND path, and its `hand_stmt` helper had at some point been rewritten to
+// call `parse_statement()` — the same method `flip_stmt` calls. The two differed only
+// by `p.stmt_flip = true` on one side, and once `parse_statement` stopped branching on
+// that field they were character-for-character the same parse. Every assertion below
+// would have compared a path against itself and passed by construction: exactly the
+// class the loop rules exist to police, arriving by a helper edit rather than by design.
+//
+// It now compares the INTERPRETER (`parse_statement`) against the GENERATED statement
+// rules (reached through `parse_declaration`, whose `statement` tail routes into them —
+// they live in parse/gen_decl_parser.av because the declaration grammar composes the
+// statement one). Two engines, one grammar.
+//
+// The make-or-break case is still `while foo { }`: the condition parses with
+// allow_struct_lit=false, so `foo` is a bare ident and `{ }` is the body — NOT a struct
+// literal `foo {}`. @off(allow_struct_lit) must reproduce that through the expression's
+// brace handling, or the two engines diverge.
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id}
 
+/// `.Ok` is NOT "parsed cleanly": both entries hand back a RECOVERED partial tree
+/// as `.Ok` with `had_error` set, and rendering that would let `agree_ok` below
+/// compare two recoveries and call it agreement. Raised in review on PR #1221.
 fn flip_stmt(src: string) -> string {
     mut p = parser_new(src)
-    p.stmt_flip = true
     match p.parse_statement() {
-        .Ok(id) -> render_stmt_id(p.store, id)
+        .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }
 
-fn hand_stmt(src: string) -> string {
+/// The GENERATED engine, through the declaration entry. `decl_static` pinned, not
+/// ambient — an ambient flag is how this file went vacuous the first time.
+fn gen_stmt(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_statement() {
-        .Ok(id) -> render_stmt_id(p.store, id)
+    p.decl_static = true
+    match p.parse_declaration() {
+        .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }
 
-// A plain equality check (`flip_stmt(src) == hand_stmt(src)`) is too weak for the
+// A plain equality check (`flip_stmt(src) == gen_stmt(src)`) is too weak for the
 // two spec KINDS below: it returns true when BOTH paths reject (both `<err>`), so
 // a valid-form spec would pass even if both paths spuriously errored, and a
 // body-gate spec would pass even if both spuriously ACCEPTED. So valid-form specs
@@ -40,15 +54,15 @@ fn hand_stmt(src: string) -> string {
 // enforces its stated outcome, not just mutual equality.
 fn agree_ok(src: string) -> bool {
     let flip = flip_stmt(src)
-    let hand = hand_stmt(src)
-    flip != "<err>" && flip == hand
+    let gen = gen_stmt(src)
+    flip != "<err>" && flip == gen
 }
 
 fn both_reject(src: string) -> bool {
-    flip_stmt(src) == "<err>" && hand_stmt(src) == "<err>"
+    flip_stmt(src) == "<err>" && gen_stmt(src) == "<err>"
 }
 
-spec "t-47hc.13 S1: grammar-native `while` == hand parse_while_statement (stmt-flip)" {
+spec "t-47hc.13 S1: grammar-native `while` interpreter == generated statement rules" {
     then "plain while forms agree (basic wiring)" {
         agree_ok("while 1 { break }") &&
         agree_ok("while 1 < 2 { continue }") &&
@@ -72,7 +86,7 @@ spec "t-47hc.13 S1: grammar-native `while` == hand parse_while_statement (stmt-f
 // The grammar-native `block = "{" statement* "}"` rule (replacing @hand(braced_body))
 // must build the SAME Stmt.Block as the hand parser for DIVERSE inner statements —
 // the inner `statement*` dispatches each through the same grammar (feature/hand forms
-// via @hand(stmt_hand)), incl. a nested `{` resolved by is_stmt_map_literal.
+// via the statement rule), incl. a nested `{` resolved by is_stmt_map_literal.
 spec "t-47hc.13: grammar-native block body — inner statement variety agrees" {
     then "let / multi-statement / empty / nested bodies build identically" {
         agree_ok("while 1 { let x = 1 }") &&
@@ -85,7 +99,7 @@ spec "t-47hc.13: grammar-native block body — inner statement variety agrees" {
     }
 }
 
-spec "t-47hc.13 S1: grammar-native `if` == hand parse_if_statement (stmt-flip)" {
+spec "t-47hc.13 S1: grammar-native `if` interpreter == generated statement rules" {
     then "if without else, with else, else-if chains" {
         agree_ok("if 1 { break }") &&
         agree_ok("if 1 { break } else { continue }") &&
@@ -100,7 +114,7 @@ spec "t-47hc.13 S1: grammar-native `if` == hand parse_if_statement (stmt-flip)" 
     }
 }
 
-spec "t-47hc.13 S1: grammar-native `for` == hand parse_for_statement (stmt-flip)" {
+spec "t-47hc.13 S1: grammar-native `for` interpreter == generated statement rules" {
     then "integer range + collection forms" {
         agree_ok("for i in 0..5 { break }") &&
         agree_ok("for i in 0..10 { break continue }") &&
@@ -118,19 +132,19 @@ spec "t-47hc.13 S1: grammar-native `for` == hand parse_for_statement (stmt-flip)
         // one process, so acceptance is the local assertion; the cold compiler
         // differential proves exact generated-vs-hand temp ordering.
         flip_stmt("for (a, b) in pairs { a }") != "<err>" &&
-        hand_stmt("for (a, b) in pairs { a }") != "<err>" &&
+        gen_stmt("for (a, b) in pairs { a }") != "<err>" &&
         flip_stmt("for (a, b,) in pairs { for (c, d) in pairs { c } }") != "<err>" &&
-        hand_stmt("for (a, b,) in pairs { for (c, d) in pairs { c } }") != "<err>"
+        gen_stmt("for (a, b,) in pairs { for (c, d) in pairs { c } }") != "<err>"
     }
 }
 
 // The BODY-PARITY regression (the CodeRabbit finding on PR #981): a control-flow
 // HEADER requires a `{`-block body. The hand parsers gate it (`if !check(LeftBrace)
 // { report ExpectedBlock; Err }`); the grammar-native `block` rule (a required
-// `"{"`) reproduces that gate. If the body were `@hand(stmt_hand)` (unrestricted parse_statement),
+// `"{"`) reproduces that gate. If the body were an unrestricted statement reference,
 // the flip would ACCEPT a bare-statement body the hand parser REJECTS — a genuine
 // non-byte-identical divergence. With the SHARED `<err>` sentinel, a mutual
-// rejection registers as agreement; on the buggy `stmt_hand` body the flip would
+// rejection registers as agreement; on the unrestricted body the interpreter would
 // render a While/If/For (≠ `<err>`) while hand yields `<err>`, so these FAIL.
 spec "t-47hc.13 S1: bare-statement bodies are rejected by BOTH (the block `{`-requirement)" {
     then "`while c <bare-stmt>` — no `{`, both reject" {
@@ -144,7 +158,27 @@ spec "t-47hc.13 S1: bare-statement bodies are rejected by BOTH (the block `{`-re
         both_reject("if 1 break") &&
         both_reject("if 1 continue")
     }
-    then "`for … <bare-stmt>` — range and collection bodies both `{`-gated, both reject" {
+    // This trio WAS pinned as an entry asymmetry — "the statement entry rejects, the
+    // declaration entry stops early" — asserting the literal tree
+    // `(for-in x coll (block ))` from the declaration side. Adding the `had_error`
+    // guard to the helpers (review on #1221) turned that assertion red, and the
+    // measurement behind it says the pin's premise was wrong, not the guard:
+    //
+    //   parse_declaration("for x in coll break")
+    //     -> .Ok, had_error=1, error_message="parse error at 1:20: expected `}`"
+    //        tree=(for-in x coll (block ))
+    //
+    // The declaration entry is not lenient and does not "leave `break` for its
+    // caller". It REPORTS — `expected `}`` at the `break` — and hands back a partial
+    // tree as `.Ok`. So both entries reject this input; they differ only in HOW they
+    // say so, and the old row was rendering a recovered tree and reading it as a
+    // clean parse. That is the same vacuity the guard exists to catch, one layer up.
+    //
+    // The production control still holds and is now CONSISTENT rather than an
+    // exception: in a real fn body both this build and `./build/seed` (the pinned
+    // integration compiler) reject `for x in coll break` with F0001 "expected `}`
+    // after function body".
+    then "`for … <bare-stmt>` — both entries reject, the declaration one via a recovered .Ok" {
         both_reject("for x in coll break") &&
         both_reject("for i in 0..5 break") &&
         both_reject("for i in a..b continue")

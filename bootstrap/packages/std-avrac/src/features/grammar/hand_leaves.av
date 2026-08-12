@@ -87,7 +87,6 @@ fn hand_match_table(p: Parser) -> Result<StmtId, string> { p.parse_match_stateme
 /// The whole STATEMENT dispatch (block, if/while/for/match/defer/errdefer/
 /// return). The `_hand` entry, so the delegate does not re-flip THIS statement —
 /// only its nested bodies flip, via the delegate's own delegate.
-fn hand_stmt_hand(p: Parser) -> Result<StmtId, string> { p.parse_statement_hand() }
 
 /// The whole DECLARATION dispatch (doc/annotation/export wrapping + the decl
 /// keywords + the component-vs-expression IDENT disambiguation + the statement
@@ -142,7 +141,6 @@ export fn hand_stmt_leaf(name: string) -> HandStmtLeaf? {
         "let_stmt"       -> HandStmtLeaf { name, run: hand_let_stmt }
         "return_stmt"    -> HandStmtLeaf { name, run: hand_return_stmt }
         "match_table"    -> HandStmtLeaf { name, run: hand_match_table }
-        "stmt_hand"      -> HandStmtLeaf { name, run: hand_stmt_hand }
         _                -> null
     }
 }

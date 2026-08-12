@@ -352,16 +352,6 @@ export type Parser = {
     // so this flag alone chooses static-vs-interpreter and there is no way to reach a
     // hand declaration parser, because none exists.
     mut decl_static: bool,
-    // ps3t.6.7 Step G slice 4 — statement-family swap-in: when true,
-    // parse_statement delegates the whole statement to the grammar-DSL
-    // (avra_stmt_flip_grammar: break/continue DSL-native, block + control-flow +
-    // feature-keyword forms via @hand(stmt_hand) → parse_statement, and the
-    // fall-through expr-statement over the shared expression grammar), with a hand
-    // fallback on any DSL error. Read once at construction, settable by tests.
-    // Default OFF until proven byte-identical on the full selfhost, then promoted
-    // (like type_flip / pat_flip). dsl_stmt_grammar caches avra_stmt_flip_grammar()
-    // lazily, once, exactly like dsl_expr_grammar.
-    mut stmt_flip: bool,
     mut dsl_stmt_grammar: Grammar?,
     // ps3t.6.7 Step G slice 4b — the declaration/whole-program grammar, now the
     // ONLY declaration parser: parse_declaration delegates to the grammar-DSL
@@ -865,10 +855,13 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         expr_flip: avra_process_env_get("AVRA_PARSER_EXPR_FLIP") == "1",
         dsl_expr_grammar: null,
         decl_static: avra_process_env_get("AVRA_PARSER_DECL_STATIC") != "0",
-        // ps3t.6.7 Step G slice 4 — opt-in via AVRA_PARSER_STMT_FLIP=1: the
-        // grammar-DSL statement parser. Default OFF until the full-selfhost
-        // byte-identity proof promotes it (like type/pat_flip).
-        stmt_flip: avra_process_env_get("AVRA_PARSER_STMT_FLIP") == "1",
+        // ps3t.6.7 Step G slice 4, promoted by t-47hc.37: the grammar-DSL
+        // statement parser, UNCONDITIONAL. There is no `stmt_flip` field and no
+        // `AVRA_PARSER_STMT_FLIP` env var — both went with `parse_statement_hand`,
+        // and this comment described them as a live opt-in for exactly as long as
+        // it took review to catch it. Prose that names a flag the compiler does
+        // not read is the t-bw9s failure in its cheapest form: the run succeeds,
+        // the reader sets the variable, and nothing selects anything.
         dsl_stmt_grammar: null,
         // ps3t.6.7 Step G slice 5.4, then t-47hc — the grammar-DSL drives the whole
         // TOP-LEVEL dispatch (declaration vs statement vs expr-stmt), and does so
@@ -876,7 +869,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // escape hatch back to a hand RD driver. Both went with the `@hand(decl_hand)`
         // leaf. The shared hand-delegate (ensure_hand_delegate) still exists for the
         // leaves that remain in family-isolated grammar views, and is still a
-        // SINGLE-LEVEL PURE-HAND parser (its own stmt_flip/pat_flip are OFF) so bodies
+        // SINGLE-LEVEL parser (its own pat_flip is OFF) so bodies
         // do not re-enter the DSL through it. Proven byte-identical over the full
         // selfhost + corpus.
         dsl_decl_grammar: null,
@@ -1047,11 +1040,12 @@ impl Parser {
         // The counter value the interpreter fallback restores to (see below).
         let seq0 = d.gensym_seq
         d.copy_cursor_from(self)
-        // Fresh per-item diagnostic scratch on the (single-level, pure-hand)
-        // delegate: any diagnostic it reports while parsing THIS item is merged
-        // back into this parser's bag on the error path below, so a reset keeps
-        // the merge from re-copying prior items' diagnostics.
-        d.bag = bag_new()
+        // Fresh per-item scratch on the (single-level, pure-hand) delegate: any
+        // diagnostic it reports while parsing THIS item is merged back into this
+        // parser's bag on the error path below, so a reset keeps the merge from
+        // re-copying prior items' diagnostics — and the same applies to the
+        // had_error / error_message summary that path adopts alongside the bag.
+        d.begin_delegate_item()
         // ps3t.6.7 Phase 2: the STATIC generated parser (run_static_decl) when
         // decl_static, else the Grammar-tree interpreter (run_dsl_decl_at_shared).
         // Both share the token stream, modes, @hand delegate, store, and the
@@ -1303,8 +1297,10 @@ impl Parser {
                 // operand. Was the hand `parse_binary_pratt(12)`; now the GENERATED parser
                 // entered at the same level via run_static_expr_cell (t-47hc.4.1).
                 let cell_modes = self.current_modes()
-                let cd = self.ensure_hand_delegate()
+                mut cd = self.ensure_hand_delegate()
                 cd.copy_cursor_from(self)
+                // Same per-parse reset as the sibling seams (see parse_statement).
+                cd.begin_delegate_item()
                 let cell = run_static_expr_cell(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, cell_modes, cd)
                 if cell.had_error {
                     // RESTORE the mode and SURFACE the diagnostics before bailing. Raised in
@@ -1387,7 +1383,7 @@ impl Parser {
     /// parse by hand (the byte-identical oracle) and never re-enter a flip. Adding
     /// a new flip flag updates this ONE site — the two-site drift CodeRabbit
     /// flagged on #899 (parse_statement had to be hand-edited alongside
-    /// parse_expression to force stmt_flip off).
+    /// parse_expression).
     /// Snapshot this parser's live mode flags for a flip hand-off (ps3t.6.7).
     /// The single home for the `ExprModes` construction the three flip sites
     /// (parse_declaration / parse_statement / parse_expression) thread to the
@@ -1401,6 +1397,33 @@ impl Parser {
             quote_depth: self.quote_depth,
             cell_mode: self.cell_mode,
         }
+    }
+
+    /// Clear the shared `@hand` delegate's PER-ITEM state before a seam parses
+    /// through it.
+    ///
+    /// `ensure_hand_delegate` hands out ONE delegate per file, so everything it
+    /// accumulates outlives the item that produced it. `bag` was reset at the
+    /// seams; `had_error` and `error_message` — documented above as a STICKY
+    /// flag and "first error's message" — were not, and both are read by every
+    /// seam as "what the delegate did for THIS item".
+    ///
+    /// They diverge whenever the delegate reports on an item that then SUCCEEDS
+    /// overall: a rolled-back `@try` branch reports into the delegate and the
+    /// grammar goes on to parse the item cleanly, so the seam returns `.Ok`
+    /// with `self.had_error` still false while the delegate's flag stays set
+    /// forever. The next item that genuinely fails then reaches the
+    /// `!self.had_error && d_had_error` adoption with a TRUE flag it did not
+    /// earn, and copies the dead item's message into `error_message` — the
+    /// field whose contract is "consult it for the cause". Same class as the
+    /// `bag` append this seam already guards, one field further in.
+    ///
+    /// Cursor/line state is deliberately NOT touched: `copy_cursor_from` owns
+    /// that, and it runs alongside this at every seam.
+    fn begin_delegate_item(self) {
+        self.bag = bag_new()
+        self.had_error = false
+        self.error_message = ""
     }
 
     fn ensure_hand_delegate(self) -> Parser {
@@ -1449,85 +1472,85 @@ impl Parser {
             // like every other expression in the process — there is no second
             // implementation left for the delegate to prefer. The remaining toggles
             // pick a slower ENGINE for the same grammar, not a different parser.
-            d.stmt_flip = false
             d.expr_flip = false
             d.decl_static = false
             d.type_static = false
             d.pat_static = false
             d.pat_flip = false
+            // `type_flip` is deliberately NOT cleared, and the asymmetry with
+            // `pat_flip` right above it is the whole point. Clearing `*_static`
+            // selects the slower ENGINE for the same grammar; clearing `*_flip`
+            // as well selects a DIFFERENT PARSER — the hand. Patterns still have
+            // a hand parser to fall back to. Types are mid-retirement: the
+            // executor is the type family's PRODUCTION engine (`type_flip` is
+            // what routes `parse_type_expr` through `exec_rule`, which is why
+            // the recovery corpus's executor coverage comes from types at all),
+            // so clearing it here would not pick a slower engine — it would send
+            // the delegate to `parse_type_expr_hand`, a second implementation,
+            // on a seam whose contract is byte-identical output. Raised in
+            // review on #1221; declined deliberately rather than taken as a
+            // quick win, because it is a production behaviour change with no
+            // evidence behind it. The flag and the hand tail it would select are
+            // both deleted by the type slice, which ends the question.
             self.hand_delegate = d
         }
         self.hand_delegate!
     }
 
     fn parse_statement(self) -> Result<StmtId, string> {
-        // ps3t.6.7 Step G slice 4 statement-family swap-in — mirror
-        // parse_expression's flip: delegate the whole statement to the grammar-DSL
-        // over the lex-once tokens at the current byte, threading this parser's
-        // live modes + a reusable @hand delegate (SYNCED to this parser's cursor +
-        // line first, its end state adopted after), then resync to the stop byte.
-        // A DSL error falls through to the authoritative hand parser.
-        if self.stmt_flip {
-            let modes = self.current_modes()
-            // One reusable @hand delegate per file (see ensure_hand_delegate),
-            // SYNCED to this parser's cursor+line before the parse, its end state
-            // adopted after.
-            let d = self.ensure_hand_delegate()
-            d.copy_cursor_from(self)
-            let dsl = run_dsl_stmt_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_statement_grammar(), modes, d)
-            if !dsl.had_error {
-                // Forward-advance the delegate to the statement's true end (past any
-                // trailing structural tokens the DSL itself consumed), then adopt
-                // its cursor+line so this parser continues from the statement's end
-                // with the same line the hand parser would have.
-                d.resync_to_stop_byte(dsl.stop_byte)
-                self.copy_cursor_from(d)
-                return .Ok(dsl.stmt)
+        // ps3t.6.7 Step G slice 4, now UNCONDITIONAL (t-47hc.37): the whole statement
+        // is parsed by the grammar over the lex-once tokens at the current byte,
+        // threading this parser's live modes + a reusable @hand delegate (SYNCED to
+        // this parser's cursor + line first, its end state adopted after), then
+        // resyncing to the stop byte. There is no `if` around this any more and no
+        // fall-through below it — `parse_statement_hand` is deleted.
+        let modes = self.current_modes()
+        // One reusable @hand delegate per file (see ensure_hand_delegate),
+        // SYNCED to this parser's cursor+line before the parse, its end state
+        // adopted after.
+        mut d = self.ensure_hand_delegate()
+        d.copy_cursor_from(self)
+        // The statement seam reached the delegate with NO reset at all until
+        // review on #1221 — it merges the bag and adopts had_error /
+        // error_message on the error path exactly like its siblings, so it
+        // needs the same per-item clear.
+        d.begin_delegate_item()
+        let dsl = run_dsl_stmt_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_statement_grammar(), modes, d)
+        if !dsl.had_error {
+            // Forward-advance the delegate to the statement's true end (past any
+            // trailing structural tokens the DSL itself consumed), then adopt
+            // its cursor+line so this parser continues from the statement's end.
+            d.resync_to_stop_byte(dsl.stop_byte)
+            self.copy_cursor_from(d)
+            return .Ok(dsl.stmt)
+        }
+        // The statement family OWNS ITS RECOVERY — the same seam the expression
+        // family got in t-47hc.4.1, and for the same reason: there is no hand
+        // dispatcher left to fall through to. Merge order mirrors parse_expression
+        // exactly (the delegate's bag first, since an @hand leaf is deeper than the
+        // native rule that reached it, then each dsl.diags entry in report order with
+        // its own declared code), so the recovery oracles compare like against like.
+        self.copy_cursor_from(d)
+        let d_had_error = d.had_error
+        let d_error_message = d.error_message
+        self.bag = bag_merge(self.bag, d.bag)
+        if !self.had_error && d_had_error {
+            self.had_error = true
+            self.error_message = d_error_message
+        }
+        mut gi = 0
+        while gi < dsl.diags.length {
+            let gd = dsl.diags[gi]
+            let dc = syntax_diag_code(gd.code)
+            if dc != null {
+                self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
+            } else {
+                self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
             }
-            // DSL parse error → fall through to the authoritative hand parser.
+            gi = gi + 1
         }
-        self.parse_statement_hand()
-    }
-
-    /// The hand-written statement dispatcher: the swap-in oracle, and the
-    /// fallback when the statement flip is off or errors. (Was the body of
-    /// parse_statement.)
-    fn parse_statement_hand(self) -> Result<StmtId, string> {
-        note_hand_fallback("stmt", self.file, self.current_start)
-        // qsqm: a bare map literal at statement position — a function's
-        // implicit-return `{"k": v}` — must not be swallowed as a block.
-        // is_stmt_map_literal fires only on a string-keyed `{ "str": ... }`; a
-        // real block (`{ let x = ... }`) AND a bare `{}` (which stays a block,
-        // since the compiler's own source uses `{}` block statements) both parse
-        // as blocks. A map falls through to the expression path below
-        // (parse_expression → parse_map_literal).
-        if self.check(Tk.LeftBrace) && !self.is_stmt_map_literal() {
-            self.advance()
-            let body = self.parse_statement_list_ids(true)?
-            if !self.consume(Tk.RightBrace, "expected `}` after block") {
-                return .Err("parse error")
-            }
-            return .Ok(self.alloc_stmt_leaf(Stmt.Block(body.ids)))
-        }
-
-        if self.check(Tk.KwBreak) {
-            self.advance()
-            return .Ok(self.alloc_stmt_leaf(Stmt.Break))
-        }
-
-        if self.check(Tk.KwContinue) {
-            self.advance()
-            return .Ok(self.alloc_stmt_leaf(Stmt.Continue))
-        }
-
-        let stmt_raw = lookup_stmt_parser(self.features, tk_keyword_str(self.current_kind))
-        if stmt_raw != null {
-            let handler: fn(Parser) -> Result<StmtId, string> = stmt_raw!
-            return handler(self)
-        }
-
-        let eid = self.parse_expression()?
-        .Ok(self.alloc_stmt_leaf(Stmt.Expr(eid)))
+        self.had_error = true
+        .Err("statement parse error")
     }
 
     /// B1: the expression chain flows typed ids end-to-end; the parsed
@@ -1548,8 +1571,14 @@ impl Parser {
         // state so this parser continues from the expression's end with the
         // same line the hand parser would have. This reproduces the hand
         // parser's line accounting byte-for-byte across the split parse.
-        let d = self.ensure_hand_delegate()
+        mut d = self.ensure_hand_delegate()
         d.copy_cursor_from(self)
+        // Fresh per-parse scratch on the SHARED delegate, the same discipline
+        // parse_declaration documents: `bag_merge` APPENDS, and
+        // `ensure_hand_delegate` hands out ONE delegate per file, so merging without
+        // resetting re-copies every diagnostic the delegate reported for earlier items.
+        // Raised in review on PR #1221 — parse_declaration was the only site that had it.
+        d.begin_delegate_item()
         // ps3t.6.7 Step G: the Grammar-tree interpreter (run_dsl_expr_at_shared)
         // when expr_flip, else the STATIC generated parser (run_static_expr).
         // Both share the token stream, modes, @hand delegate, and resync below —
@@ -1635,9 +1664,10 @@ impl Parser {
         self.dsl_expr_grammar ?? avra_expr_grammar()
     }
 
-    /// The DSL statement grammar (the production dispatch: break/continue +
-    /// @hand(stmt_hand) + expr_stmt over the composed expression grammar), built
-    /// at most once per parser — the statement sibling of dsl_expression_grammar.
+    /// The DSL statement grammar (the production dispatch: the native statement
+    /// rules + expr_stmt over the composed expression grammar), built at most
+    /// once per parser — the statement sibling of dsl_expression_grammar.
+    /// The `@hand(stmt_hand)` alternative this used to name is deleted (t-47hc.37).
     fn dsl_statement_grammar(self) -> Grammar {
         if self.dsl_stmt_grammar == null {
             self.dsl_stmt_grammar = avra_stmt_flip_grammar()

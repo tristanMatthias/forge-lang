@@ -1000,7 +1000,6 @@ impl PState {
         if self.src == "" { return null }
         mut d = parser_new_with_store(self.src, self.file, self.store)
         d.records_roots = 0
-        d.stmt_flip = false
         d.expr_flip = false
         self.hand_delegate = d
         self.hand_delegate
@@ -1321,7 +1320,6 @@ export fn new_pstate(src: string) -> PState {
     // every leaf the fresh-parser fallback this exists to avoid.
     mut d = parser_new_with_store(src, "", store)
     d.records_roots = 0
-    d.stmt_flip = false
     d.expr_flip = false
     PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
 }
@@ -3879,14 +3877,6 @@ fn hand_starts(name: string, tok: Token) -> bool {
     // ps3t.6.7 G.4 — the whole-statement dispatch leaf's FIRST: `{` (block OR a
     // map-literal statement, disambiguated inside parse_statement) plus the
     // statement KEYWORDS parse_statement routes to feature parsers. `break` /
-    // `continue` are DSL-native alternatives ordered BEFORE this one; every
-    // other token is an expression statement handled by the `expr_stmt`
-    // alternative ordered AFTER it. The keyword list mirrors the registered
-    // stmt_keyword set (if/while/for/match/defer/errdefer/return) exactly.
-    if name == "stmt_hand" {
-        let t = tok.text
-        return t == "{" || t == "if" || t == "while" || t == "return"
-    }
     // ps3t.6.7 G.4b — the whole-declaration dispatch leaf's FIRST: exactly the
     // tokens parse_declaration handles itself (doc-comment wrapping, `@`
     // annotation OR a qualified `@pkg::T` it forwards, `export`, every decl
@@ -4581,9 +4571,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // slice index, …), or the runner would recurse into itself per nested expr.
     // Force ALL delegate toggles off; the top operator ladder stays DSL/static, the
     // whole leaf-and-below is hand-parsed (byte-identical, since the ladders match).
-    // stmt_flip too: a leaf's nested block (closure body, `if`-expr arm) parses
-    // statements by hand, never re-entering the statement flip on this delegate.
-    bp.stmt_flip = false
     bp.expr_flip = false
     // `advance()`, NOT `advance_token()`: only the former maintains `prev_line`
     // (`advance` is literally `prev_line = current_line; advance_token()`). The hand's
