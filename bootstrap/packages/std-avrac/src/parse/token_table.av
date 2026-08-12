@@ -315,13 +315,20 @@ export type NestRun = { name: string, open_a: string, open_b: string, close_a: s
 /// `skip_strings` turns that last part on. `raw_prefix` names the byte that marks a raw
 /// nested string (`r"…"`), which takes no escapes — without it a raw nested string gets
 /// escape handling applied to it and mis-scans.
+///
+/// `char_delim` and `tmpl_delim` name the OTHER two literal forms a brace can hide inside:
+/// a char literal (`'}'`) and a backtick template. Both were unskipped until t-v126 — the
+/// hand-written loop this replaced only ever skipped `"`-delimited strings — so a brace
+/// inside either closed the region early.
 export type InterpRun = {
     name: string,
     open_a: string, open_b: string,
     close: string,
     depth_open: string,
     skip_strings: bool,
-    raw_prefix: string
+    raw_prefix: string,
+    char_delim: string,
+    tmpl_delim: string
 }
 
 /// The interpolation regions, compiled to `scan_<name>(src, start) -> int`. `start` is AT
@@ -330,7 +337,8 @@ export type InterpRun = {
 export fn interp_run_rules() -> List<InterpRun> {
     [
         InterpRun { name: "interp_region", open_a: "DOLLAR", open_b: "LBRACE", close: "RBRACE",
-                    depth_open: "LBRACE", skip_strings: true, raw_prefix: "LOWER_R" },
+                    depth_open: "LBRACE", skip_strings: true, raw_prefix: "LOWER_R",
+                    char_delim: "SQUOTE", tmpl_delim: "BACKTICK" },
     ]
 }
 

@@ -234,6 +234,21 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
     }
 
+    // t-v126: a brace hides inside a CHAR literal and a BACKTICK template too, not just a
+    // string. The hand-written loop this rule replaced skipped only `"`-delimited strings,
+    // so both of these closed the region early.
+    then "a brace inside a char literal is content" {
+        // `$`0 `{`1 `'`2 `}`3 `'`4 `}`5 -> past the real close is 6.
+        let c = "$" + "{'}'}rest"
+        scan_interp_region(avra_bytes_from_string(c), 0) == 6
+    }
+
+    then "a brace inside a backtick template is content" {
+        // `$`0 `{`1 `` ` ``2 `a`3 `}`4 `b`5 `` ` ``6 `}`7 -> past the real close is 8.
+        let c = "$" + "{`a}b`}rest"
+        scan_interp_region(avra_bytes_from_string(c), 0) == 8
+    }
+
     then "block_comment spans the whole nested comment" {
         // "/* a /* b */ c */" is 17 bytes and balances at the end
         let c = "/* a /* b */ c */"

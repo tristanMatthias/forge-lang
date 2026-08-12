@@ -374,6 +374,8 @@ fn run_symbol_import_list() -> string {
             if !run_list_has(syms, "DQUOTE") { syms.push("DQUOTE") }
             if !run_list_has(syms, "BACKSLASH") { syms.push("BACKSLASH") }
             if !run_list_has(syms, ir[q].raw_prefix) { syms.push(ir[q].raw_prefix) }
+            if !run_list_has(syms, ir[q].char_delim) { syms.push(ir[q].char_delim) }
+            if !run_list_has(syms, ir[q].tmpl_delim) { syms.push(ir[q].tmpl_delim) }
         }
         q = q + 1
     }
@@ -521,6 +523,27 @@ fn emit_interp_scanner(rule: InterpRun) -> string {
                "            }\n" +
                "            end = end + 2\n" +
                "            while byte_at(src, end) != -1 && byte_at(src, end) != DQUOTE { end = end + 1 }\n" +
+               "            if byte_at(src, end) != -1 { end = end + 1 }\n" +
+               "            continue\n" +
+               "        }\n" +
+               // A CHAR literal and a BACKTICK template hide braces just as a string does.
+               // The char literal takes escapes; the template is verbatim, matching
+               // tmpl_body's rule in the same table.
+               "        if byte_at(src, end) == " + rule.char_delim + " {\n" +
+               "            end = end + 1\n" +
+               "            while byte_at(src, end) != -1 && byte_at(src, end) != " + rule.char_delim + " {\n" +
+               "                if byte_at(src, end) == BACKSLASH && byte_at(src, end + 1) != -1 {\n" +
+               "                    end = end + 2\n" +
+               "                    continue\n" +
+               "                }\n" +
+               "                end = end + 1\n" +
+               "            }\n" +
+               "            if byte_at(src, end) != -1 { end = end + 1 }\n" +
+               "            continue\n" +
+               "        }\n" +
+               "        if byte_at(src, end) == " + rule.tmpl_delim + " {\n" +
+               "            end = end + 1\n" +
+               "            while byte_at(src, end) != -1 && byte_at(src, end) != " + rule.tmpl_delim + " { end = end + 1 }\n" +
                "            if byte_at(src, end) != -1 { end = end + 1 }\n" +
                "            continue\n" +
                "        }\n" +
