@@ -1,21 +1,29 @@
 // WHY: ps3t.6.7 slice 5a — the ERROR-RECOVERY differential ORACLE.
 //
-// Slice 5 (retiring the hand RD driver) hinges on the static generated parser
-// producing byte-identical error-recovery DIAGNOSTICS to the hand parser, so the
-// interpreter re-parse fallback in parse_declaration (gated by the diagnostic
-// AVRA_NO_STATIC_FALLBACK) can be removed. This spec MEASURES that gap directly:
-// for a corpus of INVALID programs, the static parser WITHOUT the fallback
-// (AVRA_NO_STATIC_FALLBACK=1) must emit the SAME diagnostics — same F-codes, in
-// the same recovery order — as the hand parser (AVRA_PARSER_DECL_FLIP=0, the
-// ultimate oracle). Because typeck gates on parse errors (no codegen runs for an
-// invalid program), the diagnostics ARE the observable output.
+// A corpus of INVALID programs, each asserted to recover IDENTICALLY under two
+// independent implementations of the same grammar. Because typeck gates on parse
+// errors (no codegen runs for an invalid program), the diagnostics ARE the
+// observable output, so this is where recovery behaviour is pinned at all.
 //
-// Finding (2026-07-21): they already AGREE across this corpus — including
-// multi-error recovery — which reshapes the slice-5 estimate: the fallback is a
-// candidate for outright removal. Removing it would also FIX a latent bug — the
-// interpreter fallback SWALLOWS stray-top-level-token errors that both the static
-// parser and the hand parser catch (recorded on the ps3t.6.7 ticket). This oracle
-// is the gate that must stay green (and grow) before slice 5c removes the fallback.
+// ── WHICH TWO (read this before quoting the corpus as evidence) ──────────────
+//
+// EMIT — the CHECKED-IN generated static parser (parse/gen_*_parser.av). Production.
+// EXEC — the grammar tree INTERPRETER (features/grammar/executor.av). Still the
+//        production parser for the TYPE family, so not a museum piece.
+//
+// There is NO hand row. It was retired in t-47hc.4.1 with the hand expression
+// ladder itself (the decl hand leaf had already gone with `@hand(decl_hand)`), and
+// the retirement was not optional: the "hand" env prefix differed from "emit" only
+// in `AVRA_PARSER_EXPR_STATIC=0`, and once that variable stopped selecting anything,
+// every `agree*` below would have compared the generated parser to ITSELF and passed
+// by construction. That is the documented t-bw9s failure — a mode name outliving the
+// implementation it named — and it is the exact shape this file exists to police.
+//
+// Historical note kept because the finding still holds: emit and hand AGREED across
+// this whole corpus, including multi-error recovery, which is what made removing the
+// interpreter re-parse fallback (and later the ladder) measurable rather than a leap.
+// Comments below that read "emit-vs-hand" describe that era; the assertion they sit
+// on now compares emit against exec.
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
@@ -47,18 +55,25 @@ fn errcodes(env: string, source: string) -> string {
 /// existing default, so this is behaviour-preserving — it removes the ambient dependence,
 /// not the meaning.
 fn mode_env(mode: string) -> string {
-    // EXPRESSION routing is pinned too, not just declaration routing. `expr_static` is
-    // `!= "0"` (ON by default) and `expr_flip` is `== "1"`, both read independently of
-    // the decl flags — so a prefix that sets only `AVRA_PARSER_DECL_FLIP=0` leaves the
-    // hand oracle running the GENERATED expression parser. Before `table_lit` went
-    // native that was harmless (no native table rule existed, so the expression path
-    // fell through to `@hand(primary_base)` -> `parse_table_literal` anyway); once the
-    // rule landed it would mean the table assertions compare native against native.
-    if mode == "hand" { return "AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
-    if mode == "emit" { return "AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
-    // production — the static parser, then the INTERPRETER re-parse on `had_error`
-    // (t-zrn3): the path users actually run, and the one the other two are blind to.
-    "AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+    // EXPRESSION routing is pinned too, not just declaration routing: `expr_flip` is
+    // read independently of the decl flags, so a prefix that sets only the decl
+    // variable leaves the expression engine ambient.
+    //
+    // t-47hc.4.1 RETIRED the "hand" prefix. It used to read
+    // `AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0`, which selected the hand
+    // expression ladder — and that ladder is deleted, along with the variable that
+    // chose it. Leaving the row in place would have made it byte-identical to "emit",
+    // so every `agree*` in this file would compare the generated parser to ITSELF and
+    // pass by construction: exactly the vacuity documented for `AVRA_PARSER_DECL_FLIP`
+    // (t-bw9s), where a dead variable kept a mode name that no longer selected
+    // anything. The surviving oracle pair is EMIT vs EXEC — two engines compiled from
+    // one grammar, which is the pair that can actually drift.
+    if mode == "exec" { return "AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1" }
+    if mode == "emit" { return "AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
+    // production — the default routing, spelled out. Identical to "emit" today; kept
+    // separate on purpose so a reintroduced fallback surfaces as a divergence between
+    // the two rows rather than hiding behind a collapsed one.
+    "AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
 }
 
 /// The full diagnostic MESSAGES, not merely their F-codes (t-myz7, the `table` slice).
@@ -88,10 +103,10 @@ fn errmsgs(env: string, source: string) -> string {
 /// The message-level sibling of `agree_all`. The nonempty check is the anti-vacuity
 /// half — without it a fixture that stopped reporting entirely would "agree".
 fn msgs_agree_bad(source: string) -> bool {
-    let hand = errmsgs(mode_env("hand"), source)
+    let exec = errmsgs(mode_env("exec"), source)
     let emit = errmsgs(mode_env("emit"), source)
     let prod = errmsgs(mode_env("prod"), source)
-    if hand == "" || emit != hand || prod != hand {
+    if exec == "" || emit != exec || prod != exec {
         // WHICH path diverged, and whether the capture came back EMPTY. `errmsgs` returns
         // filtered pipeline output and so cannot carry `bs2 check`'s exit status, which
         // leaves "the compiler died / the filter matched nothing" and "the messages really
@@ -102,11 +117,11 @@ fn msgs_agree_bad(source: string) -> bool {
         // three call sites that pin an exact message.
         println("three-path MESSAGE mismatch")
         println(source)
-        println("hand=" + hand)
+        println("exec=" + exec)
         println("emit=" + emit)
         println("prod=" + prod)
     }
-    hand != "" && emit == hand && prod == hand
+    exec != "" && emit == exec && prod == exec
 }
 
 /// Does an F-code signature contain a PARSE-phase failure? Raised in review on the
@@ -135,7 +150,7 @@ fn sig_has_parse_code(sig: string) -> bool {
 }
 
 fn static_raw(source: string) -> string { errcodes(mode_env("emit"), source) }
-fn hand_oracle(source: string) -> string { errcodes(mode_env("hand"), source) }
+fn exec_oracle(source: string) -> string { errcodes(mode_env("exec"), source) }
 // t-zrn3 — the THIRD path, and the one users actually run. `static_raw` and the TREE
 // oracle below both disable the interpreter re-parse fallback, so between them they
 // measure the EMIT-generated parser and nothing else. The DEFAULT path is static →
@@ -147,21 +162,64 @@ fn hand_oracle(source: string) -> string { errcodes(mode_env("hand"), source) }
 fn default_path(source: string) -> string { errcodes(mode_env("prod"), source) }
 fn agree(source: string) -> bool {
     let sr = static_raw(source)
-    let hand = hand_oracle(source)
-    if sr != hand {
+    let ex = exec_oracle(source)
+    if sr != ex {
         println("recovery diagnostic mismatch")
         println(source)
-        println(sr)
-        println(hand)
+        println("emit=" + sr)
+        println("exec=" + ex)
     }
-    sr == hand
+    sr == ex
 }
+// ── PINNED expectations, for the inputs where the two engines legitimately differ ──
+//
+// The corpus is a differential, and a differential has one structural weakness: it
+// says nothing about an input the two engines answer differently. Dropping such an
+// input loses the coverage; asserting agreement on it is simply false. So those
+// inputs are PINNED instead — the shipping parser's exact output, written out.
+//
+// A pinned expectation is strictly stronger than the differential where it applies
+// (it cannot pass by both sides being wrong together, which is the vacuity `agree_bad`
+// exists to catch), and strictly narrower (it says nothing about the other engine). It
+// is the right tool only for a KNOWN divergence, and every use below names the reason.
+//
+// EVERY divergence pinned here is the same one: the grammar EXECUTOR is a weaker
+// answerer for malformed DECLARATIONS than the emitted parser — CLAUDE.md records the
+// executor no longer answering invalid declaration input at all, since the `@hand(decl_hand)`
+// leaf that used to catch those went away. Where it still runs, it reports the enclosing
+// alternation's failure IN ADDITION to the inner rule's, so its signature carries an
+// extra F0001. That is a divergence in the engine that does NOT ship for declarations.
+fn pin(source: string, expected: string) -> bool {
+    let sr = static_raw(source)
+    if sr != expected {
+        println("PINNED recovery signature moved")
+        println(source)
+        println("expected=" + expected)
+        println("actual  =" + sr)
+    }
+    sr == expected
+}
+
+// The TREE + diagnostic-COUNT twin of `pin`, for the same reason `agree_bad` is the
+// tree twin of `agree`: an equal signature off a different tree is a real regression.
+fn pin_tree(source: string, expected_tree: string, expected_diags: int) -> bool {
+    let t = rtree(true, source)
+    let d = rdiags(true, source)
+    if t != expected_tree || d != expected_diags {
+        println("PINNED recovery tree moved")
+        println(source)
+        println("expected=" + expected_tree + " diags=" + string(expected_diags))
+        println("actual  =" + t + " diags=" + string(d))
+    }
+    t == expected_tree && d == expected_diags
+}
+
 // A malformed case that must ACTUALLY report an error: parser parity AND a
 // nonempty F-code signature, so the assertion pins the `had_error` contract
 // rather than passing vacuously when both parsers emit nothing.
 fn agree_error(source: string) -> bool {
     let sr = static_raw(source)
-    sr != "" && sr == hand_oracle(source)
+    sr != "" && sr == exec_oracle(source)
 }
 
 // Agreement on ALL THREE parser paths at once: emit (fallback off), the DEFAULT
@@ -169,17 +227,17 @@ fn agree_error(source: string) -> bool {
 // that characterise the executor's own recovery; `agree` stays emit-vs-hand so the
 // existing corpus keeps measuring exactly what it always did.
 fn agree_all(source: string) -> bool {
-    let hand = hand_oracle(source)
+    let ex = exec_oracle(source)
     let sr = static_raw(source)
     let dflt = default_path(source)
-    if sr != hand || dflt != hand {
+    if sr != ex || dflt != ex {
         println("three-path recovery mismatch")
         println(source)
         println("emit=" + sr)
         println("default=" + dflt)
-        println("hand=" + hand)
+        println("exec=" + ex)
     }
-    sr == hand && dflt == hand
+    sr == ex && dflt == ex
 }
 
 spec "t-47hc.26: the native `if let` recovers exactly as the hand did" {
@@ -220,7 +278,7 @@ spec "t-47hc.26: the native `if let` recovers exactly as the hand did" {
     }
 }
 
-spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid corpus)" {
+spec "ps3t.6.7 slice 5a: static parser error recovery == exec oracle (invalid corpus)" {
     // ps3t.6.7 slice 5b — the corpus GREW to a broad, category-diverse invalid set
     // (stray tokens, malformed decls of every keyword, control-flow, expressions,
     // multi-error, EOF-unclosed). All AGREE: static-raw error recovery is
@@ -257,7 +315,9 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("fn a() -> int\nfn b() -> int { 2 }")
     }
     then "malformed type / enum / trait / impl declarations" {
-        agree("type T = { x: , y: int }\nfn f() -> int { 1 }") &&
+        // PINNED, not agreed: the executor adds the enclosing alternation's own F0001
+        // on top of the field rule's. See `pin`.
+        pin("type T = { x: , y: int }\nfn f() -> int { 1 }", "F0001 F0013 ") &&
         agree("type T = { x: int\nfn f() -> int { 1 }") &&
         agree("type = { x: int }\nfn f() -> int { 1 }") &&
         agree("enum E { A, , B }\nfn f() -> int { 1 }") &&
@@ -272,7 +332,8 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
     // tested it broken. Mirrors the malformed-`type` cases above, since `shape` shares
     // `field` with it.
     then "malformed shape declarations (the routed keyword)" {
-        agree("shape S = { x: , y: int }\nfn f() -> int { 1 }") &&
+        // PINNED for the same reason as the `type` sibling — `shape` shares `field`.
+        pin("shape S = { x: , y: int }\nfn f() -> int { 1 }", "F0001 F0013 ") &&
         agree("shape S = { x: int\nfn f() -> int { 1 }") &&
         agree("shape = { x: int }\nfn f() -> int { 1 }") &&
         agree("shape S = \nfn f() -> int { 1 }") &&
@@ -706,7 +767,10 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         // Each program has 3-6 parse errors; recovery must resynchronise and find
         // every one, in the same order, under both parsers.
         agree("fn a() -> int { 1 + }\nfn b() -> int { 2 }\nthen\nfn c() -> int { * 3 }") &&
-        agree("type T = { x: , y: }\nfn f(a: , b: int) -> int { return a }\nfn g() -> int { let z = ; return z }") &&
+        // PINNED: contains the `{ x: , … }` field abort, so it carries the executor's
+        // extra alternation F0001 exactly as the single-error case above does.
+        pin("type T = { x: , y: }\nfn f(a: , b: int) -> int { return a }\nfn g() -> int { let z = ; return z }",
+            "F0001 F0013 F0001 F0013 F0001 F0041 ") &&
         agree("fn h() -> int {\n  if { return 1 }\n  while return 2\n  for x { return 3 }\n}")
     }
     then "unclosed constructs at EOF" {
@@ -715,7 +779,7 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
         agree("type T = {\n x: int,\n")
     }
     then "a valid program produces no diagnostics under either mode (sanity)" {
-        static_raw("fn ok() -> int { 1 + 2 }") == "" && hand_oracle("fn ok() -> int { 1 + 2 }") == ""
+        static_raw("fn ok() -> int { 1 + 2 }") == "" && exec_oracle("fn ok() -> int { 1 + 2 }") == ""
     }
 }
 
@@ -733,96 +797,75 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == hand oracle (invalid co
 // `(error)`, a failed expr-stmt → `(expr (error))`), so one string equality
 // captures both the outcome AND the shape.
 
-/// The whole-program tree under ONE parser path — the three-way core `rtree` and
-/// `tree_agrees_everywhere` both read, so the path selection lives in one place.
-/// `mode`: "hand" (the oracle) | "emit" (the generated parser, interpreter re-parse
-/// OFF) | "exec" (the grammar EXECUTOR). Those are CLAUDE.md's three implementations;
-/// the DEFAULT production path is emit with the executor as its fallback, so a
-/// comparison that omits "exec" cannot see an executor-only divergence.
+/// The whole-program tree under ONE parser ENGINE — the core `rtree` and
+/// `tree_agrees_everywhere` both read, so the engine selection lives in one place.
+/// `mode`: "emit" (the CHECKED-IN generated parser) | "exec" (the grammar EXECUTOR).
+/// Those are the two surviving implementations; production is "emit", so a comparison
+/// that omits "exec" cannot see an executor-only divergence — and the executor is still
+/// the production parser for the TYPE family, so it is not a museum piece.
 fn rtree_at(mode: string, source: string) -> string {
     mut p = parser_new(source)
-    // EVERY routing field is set explicitly, for all three modes. `parser_new` reads
-    // `decl_flip` and `decl_static` from the environment (`… != "0"`, so ON by
-    // default), which means a helper that sets only the ONE field distinguishing its
-    // mode is silently ambient-dependent: run the suite under
-    // `AVRA_PARSER_DECL_FLIP=0` and "emit" and "exec" both collapse to the hand, and
-    // `tree_agrees_everywhere` passes comparing the hand against itself, twice. That is
-    // the vacuity class this file exists to police — asserting three implementations
-    // agree while running one is worse than not asserting it.
+    // EVERY routing field is set explicitly, for BOTH modes. `parser_new` reads
+    // `decl_static` from the environment (`… != "0"`, so ON by default) and `expr_flip`
+    // independently of it, which means a helper that sets only the ONE field
+    // distinguishing its mode is silently ambient-dependent — and the two modes can
+    // collapse onto one engine while `tree_agrees_everywhere` passes comparing it
+    // against itself. That is the vacuity class this file exists to police: asserting
+    // two implementations agree while running one is worse than not asserting it.
     let f = mode_flags(mode)
     p.decl_static = f.decl_static
     p.expr_flip = f.expr_flip
-    p.expr_static = f.expr_static
     let r = p.parse_file_program()
     if r.ids == null { return "<null>" }
     render_stmt_ids(r.store, r.ids!)
 }
 
 /// The IN-PROCESS twin of `mode_env` — EVERY routing field for the named mode, so a
-/// helper cannot inherit one from `parser_new`'s defaults.
-///
-/// The expression pair is the half that was missing, and it is not optional: the gate
-/// in `parse_expression` is `if self.expr_flip || self.expr_static`, an OR, and
-/// `expr_static` reads `!= "0"` — ON by default. So setting only `decl_flip = false`
-/// leaves the "hand" oracle running the GENERATED expression parser, and the table
-/// assertions compare native against native instead of against `parse_table_literal`.
-/// Harmless before `table_lit` went native (no native table rule existed, so the
-/// expression path fell through to `@hand(primary_base)` -> the hand's own parser);
-/// a live vacuity once the rule landed.
-///
-///   hand — both off, so the gate is false and `parse_expression_hand` runs
-///   emit — expr_static on: the generated static parser
-///   exec — expr_flip on + expr_static off: the Grammar-tree interpreter
-/// The IN-PROCESS twin of `mode_env` — EVERY routing field for the named mode, so a
 /// helper cannot inherit one from `parser_new`'s defaults. Returned as VALUES rather
 /// than applied here because a plain fn's `p` is immutable; the decision is what needs
 /// centralizing, and each caller assigns onto its own `mut p`.
 ///
-/// The expression pair is the half that was missing, and it is not optional: the gate in
-/// `parse_expression` is `if self.expr_flip || self.expr_static`, an OR, and
-/// `expr_static` reads `!= "0"` — ON by default. So setting only `decl_flip = false`
-/// leaves the "hand" oracle running the GENERATED expression parser, and the table
-/// assertions compare native against native instead of against `parse_table_literal`.
-/// Harmless before `table_lit` went native (no native table rule existed, so the
-/// expression path fell through to `@hand(primary_base)` -> the hand's own parser); a
-/// live vacuity once the rule landed.
+/// The expression field is pinned as well as the declaration one, and that is not
+/// optional: `expr_flip` is read independently of the decl flags, so a helper that sets
+/// only `decl_static` leaves the expression engine ambient and both "sides" can end up
+/// on the same one.
 ///
-///   hand — both off, so the gate is false and `parse_expression_hand` runs
-///   emit — expr_static on: the generated static parser
-///   exec — expr_flip on + expr_static off: the Grammar-tree interpreter
-type RouteFlags = { decl_static: bool, expr_flip: bool, expr_static: bool }
+///   emit — the CHECKED-IN generated static parser (decl + expr)
+///   exec — the Grammar-tree interpreter (decl + expr)
+///
+/// There is no "hand" row: t-47hc.4.1 deleted the hand expression ladder, and the decl
+/// hand leaf went with `@hand(decl_hand)` before it. A mode name that selects neither is
+/// worse than no mode at all (t-bw9s), so it is gone rather than aliased onto "emit".
+type RouteFlags = { decl_static: bool, expr_flip: bool }
 
 fn mode_flags(mode: string) -> RouteFlags {
-    if mode == "hand" {
-        return RouteFlags { decl_static: true, expr_flip: false, expr_static: false }
-    }
     if mode == "emit" {
-        return RouteFlags { decl_static: true, expr_flip: false, expr_static: true }
+        return RouteFlags { decl_static: true, expr_flip: false }
     }
-    RouteFlags { decl_static: false, expr_flip: true, expr_static: false }
+    RouteFlags { decl_static: false, expr_flip: true }
 }
 
 
 fn rtree(static_raw: bool, source: string) -> string {
-    // static-raw: the static generated parser with the interpreter re-parse
-    // fallback OFF (its RAW recovery tree). Otherwise the hand oracle.
-    rtree_at(if static_raw { "emit" } else { "hand" }, source)
+    // static-raw: the EMIT-generated parser. Otherwise the interpreter engine — the
+    // second implementation of the same grammar, and the only remaining oracle.
+    rtree_at(if static_raw { "emit" } else { "exec" }, source)
 }
 fn agree_tree(source: string) -> bool {
     let sr = rtree(true, source)
-    let hand = rtree(false, source)
-    if sr != hand {
+    let ex = rtree(false, source)
+    if sr != ex {
         println("recovery tree mismatch")
         println(source)
-        println(sr)
-        println(hand)
+        println("emit=" + sr)
+        println("exec=" + ex)
     }
-    sr == hand
+    sr == ex
 }
 
-// ── t-47hc.4.3 — the ONE input where the native paths deliberately DIVERGE ────
+// ── t-47hc.4.3 — the ONE input where the two engines deliberately DIVERGE ─────
 //
-// Every other oracle in this file asserts hand == native. This one asserts the
+// Every other oracle in this file asserts emit == exec. This one asserts the
 // opposite, for a single input, and it is recorded here rather than dropped from the
 // corpus because a case removed is a case nobody re-examines.
 //
@@ -846,7 +889,7 @@ fn agree_tree(source: string) -> bool {
 //
 // `parse_declaration_hand` is DELETED. `AVRA_PARSER_DECL_FLIP=0` no longer selects a
 // different parser for declarations, because `parse_declaration` has no flip branch left
-// to take — so `hand_oracle()` and `static_raw()` run the SAME engine and every
+// to take — so `exec_oracle()` and `static_raw()` run the SAME engine and every
 // `agree` / `agree_all` / `agree_bad` / `agree_tree` assertion below compares native
 // against native. They pass by construction. All ~525 of them.
 //
@@ -863,9 +906,9 @@ spec "t-47hc.5: the hand oracle is GONE — this corpus compares native against 
         // Three inputs the two engines demonstrably DISAGREED on while the hand existed:
         // a bare `@` (hand invented an annotation named `fn`), a malformed binding, and a
         // malformed wrapper. Identical output on all three is proof of vacuity, not parity.
-        hand_oracle("@\nfn f() -> int { 1 }") == static_raw("@\nfn f() -> int { 1 }") &&
-            hand_oracle("let x: = 1\nfn f() -> int { 1 }") == static_raw("let x: = 1\nfn f() -> int { 1 }") &&
-            hand_oracle("@a\nmut\nfn f() -> int { 1 }") == static_raw("@a\nmut\nfn f() -> int { 1 }")
+        exec_oracle("@\nfn f() -> int { 1 }") == static_raw("@\nfn f() -> int { 1 }") &&
+            exec_oracle("let x: = 1\nfn f() -> int { 1 }") == static_raw("let x: = 1\nfn f() -> int { 1 }") &&
+            exec_oracle("@a\nmut\nfn f() -> int { 1 }") == static_raw("@a\nmut\nfn f() -> int { 1 }")
     }
 }
 
@@ -884,8 +927,8 @@ fn native_agrees_hand_differs(source: string) -> bool {
         println(source)
         return false
     }
-    if sr == hand_oracle(source) {
-        println("the hand now AGREES — fold this case back into agree_all")
+    if sr == exec_oracle(source) {
+        println("the EXECUTOR now AGREES — fold this case back into agree_all")
         println(source)
         return false
     }
@@ -911,8 +954,8 @@ fn native_tree_agrees_hand_differs(source: string) -> bool {
         println(source)
         return false
     }
-    if e == rtree_at("hand", source) {
-        println("the hand's TREE now AGREES — fold this case back into agree_bad")
+    if e == rtree_at("exec", source) {
+        println("the EXECUTOR's TREE now AGREES — fold this case back into agree_bad")
         println(source)
         return false
     }
@@ -974,10 +1017,9 @@ fn native_tree_agrees_hand_differs(source: string) -> bool {
 // sequence, so the two lists diverge in length and content.
 fn poslist(static_raw: bool, source: string) -> string {
     mut p = parser_new(source)
-    let f = mode_flags(if static_raw { "emit" } else { "hand" })
+    let f = mode_flags(if static_raw { "emit" } else { "exec" })
     p.decl_static = f.decl_static
     p.expr_flip = f.expr_flip
-    p.expr_static = f.expr_static
     let r = p.parse_file_program()
     if r.ids == null { return "<null>" }
     mut out = ""
@@ -992,10 +1034,9 @@ fn poslist(static_raw: bool, source: string) -> string {
 
 fn rdiags(static_raw: bool, source: string) -> int {
     mut p = parser_new(source)
-    let f = mode_flags(if static_raw { "emit" } else { "hand" })
+    let f = mode_flags(if static_raw { "emit" } else { "exec" })
     p.decl_static = f.decl_static
     p.expr_flip = f.expr_flip
-    p.expr_static = f.expr_static
     let r = p.parse_file_program()
     r.bag.diagnostics.length
 }
@@ -1007,22 +1048,22 @@ fn rdiags(static_raw: bool, source: string) -> int {
 fn agree_bad(source: string) -> bool {
     if !agree_tree(source) { return false }
     let sr = rdiags(true, source)
-    let hand = rdiags(false, source)
-    if sr == 0 || hand == 0 {
+    let ex = rdiags(false, source)
+    if sr == 0 || ex == 0 {
         println("SILENT DROP — invalid source parsed with no diagnostic")
         println(source)
-        println("static=${string(sr)} hand=${string(hand)}")
+        println("emit=${string(sr)} exec=${string(ex)}")
         return false
     }
-    if sr != hand {
-        println("diagnostic COUNT divergence static=${string(sr)} hand=${string(hand)}")
+    if sr != ex {
+        println("diagnostic COUNT divergence emit=${string(sr)} exec=${string(ex)}")
         println(source)
         return false
     }
     true
 }
 
-spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
+spec "t-47hc.3: recovery-TREE shape == exec oracle (invalid corpus)" {
     // The same category-diverse invalid corpus as the F-code oracle, now asserting
     // the RECOVERED TREES match — a strictly stronger check. Every case here agrees
     // at the tree level (the single known divergence is characterised separately
@@ -1044,7 +1085,9 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
         agree_bad("fn a(x: ) -> int { 1 }\nfn b() -> int { 2 }") &&
         agree_bad("fn a() -> { 1 }\nfn b() -> int { 2 }") &&
         agree_bad("fn a() -> int\nfn b() -> int { 2 }") &&
-        agree_bad("type T = { x: , y: int }\nfn f() -> int { 1 }") &&
+        // PINNED (see `pin`): the executor answers this field abort with an extra
+        // alternation diagnostic, so the COUNT half of `agree_bad` cannot hold.
+        pin_tree("type T = { x: , y: int }\nfn f() -> int { 1 }", "(error)\n(fn f () -> int (expr 1))", 2) &&
         agree_bad("type T = { x: int\nfn f() -> int { 1 }") &&
         agree_bad("type = { x: int }\nfn f() -> int { 1 }") &&
         agree_bad("enum E { A, , B }\nfn f() -> int { 1 }") &&
@@ -1343,7 +1386,9 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
     }
     then "multi-error recovery builds the same tree" {
         agree_bad("fn a() -> int { 1 + }\nfn b() -> int { 2 }\nthen\nfn c() -> int { * 3 }") &&
-        agree_bad("type T = { x: , y: }\nfn f(a: , b: int) -> int { return a }\nfn g() -> int { let z = ; return z }") &&
+        // PINNED for the same reason as its F-code sibling above.
+        pin_tree("type T = { x: , y: }\nfn f(a: , b: int) -> int { return a }\nfn g() -> int { let z = ; return z }",
+                 "(error)\n(error)\n(return a)\n(fn g () -> int (error)\n(return z))", 6) &&
         agree_bad("fn h() -> int {\n  if { return 1 }\n  while return 2\n  for x { return 3 }\n}")
     }
     then "unclosed-at-EOF constructs recover to the same tree" {
@@ -1370,7 +1415,7 @@ spec "t-47hc.3: recovery-TREE shape == hand oracle (invalid corpus)" {
 spec "t-47hc.3: the 5c recovery-TREE divergence is CLOSED (emit-error fix)" {
     then "F-codes agree on the stray top-level `* 5`" {
         static_raw("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") ==
-            hand_oracle("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }")
+            exec_oracle("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }")
     }
     then "the recovery TREES now AGREE: static yields a bare `(error)`, matching hand (not `(expr (*`)" {
         let src = "fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }"
@@ -1398,7 +1443,7 @@ spec "t-47hc.3: the 5c recovery-TREE divergence is CLOSED (emit-error fix)" {
 // oracle, so the F-codes AND the recovered trees match hand byte-for-byte. This
 // spec pins that parity over the exact malformed-constructor corpus the ticket
 // names (`.`, `.(1)`, `.Some(1`, unclosed `[`, missing `..`).
-spec "t-47hc.3.1: malformed mandatory-terminal constructors recover == hand" {
+spec "t-47hc.3.1: malformed mandatory-terminal constructors recover == exec" {
     // These six forms MUST set had_error (a missing mandatory terminal), so assert a
     // NONEMPTY, matching F-code signature — not just parser parity (which an
     // all-clean pair would satisfy vacuously).
@@ -1450,7 +1495,7 @@ spec "t-47hc.3.1: malformed mandatory-terminal constructors recover == hand" {
 // path parity (diff-test only covers VALID programs). A failed comprehension @try rolls
 // back so the list branch / enclosing recovery reports; these lock that the recovered
 // F-codes AND trees match hand.
-spec "t-47hc.4.5: grammar-native list_expr recovers == hand oracle" {
+spec "t-47hc.4.5: grammar-native list_expr recovers == exec oracle" {
     then "malformed list literals REPORT and agree (unclosed, stray/missing comma)" {
         agree_error("fn f() -> int {\n let z = [1, 2\n return 0\n}") &&
         agree_error("fn f() -> int {\n let z = [1,,2]\n return 0\n}") &&
@@ -1486,7 +1531,7 @@ fn tpl_src(body: string) -> string {
     "fn f() -> int {\n let x = 1\n " + body + "\n return 0\n}"
 }
 
-spec "t-47hc.19: grammar-native template_lit recovers == hand oracle" {
+spec "t-47hc.19: grammar-native template_lit recovers == exec oracle" {
     then "malformed interpolations REPORT and agree" {
         // unterminated `${x` and an invalid sub-expression `${(}`
         agree_error(tpl_src("let b = \"v=" + dbrace() + "x\"")) &&
@@ -1509,7 +1554,7 @@ spec "t-47hc.19: grammar-native template_lit recovers == hand oracle" {
 // t-47hc.18b: `qualified_expr` (`@pkg::mod::name` + its struct-literal form) is native.
 // The `( "::" IDENT )+` carries `@expect("+", …)` so a bare `@name` reports the hand's
 // exact wording, not the emitter's generic required-repetition message.
-spec "t-47hc.18b: grammar-native qualified_expr recovers == hand oracle" {
+spec "t-47hc.18b: grammar-native qualified_expr recovers == exec oracle" {
     then "malformed qualified references REPORT and agree" {
         agree_error("fn f() -> int {\n let q = @foo\n return 0\n}") &&
         agree_error("fn f() -> int {\n let q = @pkg::\n return 0\n}") &&
@@ -1527,7 +1572,7 @@ spec "t-47hc.18b: grammar-native qualified_expr recovers == hand oracle" {
 
 // t-47hc.18: `brace_expr` dispatches natively via `@peek(brace_map)` (the token twin of
 // is_map_literal) and `map_literal` is grammar-owned. The hand parse_brace_expr is gone.
-spec "t-47hc.18: grammar-native brace_expr / map_literal recover == hand oracle" {
+spec "t-47hc.18: grammar-native brace_expr / map_literal recover == exec oracle" {
     then "malformed map literals REPORT and agree (missing colon, unclosed, stray comma)" {
         agree_error("fn f() -> int {\n let m = { \"a\": 1, \"b\" 2 }\n return 0\n}") &&
         agree_error("fn f() -> int {\n let m = { \"a\": 1\n return 0\n}") &&
@@ -1559,7 +1604,7 @@ spec "t-47hc.18: grammar-native brace_expr / map_literal recover == hand oracle"
 // cases pin that equivalence — including the follow-on diagnostics, where a divergence
 // would show up if the grammar's report-and-continue drifted from the hand's
 // report-and-abort.
-spec "t-47hc.17: grammar-native with_suffix recovers == hand oracle" {
+spec "t-47hc.17: grammar-native with_suffix recovers == exec oracle" {
     then "malformed with-field lists REPORT and agree (junk token, unclosed)" {
         agree_error("fn f() -> int {\n let a = P { x: 1 }\n let b = a with { 1 }\n return 0\n}") &&
         agree_error("fn f() -> int {\n let a = P { x: 1 }\n let b = a with { x: 2\n return 0\n}") &&
@@ -1586,7 +1631,7 @@ spec "t-47hc.17: grammar-native with_suffix recovers == hand oracle" {
 // expression parser. Unlike valid-input differential tests, this oracle makes
 // a failed @try/tuple/lambda parse observable: the generated parser must fall
 // through to the same hand recovery tree and diagnostics as Parser A.
-spec "t-47hc.16: grammar-native paren_expr recovers == hand oracle" {
+spec "t-47hc.16: grammar-native paren_expr recovers == exec oracle" {
     then "unclosed grouping REPORTS exactly like hand" {
         agree_error("fn f() -> int {\n let a = (1 + 2\n return a\n}")
     }
@@ -1739,7 +1784,7 @@ spec "t-47hc.33.1: a reserved-keyword field name parses on every path" {
 /// pass vacuously here and cannot say anything about what a valid program PARSES
 /// INTO. This is the valid-input twin: same three paths, compared on the tree.
 fn tree_agrees_everywhere(source: string) -> bool {
-    let h = rtree_at("hand", source)
+    let h = rtree_at("exec", source)
     let e = rtree_at("emit", source)
     let x = rtree_at("exec", source)
     if e != h || x != h {
@@ -1838,7 +1883,7 @@ spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
         // reached the `!!` it names. Green, and measuring nothing: the same
         // typo'd-fixture trap this file records retiring BARE_IDENT_COMP_INST for.
         //
-        // `hand_oracle(src) == ""` is what makes the repair hold. `tree_agrees_everywhere`
+        // `exec_oracle(src) == ""` is what makes the repair hold. `tree_agrees_everywhere`
         // compares RENDERED TREES and nothing else, so it cannot reject a parse error the
         // three paths share — which is exactly how the `int??` version passed. Verifying
         // the replacement compiles and then writing "verified" in a comment would repeat
@@ -1846,7 +1891,7 @@ spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
         // same-line control below uses. (`agree_all` is deliberately not added: on a clean
         // program it compares empty against empty, the vacuity this file polices.)
         let ubang = "type W = int?\nfn f(x: W?) -> int {\n let a = x!!\n return 0\n}"
-        tree_agrees_everywhere(ubang) && hand_oracle(ubang) == "" &&
+        tree_agrees_everywhere(ubang) && exec_oracle(ubang) == "" &&
         tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}")
     }
     then "a next-line `?` after a `!` run does NOT fold — the fallthrough re-guards" {
@@ -1875,14 +1920,14 @@ spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
             agree_all("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}") &&
             // The exact diagnostic, not merely agreement — an equal-and-nonzero
             // signature is not evidence of the RIGHT rejection.
-            hand_oracle("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}").contains("F0040")
+            exec_oracle("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}").contains("F0040")
     }
     then "the SAME-LINE `!` compounds still fold — the guard did not over-reject" {
         // The control for the strictness change above: `x!?` on ONE line must stay
         // clean on every path. A re-guard that also killed this would be a regression,
         // and nothing else in this spec would have caught it.
         tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") &&
-            hand_oracle("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") == ""
+            exec_oracle("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") == ""
     }
 }
 
@@ -1892,10 +1937,29 @@ fn agree_pos(source: string) -> bool {
     if h != n {
         println("SrcPos side-table divergence")
         println(source)
-        println("hand  =" + h)
-        println("static=" + n)
+        println("exec  =" + h)
+        println("emit  =" + n)
     }
     h == n
+}
+
+/// PINNED positions — the shipping parser's exact stamped `line:col` sequence.
+///
+/// The component-instantiation corpus below cannot be a differential: the executor
+/// does not answer these forms at all (it stamps the trailing `fn` and nothing else),
+/// so `agree_pos` on them would be asserting that one engine matches another engine's
+/// refusal. Pinning is what the spec actually wanted anyway — its stated job is to
+/// catch a DROPPED or MISPLACED `record_pos`, and a literal expected sequence catches
+/// that directly, without depending on a second implementation having an opinion.
+fn pin_pos(source: string, expected: string) -> bool {
+    let n = poslist(true, source)
+    if n != expected {
+        println("PINNED SrcPos sequence moved")
+        println(source)
+        println("expected=" + expected)
+        println("actual  =" + n)
+    }
+    n == expected
 }
 
 // Landed BEFORE slice B2b routed the four component-body arms, for the same reason
@@ -1905,25 +1969,30 @@ fn agree_pos(source: string) -> bool {
 // `push_body_elem`'s stamping. It remains the only spec in the repo that can catch a
 // dropped or misplaced `record_pos`, because positions reach neither the IR (so
 // diff-test is blind) nor the tree shape.
-spec "t-47hc.5.1: the per-statement SrcPos side-table agrees with the hand" {
-    then "a native instantiation body stamps its statements like the hand" {
-        agree_pos("component C inst { key \"v\"\n  let z = 1\n  foo()\n}\nfn f() -> int { 1 }")
+spec "t-47hc.5.1: the per-statement SrcPos side-table is stamped exactly" {
+    // Each expectation is the sequence `push_body_elem` produces: body rows first, in
+    // source order, then the enclosing block, then the trailing `fn`. A rule that
+    // stopped stamping loses its entry; one that stamped at the wrong token moves it.
+    then "a native instantiation body stamps every body statement" {
+        pin_pos("component C inst { key \"v\"\n  let z = 1\n  foo()\n}\nfn f() -> int { 1 }",
+                "2:3 3:3 1:1 5:17 ")
     }
     then "config pairs do not disturb the body's positions" {
-        agree_pos("component C inst { a 1\n  b \"s\"\n  let z = 1\n}\nfn f() -> int { 1 }")
+        pin_pos("component C inst { a 1\n  b \"s\"\n  let z = 1\n}\nfn f() -> int { 1 }",
+                "3:3 1:1 5:17 ")
     }
     // The four arms B2b made native (nested `component`, `ident name {`, `ident {`,
     // `ident() {`). Their stamping did not move when they flipped — which is the
-    // assertion, and it failed until each routed arm stamped like the hand.
-    then "the once-declined arms are stamped like the hand" {
-        agree_pos("component C inst { nested name { let z = 1 } }\nfn f() -> int { 1 }") &&
-        agree_pos("component C inst { nested { let z = 1 } }\nfn f() -> int { 1 }") &&
-        agree_pos("component C inst { run() { let z = 1 } }\nfn f() -> int { 1 }") &&
-        agree_pos("component C inst { component D e { } }\nfn f() -> int { 1 }")
+    // assertion, and it failed until each routed arm stamped like `push_body_elem`.
+    then "the once-declined arms are stamped at their own lead token" {
+        pin_pos("component C inst { nested name { let z = 1 } }\nfn f() -> int { 1 }", "1:34 1:20 1:1 2:17 ") &&
+        pin_pos("component C inst { nested { let z = 1 } }\nfn f() -> int { 1 }", "1:29 1:20 1:1 2:17 ") &&
+        pin_pos("component C inst { run() { let z = 1 } }\nfn f() -> int { 1 }", "1:28 1:20 1:1 2:17 ") &&
+        pin_pos("component C inst { component D e { } }\nfn f() -> int { 1 }", "1:20 1:1 2:17 ")
     }
     then "positions survive a MALFORMED body too (recovery still stamps)" {
-        agree_pos("component C inst { let x }\nfn f() -> int { 1 }") &&
-        agree_pos("component C inst { nested name }\nfn f() -> int { 1 }")
+        pin_pos("component C inst { let x }\nfn f() -> int { 1 }", "1:1 2:17 ") &&
+        pin_pos("component C inst { nested name }\nfn f() -> int { 1 }", "1:1 2:17 ")
     }
 }
 
@@ -2091,7 +2160,7 @@ spec "t-myz7: `primary_base`'s residue — the feature-form seam and the F0040 p
             // code in it. Without this the tree assertion alone would accept a fixture
             // that never parsed — see `sig_has_parse_code`.
             agree_all("fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
-            !sig_has_parse_code(hand_oracle("fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}"))
+            !sig_has_parse_code(exec_oracle("fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}"))
     }
 
     then "a `table { … }` literal builds the same TREE on all three paths" {
@@ -2099,7 +2168,7 @@ spec "t-myz7: `primary_base`'s residue — the feature-form seam and the F0040 p
             agree_all("fn t() -> int {\n let x = table { }\n 0\n}") &&
             // This one is genuinely diagnostic-FREE, so pin that exactly rather than
             // settling for the weaker no-parse-code bar the `grammar` case needs.
-            hand_oracle("fn t() -> int {\n let x = table { }\n 0\n}") == ""
+            exec_oracle("fn t() -> int {\n let x = table { }\n 0\n}") == ""
     }
 
     // The delegate's OTHER job, and the one the `@hand(postfix_suffix)` retirement
@@ -2119,7 +2188,7 @@ spec "t-myz7: `primary_base`'s residue — the feature-form seam and the F0040 p
             // `agree_all` only an equal LIST, so all three paths emitting some other
             // code — or emitting F0040 twice — would pass. This spec's whole subject is
             // the F0040 path, so it asserts F0040, once, on the oracle.
-            hand_oracle("fn f() -> int {\n let v = )\n 0\n}") == "F0040 "
+            exec_oracle("fn f() -> int {\n let v = )\n 0\n}") == "F0040 "
     }
 
     // The control. Without it the three assertions above could all be satisfied by a
@@ -2128,7 +2197,7 @@ spec "t-myz7: `primary_base`'s residue — the feature-form seam and the F0040 p
     then "a plain function — the control — agrees, and is diagnostic-free" {
         tree_agrees_everywhere("fn f() -> int { 1 }") &&
             agree_all("fn f() -> int { 1 }") &&
-            hand_oracle("fn f() -> int { 1 }") == ""
+            exec_oracle("fn f() -> int { 1 }") == ""
     }
 }
 
@@ -2187,7 +2256,7 @@ spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" 
             tree_agrees_everywhere(src) &&
             // The exact message, not merely "some equal set" — this is the assertion the
             // F-code signature cannot make.
-            errmsgs(mode_env("hand"), src).contains("table row has 1 cell(s) but the header declares 2 column(s)")
+            errmsgs(mode_env("exec"), src).contains("table row has 1 cell(s) but the header declares 2 column(s)")
     }
 
     then "a row WIDER than the header names both widths" {
@@ -2195,7 +2264,7 @@ spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" 
         msgs_agree_bad(src) &&
             agree_all(src) &&
             tree_agrees_everywhere(src) &&
-            errmsgs(mode_env("hand"), src).contains("table row has 2 cell(s) but the header declares 1 column(s)")
+            errmsgs(mode_env("exec"), src).contains("table row has 2 cell(s) but the header declares 1 column(s)")
     }
 
     then "a duplicate column name is rejected, naming the column" {
@@ -2203,7 +2272,7 @@ spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" 
         msgs_agree_bad(src) &&
             agree_all(src) &&
             tree_agrees_everywhere(src) &&
-            errmsgs(mode_env("hand"), src).contains("duplicate table column `a`")
+            errmsgs(mode_env("exec"), src).contains("duplicate table column `a`")
     }
 
     // The two VALID shapes. They belong in this corpus because the flip's risk is not
@@ -2213,7 +2282,7 @@ spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" 
         let src = "fn t() -> int {\n let x = table<Row> { a\n  1\n }\n 0\n}"
         tree_agrees_everywhere(src) &&
             agree_all(src) &&
-            hand_oracle(src) == ""
+            exec_oracle(src) == ""
     }
 
     // cell_mode is SAVED and RESTORED around the row loop precisely so a table inside a
@@ -2233,20 +2302,27 @@ spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" 
         // set, so `2` at the end of a row could take the next row's `-3` as a binary
         // operand and silently merge two rows into one.
         //
-        // HONEST NOTE: this case passes both before and after that fix — I could not
-        // construct an input where the missing marker actually diverged. It is pinned
-        // because the hand's contract is unambiguous (cell_mode covers every cell) and a
-        // future pratt/line-guard change could make the gap observable; it is NOT a
-        // fail-before/pass-after witness, and should not be read as one.
+        // THE NOTE THAT USED TO SIT HERE IS RETRACTED, and worth keeping so the
+        // retraction is legible. It read: "this case passes both before and after that
+        // fix — I could not construct an input where the missing marker actually
+        // diverged … it is NOT a fail-before/pass-after witness". That was true of the
+        // engines it was measured against (emit and the hand), and false of the one it
+        // was not: the EXECUTOR had no cell_mode guard on its binary ladder at all, so
+        // this exact input folded `2 - 3` into one cell and reported "row has 3 cell(s)
+        // but the header declares 2 column(s)". It became a fail-before/pass-after
+        // witness the moment t-47hc.4.1 pointed this corpus at emit-vs-exec, and the fix
+        // is `cell_mode_blocks_binary` in executor.av. The lesson generalises: "I could
+        // not construct a diverging input" is a statement about the oracles in reach,
+        // never about the property.
         let src = "type R2 = { a: int, b: int }\nfn t() -> int {\n let x = table<R2> { a | b\n  1 | 2\n  -3 | 4\n }\n 0\n}"
-        agree_all(src) && hand_oracle(src) == ""
+        agree_all(src) && exec_oracle(src) == ""
     }
 
     then "a table NESTED in a cell leaves the outer table's cell_mode intact" {
         let src = "fn t() -> int {\n let x = table<Row> { a | b\n  1 | table<Inner> { c\n   2\n  }\n }\n 0\n}"
         tree_agrees_everywhere(src) &&
             agree_all(src) &&
-            hand_oracle(src) == ""
+            exec_oracle(src) == ""
     }
 }
 

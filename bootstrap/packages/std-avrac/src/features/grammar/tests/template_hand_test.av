@@ -20,18 +20,20 @@ fn dsl_expr(src: string) -> string {
     render_expr_id(r.store, r.root)
 }
 
-// The hand parser's rendered expr for the same `src` (parse_primary is where the
-// hand parser handles the Tk.Template arm).
-fn hand_expr(src: string) -> string {
+// The PRODUCTION parser's rendered expr for the same `src`. Was the hand
+// `parse_primary` (its Tk.Template arm); that ladder is deleted (t-47hc.4.1), so this
+// is the generated static parser via `parse_expression`. Interpreter-vs-emit remains a
+// genuine differential: two engines, one grammar.
+fn prod_expr(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_primary() {
+    match p.parse_expression() {
         .Ok(id) -> render_expr_id(p.store, id)
         .Err(_) -> "<hand err>"
     }
 }
 
 fn agree(src: string) -> bool {
-    dsl_expr(src) == hand_expr(src)
+    dsl_expr(src) == prod_expr(src)
 }
 
 // Build the SOURCE of an interpolated string literal WITHOUT the "${" appearing

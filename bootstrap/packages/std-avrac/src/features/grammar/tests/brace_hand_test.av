@@ -18,16 +18,22 @@ fn dsl_brace(src: string) -> string {
     render_expr_id(r.store, r.root)
 }
 
-fn hand_brace(src: string) -> string {
+// The PRODUCTION parser's answer for the same source. This used to call the hand
+// `parse_primary`; that ladder is deleted (t-47hc.4.1), so the counterpart is now the
+// generated static parser reached through `parse_expression`. The comparison stays a
+// real two-ENGINE differential — interpreter above, emitted parser here — rather than
+// the vacuous native-against-native shape, because the two are separate code paths
+// compiled from the same grammar.
+fn prod_brace(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_primary() {
+    match p.parse_expression() {
         .Ok(id) -> render_expr_id(p.store, id)
         .Err(_) -> "<err>"
     }
 }
 
 fn agree(src: string) -> bool {
-    dsl_brace(src) == hand_brace(src)
+    dsl_brace(src) == prod_brace(src)
 }
 
 spec "t-47hc.18: grammar-native map-vs-block == hand parser" {
