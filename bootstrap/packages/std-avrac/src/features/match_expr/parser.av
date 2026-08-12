@@ -194,7 +194,20 @@ impl Parser {
             run_dsl_pattern_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_pattern_grammar(), "pattern_or")
         }
         if !dsl.had_error {
-            while self.current_start < dsl.stop_byte && !self.is_at_end() {
+            // `check(Tk.Eof)`, not `is_at_end()`. They are different questions and the
+            // difference is a real off-by-one: `is_at_end` is a LEXER position test
+            // (`current >= source_len`, parse/lexer.av), so it goes true as soon as the
+            // scanner has consumed the last byte — while a final token is still STAGED
+            // and unconsumed. The resync then stops one token short and leaves it
+            // current, so a caller continues on a token the pattern already covered.
+            // `check(Tk.Eof)` asks about the staged TOKEN, which is what this loop means.
+            //
+            // The sibling type seam (parse/mod.av) has always used the token form; this
+            // one used the lexer form. Raised in review on #1224, pre-existing rather
+            // than introduced here — but this is the change that makes this seam the
+            // sole pattern entry, so leaving a known-wrong resync in it is exactly the
+            // hack-that-survives-a-commit the rules forbid.
+            while self.current_start < dsl.stop_byte && !self.check(Tk.Eof) {
                 self.advance_token()
             }
             return .Ok(dsl.pat)
