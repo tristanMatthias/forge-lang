@@ -36,7 +36,7 @@ fn dsl_at_type(src: string) -> string {
 fn hand_type(src: string) -> string {
     mut p = parser_new(src)
     // make the "== hand parser" oracle tautological. Pin the hand parser.
-    // t-47hc.37 — was `parse_type_expr_hand`, which is DELETED (the last of the three
+    // t-47hc.37 — was `parse_type_expr_hand`, which is DELETED (the last of the three ITEM-LEVEL
     // hand tails). The oracle half is the INTERPRETER engine now: `type_static = false`
     // selects run_dsl_type_at_shared over the generated run_static_type. Two engines,
     // one grammar — and the interpreter is still PRODUCTION for the type family, so this

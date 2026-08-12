@@ -2619,12 +2619,51 @@ impl Parser {
                 return .Ok(dsl.te)
             }
             // The type family OWNS ITS RECOVERY (t-47hc.37) — the last of the three
-            // seams to get it, after expressions (t-47hc.4.1) and statements. There is
-            // no `parse_type_expr_hand` left to fall through to: it was unreachable from
-            // the front end (the hand-fallback probe fired ZERO times over the whole
-            // compiler source, the difftest corpus, a wide-surface fixture and ten
-            // malformed fixtures) and is deleted.
-            self.report(DiagCode.SyntaxError, message)
+            // ITEM-LEVEL seams to get it, after expressions (t-47hc.4.1) and
+            // statements. There is no `parse_type_expr_hand` left to fall through to:
+            // it was unreachable from the front end (the hand-fallback probe fired
+            // ZERO times over the whole compiler source, the difftest corpus, a
+            // wide-surface fixture and ten malformed fixtures) and is deleted.
+            //
+            // "the three" is EXPRESSIONS, STATEMENTS and TYPES, and it is not the same
+            // as "no hand parser is left in the compiler" — PATTERNS are a fourth
+            // family and still have one. `parse_pattern_or` (features/match_expr/
+            // parser.av) falls through to `parse_pattern_or_hand` on a DSL parse
+            // error, which is a LIVE production fallback, not a dead tail. Counting
+            // three families and reading it as "done" is exactly the over-claim this
+            // program keeps having to walk back, so it is written down here rather
+            // than left to the next reader to discover. Tracked separately.
+            // SURFACE THE GRAMMAR'S OWN DIAGNOSTICS, exactly as the expression and
+            // declaration seams do. Raised in review on #1223, and it is a real gap
+            // rather than a style point: this seam used to report a generic
+            // `SyntaxError` at the CALLER's cursor and drop `dsl.diags` on the floor.
+            // That was survivable only while `parse_type_expr_hand` existed to
+            // re-parse and own the message — deleting the hand made this the ONLY
+            // place a type diagnostic can reach the user, so dropping them here loses
+            // the rule's message, its F-code and its span outright.
+            //
+            // ALL of them, in report order, and by SPAN — a committed native rule
+            // recovers more than once, and the recovery oracle compares the ORDERED
+            // F-code signature with duplicates preserved. `syntax_diag_code` maps a
+            // rule's declared code back over the F0001-F0999 range; an uncoded
+            // diagnostic keeps the previous `SyntaxError` default.
+            if dsl.diags.length == 0 {
+                // The grammar failed without reporting: keep the seam's own message
+                // rather than failing silently.
+                self.report(DiagCode.SyntaxError, message)
+            } else {
+                mut gi = 0
+                while gi < dsl.diags.length {
+                    let gd = dsl.diags[gi]
+                    let dc = syntax_diag_code(gd.code)
+                    if dc != null {
+                        self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
+                    } else {
+                        self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
+                    }
+                    gi = gi + 1
+                }
+            }
             .Err(message)
         }
     }

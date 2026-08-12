@@ -2,7 +2,10 @@
 //
 // `parse_type_expr` is UNCONDITIONAL now: it runs the type grammar and owns its own
 // error path. The `type_flip` field and the hand parser `parse_type_expr_hand` it used
-// to fall through to are both DELETED — the last of the three hand tails.
+// to fall through to are both DELETED — the last of the three ITEM-LEVEL hand tails
+// (expressions, statements, types). NOT the last hand parser in the compiler:
+// PATTERNS are a fourth family and `parse_pattern_or` still falls through to
+// `parse_pattern_or_hand` on a DSL error, in production.
 //
 // WHICH TWO ENGINES: `type_static` selects the CHECKED-IN generated parser
 // (run_static_type, parse/gen_type_parser.av) or the tree INTERPRETER
@@ -80,6 +83,41 @@ spec "t-47hc.37: parse_type_expr — interpreter engine == generated engine" {
             agree("@std::avrac::core::ExprId") &&
             agree("List<@std::avrac::core::ExprId>") &&
             agree("@std::avrac::core::Result<int, string>")
+        }
+    }
+}
+
+// Review on #1223: with `parse_type_expr_hand` deleted, this seam is the ONLY
+// place a type diagnostic can reach the user — and it was reporting a generic
+// SyntaxError carrying the CALLER's placeholder message while dropping
+// `dsl.diags` entirely. The grammar's own message, F-code and span were lost.
+// It re-reports them now, the way the expression and declaration seams have.
+//
+// Asserting "an error is produced" would NOT catch that — the old generic report
+// is an error too. So the caller passes a placeholder that could only come from
+// the seam, and the assertion is that the surfaced diagnostic is NOT it. The old
+// behaviour echoed it verbatim, so this row goes red on a regression.
+fn first_type_diag(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_type_expr("CALLER_PLACEHOLDER") {
+        .Ok(_) -> "<parsed>"
+        .Err(_) -> if p.bag.diagnostics.length == 0 { "<no diagnostic>" } else { p.bag.diagnostics[0].message }
+    }
+}
+
+spec "t-47hc.37: the type seam surfaces the GRAMMAR's diagnostics, not the caller's placeholder" {
+    given "a malformed type the grammar rejects with its own message" {
+        then "the surfaced diagnostic is the rule's, not the placeholder the seam was handed" {
+            let d = first_type_diag("List<")
+            d != "<parsed>" && d != "<no diagnostic>" && d != "CALLER_PLACEHOLDER"
+        }
+    }
+    given "several malformed forms" {
+        then "each surfaces a real diagnostic rather than the placeholder" {
+            first_type_diag("Map<string,") != "CALLER_PLACEHOLDER" &&
+            first_type_diag("fn(") != "CALLER_PLACEHOLDER" &&
+            first_type_diag("Map<string,") != "<no diagnostic>" &&
+            first_type_diag("fn(") != "<no diagnostic>"
         }
     }
 }
