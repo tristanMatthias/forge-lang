@@ -115,7 +115,10 @@ impl Parser {
             mut i = 0
             while i < value_count {
                 if self.check(Tk.RightBrace) { break }
-                let val_id = self.parse_primary()?
+                // Table cell: the generated expression parser. Was `parse_primary()` from the hand
+                // ladder — a cell is a single value, and `parse_expression` stops at the `|`
+                // column separator and `}` the same way, because neither is an operator.
+                let val_id = self.parse_expression()?
                 vals.push(val_id)
                 i = i + 1
                 if self.check(Tk.Pipe) { self.advance() }
@@ -202,7 +205,9 @@ impl Parser {
             // between sentinels.
             if self.check(Tk.Tilde) && self.quote_depth > 0 {
                 self.advance()
-                let target_id = self.parse_unary()?
+                // Quote-splice target: the generated expression parser. Was `parse_unary()`; a splice
+                // target is `~x` / `~f(x)`, and the following `,` or `}` terminates it either way.
+                let target_id = self.parse_expression()?
                 if self.check(Tk.Comma) { self.advance() }
                 let sentinel_pat = Pattern.TypePattern("__quote_splice_arms__", "")
                 let splice = Expr.Splice(target_id)

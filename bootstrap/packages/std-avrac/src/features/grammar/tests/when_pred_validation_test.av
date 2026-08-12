@@ -31,7 +31,7 @@ fn err_of(grammar_src: string) -> string {
 
 // A rule gated on `flag`, delegating to a hand leaf that can consume `{ }`.
 fn gated_errs(flag: string, src: string) -> bool {
-    let gp = parse_grammar("gated = @when(${flag}) @hand(primary_base)")
+    let gp = parse_grammar("gated = @when(${flag}) @hand(ident_primary)")
     run_grammar_expr(gp.grammar, src).had_error
 }
 
@@ -290,12 +290,12 @@ spec "t-47hc.32: `@bump` obeys the same POSITION rules as @off/@on" {
         e.contains("@bump") && e.contains("quote_depth")
     }
     then "it cannot wrap a @hand primary — the delegate owns its own mode handling" {
-        err_of("r = @bump(quote_depth) @hand(primary_base)").contains("@bump")
+        err_of("r = @bump(quote_depth) @hand(ident_primary)").contains("@bump")
     }
     then "the diagnostic names @bump, not the @off it used to be mislabelled as" {
         // The three-way marker/flag pick is what makes the message honest; a two-way
         // `if mode_off != \"\" { \"@off\" } else { \"@on\" }` reported \"@on(\" + \"\" + \")\".
-        !err_of("r = @bump(quote_depth) @hand(primary_base)").contains("@on")
+        !err_of("r = @bump(quote_depth) @hand(ident_primary)").contains("@on")
     }
 }
 
@@ -338,7 +338,7 @@ spec "t-47hc: a mode marker MAY ride a @require item, with the restore threaded"
         // Anti-vacuity: if `rejects` simply stopped detecting rejections the three
         // assertions above would pass for the wrong reason. A mode marker on a `@hand`
         // primary is still an error, and so is an unknown flag.
-        rejects("r = @bump(quote_depth) @hand(primary_base)") &&
+        rejects("r = @bump(quote_depth) @hand(ident_primary)") &&
             rejects("r = @off(no_such_flag) a:NUMBER")
     }
     then "a @require with NO mode marker is still fine — the rule is the pair, not @require" {
