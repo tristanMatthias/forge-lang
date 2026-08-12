@@ -123,26 +123,57 @@ jobs:
         run: |
           wd=bootstrap/build/difftest/work
           if [ ! -f "$wd/self.old.ll" ] || [ ! -f "$wd/self.new.ll" ]; then
-            echo "no selfhost IR pair — the divergence was in the corpus, or the compile itself failed"
+            echo "no selfhost IR pair — the compile failed before both sides were emitted"
             ls -la "$wd" 2>/dev/null || echo "(no work dir)"
+            exit 0
+          fi
+          # `if: failure()` also fires for a CORPUS-only divergence, and the selfhost pair
+          # exists by then either way. Rather than thread a status through the job, ask the
+          # files: identical means selfhost agreed and the failure came from elsewhere.
+          if cmp -s "$wd/self.old.ll" "$wd/self.new.ll"; then
+            echo "selfhost IR is BYTE-IDENTICAL — this failure was NOT a selfhost divergence"
+            echo "(corpus divergence, a rejected compile, or a non-diff-test step)"
             exit 0
           fi
           echo "=== selfhost IR: line counts"
           wc -l "$wd/self.old.ll" "$wd/self.new.ll"
           echo "=== divergence summary (first 200 diff lines, unified)"
           diff -u "$wd/self.old.ll" "$wd/self.new.ll" | head -200 || true
-          echo "=== are the differing lines TYPE DECLARATIONS, and are they MISSING or REORDERED?"
-          # The recorded signature is a block of named struct types on one side only. Sorting
-          # both sides answers presence-vs-order in one line: if the sorted sets match, the
-          # emission REORDERED; if they differ, one side genuinely emitted fewer types.
-          grep -E '^%"' "$wd/self.old.ll" | sort > /tmp/t.old || true
-          grep -E '^%"' "$wd/self.new.ll" | sort > /tmp/t.new || true
-          echo "old type decls: $(wc -l < /tmp/t.old), new: $(wc -l < /tmp/t.new)"
-          if diff -q /tmp/t.old /tmp/t.new >/dev/null 2>&1; then
-            echo "VERDICT: same type SET, different ORDER -> an emission-ordering bug"
+
+          # The recorded signature is a block of named struct types differing between the
+          # sides. Two very different causes produce it, so the verdict PROVES which rather
+          # than inferring it — an earlier version of this step compared only sorted type
+          # lines, which reports "ordering" for a changed FUNCTION BODY as well, since the
+          # type lines are equal in that case too.
+          #
+          # A type declaration is `%"…" = type …`. Everything else is the remainder.
+          type_re='^%"[^"]*"[[:space:]]*=[[:space:]]*type([[:space:]]|$)'
+          for side in old new; do
+            grep -E   "$type_re" "$wd/self.$side.ll" > "/tmp/ty.$side" || true
+            grep -vE  "$type_re" "$wd/self.$side.ll" > "/tmp/rest.$side" || true
+          done
+          echo "type decls: old=$(wc -l < /tmp/ty.old) new=$(wc -l < /tmp/ty.new)"
+          if [ ! -s /tmp/ty.old ] && [ ! -s /tmp/ty.new ]; then
+            echo "VERDICT: no type declarations matched on EITHER side — the selector is"
+            echo "         wrong for this IR, so no classification is possible. Read the"
+            echo "         diff above directly rather than trusting a verdict here."
+            exit 0
+          fi
+          sort /tmp/ty.old > /tmp/tys.old; sort /tmp/ty.new > /tmp/tys.new
+          same_set=1;  cmp -s /tmp/tys.old /tmp/tys.new || same_set=0
+          same_rest=1; cmp -s /tmp/rest.old /tmp/rest.new || same_rest=0
+          same_order=1; cmp -s /tmp/ty.old /tmp/ty.new || same_order=0
+          if [ "$same_set" = 1 ] && [ "$same_rest" = 1 ] && [ "$same_order" = 0 ]; then
+            echo "VERDICT: ORDERING — same type SET, same non-type IR, different type ORDER."
+            echo "         This is the mechanism t-47hc.14 describes."
+          elif [ "$same_set" = 0 ]; then
+            echo "VERDICT: TYPE SETS DIFFER — one side emitted types the other did not."
+            echo "         NOT an ordering bug; t-47hc.14's premise does not cover this."
+            diff /tmp/tys.old /tmp/tys.new | head -40 || true
           else
-            echo "VERDICT: type SETS DIFFER -> not ordering; one side emitted different types"
-            diff /tmp/t.old /tmp/t.new | head -40 || true
+            echo "VERDICT: the NON-TYPE IR differs — function bodies or globals changed."
+            echo "         Not a type-table problem at all; treat as a real behavioural diff."
+            diff -u /tmp/rest.old /tmp/rest.new | head -60 || true
           fi
 
       - name: Upload the divergent IR (on failure)

@@ -675,7 +675,7 @@ export fn gen_run_scanner_header() -> string {
     "// Source of truth: char_run_rules() in parse/token_table.av (compiled to byte-run\n" +
     "// scan loops by parse/emit_lex.av). Editing char_run_rules without regenerating\n" +
     "// fails parse/tests/gen_run_scanner_regen_test.av.\n" +
-    "use parse.{byte_at, " + run_symbol_import_list() + "}\n\n"
+    "use parse.{byte_at, EscapeRes, LOWER_X, " + run_symbol_import_list() + "}\n\n"
 }
 
 /// The COMPLETE text of parse/gen_run_scanner.av: header + char-class run bodies +

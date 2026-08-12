@@ -462,11 +462,10 @@ impl Parser {
                     // between a string, a multiline string and a char literal.
                     let er = resolve_escape(sb, self.source, self.current, DQUOTE)
                     content = content + er.text
-                    mut adv = er.consumed - 1
-                    while adv > 0 {
-                        self.advance_byte()
-                        adv = adv - 1
-                    }
+                    // `consumed` counts from the backslash; one byte of it is already
+                    // behind us. take_run_nl walks the rest with the same LF accounting
+                    // every other advance uses — no second way to move the cursor.
+                    self.take_run_nl(self.current + er.consumed - 1)
                     run_start = self.current
                 } else {
                     self.advance_byte()
@@ -546,11 +545,10 @@ impl Parser {
                     // between a string, a multiline string and a char literal.
                     let er = resolve_escape(sb, self.source, self.current, DQUOTE)
                     content = content + er.text
-                    mut adv = er.consumed - 1
-                    while adv > 0 {
-                        self.advance_byte()
-                        adv = adv - 1
-                    }
+                    // `consumed` counts from the backslash; one byte of it is already
+                    // behind us. take_run_nl walks the rest with the same LF accounting
+                    // every other advance uses — no second way to move the cursor.
+                    self.take_run_nl(self.current + er.consumed - 1)
                     run_start = self.current
                 } else {
                     self.advance_byte()
