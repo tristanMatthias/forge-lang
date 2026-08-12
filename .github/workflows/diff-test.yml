@@ -112,3 +112,77 @@ jobs:
             echo "intended-strictness-change label present — a NEW-only rejection of OLD's source is an expected outcome"
           fi
           bash bootstrap/scripts/diagnose.sh --diff-test --base "origin/${BASE_REF}" --new HEAD $extra
+
+      # t-47hc.14 / t-jova: on a divergence, KEEP THE EVIDENCE. Every diagnosis of this
+      # failure so far has been inferred from the job log, which serves only a ~600KB tail
+      # and which `diff` itself truncates with a broken pipe — so the actual divergence has
+      # never once been read whole. Four occurrences produced three wrong attributions and
+      # two reverts of innocent commits. The files are a few MB; the guessing is not cheap.
+      - name: Capture the divergent IR (on failure)
+        if: failure()
+        run: |
+          wd=bootstrap/build/difftest/work
+          if [ ! -f "$wd/self.old.ll" ] || [ ! -f "$wd/self.new.ll" ]; then
+            echo "no selfhost IR pair — the compile failed before both sides were emitted"
+            ls -la "$wd" 2>/dev/null || echo "(no work dir)"
+            exit 0
+          fi
+          # `if: failure()` also fires for a CORPUS-only divergence, and the selfhost pair
+          # exists by then either way. Rather than thread a status through the job, ask the
+          # files: identical means selfhost agreed and the failure came from elsewhere.
+          if cmp -s "$wd/self.old.ll" "$wd/self.new.ll"; then
+            echo "selfhost IR is BYTE-IDENTICAL — this failure was NOT a selfhost divergence"
+            echo "(corpus divergence, a rejected compile, or a non-diff-test step)"
+            exit 0
+          fi
+          echo "=== selfhost IR: line counts"
+          wc -l "$wd/self.old.ll" "$wd/self.new.ll"
+          echo "=== divergence summary (first 200 diff lines, unified)"
+          diff -u "$wd/self.old.ll" "$wd/self.new.ll" | head -200 || true
+
+          # The recorded signature is a block of named struct types differing between the
+          # sides. Two very different causes produce it, so the verdict PROVES which rather
+          # than inferring it — an earlier version of this step compared only sorted type
+          # lines, which reports "ordering" for a changed FUNCTION BODY as well, since the
+          # type lines are equal in that case too.
+          #
+          # A type declaration is `%"…" = type …`. Everything else is the remainder.
+          type_re='^%"[^"]*"[[:space:]]*=[[:space:]]*type([[:space:]]|$)'
+          for side in old new; do
+            grep -E   "$type_re" "$wd/self.$side.ll" > "/tmp/ty.$side" || true
+            grep -vE  "$type_re" "$wd/self.$side.ll" > "/tmp/rest.$side" || true
+          done
+          echo "type decls: old=$(wc -l < /tmp/ty.old) new=$(wc -l < /tmp/ty.new)"
+          if [ ! -s /tmp/ty.old ] && [ ! -s /tmp/ty.new ]; then
+            echo "VERDICT: no type declarations matched on EITHER side — the selector is"
+            echo "         wrong for this IR, so no classification is possible. Read the"
+            echo "         diff above directly rather than trusting a verdict here."
+            exit 0
+          fi
+          sort /tmp/ty.old > /tmp/tys.old; sort /tmp/ty.new > /tmp/tys.new
+          same_set=1;  cmp -s /tmp/tys.old /tmp/tys.new || same_set=0
+          same_rest=1; cmp -s /tmp/rest.old /tmp/rest.new || same_rest=0
+          same_order=1; cmp -s /tmp/ty.old /tmp/ty.new || same_order=0
+          if [ "$same_set" = 1 ] && [ "$same_rest" = 1 ] && [ "$same_order" = 0 ]; then
+            echo "VERDICT: ORDERING — same type SET, same non-type IR, different type ORDER."
+            echo "         This is the mechanism t-47hc.14 describes."
+          elif [ "$same_set" = 0 ]; then
+            echo "VERDICT: TYPE SETS DIFFER — one side emitted types the other did not."
+            echo "         NOT an ordering bug; t-47hc.14's premise does not cover this."
+            diff /tmp/tys.old /tmp/tys.new | head -40 || true
+          else
+            echo "VERDICT: the NON-TYPE IR differs — function bodies or globals changed."
+            echo "         Not a type-table problem at all; treat as a real behavioural diff."
+            diff -u /tmp/rest.old /tmp/rest.new | head -60 || true
+          fi
+
+      - name: Upload the divergent IR (on failure)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: difftest-divergence-${{ github.run_id }}
+          path: |
+            bootstrap/build/difftest/work/self.old.ll
+            bootstrap/build/difftest/work/self.new.ll
+          retention-days: 14
+          if-no-files-found: ignore

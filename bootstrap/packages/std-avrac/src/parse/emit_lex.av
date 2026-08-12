@@ -19,7 +19,7 @@
 // (parse/gen_operator_scanner.av) is what production consumes. RELATIVE imports:
 // this is an in-package compiler-src module (absolute `@std.avrac.` self-imports
 // double-expand the package — F4012).
-use parse.{operator_rules, keyword_rules, char_run_rules, delim_run_rules, str_run_rules, nest_run_rules, interp_run_rules, LitRule, CharRun, DelimRun, StrRun, NestRun, InterpRun, byte_at, ascii_const_name}
+use parse.{operator_rules, keyword_rules, char_run_rules, delim_run_rules, str_run_rules, nest_run_rules, interp_run_rules, escape_rules, LitRule, CharRun, DelimRun, StrRun, NestRun, InterpRun, EscapeRule, byte_at, ascii_const_name}
 use core.{Tk, tk_name}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
@@ -364,6 +364,12 @@ fn run_symbol_import_list() -> string {
         if sr[m].stop_nl && !run_list_has(syms, "LF") { syms.push("LF") }
         m = m + 1
     }
+    let er = escape_rules()
+    mut e = 0
+    while e < er.length {
+        if !run_list_has(syms, er[e].lead) { syms.push(er[e].lead) }
+        e = e + 1
+    }
     let ir = interp_run_rules()
     mut q = 0
     while q < ir.length {
@@ -610,6 +616,47 @@ export fn emit_interp_scanner_source() -> string {
     out
 }
 
+/// GENERATED universal escape resolver. One `if` per escape_rules() row.
+fn emit_escape_resolver() -> string {
+    let rules = escape_rules()
+    mut arms = ""
+    mut codes = ""
+    mut i = 0
+    while i < rules.length {
+        arms = arms + "    if b == " + rules[i].lead + " { return EscapeRes { text: \"" + rules[i].text_src + "\", consumed: 2 } }\n"
+        codes = codes + "    if b == " + rules[i].lead + " { return " + string(rules[i].code) + " }\n"
+        i = i + 1
+    }
+    "/// GENERATED from escape_rules(). Resolve the escape whose LEAD byte sits at `esc_pos`\n" +
+    "/// (just past the backslash). `delim` is the caller's own closing delimiter — the ONE\n" +
+    "/// escape that is not universal, since a string escapes `\\\"` and a char literal `\\\'`.\n" +
+    "/// Everything else is identical across the three literal forms, which is why one\n" +
+    "/// resolver can serve all of them instead of the three drifting ladders it replaced.\n" +
+    "/// GENERATED from escape_rules(). The code point for a UNIVERSAL escape lead, or -1.\n" +
+    "/// The char-literal form wants an int, not a lexeme, and rejects what it does not\n" +
+    "/// recognise — so it takes this accessor and keeps its own policy.\n" +
+    "export fn escape_code(b: int) -> int {\n" +
+    codes +
+    "    -1\n" +
+    "}\n" +
+    "\n" +
+    "export fn resolve_escape(src: bytes, text: string, esc_pos: int, delim: int) -> EscapeRes {\n" +
+    "    let b = byte_at(src, esc_pos)\n" +
+    "    if b == -1 { return EscapeRes { text: \"\", consumed: 1 } }\n" +
+    "    if b == delim { return EscapeRes { text: text.substring(esc_pos, esc_pos + 1), consumed: 2 } }\n" +
+    arms +
+    "    if b == LOWER_X {\n" +
+    "        let hi = byte_at(src, esc_pos + 1)\n" +
+    "        let lo = byte_at(src, esc_pos + 2)\n" +
+    "        if hi != -1 && lo != -1 {\n" +
+    "            return EscapeRes { text: avra_char_from_hex(text.substring(esc_pos + 1, esc_pos + 2), text.substring(esc_pos + 2, esc_pos + 3)), consumed: 4 }\n" +
+    "        }\n" +
+    "    }\n" +
+    "    // Unknown escape: VERBATIM, backslash included — the hand behaviour, preserved.\n" +
+    "    EscapeRes { text: \"\\\\\" + text.substring(esc_pos, esc_pos + 1), consumed: 2 }\n" +
+    "}\n"
+}
+
 /// The generated nesting bodies — one `scan_<name>` per nest_run_rules() entry.
 export fn emit_nest_scanner_source() -> string {
     let rules = nest_run_rules()
@@ -628,7 +675,7 @@ export fn gen_run_scanner_header() -> string {
     "// Source of truth: char_run_rules() in parse/token_table.av (compiled to byte-run\n" +
     "// scan loops by parse/emit_lex.av). Editing char_run_rules without regenerating\n" +
     "// fails parse/tests/gen_run_scanner_regen_test.av.\n" +
-    "use parse.{byte_at, " + run_symbol_import_list() + "}\n\n"
+    "use parse.{byte_at, EscapeRes, LOWER_X, " + run_symbol_import_list() + "}\n\n"
 }
 
 /// The COMPLETE text of parse/gen_run_scanner.av: header + char-class run bodies +
@@ -636,5 +683,6 @@ export fn gen_run_scanner_header() -> string {
 export fn gen_run_scanner_file() -> string {
     gen_run_scanner_header() + emit_run_scanner_source() + "\n" + emit_delim_scanner_source() +
         "\n" + emit_str_scanner_source() + "\n" + emit_nest_scanner_source() +
-        "\n" + emit_interp_scanner_source()
+        "\n" + emit_interp_scanner_source() +
+        "\n" + emit_escape_resolver()
 }

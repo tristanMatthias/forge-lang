@@ -275,6 +275,42 @@ export fn delim_run_rules() -> List<DelimRun> {
 /// `close_rep` is how many CONSECUTIVE close bytes end the body — 1 for `"…"`, 3 for the
 /// triple-quoted forms. A one-byte close cannot express `"""…"""`: a multiline body contains
 /// ordinary `"` bytes, so stopping at the first would truncate it.
+/// One resolved escape: the TEXT it produces and how many SOURCE bytes it spanned
+/// (2 for `\\n`, 4 for `\\xNN`). `consumed` is what lets one resolver serve callers that
+/// advance byte-by-byte and callers that slice.
+export type EscapeRes = { text: string, consumed: int }
+
+/// The UNIVERSAL escape map: the byte after `\\`, and the code point it produces.
+///
+/// Universal because these six mean the same thing in every literal form. What is NOT here
+/// is deliberately not universal: the DELIMITER escape (`\\"` in a string, `\\'` in a char
+/// literal) differs per run and the run already carries its own `close`, and `\\x` is
+/// variable-length so it cannot be a byte→byte row.
+///
+/// This existed three times before — `scan_char_literal`, `scan_string_token`, and
+/// `scan_multiline_string` each had their own if/else ladder, and the three had drifted
+/// (the char one honours `\\'` and not `\\"`, the string ones the reverse). Three
+/// implementations of one mapping is the defect this whole table exists to remove.
+/// `text_src` is the escape's replacement AS IT MUST APPEAR IN GENERATED SOURCE — the two
+/// characters `\\` `n`, not a newline. The emitter pastes it into a string literal, so the
+/// literal form is what the table has to hold.
+export type EscapeRule = { lead: string, text_src: string, code: int }
+
+/// Compiled into TWO generated accessors, because the consumers genuinely differ in shape:
+/// `resolve_escape` (text — the string forms build a lexeme) and `escape_code` (int — a
+/// char literal is a code point). Two accessors, ONE table: the map itself is stated once,
+/// which is the duplication that mattered. Their POLICIES still differ and should — a
+/// string passes an unknown escape through verbatim, a char literal rejects it.
+export fn escape_rules() -> List<EscapeRule> {
+    [
+        EscapeRule { code: 10, lead: "LOWER_N",   text_src: "\\n" },
+        EscapeRule { code: 9, lead: "LOWER_T",   text_src: "\\t" },
+        EscapeRule { code: 13, lead: "LOWER_R",   text_src: "\\r" },
+        EscapeRule { code: 0, lead: "DIGIT_0",   text_src: "\\0" },
+        EscapeRule { code: 92, lead: "BACKSLASH", text_src: "\\\\" },
+    ]
+}
+
 export type StrRun = { name: string, close: string, escape: bool, interp_a: string, interp_b: string, stop_nl: bool, close_rep: int }
 
 /// The string-body runs, compiled to `scan_<name>(src, start) -> int` by
