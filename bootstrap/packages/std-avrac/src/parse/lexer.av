@@ -7,7 +7,7 @@ use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
-use parse.{scan_operator, classify_keyword, scan_dq_body, scan_ml_body, scan_raw_ml_body, scan_interp_region, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, scan_raw_body, scan_tmpl_body, scan_block_comment, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
+use parse.{scan_operator, classify_keyword, resolve_escape, escape_code, scan_dq_body, scan_ml_body, scan_raw_ml_body, scan_interp_region, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, scan_raw_body, scan_tmpl_body, scan_block_comment, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
 use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
@@ -334,11 +334,12 @@ impl Parser {
             }
             let ep = self.current
             let esc = self.advance_byte()
-            if esc == LOWER_N { code_point = 10 }
-            else if esc == LOWER_T { code_point = 9 }
-            else if esc == LOWER_R { code_point = 13 }
-            else if esc == DIGIT_0 { code_point = 0 }
-            else if esc == BACKSLASH { code_point = 92 }
+            // The universal map comes from escape_rules() via the generated escape_code;
+            // `\'` is this form's OWN delimiter, and rejecting anything else is this
+            // form's own policy — a string passes an unknown escape through verbatim,
+            // a char literal does not. Shared map, separate policy.
+            let uni = escape_code(esc)
+            if uni >= 0 { code_point = uni }
             else if esc == SQUOTE { code_point = 39 }
             else {
                 self.report(DiagCode.SyntaxError, "unknown escape in character literal: \\" + self.slice(ep, ep + 1))
@@ -456,21 +457,16 @@ impl Parser {
                         run_start = self.current
                         break
                     }
-                    let ep = self.current
-                    let esc = self.advance_byte()
-                    if esc == LOWER_N { content = content + "\n" }
-                    else if esc == LOWER_T { content = content + "\t" }
-                    else if esc == LOWER_R { content = content + "\r" }
-                    else if esc == BACKSLASH { content = content + "\\" }
-                    else if esc == DQUOTE { content = content + "\"" }
-                    else if esc == DIGIT_0 { content = content + "\0" }
-                    else if esc == LOWER_X {
-                        let hp = self.current
+                    // ONE resolver, generated from escape_rules(). `DQUOTE` is this
+                    // form's own delimiter — the only part of an escape that differs
+                    // between a string, a multiline string and a char literal.
+                    let er = resolve_escape(sb, self.source, self.current, DQUOTE)
+                    content = content + er.text
+                    mut adv = er.consumed - 1
+                    while adv > 0 {
                         self.advance_byte()
-                        self.advance_byte()
-                        content = content + avra_char_from_hex(self.slice(hp, hp + 1), self.slice(hp + 1, hp + 2))
+                        adv = adv - 1
                     }
-                    else { content = content + "\\" + self.slice(ep, ep + 1) }
                     run_start = self.current
                 } else {
                     self.advance_byte()
@@ -545,21 +541,16 @@ impl Parser {
                         run_start = self.current
                         break
                     }
-                    let ep = self.current
-                    let esc = self.advance_byte()
-                    if esc == LOWER_N { content = content + "\n" }
-                    else if esc == LOWER_T { content = content + "\t" }
-                    else if esc == LOWER_R { content = content + "\r" }
-                    else if esc == BACKSLASH { content = content + "\\" }
-                    else if esc == DQUOTE { content = content + "\"" }
-                    else if esc == DIGIT_0 { content = content + "\0" }
-                    else if esc == LOWER_X {
-                        let hp = self.current
+                    // ONE resolver, generated from escape_rules(). `DQUOTE` is this
+                    // form's own delimiter — the only part of an escape that differs
+                    // between a string, a multiline string and a char literal.
+                    let er = resolve_escape(sb, self.source, self.current, DQUOTE)
+                    content = content + er.text
+                    mut adv = er.consumed - 1
+                    while adv > 0 {
                         self.advance_byte()
-                        self.advance_byte()
-                        content = content + avra_char_from_hex(self.slice(hp, hp + 1), self.slice(hp + 1, hp + 2))
+                        adv = adv - 1
                     }
-                    else { content = content + "\\" + self.slice(ep, ep + 1) }
                     run_start = self.current
                 } else {
                     self.advance_byte()
