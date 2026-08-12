@@ -1,6 +1,6 @@
 // t-47hc.13 S1 — grammar-native `while`, as an ENGINE differential.
 //
-// while_stmt = "while" @off(allow_struct_lit) c:expression body:@hand(stmt_hand)
+// while_stmt = "while" @off(allow_struct_lit) c:expression body:braced_block
 //              -> While(c, body)
 //
 // THIS FILE WAS VACUOUS AND IS FIXED HERE (t-47hc.37). Its header described a FLIP
@@ -51,15 +51,15 @@ fn gen_stmt(src: string) -> string {
 // enforces its stated outcome, not just mutual equality.
 fn agree_ok(src: string) -> bool {
     let flip = flip_stmt(src)
-    let hand = gen_stmt(src)
-    flip != "<err>" && flip == hand
+    let gen = gen_stmt(src)
+    flip != "<err>" && flip == gen
 }
 
 fn both_reject(src: string) -> bool {
     flip_stmt(src) == "<err>" && gen_stmt(src) == "<err>"
 }
 
-spec "t-47hc.13 S1: grammar-native `while` == hand parse_while_statement (stmt-flip)" {
+spec "t-47hc.13 S1: grammar-native `while` interpreter == generated statement rules" {
     then "plain while forms agree (basic wiring)" {
         agree_ok("while 1 { break }") &&
         agree_ok("while 1 < 2 { continue }") &&
@@ -83,7 +83,7 @@ spec "t-47hc.13 S1: grammar-native `while` == hand parse_while_statement (stmt-f
 // The grammar-native `block = "{" statement* "}"` rule (replacing @hand(braced_body))
 // must build the SAME Stmt.Block as the hand parser for DIVERSE inner statements —
 // the inner `statement*` dispatches each through the same grammar (feature/hand forms
-// via @hand(stmt_hand)), incl. a nested `{` resolved by is_stmt_map_literal.
+// via the statement rule), incl. a nested `{` resolved by is_stmt_map_literal.
 spec "t-47hc.13: grammar-native block body — inner statement variety agrees" {
     then "let / multi-statement / empty / nested bodies build identically" {
         agree_ok("while 1 { let x = 1 }") &&
@@ -138,10 +138,10 @@ spec "t-47hc.13 S1: grammar-native `for` == hand parse_for_statement (stmt-flip)
 // The BODY-PARITY regression (the CodeRabbit finding on PR #981): a control-flow
 // HEADER requires a `{`-block body. The hand parsers gate it (`if !check(LeftBrace)
 // { report ExpectedBlock; Err }`); the grammar-native `block` rule (a required
-// `"{"`) reproduces that gate. If the body were `@hand(stmt_hand)` (unrestricted parse_statement),
+// `"{"`) reproduces that gate. If the body were an unrestricted statement reference,
 // the flip would ACCEPT a bare-statement body the hand parser REJECTS — a genuine
 // non-byte-identical divergence. With the SHARED `<err>` sentinel, a mutual
-// rejection registers as agreement; on the buggy `stmt_hand` body the flip would
+// rejection registers as agreement; on the unrestricted body the interpreter would
 // render a While/If/For (≠ `<err>`) while hand yields `<err>`, so these FAIL.
 spec "t-47hc.13 S1: bare-statement bodies are rejected by BOTH (the block `{`-requirement)" {
     then "`while c <bare-stmt>` — no `{`, both reject" {

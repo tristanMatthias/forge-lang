@@ -177,16 +177,15 @@ fn type_entry_markers(tag: string, src: string, native: bool) -> int {
 // Read this before quoting a zero from them. They assert that a `bs2 check` of a
 // whole program logs no `[hand-fallback]` marker — and no `bs2 check` CAN log one,
 // under any routing flags, on valid or invalid input. Verified directly: default;
-// `EXPR_STATIC=0 EXPR_FLIP=0`; `STMT_FLIP=1` on malformed input; `TYPE_STATIC=0
+// the expression routing; malformed input; `TYPE_STATIC=0
 // TYPE_FLIP=0`; fresh filenames to defeat the compile cache; and through the LOG
 // sink as well as stderr, where the log file is never even created — so
 // `note_hand_fallback` is not being called at all.
 //
 // That is the flip being COMPLETE, not the probe being broken. With zero production
 // `@hand` leaves the generated parser never calls back into `Parser.parse_*_hand`, so
-// the hand entries are unreachable from the front end. (`parse_statement`'s callers —
-// while_stmt, for_stmt, let-else, component_decl — are themselves hand-path-only, so
-// even a `while` body does not reach the stmt hand.)
+// the one remaining hand entry is unreachable from the front end. (There is no stmt hand
+// to reach any more: t-47hc.37 deleted it along with the dispatcher that fed it.)
 //
 // The consequence is what matters: a positive control for these rows is IMPOSSIBLE
 // without reintroducing a hand leaf purely to test the probe. So a zero here is not
@@ -306,9 +305,8 @@ spec "t-47hc.5: the fall-through probe is NOT a blind instrument (positive contr
     // corpus, a wide-surface fixture (component / while / for / if / let-else /
     // channel / quote type / match / lambda / where clause) and ten MALFORMED
     // fixtures, the marker fired ZERO times. `--hand-leaves` agrees: zero production
-    // `@hand` leaves. Both surviving tails — `parse_statement_hand` and
-    // `parse_type_expr_hand` is the only tail left, and this in-process control is the
-    // only thing that can still move the gauge.
+    // `@hand` leaves. `parse_type_expr_hand` is the ONLY tail left, and this in-process
+    // control is the only thing that can still move the gauge.
     then "with both type-routing flags OFF the probe FIRES" {
         type_entry_markers("ctl_on", "List<int>", false) > 0
     }

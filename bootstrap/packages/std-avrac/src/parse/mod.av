@@ -1292,8 +1292,10 @@ impl Parser {
                 // operand. Was the hand `parse_binary_pratt(12)`; now the GENERATED parser
                 // entered at the same level via run_static_expr_cell (t-47hc.4.1).
                 let cell_modes = self.current_modes()
-                let cd = self.ensure_hand_delegate()
+                mut cd = self.ensure_hand_delegate()
                 cd.copy_cursor_from(self)
+                // Same per-parse reset as the sibling seams (see parse_statement).
+                cd.bag = bag_new()
                 let cell = run_static_expr_cell(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, cell_modes, cd)
                 if cell.had_error {
                     // RESTORE the mode and SURFACE the diagnostics before bailing. Raised in
@@ -1459,7 +1461,7 @@ impl Parser {
         // One reusable @hand delegate per file (see ensure_hand_delegate),
         // SYNCED to this parser's cursor+line before the parse, its end state
         // adopted after.
-        let d = self.ensure_hand_delegate()
+        mut d = self.ensure_hand_delegate()
         d.copy_cursor_from(self)
         let dsl = run_dsl_stmt_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_statement_grammar(), modes, d)
         if !dsl.had_error {
@@ -1517,8 +1519,14 @@ impl Parser {
         // state so this parser continues from the expression's end with the
         // same line the hand parser would have. This reproduces the hand
         // parser's line accounting byte-for-byte across the split parse.
-        let d = self.ensure_hand_delegate()
+        mut d = self.ensure_hand_delegate()
         d.copy_cursor_from(self)
+        // Fresh per-parse diagnostic scratch on the SHARED delegate, the same
+        // discipline parse_declaration documents: `bag_merge` APPENDS, and
+        // `ensure_hand_delegate` hands out ONE delegate per file, so merging without
+        // resetting re-copies every diagnostic the delegate reported for earlier items.
+        // Raised in review on PR #1221 — parse_declaration was the only site that had it.
+        d.bag = bag_new()
         // ps3t.6.7 Step G: the Grammar-tree interpreter (run_dsl_expr_at_shared)
         // when expr_flip, else the STATIC generated parser (run_static_expr).
         // Both share the token stream, modes, @hand delegate, and resync below —

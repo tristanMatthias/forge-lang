@@ -54,8 +54,17 @@ fn gen_stmt(src: string) -> string {
     }
 }
 
+/// Valid-form parity: both engines must PARSE and render the SAME Stmt. Bare equality
+/// would pass on a mutual `<err>` — which is how a valid-form group goes vacuous without
+/// a single assertion changing. Raised in review on PR #1221.
 fn agree(src: string) -> bool {
-    flip_stmt(src) == gen_stmt(src)
+    let flip = flip_stmt(src)
+    flip != "<err>" && flip == gen_stmt(src)
+}
+
+/// Reject parity: both engines must return the SHARED sentinel.
+fn both_reject(src: string) -> bool {
+    flip_stmt(src) == "<err>" && gen_stmt(src) == "<err>"
 }
 
 spec "t-47hc.37: parse_statement (interpreter) == the generated statement rules" {
@@ -105,8 +114,11 @@ spec "t-47hc.37: parse_statement (interpreter) == the generated statement rules"
         // these keywords natively (`--parser-frontier`: let / const native). Asserting
         // agreement here would now be asserting that two entries with different jobs
         // answer the same, and the honest form is to pin the split.
+        // `let` is pinned in its own `given` above, so this row carries the two the
+        // group name promises and the earlier one does not — `mut` was named here and
+        // never tested until review caught it.
         then "parse_statement declines each and parse_declaration accepts each" {
-            flip_stmt("let x = 1") == "<err>" && gen_stmt("let x = 1") != "<err>" &&
+            flip_stmt("mut y = 2") == "<err>" && gen_stmt("mut y = 2") != "<err>" &&
             flip_stmt("const Z = 3") == "<err>" && gen_stmt("const Z = 3") != "<err>"
         }
     }
@@ -123,7 +135,7 @@ spec "t-47hc.37: parse_statement (interpreter) == the generated statement rules"
     }
     given "reject parity: both parsers reject the same malformed statement" {
         then "a dangling operator rejects on both" {
-            flip_stmt("= 5") == "<err>" && gen_stmt("= 5") == "<err>"
+            both_reject("= 5")
         }
     }
 }
