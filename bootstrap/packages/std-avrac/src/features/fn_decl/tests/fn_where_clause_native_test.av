@@ -108,11 +108,12 @@ spec "t-47hc.5: `fn` accepts a where clause on both parser engines" {
             "fn main() { println(both(Boxy { v: 1 })) }\n", "S")
     }
 
-    then "a `+`-joined bound is answered IDENTICALLY by all three paths" {
-        // The hand rejects this at TYPECK (concatenating two generic trait-method
-        // results is what it will not check), and so must the native paths — byte for
-        // byte. This is the case that would otherwise be read as a parser regression
-        // when the parser is exactly right.
+    then "a `+`-joined bound is answered IDENTICALLY by both engines" {
+        // Both engines reject this at TYPECK (concatenating two generic trait-method
+        // results is what it will not check) — byte for byte. This is the case that
+        // would otherwise be read as a parser regression when the parser is exactly
+        // right. (Was "all three paths" / "the hand rejects this"; the hand leg is gone,
+        // t-47hc.4.1.)
         agrees("plus", prelude() +
             "fn dump<T>(x: T) -> string where T: Show + Tag { x.show() + x.tag() }\n" +
             "fn main() { println(dump(Boxy { v: 1 })) }\n",

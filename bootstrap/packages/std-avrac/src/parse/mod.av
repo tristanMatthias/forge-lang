@@ -1307,6 +1307,41 @@ impl Parser {
                 cd.copy_cursor_from(self)
                 let cell = run_static_expr_cell(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, cell_modes, cd)
                 if cell.had_error {
+                    // RESTORE the mode and SURFACE the diagnostics before bailing. Raised in
+                    // review on PR #1220, and both halves are real:
+                    //
+                    // `cell_mode` is set true above and every OTHER exit from this function
+                    // restores `saved_cell_mode`. Leaving it set means the caller — and the
+                    // statement-list recovery that follows this `.Err` — keeps the table-cell
+                    // newline rules for the rest of the parse, and a NESTED table restores the
+                    // wrong value on the way out.
+                    //
+                    // And a bare `had_error = true` produces an errored parse with NO
+                    // diagnostic and an empty `error_message`: the cell's own reports live in
+                    // `cell.diags` and the delegate's bag, neither of which reaches the caller
+                    // by itself. The merge order matches the sibling seams in
+                    // `parse_declaration` / `parse_expression` — delegate bag first (it is
+                    // deeper, so it reported first), then each grammar diagnostic re-reported
+                    // at its own span with its own declared code.
+                    self.cell_mode = saved_cell_mode
+                    let cd_had_error = cd.had_error
+                    let cd_error_message = cd.error_message
+                    self.bag = bag_merge(self.bag, cd.bag)
+                    if !self.had_error && cd_had_error {
+                        self.had_error = true
+                        self.error_message = cd_error_message
+                    }
+                    mut cdi = 0
+                    while cdi < cell.diags.length {
+                        let cdg = cell.diags[cdi]
+                        let cdc = syntax_diag_code(cdg.code)
+                        if cdc != null {
+                            self.report_at_span(cdc!, cdg.msg, cdg.byte, cdg.end_byte)
+                        } else {
+                            self.report_at_span(DiagCode.SyntaxError, cdg.msg, cdg.byte, cdg.end_byte)
+                        }
+                        cdi = cdi + 1
+                    }
                     self.had_error = true
                     return .Err("table cell parse error")
                 }

@@ -1,0 +1,120 @@
+// WHY: `|` is a real BINARY OPERATOR (bitwise-or, lbp 10) AND the match-table's
+// column separator. A table cell parsed at full precedence folds `1 | 2` into one
+// bitwise-or, `table_zip_entries` then zips fewer values than there are headers, and
+// the row silently loses a column — no diagnostic, wrong map.
+//
+// `parse_table_literal` (parse/mod.av) has always entered its cells at binding power
+// 12 (bitwise-XOR) for exactly this reason. `parse_match_table_rows` did NOT: it used
+// the hand `parse_primary()`, which stopped after one primary and so never met a `|`
+// to fold. When the hand ladder was deleted (t-47hc.4.1) that call became
+// `parse_expression()` — full precedence — on the reasoning that "`|` is not an
+// operator here". It is. Raised in review on PR #1220; the fix routes both cell sites
+// through `run_static_expr_cell`.
+//
+// This spec is the witness the reasoning lacked. It asserts the VALUES, not merely
+// that the table parses: a swallowed separator produces a clean parse with a missing
+// column, so any assertion weaker than "every column arrived with its own value"
+// cannot see it. That is why `match_table_native_test` stayed green throughout — it
+// checks for parse diagnostics, and there are none.
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+
+fn run_out(name: string, src: string) -> string {
+    let path = "build/_mtcol_${name}.av"
+    write_fixture(path, src)
+    avra_shell_exec("./build/bs2 run '${path}' 2>&1")
+}
+
+// Two value columns whose cells are INTEGERS — the shape where `|` is a legal
+// operator between them. String cells would also fold, but an int row makes the
+// arithmetic proof direct.
+fn two_int_cols() -> string {
+    run_out("two_int",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) -> int {\n" +
+        "    let m = match e table { pat | a | b\n" +
+        "        .A | 1 | 2\n" +
+        "        .B | 3 | 4\n" +
+        "    }\n" +
+        "    (m.get(\"a\") ?? 0) * 100 + (m.get(\"b\") ?? 0)\n" +
+        "}\n" +
+        "fn main() { println(string(probe(E.A))) }\n")
+}
+
+// THREE columns: a fold would collapse two separators, so the failure is larger and
+// the arithmetic distinguishes "folded the first pair" from "folded the second".
+fn three_int_cols() -> string {
+    run_out("three_int",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) -> int {\n" +
+        "    let m = match e table { pat | a | b | c\n" +
+        "        .A | 1 | 2 | 4\n" +
+        "        .B | 5 | 6 | 7\n" +
+        "    }\n" +
+        "    (m.get(\"a\") ?? 0) * 10000 + (m.get(\"b\") ?? 0) * 100 + (m.get(\"c\") ?? 0)\n" +
+        "}\n" +
+        "fn main() { println(string(probe(E.B))) }\n")
+}
+
+// The SECOND row, so the assertion is not satisfied by the first row alone.
+fn second_row() -> string {
+    run_out("second_row",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) -> int {\n" +
+        "    let m = match e table { pat | a | b\n" +
+        "        .A | 1 | 2\n" +
+        "        .B | 3 | 4\n" +
+        "    }\n" +
+        "    (m.get(\"a\") ?? 0) * 100 + (m.get(\"b\") ?? 0)\n" +
+        "}\n" +
+        "fn main() { println(string(probe(E.B))) }\n")
+}
+
+// A cell that WANTS the operator, written the only way a cell can take one: inside
+// parentheses. This is the other half of the contract — the low binding power must not
+// make `|` unreachable, only unreachable at the TOP level of a cell.
+//
+// The parenthesised cell is deliberately the LAST column, and that placement is a
+// finding rather than a convenience. Written as the FIRST value column
+// (`.A | (6 | 1) | 2`) this fails: the PATTERN column's parser reads `|` as an
+// or-pattern separator and takes `(6 | 1)` as a second alternative, so the row zips one
+// value short and reports `Map<string, >`. That is the pattern↔separator boundary, not
+// the cell entry — it reproduces on the base commit and is unrelated to this PR — so
+// the assertion below isolates the thing it means to test. Filed as a separate concern;
+// do not "fix" it by widening this spec.
+fn parenthesised_bitor() -> string {
+    run_out("paren_bitor",
+        "enum E { A, B }\n" +
+        "fn probe(e: E) -> int {\n" +
+        "    let m = match e table { pat | a | b\n" +
+        "        .A | 2 | (6 | 1)\n" +
+        "        .B | 3 | 4\n" +
+        "    }\n" +
+        "    (m.get(\"a\") ?? 0) * 100 + (m.get(\"b\") ?? 0)\n" +
+        "}\n" +
+        "fn main() { println(string(probe(E.A))) }\n")
+}
+
+spec "t-47hc.4.1: a match-table cell stops at the `|` column separator" {
+    given "rows whose cells are integers, so `|` between them is a legal operator" {
+        // A fold would make the map one entry short. Asserting the arithmetic, not the
+        // absence of diagnostics, is the whole point — a swallowed column parses clean.
+        then "two columns each keep their own value" {
+            two_int_cols().contains("102")
+        }
+        then "three columns keep all three, on the SECOND row" {
+            three_int_cols().contains("50607")
+        }
+        then "the second row zips independently of the first" {
+            second_row().contains("304")
+        }
+    }
+    given "a cell that genuinely wants bitwise-or" {
+        // 6 | 1 == 7, in the LAST column: 2 * 100 + 7. If the cell entry were so low
+        // that parentheses could not restore the operator, this would be 206 or a parse
+        // error instead.
+        then "parentheses make the operator reachable inside a cell" {
+            parenthesised_bitor().contains("207")
+        }
+    }
+}

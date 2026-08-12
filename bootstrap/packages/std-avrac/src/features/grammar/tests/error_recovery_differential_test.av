@@ -885,82 +885,49 @@ fn agree_tree(source: string) -> bool {
 // paths agree with EACH OTHER, the input still reports, and the hand still differs. That
 // last clause is what stops this being a guard that cannot fail: fix the hand and this
 // goes RED, which is the prompt to fold the case back into `agree_all`/`agree_bad`.
-// ── t-47hc.5: THIS CORPUS IS CURRENTLY VACUOUS — read this before trusting it ──
+// ── t-47hc.5 → t-47hc.4.1: THE VACUITY IS OVER. What this block used to say ──
 //
-// `parse_declaration_hand` is DELETED. `AVRA_PARSER_DECL_FLIP=0` no longer selects a
-// different parser for declarations, because `parse_declaration` has no flip branch left
-// to take — so `exec_oracle()` and `static_raw()` run the SAME engine and every
-// `agree` / `agree_all` / `agree_bad` / `agree_tree` assertion below compares native
-// against native. They pass by construction. All ~525 of them.
+// It read "THIS CORPUS IS CURRENTLY VACUOUS", on the grounds that `parse_declaration_hand`
+// was deleted, so `exec_oracle()` and `static_raw()` ran the SAME engine and every
+// `agree` / `agree_all` / `agree_bad` / `agree_tree` assertion below passed by
+// construction — "all ~525 of them". That was TRUE of the routing it described: both
+// legs were `AVRA_PARSER_DECL_STATIC=1` with the expression flags deciding nothing.
 //
-// That is not a defect in this file; it is the cost of retiring the oracle, taken
-// deliberately. What matters is that it is VISIBLE, because a green corpus that proves
-// nothing is worse than no corpus: it reads as coverage.
+// It is NOT true now, and the retraction is kept rather than the text replaced, because
+// the reason it stopped being true is the useful part. t-47hc.4.1 repointed the two legs
+// at EMIT and EXEC — the generated static parser and the tree interpreter, two engines
+// compiled from one grammar (see the header). They are not the same engine, and ten
+// inputs proved it on the first run: nine where the executor answers a malformed
+// declaration with an extra alternation diagnostic (now PINNED, see `pin`), and one
+// genuine bug — the executor had no `cell_mode` guard on its binary ladder, so a table
+// cell swallowed the next row's leading `-`.
 //
-// The spec below is the one assertion here that can still fail. It PINS the vacuity, so
-// that if a differential oracle is ever restored — the hand parser kept as a separate
-// build, or these cases re-baselined as GOLDEN fixtures recording the current native
-// output — this goes red and says so, instead of the restoration going unnoticed.
-spec "t-47hc.5: the hand oracle is GONE — this corpus compares native against native" {
-    then "the `hand` mode and the `emit` mode are the same engine now" {
-        // Three inputs the two engines demonstrably DISAGREED on while the hand existed:
-        // a bare `@` (hand invented an annotation named `fn`), a malformed binding, and a
-        // malformed wrapper. Identical output on all three is proof of vacuity, not parity.
+// So the assertions below are LIVE. The spec that follows used to pin the vacuity; it now
+// pins the three inputs that motivated it, as ordinary agreement checks.
+spec "t-47hc.4.1: emit and exec agree on the inputs that split the hand from the native paths" {
+    then "a bare `@`, a malformed binding, and a malformed wrapper agree across engines" {
+        // Three inputs the hand and the native paths demonstrably DISAGREED on while the
+        // hand existed: a bare `@` (the hand invented an annotation named `fn`), a
+        // malformed binding, and a malformed wrapper. With the hand gone they are
+        // ordinary two-engine agreement checks — and they are not vacuous, because emit
+        // and exec DO diverge elsewhere in this file (that is what `pin` exists for).
         exec_oracle("@\nfn f() -> int { 1 }") == static_raw("@\nfn f() -> int { 1 }") &&
             exec_oracle("let x: = 1\nfn f() -> int { 1 }") == static_raw("let x: = 1\nfn f() -> int { 1 }") &&
             exec_oracle("@a\nmut\nfn f() -> int { 1 }") == static_raw("@a\nmut\nfn f() -> int { 1 }")
     }
 }
 
-fn native_agrees_hand_differs(source: string) -> bool {
-    let sr = static_raw(source)
-    let dflt = default_path(source)
-    if sr != dflt {
-        println("native paths disagree with EACH OTHER")
-        println(source)
-        println("emit=" + sr)
-        println("default=" + dflt)
-        return false
-    }
-    if sr == "" {
-        println("SILENT DROP — invalid source parsed with no diagnostic")
-        println(source)
-        return false
-    }
-    if sr == exec_oracle(source) {
-        println("the EXECUTOR now AGREES — fold this case back into agree_all")
-        println(source)
-        return false
-    }
-    true
-}
-
-// The recovery-TREE half of the above, and an INDEPENDENT oracle from it: the two
-// engines can report the same diagnostics off different trees (that is the whole reason
-// `--parser-tree` exists alongside `--parser-probe`), so the divergence has to be pinned
-// in both views or half of it goes unwatched.
-fn native_tree_agrees_hand_differs(source: string) -> bool {
-    let e = rtree_at("emit", source)
-    let x = rtree_at("exec", source)
-    if e != x {
-        println("native TREES disagree with EACH OTHER")
-        println(source)
-        println("emit=" + e)
-        println("exec=" + x)
-        return false
-    }
-    if rdiags(true, source) == 0 {
-        println("SILENT DROP — invalid source parsed with no diagnostic")
-        println(source)
-        return false
-    }
-    if e == rtree_at("exec", source) {
-        println("the EXECUTOR's TREE now AGREES — fold this case back into agree_bad")
-        println(source)
-        return false
-    }
-    true
-}
+// t-47hc.4.1 — `native_agrees_hand_differs` and `native_tree_agrees_hand_differs` are
+// DELETED here. Both were "the native paths agree with each other AND the hand differs"
+// helpers, for cases the hand answered differently on purpose. Neither had a caller left,
+// and both had rotted into checks that could not fail: the F-code one compared
+// `static_raw` against `default_path`, which `mode_env` maps to the same string, and the
+// tree one re-read `rtree_at("exec", …)` for its "does the third path still differ?"
+// clause after already establishing equality with that value. Raised in review on PR
+// #1220. A guard that cannot fail is worth less than no guard, because it reads as
+// coverage — so they go rather than get renamed. Their ROLE survives as `pin` /
+// `pin_tree` / `pin_pos` above, which assert the shipping parser's exact output for a
+// known divergence instead of asserting that a divergence exists.
 
 // ── t-6u9b — the ANTI-VACUITY half: diagnostic COUNT ──────────────────────────
 //
@@ -1784,17 +1751,20 @@ spec "t-47hc.33.1: a reserved-keyword field name parses on every path" {
 /// pass vacuously here and cannot say anything about what a valid program PARSES
 /// INTO. This is the valid-input twin: same three paths, compared on the tree.
 fn tree_agrees_everywhere(source: string) -> bool {
-    let h = rtree_at("exec", source)
+    // TWO legs. This had three while a hand row existed; t-47hc.4.1 rewrote that row to
+    // "exec" and left the binding in place, so it called `rtree_at("exec", …)` twice and
+    // one of the two comparisons was a value against itself. Raised in review on PR
+    // #1220 — the same shape this file exists to police, arriving by rename rather than
+    // by design. The name is kept: it still means "on every engine there is".
     let e = rtree_at("emit", source)
     let x = rtree_at("exec", source)
-    if e != h || x != h {
-        println("three-path TREE mismatch")
+    if e != x {
+        println("TREE mismatch across engines")
         println(source)
-        println("hand=" + h)
         println("emit=" + e)
         println("exec=" + x)
     }
-    e == h && x == h
+    e == x
 }
 
 // ── t-47hc.26: STATEMENT-position `if let`, which every other oracle is blind to ──

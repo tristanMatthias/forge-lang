@@ -14,6 +14,7 @@ use core.{Tk}
 // to the grammar-DSL when pat_flip is set (the inverse of the @hand bridge).
 use features.grammar.{run_dsl_pattern_at_shared, DslPatResult, Grammar}
 use parse.{run_static_pat}
+use parse.{run_static_expr_cell}
 // t-47hc.8: the pattern grammar fragment is owned by THIS feature (grammar.av).
 use features.match_expr.{avra_pat_grammar}
 
@@ -115,10 +116,25 @@ impl Parser {
             mut i = 0
             while i < value_count {
                 if self.check(Tk.RightBrace) { break }
-                // Table cell: the generated expression parser. Was `parse_primary()` from the hand
-                // ladder — a cell is a single value, and `parse_expression` stops at the `|`
-                // column separator and `}` the same way, because neither is an operator.
-                let val_id = self.parse_expression()?
+                // Table cell: the generated expression parser entered at BINDING POWER 12
+                // (bitwise-XOR), the same entry `parse_table_literal` uses. Was `parse_primary()`
+                // from the hand ladder.
+                //
+                // The entry matters and `parse_expression` is the WRONG one: `|` is a real
+                // binary operator (lbp 10), so a full-precedence parse folds `1 | 2` into one
+                // bitwise-or and `table_zip_entries` then silently drops the missing column.
+                // Raised by review on this PR; the multi-column int row is the witness and is
+                // pinned in match_table_column_separator_test.av.
+                let cell_modes = self.current_modes()
+                let cd = self.ensure_hand_delegate()
+                cd.copy_cursor_from(self)
+                let cell = run_static_expr_cell(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, cell_modes, cd)
+                if cell.had_error {
+                    self.had_error = true
+                    return .Err("table cell parse error")
+                }
+                self.resync_to_stop_byte(cell.stop_byte)
+                let val_id = cell.expr
                 vals.push(val_id)
                 i = i + 1
                 if self.check(Tk.Pipe) { self.advance() }

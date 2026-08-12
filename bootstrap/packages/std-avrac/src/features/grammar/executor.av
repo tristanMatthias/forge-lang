@@ -2942,13 +2942,74 @@ fn sameline_ok(st: PState, item: GItem) -> bool {
 /// The grammar comment at `table_row` predicted exactly this input and said it could not
 /// be made to diverge; it diverges here.
 fn cell_mode_blocks_binary(st: PState) -> bool {
-    if st.modes.cell_mode == 0 { return false }
+    if !st.modes.cell_mode { return false }
     let tx = st.cur().text
     if tx != "+" && tx != "-" { return false }
     if st.pos == 0 { return false }
     let prev_line = st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line
     let cur_line = st.store.lines.to_linecol(st.cur().pos).line
     prev_line != cur_line
+}
+
+/// Does this repetition consume the current token AS A BINARY OPERATOR?
+///
+/// The scope half of the guard above, and it is load-bearing rather than defensive
+/// (raised in review on PR #1220). Emit checks `cell_mode` in ONE place —
+/// `parse_binary_pratt_g_id`, where the operator is consumed — so a guard the executor
+/// applies to EVERY repetition is wider than the rule it mirrors, and the two engines
+/// diverge on any repetition whose ELEMENT merely begins with `+`/`-`. A `when_arm`
+/// repetition nested in a table cell is the shape: emit continues it, an unscoped
+/// executor guard would stop it.
+///
+/// The binary ladder's repetitions are `( op:("+" | "-") r:<rule> )*` — the repeated
+/// GROUP LEADS with the operator LITERAL. Everything else leads with a rule reference,
+/// a named terminal, or a different literal. So "the group's first item is a literal
+/// matching the current token" separates the two exactly, with no list of rule names to
+/// keep in sync.
+fn repeat_lead_is_current_literal(item: GItem, st: PState) -> bool {
+    let tx = st.cur().text
+    match item.prim {
+        .Group(inner) -> {
+            match inner {
+                .Alt(branches) -> {
+                    for b in branches {
+                        if b.items.length > 0 {
+                            if prim_matches_literal(b.items[0].prim, tx) { return true }
+                        }
+                    }
+                    false
+                }
+                _ -> false
+            }
+        }
+        _ -> prim_matches_literal(item.prim, tx)
+    }
+}
+
+/// Is `prim` the literal `tx`, or an alternation of literals containing it? The
+/// operator position in a `fold_binary` rule is spelled both ways — `op:"+"` for a
+/// single operator and `op:("+" | "-")` for a stratum with several.
+fn prim_matches_literal(prim: GPrim, tx: string) -> bool {
+    match prim {
+        .Lit(t) -> t == tx
+        .Group(inner) -> {
+            match inner {
+                .Alt(branches) -> {
+                    for b in branches {
+                        if b.items.length == 1 {
+                            match b.items[0].prim {
+                                .Lit(t) -> { if t == tx { return true } }
+                                _ -> {}
+                            }
+                        }
+                    }
+                    false
+                }
+                _ -> false
+            }
+        }
+        _ -> false
+    }
 }
 
 /// Execute one postfix item, honouring its repetition, and bind its
@@ -3311,9 +3372,11 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
     // ps3t.6.7: a `^`-marked repetition stops at a cross-line token — the DSL
     // mirror of the hand parser's newline-terminated postfix loop. `cell_mode_blocks_binary`
     // is the modes-driven sibling: inside a table cell a cross-line `+`/`-` belongs to the
-    // NEXT ROW, so no repetition may take it as an operator (emit's Pratt loop `break`s on
-    // the same test).
-    while tok_starts_prim(g, item.prim, st, empty) && sameline_ok(st, item) && !cell_mode_blocks_binary(st) {
+    // NEXT ROW, so an OPERATOR repetition may not take it (emit's Pratt loop `break`s on
+    // the same test). `repeat_lead_is_current_literal` is what keeps that scoped to
+    // operator repetitions — see its comment; without it the guard is wider than emit's.
+    while tok_starts_prim(g, item.prim, st, empty) && sameline_ok(st, item)
+            && !(cell_mode_blocks_binary(st) && repeat_lead_is_current_literal(item, st)) {
         if cap >= 0 && taken >= cap { return }
         let before = st.pos
         let v = exec_primary(g, item.prim, st, env, true, annots)
