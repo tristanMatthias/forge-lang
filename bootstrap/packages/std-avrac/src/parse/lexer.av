@@ -581,9 +581,8 @@ impl Parser {
                 }
                 return
             }
-            // `${` — balanced braces with nested strings skipped; not a body run, so it
-            // stays hand-written. run_start stays just past the `${` so the region is
-            // copied VERBATIM by the next flush.
+            // `${` — balanced braces with nested strings skipped. run_start stays just past
+            // the `${` so the region is copied VERBATIM by the next flush.
             content = content + self.slice(run_start, self.current)
             has_interpolation = true
             content = content + "$" + "{"

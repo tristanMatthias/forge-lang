@@ -19,7 +19,7 @@
 // (parse/gen_operator_scanner.av) is what production consumes. RELATIVE imports:
 // this is an in-package compiler-src module (absolute `@std.avrac.` self-imports
 // double-expand the package — F4012).
-use parse.{operator_rules, keyword_rules, char_run_rules, delim_run_rules, str_run_rules, nest_run_rules, LitRule, CharRun, DelimRun, StrRun, NestRun, byte_at, ascii_const_name}
+use parse.{operator_rules, keyword_rules, char_run_rules, delim_run_rules, str_run_rules, nest_run_rules, interp_run_rules, LitRule, CharRun, DelimRun, StrRun, NestRun, InterpRun, byte_at, ascii_const_name}
 use core.{Tk, tk_name}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
@@ -505,6 +505,20 @@ fn emit_interp_scanner(rule: InterpRun) -> string {
         // at each — an escaped quote is not a close. A raw nested string (`r"…"`) takes NO
         // escapes, so it is matched first and skipped without them.
         skip = "        if byte_at(src, end) == " + rule.raw_prefix + " && byte_at(src, end + 1) == DQUOTE {\n" +
+               // `r\"\"\"…\"\"\"` must be tested BEFORE `r\"…\"`, or the single-line branch stops at
+               // the second quote of the opening triple and the raw body's braces are then
+               // counted as interpolation depth — `${r\"\"\"a\" { \"\"\"}` ran to EOF.
+               "            if byte_at(src, end + 2) == DQUOTE && byte_at(src, end + 3) == DQUOTE {\n" +
+               "                end = end + 4\n" +
+               "                while byte_at(src, end) != -1 {\n" +
+               "                    if byte_at(src, end) == DQUOTE && byte_at(src, end + 1) == DQUOTE && byte_at(src, end + 2) == DQUOTE {\n" +
+               "                        end = end + 3\n" +
+               "                        break\n" +
+               "                    }\n" +
+               "                    end = end + 1\n" +
+               "                }\n" +
+               "                continue\n" +
+               "            }\n" +
                "            end = end + 2\n" +
                "            while byte_at(src, end) != -1 && byte_at(src, end) != DQUOTE { end = end + 1 }\n" +
                "            if byte_at(src, end) != -1 { end = end + 1 }\n" +

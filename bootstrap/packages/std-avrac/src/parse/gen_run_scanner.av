@@ -146,6 +146,17 @@ export fn scan_interp_region(src: bytes, start: int) -> int {
     mut depth = 1
     while byte_at(src, end) != -1 {
         if byte_at(src, end) == LOWER_R && byte_at(src, end + 1) == DQUOTE {
+            if byte_at(src, end + 2) == DQUOTE && byte_at(src, end + 3) == DQUOTE {
+                end = end + 4
+                while byte_at(src, end) != -1 {
+                    if byte_at(src, end) == DQUOTE && byte_at(src, end + 1) == DQUOTE && byte_at(src, end + 2) == DQUOTE {
+                        end = end + 3
+                        break
+                    }
+                    end = end + 1
+                }
+                continue
+            }
             end = end + 2
             while byte_at(src, end) != -1 && byte_at(src, end) != DQUOTE { end = end + 1 }
             if byte_at(src, end) != -1 { end = end + 1 }
