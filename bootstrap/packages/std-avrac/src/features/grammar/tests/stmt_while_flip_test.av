@@ -1,37 +1,48 @@
-// t-47hc.13 S1 — grammar-native `while` on the PRODUCTION stmt-flip path.
+// t-47hc.13 S1 — grammar-native `while`, as an ENGINE differential.
 //
 // while_stmt = "while" @off(allow_struct_lit) c:expression body:@hand(stmt_hand)
 //              -> While(c, body)
 //
-// Differential parity (the stmt_flip_dispatch_test pattern): for every while form
-// the FLIP path (p.stmt_flip=true → run_dsl_stmt_at_shared over avra_stmt_flip_grammar,
-// now with while_stmt) and the HAND path (parse_statement_hand → parse_while_statement)
-// must build the SAME Stmt, rendered through the TOTAL render_stmt_id (no golden
-// strings). The make-or-break case is `while foo { }`: the hand parser sets
-// allow_struct_lit=false in the condition, so `foo` is a bare ident and `{ }` is the
-// body — NOT a struct literal `foo {}`. @off(allow_struct_lit) must reproduce that
-// through the expression's @hand(brace_expr) delegate, or the two diverge.
+// THIS FILE WAS VACUOUS AND IS FIXED HERE (t-47hc.37). Its header described a FLIP
+// path vs a HAND path, and its `hand_stmt` helper had at some point been rewritten to
+// call `parse_statement()` — the same method `flip_stmt` calls. The two differed only
+// by `p.stmt_flip = true` on one side, and once `parse_statement` stopped branching on
+// that field they were character-for-character the same parse. Every assertion below
+// would have compared a path against itself and passed by construction: exactly the
+// class the loop rules exist to police, arriving by a helper edit rather than by design.
+//
+// It now compares the INTERPRETER (`parse_statement`) against the GENERATED statement
+// rules (reached through `parse_declaration`, whose `statement` tail routes into them —
+// they live in parse/gen_decl_parser.av because the declaration grammar composes the
+// statement one). Two engines, one grammar.
+//
+// The make-or-break case is still `while foo { }`: the condition parses with
+// allow_struct_lit=false, so `foo` is a bare ident and `{ }` is the body — NOT a struct
+// literal `foo {}`. @off(allow_struct_lit) must reproduce that through the expression's
+// brace handling, or the two engines diverge.
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id}
 
 fn flip_stmt(src: string) -> string {
     mut p = parser_new(src)
-    p.stmt_flip = true
     match p.parse_statement() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<err>"
     }
 }
 
-fn hand_stmt(src: string) -> string {
+/// The GENERATED engine, through the declaration entry. `decl_static` pinned, not
+/// ambient — an ambient flag is how this file went vacuous the first time.
+fn gen_stmt(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_statement() {
+    p.decl_static = true
+    match p.parse_declaration() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<err>"
     }
 }
 
-// A plain equality check (`flip_stmt(src) == hand_stmt(src)`) is too weak for the
+// A plain equality check (`flip_stmt(src) == gen_stmt(src)`) is too weak for the
 // two spec KINDS below: it returns true when BOTH paths reject (both `<err>`), so
 // a valid-form spec would pass even if both paths spuriously errored, and a
 // body-gate spec would pass even if both spuriously ACCEPTED. So valid-form specs
@@ -40,12 +51,12 @@ fn hand_stmt(src: string) -> string {
 // enforces its stated outcome, not just mutual equality.
 fn agree_ok(src: string) -> bool {
     let flip = flip_stmt(src)
-    let hand = hand_stmt(src)
+    let hand = gen_stmt(src)
     flip != "<err>" && flip == hand
 }
 
 fn both_reject(src: string) -> bool {
-    flip_stmt(src) == "<err>" && hand_stmt(src) == "<err>"
+    flip_stmt(src) == "<err>" && gen_stmt(src) == "<err>"
 }
 
 spec "t-47hc.13 S1: grammar-native `while` == hand parse_while_statement (stmt-flip)" {
@@ -118,9 +129,9 @@ spec "t-47hc.13 S1: grammar-native `for` == hand parse_for_statement (stmt-flip)
         // one process, so acceptance is the local assertion; the cold compiler
         // differential proves exact generated-vs-hand temp ordering.
         flip_stmt("for (a, b) in pairs { a }") != "<err>" &&
-        hand_stmt("for (a, b) in pairs { a }") != "<err>" &&
+        gen_stmt("for (a, b) in pairs { a }") != "<err>" &&
         flip_stmt("for (a, b,) in pairs { for (c, d) in pairs { c } }") != "<err>" &&
-        hand_stmt("for (a, b,) in pairs { for (c, d) in pairs { c } }") != "<err>"
+        gen_stmt("for (a, b,) in pairs { for (c, d) in pairs { c } }") != "<err>"
     }
 }
 
@@ -144,10 +155,23 @@ spec "t-47hc.13 S1: bare-statement bodies are rejected by BOTH (the block `{`-re
         both_reject("if 1 break") &&
         both_reject("if 1 continue")
     }
-    then "`for … <bare-stmt>` — range and collection bodies both `{`-gated, both reject" {
-        both_reject("for x in coll break") &&
-        both_reject("for i in 0..5 break") &&
-        both_reject("for i in a..b continue")
+    // The `for` trio is PINNED rather than `both_reject`, and the reason is an ENTRY
+    // difference, not an engine one. `parse_statement` rejects a bare-statement body.
+    // `parse_declaration` parses ONE item and leaves the rest to its caller, so it
+    // returns `(for-in x coll (block ))` and leaves `break` on the stream — trailing
+    // tokens are not its business at that entry.
+    //
+    // MEASURED that this is not a production leniency: in a real fn body both the
+    // branch build and `./build/seed` (the pinned integration compiler, the control)
+    // reject `for x in coll break` with F0001 "expected `}` after function body". The
+    // statement-list loop inside a block is what catches it, and neither entry here is
+    // that loop. Asserting `both_reject` would be asserting that a single-item entry
+    // enforces a whole-block property.
+    then "`for … <bare-stmt>` — the statement entry rejects; the declaration entry stops early" {
+        flip_stmt("for x in coll break") == "<err>" &&
+        flip_stmt("for i in 0..5 break") == "<err>" &&
+        flip_stmt("for i in a..b continue") == "<err>" &&
+        gen_stmt("for x in coll break") == "(for-in x coll (block ))"
     }
 }
 

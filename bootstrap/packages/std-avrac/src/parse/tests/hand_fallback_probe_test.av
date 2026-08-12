@@ -143,20 +143,24 @@ fn expr_cmd_fallbacks(name: string, src: string, want_ok: bool) -> int {
 /// The routing field is pinned explicitly, per the discipline `rtree_at` documents:
 /// an ambient flag would leave the engine chosen by the environment.
 ///
-/// Drives `parse_statement` DIRECTLY rather than a file entry, because that is the one
-/// dispatcher with a live hand tail left to control against (`parse_statement_hand`,
-/// reached whenever `stmt_flip` is off). `parse_file_expression` used to serve here and
-/// no longer can: t-47hc.4.1 deleted the expression ladder, so both settings of the
-/// expression routing now reach the same generated parser and the row would have gone
-/// quietly from a control to a second zero.
-fn stmt_entry_markers(tag: string, src: string, stmt_flip: bool) -> int {
+/// Drives `parse_type_expr` DIRECTLY, because `parse_type_expr_hand` is the LAST hand
+/// tail left to control against — its gate is `type_static || type_flip`, so clearing
+/// both reaches it. This control has now moved twice, and the moves are the point: it
+/// began on `parse_file_expression` (t-47hc.4.1 deleted the expression ladder), moved to
+/// `parse_statement` (t-47hc.37 deleted `parse_statement_hand`), and each time the old
+/// call would have kept PASSING as a second zero while proving nothing. When the type
+/// tail goes too there is no live tail left, and these rows become pure regression
+/// guards — the status the whole-program rows above already carry, and the point at
+/// which the probe should be deleted rather than kept as a gauge nothing can move.
+fn type_entry_markers(tag: string, src: string, native: bool) -> int {
     let log = "build/_handfb_log_${tag}.txt"
     let _ = avra_shell_exec("rm -f '${log}'")
     avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK", "*")
     avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK_LOG", log)
     mut p = parser_new(src)
-    p.stmt_flip = stmt_flip
-    let _ = p.parse_statement()
+    p.type_flip = native
+    p.type_static = native
+    let _ = p.parse_type_expr("probe")
     // Disarm before returning: the probe is process-wide, and leaving it armed
     // would make every LATER parse in this test binary append to a stale log.
     avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK", "")
@@ -276,7 +280,7 @@ spec "t-47hc.5: `bs2 expr` — the grammar owns VALID input; the tail owns recov
 }
 
 spec "t-47hc.5: the fall-through probe is NOT a blind instrument (positive control)" {
-    given "the statement dispatcher is driven in-process through parse_statement" {
+    given "the type dispatcher is driven in-process through parse_type_expr" {
         true
     }
 
@@ -285,25 +289,17 @@ spec "t-47hc.5: the fall-through probe is NOT a blind instrument (positive contr
     // blind-instrument failure mode, where uniform zeros get counted as
     // independent confirmations instead of as one broken gauge.
     //
-    // t-47hc.4.1 MOVED which family supplies the control, and the move is the point.
-    // It used to force the EXPRESSION tail with `expr_static = false`; that tail is
-    // deleted, so the same call proves nothing now and the row would have gone quietly
-    // from a control to a second zero — the blind-instrument failure this spec exists
-    // to prevent, arriving by deletion rather than by bug. The control moved to the
-    // STATEMENT dispatcher, whose hand tail is still live: `stmt_flip` is default OFF,
-    // so `parse_statement` reaches `parse_statement_hand` and the marker fires.
+    // THE CONTROL HAS MOVED TWICE, and that is the finding, not an inconvenience.
+    // Expression tail (t-47hc.4.1) -> statement dispatcher (t-47hc.37) -> type family,
+    // here. Each deletion silently turned the previous control into a second zero: the
+    // call still ran, still returned 0, and still passed — the blind-instrument failure
+    // this spec exists to prevent, arriving by deletion rather than by bug.
     //
-    // This is a WEAKER control than the one it replaces, and worth saying so. It proves
-    // the probe, its two sinks, and the family allowlist all work; it does NOT prove
-    // that an expression-seam regression specifically would be seen, because nothing
-    // can any more. The expression rows above are pure regression guards now — same
-    // status the whole-program rows already carry.
+    // It is a WEAKER control each time, and worth saying so. It proves the probe, its
+    // two sinks and the family allowlist all work; it does NOT prove that an
+    // expression- or statement-seam regression specifically would be seen, because
+    // nothing can see those any more. Those rows are pure regression guards now.
     //
-    // The INPUT is a bare expression statement, deliberately. `let z = …` does not
-    // discriminate: the production statement grammar routes `let` through
-    // `@hand(stmt_hand)`, so the tail is reached with the flip ON as well and both rows
-    // read nonzero. An expression statement is owned natively by the grammar, so the
-    // only thing separating the two rows is which dispatcher answered.
     //
     // MEASURED while making this move, and recorded because it sizes the next slice:
     // with the probe armed over the ENTIRE compiler source, the 24-file difftest
@@ -311,19 +307,17 @@ spec "t-47hc.5: the fall-through probe is NOT a blind instrument (positive contr
     // channel / quote type / match / lambda / where clause) and ten MALFORMED
     // fixtures, the marker fired ZERO times. `--hand-leaves` agrees: zero production
     // `@hand` leaves. Both surviving tails — `parse_statement_hand` and
-    // `parse_type_expr_hand` — are therefore unreachable from the front end, and this
-    // in-process control is the only thing that can still move the gauge. Deleting
-    // them is a promotion of `stmt_flip` (never proven byte-identical, hence default
-    // OFF), which is a diff-test-gated slice of its own, not a mechanical removal.
-    then "with the statement flip OFF the probe FIRES" {
-        stmt_entry_markers("ctl_on", "1 + 2 * 3", false) > 0
+    // `parse_type_expr_hand` is the only tail left, and this in-process control is the
+    // only thing that can still move the gauge.
+    then "with both type-routing flags OFF the probe FIRES" {
+        type_entry_markers("ctl_on", "List<int>", false) > 0
     }
 
     // The negative half, on the SAME entry and the SAME input: the only thing that
     // changed is which parser answered. So the count above tracks a hand tail being
     // taken, not merely "this helper writes to a log".
-    then "with the statement flip ON the same entry logs nothing" {
-        stmt_entry_markers("ctl_off", "1 + 2 * 3", true) == 0
+    then "with the native type parsers ON the same entry logs nothing" {
+        type_entry_markers("ctl_off", "List<int>", true) == 0
     }
 }
 
