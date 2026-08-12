@@ -254,21 +254,12 @@ export type Parser = {
     // into the entry tree as children, never as program roots). Set at
     // construction, never mutated mid-parse (not backtrack-relevant).
     mut records_roots: int,
-    // ps3t.6.5.12 parser swap-in: when true, parse_type_expr delegates the
-    // whole type expression to the grammar-DSL (run_dsl_type_at) as
-    // authoritative, falling back to the hand parser on a DSL error. Read ONCE
-    // at construction (never a getenv per annotation) and settable directly by
-    // tests. PROMOTED (ps3t.6.5.12): the DSL is now the DEFAULT type parser —
-    // proven byte-identical to the hand parser across the whole selfhost
-    // (781232 lines) + the difftest corpus. `AVRA_PARSER_TYPE_FLIP=0` restores
-    // the hand path as a debug escape hatch.
-    mut type_flip: bool,
     // t-47hc.4.4 Phase 3d: when true, parse_type_expr drives the CHECKED-IN generated
     // static type parser (parse/gen_type_parser.av's parse_type_expr, via
     // run_static_type) instead of the Grammar-tree interpreter (run_dsl_type_at_shared).
     // Straight-line speed, byte-identical to both the interpreter flip AND the hand
     // parser (diff-test-gated). PROMOTED default-ON (sibling of decl_static);
-    // `AVRA_PARSER_TYPE_STATIC=0` falls back to the interpreter (type_flip), then hand.
+    // `AVRA_PARSER_TYPE_STATIC=0` selects the interpreter engine instead.
     mut type_static: bool,
     // ps3t.6.5.12 lex-once cache (Step D): the grammar-DSL token list for THIS
     // parser's source, lexed at most once (lazily, via `grammar_tokens`) and
@@ -314,7 +305,7 @@ export type Parser = {
     // and the @hand(hand_unary) procedural leaf), threading this parser's live
     // modes so the leaf reproduces the mode-sensitive parse. Read once at
     // construction, settable by tests. Default OFF until proven byte-identical on
-    // the full selfhost, then promoted (like type_flip / pat_flip).
+    // the full selfhost, then promoted (like pat_flip).
     // dsl_expr_grammar caches avra_expr_grammar() lazily (the per-family expr view
     // carries the full ladder; the program grammar still has an older leaf).
     //
@@ -729,63 +720,17 @@ export fn p_keyword_kind(text: string) -> Tk {
     classify_keyword(avra_bytes_from_string(text), 0, text.length)
 }
 
-/// t-47hc.5 — the HAND-FALLBACK probe. The expression / statement / type
-/// dispatchers each end in `self.parse_<family>_hand(...)`, reached when the
-/// grammar path REPORTED (the declaration family has no such tail: its hand
-/// parser is deleted and the DSL path is unconditional). That tail is the last
-/// piece of the hand parser on the production path, and it is INVISIBLE on valid
-/// input by construction — the grammar succeeds, so the tail never runs and no
-/// green build can tell you whether it is load-bearing.
-///
-/// `AVRA_REFUSE_HAND_FALLBACK` makes it visible: set it to `*` (or a
-/// comma-separated family list — `expr`, `stmt`, `type`) and every hand parse
-/// prints a `[hand-fallback]` line naming the family and the byte offset. It
-/// does NOT change parse behaviour — the fall-through still happens — so it is
-/// safe to run over the whole compiler and the difftest corpus in one pass and
-/// grep the result. A run with ZERO lines is the evidence that deleting the tail
-/// changes nothing on that input set.
-///
-/// ONE marker per hand parse, and `expr` / `stmt` / `type` are the ONLY family
-/// names — the allowlist above is exhaustive. The probe sits at the ENTRY to each
-/// `parse_<family>_hand`, not at the dispatcher's fall-through, and that placement
-/// is the whole reason the counting contract holds. The entry is reached by BOTH
-/// routes into the hand parser (the grammar reported and the dispatcher fell
-/// through, OR the family's flags were off so the guard never ran), whereas a
-/// probe at the fall-through sees only the first and would miss the second
-/// entirely. Probing both sites — the shape this started as — reported two markers
-/// for a single fall-through and gave the flags-off route a name (`expr-hand`)
-/// that the documented allowlist did not match, so `…=expr` silenced exactly the
-/// case it was asked about.
-export fn hand_fallback_refused(family: string) -> bool {
-    let want = avra_process_env_get("AVRA_REFUSE_HAND_FALLBACK")
-    if want == "" { return false }
-    if want == "*" { return true }
-    // Comma-separated allowlist; compare whole names so `expr` can't match `expression`.
-    for part in want.split(",") {
-        if part.trim() == family { return true }
-    }
-    false
-}
-
-/// Report one hand parse (see `hand_fallback_refused`). Kept beside the predicate
-/// so the marker text lives in ONE place — the three hand entries call this, they
-/// never format the line themselves.
-///
-/// TWO sinks, because the two things worth measuring are reached differently.
-/// stderr serves the SHELL probe — `AVRA_REFUSE_HAND_FALLBACK='*' bs2 check f.av`,
-/// which measures the production front end and is what the corpus sweeps count.
-/// But the tails are also reachable IN-PROCESS, by a caller that drives
-/// `parser_new` + `parse_file_expression` with the family flags off, and such a
-/// caller cannot read its own stderr. `AVRA_REFUSE_HAND_FALLBACK_LOG` names a file the marker is
-/// APPENDED to as well, so an in-process control can witness the probe firing and
-/// prove it is not blind — the failure mode this whole instrument exists to avoid.
-export fn note_hand_fallback(family: string, file: string, byte: int) {
-    if !hand_fallback_refused(family) { return }
-    let line = "[hand-fallback] ${family} at ${file}:${byte}"
-    eprintln(line)
-    let log = avra_process_env_get("AVRA_REFUSE_HAND_FALLBACK_LOG")
-    if log != "" { let _ = avra_selfhost_append_file(log, line + "\n") }
-}
+// t-47hc.37 — THE HAND-FALLBACK PROBE IS DELETED, and it is worth recording what it
+// was for. `note_hand_fallback` / `hand_fallback_refused` / AVRA_REFUSE_HAND_FALLBACK
+// made the three `parse_<family>_hand` tails OBSERVABLE: a tail is invisible on valid
+// input by construction (the grammar succeeds, so the tail never runs), and no green
+// build could say whether one was load-bearing. Arming the probe and getting ZERO lines
+// over the compiler source plus the corpus was the evidence each deletion rested on.
+//
+// All three tails are now gone — expression (t-47hc.4.1), statement and type (here) —
+// so the probe has nothing left to count and no control can move it. A gauge whose
+// reading cannot change is worse than no gauge: it reads as coverage. It goes with the
+// last tail, along with parse/tests/hand_fallback_probe_test.av.
 
 /// Construct a Parser positioned on the first token of `source`.
 /// All mode flags default to permissive; feature parsers may flip
@@ -840,7 +785,6 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         features: build_registry(),
         store,
         records_roots: 1,
-        type_flip: avra_process_env_get("AVRA_PARSER_TYPE_FLIP") != "0",
         type_static: avra_process_env_get("AVRA_PARSER_TYPE_STATIC") != "0",
         grammar_toks: [],
         grammar_lex_diags: [],
@@ -1076,7 +1020,7 @@ impl Parser {
         // CONSEQUENCE worth knowing: the executor no longer answers invalid
         // DECLARATION input, so `agree_all`'s three paths collapse to two there and
         // the corpus's executor coverage now comes from the TYPE family, where
-        // `type_flip` still routes through `exec_rule` in production.
+        // the interpreter still routes through `exec_rule` in production.
         if !dsl.had_error {
             d.resync_to_stop_byte(dsl.stop_byte)
             self.copy_cursor_from(d)
@@ -1477,21 +1421,21 @@ impl Parser {
             d.type_static = false
             d.pat_static = false
             d.pat_flip = false
-            // `type_flip` is deliberately NOT cleared, and the asymmetry with
-            // `pat_flip` right above it is the whole point. Clearing `*_static`
-            // selects the slower ENGINE for the same grammar; clearing `*_flip`
-            // as well selects a DIFFERENT PARSER — the hand. Patterns still have
-            // a hand parser to fall back to. Types are mid-retirement: the
-            // executor is the type family's PRODUCTION engine (`type_flip` is
-            // what routes `parse_type_expr` through `exec_rule`, which is why
-            // the recovery corpus's executor coverage comes from types at all),
-            // so clearing it here would not pick a slower engine — it would send
-            // the delegate to `parse_type_expr_hand`, a second implementation,
-            // on a seam whose contract is byte-identical output. Raised in
-            // review on #1221; declined deliberately rather than taken as a
-            // quick win, because it is a production behaviour change with no
-            // evidence behind it. The flag and the hand tail it would select are
-            // both deleted by the type slice, which ends the question.
+            // There is no `type_flip` to clear any more, and that is this slice.
+            // Review on #1221 asked for `d.type_flip = false` here beside
+            // `d.type_static = false`; it was declined because clearing `*_static`
+            // picks a slower ENGINE for the same grammar while clearing `*_flip`
+            // picks a DIFFERENT PARSER, and `type_flip` was what routed
+            // `parse_type_expr` through `exec_rule` — the type family's production
+            // engine. Deleting `parse_type_expr_hand` removes the second
+            // implementation the request would have selected, so the question is
+            // closed rather than answered: `parse_type_expr` is unconditional and
+            // there is nothing left for a flag here to choose between.
+            //
+            // What remains true of the list above: every `*_static` cleared here
+            // still picks the interpreter over the generated parser for the same
+            // grammar, and `pat_flip` is the last entry that still selects a hand
+            // parser at all.
             self.hand_delegate = d
         }
         self.hand_delegate!
@@ -2645,9 +2589,10 @@ impl Parser {
     }
 
     fn parse_type_expr(self, message: string) -> Result<TypeExpr, string> {
-        if self.type_static || self.type_flip {
-            // t-47hc.4.4 Phase 3d: the STATIC generated type parser (run_static_type)
-            // when type_static, else the Grammar-tree interpreter (run_dsl_type_at_shared).
+        {
+            // t-47hc.4.4 Phase 3d, now UNCONDITIONAL: the STATIC generated type parser
+            // (run_static_type) when type_static, else the Grammar-tree interpreter
+            // (run_dsl_type_at_shared) — which is still PRODUCTION for this family.
             // Both share the token stream + store + resync below — they differ only in HOW
             // they drive the identical type-builders, so the DslTypeResult is byte-identical.
             let dsl = if self.type_static {
@@ -2673,27 +2618,54 @@ impl Parser {
                 }
                 return .Ok(dsl.te)
             }
-            // DSL parse error → fall through to the authoritative hand parser.
-        }
-        self.parse_type_expr_hand(message)
-    }
-
-    // The hand-written type-expression parser: the swap-in oracle, and the
-    // fallback when the DSL flip is off or errors.
-    fn parse_type_expr_hand(self, message: string) -> Result<TypeExpr, string> {
-        note_hand_fallback("type", self.file, self.current_start)
-        let base = self.parse_type_atom(message)?
-        // Union: A | B | C — lowest precedence in type position
-        if self.check(Tk.Pipe) {
-            mut result = base
-            while self.check(Tk.Pipe) {
-                self.advance()
-                let rhs = self.parse_type_atom("expected type after `|`")?
-                result = TypeExpr.Union(result, rhs)
+            // The type family OWNS ITS RECOVERY (t-47hc.37) — the last of the three
+            // ITEM-LEVEL seams to get it, after expressions (t-47hc.4.1) and
+            // statements. There is no `parse_type_expr_hand` left to fall through to:
+            // it was unreachable from the front end (the hand-fallback probe fired
+            // ZERO times over the whole compiler source, the difftest corpus, a
+            // wide-surface fixture and ten malformed fixtures) and is deleted.
+            //
+            // "the three" is EXPRESSIONS, STATEMENTS and TYPES, and it is not the same
+            // as "no hand parser is left in the compiler" — PATTERNS are a fourth
+            // family and still have one. `parse_pattern_or` (features/match_expr/
+            // parser.av) falls through to `parse_pattern_or_hand` on a DSL parse
+            // error, which is a LIVE production fallback, not a dead tail. Counting
+            // three families and reading it as "done" is exactly the over-claim this
+            // program keeps having to walk back, so it is written down here rather
+            // than left to the next reader to discover. Tracked separately.
+            // SURFACE THE GRAMMAR'S OWN DIAGNOSTICS, exactly as the expression and
+            // declaration seams do. Raised in review on #1223, and it is a real gap
+            // rather than a style point: this seam used to report a generic
+            // `SyntaxError` at the CALLER's cursor and drop `dsl.diags` on the floor.
+            // That was survivable only while `parse_type_expr_hand` existed to
+            // re-parse and own the message — deleting the hand made this the ONLY
+            // place a type diagnostic can reach the user, so dropping them here loses
+            // the rule's message, its F-code and its span outright.
+            //
+            // ALL of them, in report order, and by SPAN — a committed native rule
+            // recovers more than once, and the recovery oracle compares the ORDERED
+            // F-code signature with duplicates preserved. `syntax_diag_code` maps a
+            // rule's declared code back over the F0001-F0999 range; an uncoded
+            // diagnostic keeps the previous `SyntaxError` default.
+            if dsl.diags.length == 0 {
+                // The grammar failed without reporting: keep the seam's own message
+                // rather than failing silently.
+                self.report(DiagCode.SyntaxError, message)
+            } else {
+                mut gi = 0
+                while gi < dsl.diags.length {
+                    let gd = dsl.diags[gi]
+                    let dc = syntax_diag_code(gd.code)
+                    if dc != null {
+                        self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
+                    } else {
+                        self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
+                    }
+                    gi = gi + 1
+                }
             }
-            return .Ok(result)
+            .Err(message)
         }
-        .Ok(base)
     }
 
     // Parse a single type atom (everything except union |).

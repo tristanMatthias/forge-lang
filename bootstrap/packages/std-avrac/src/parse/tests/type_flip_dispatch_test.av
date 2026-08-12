@@ -1,24 +1,31 @@
-// ps3t.6.5.12 — the type-family FLIP dispatch (parse_type_expr → grammar-DSL).
+// ps3t.6.5.12 / t-47hc.37 — the type-family ENGINE differential.
 //
-// parse_type_expr routes through run_dsl_type_at (the inverse-@hand runner) when
-// the parser's `type_flip` field is set, falling back to the hand parser on a
-// DSL error. The field is read once from AVRA_PARSER_TYPE_FLIP at construction,
-// but is a plain `mut bool` so a test can set it directly — exercising the flip
-// path with NO process-env dependency, in a single low-memory process (the full
-// selfhost flip proof is memory-heavy and lives in the diff-test / promotion
-// step; this pins the dispatch + field wiring).
+// `parse_type_expr` is UNCONDITIONAL now: it runs the type grammar and owns its own
+// error path. The `type_flip` field and the hand parser `parse_type_expr_hand` it used
+// to fall through to are both DELETED — the last of the three ITEM-LEVEL hand tails
+// (expressions, statements, types). NOT the last hand parser in the compiler:
+// PATTERNS are a fourth family and `parse_pattern_or` still falls through to
+// `parse_pattern_or_hand` on a DSL error, in production.
 //
-// Equivalence = same tree: for every type form, the flip path (DSL) and the
-// hand path must build the same TypeExpr, lowered + rendered identically. This
-// complements the run_dsl_type_at differential test (which proves the runner)
-// by proving the parse_type_expr DISPATCH + fallback wiring around it.
+// WHICH TWO ENGINES: `type_static` selects the CHECKED-IN generated parser
+// (run_static_type, parse/gen_type_parser.av) or the tree INTERPRETER
+// (run_dsl_type_at_shared). The interpreter is still PRODUCTION for this family, so
+// both sides ship and this is a live differential rather than a museum piece.
+//
+// Equivalence = same tree: for every type form both engines must build the same
+// TypeExpr, lowered + rendered identically. This complements the run_dsl_type_at
+// differential (which proves the runner) by proving the parse_type_expr DISPATCH.
+//
+// The helpers require a NON-error render on the valid forms. Bare equality would pass
+// on a mutual error sentinel — the vacuity CodeRabbit caught in the statement sibling
+// on PR #1221, fixed here at the same time rather than waiting to be caught twice.
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_type_id, type_expr_to_vtype}
 
-// parse_type_expr via the FLIP path (type_flip set → DSL authoritative).
+/// The INTERPRETER engine (type_static off).
 fn flip_type(src: string) -> string {
     mut p = parser_new(src)
-    p.type_flip = true
+    p.type_static = false
     match p.parse_type_expr("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
@@ -28,11 +35,12 @@ fn flip_type(src: string) -> string {
     }
 }
 
-// The HAND path explicitly (parse_type_expr_hand) — robust to the promoted
-// default (type_flip now defaults TRUE), so this stays a real hand baseline.
+/// The GENERATED engine (type_static on) — pinned, not ambient, so the two sides
+/// cannot collapse onto one engine.
 fn hand_type(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_type_expr_hand("expected type") {
+    p.type_static = true
+    match p.parse_type_expr("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
             render_type_id(p.store, tid)
@@ -42,10 +50,11 @@ fn hand_type(src: string) -> string {
 }
 
 fn agree(src: string) -> bool {
-    flip_type(src) == hand_type(src)
+    let interp = flip_type(src)
+    interp != "<flip parse error>" && interp == hand_type(src)
 }
 
-spec "ps3t.6.5.12: parse_type_expr flip dispatch == hand path (type_flip field)" {
+spec "t-47hc.37: parse_type_expr — interpreter engine == generated engine" {
     given "the field toggles the path (sanity: flip really took the DSL branch)" {
         then "flip and hand render the same non-error type for a representative form" {
             flip_type("Map<string, List<int>>") == "Map<string, List<int>>" &&
@@ -74,6 +83,41 @@ spec "ps3t.6.5.12: parse_type_expr flip dispatch == hand path (type_flip field)"
             agree("@std::avrac::core::ExprId") &&
             agree("List<@std::avrac::core::ExprId>") &&
             agree("@std::avrac::core::Result<int, string>")
+        }
+    }
+}
+
+// Review on #1223: with `parse_type_expr_hand` deleted, this seam is the ONLY
+// place a type diagnostic can reach the user — and it was reporting a generic
+// SyntaxError carrying the CALLER's placeholder message while dropping
+// `dsl.diags` entirely. The grammar's own message, F-code and span were lost.
+// It re-reports them now, the way the expression and declaration seams have.
+//
+// Asserting "an error is produced" would NOT catch that — the old generic report
+// is an error too. So the caller passes a placeholder that could only come from
+// the seam, and the assertion is that the surfaced diagnostic is NOT it. The old
+// behaviour echoed it verbatim, so this row goes red on a regression.
+fn first_type_diag(src: string) -> string {
+    mut p = parser_new(src)
+    match p.parse_type_expr("CALLER_PLACEHOLDER") {
+        .Ok(_) -> "<parsed>"
+        .Err(_) -> if p.bag.diagnostics.length == 0 { "<no diagnostic>" } else { p.bag.diagnostics[0].message }
+    }
+}
+
+spec "t-47hc.37: the type seam surfaces the GRAMMAR's diagnostics, not the caller's placeholder" {
+    given "a malformed type the grammar rejects with its own message" {
+        then "the surfaced diagnostic is the rule's, not the placeholder the seam was handed" {
+            let d = first_type_diag("List<")
+            d != "<parsed>" && d != "<no diagnostic>" && d != "CALLER_PLACEHOLDER"
+        }
+    }
+    given "several malformed forms" {
+        then "each surfaces a real diagnostic rather than the placeholder" {
+            first_type_diag("Map<string,") != "CALLER_PLACEHOLDER" &&
+            first_type_diag("fn(") != "CALLER_PLACEHOLDER" &&
+            first_type_diag("Map<string,") != "<no diagnostic>" &&
+            first_type_diag("fn(") != "<no diagnostic>"
         }
     }
 }

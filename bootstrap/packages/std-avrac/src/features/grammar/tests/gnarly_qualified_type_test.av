@@ -33,10 +33,14 @@ fn dsl_type(src: string) -> string {
 
 fn hand_type(src: string) -> string {
     mut p = parser_new(src)
-    // parse_type_expr_hand, NOT parse_type_expr: type_flip is default-on, so
-    // parse_type_expr routes through the DSL — comparing DSL-against-DSL would
     // make the "== hand parser" oracle tautological. Pin the hand parser.
-    match p.parse_type_expr_hand("expected type") {
+    // t-47hc.37 — was `parse_type_expr_hand`, which is DELETED (the last of the three ITEM-LEVEL
+    // hand tails). The oracle half is the INTERPRETER engine now: `type_static = false`
+    // selects run_dsl_type_at_shared over the generated run_static_type. Two engines,
+    // one grammar — and the interpreter is still PRODUCTION for the type family, so this
+    // is a live differential rather than a museum piece.
+    p.type_static = false
+    match p.parse_type_expr("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
             render_type_id(p.store, tid)
