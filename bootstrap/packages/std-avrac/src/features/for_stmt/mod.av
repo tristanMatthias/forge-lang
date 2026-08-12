@@ -105,7 +105,6 @@ export fn for_feature() -> Feature {
     feature_new("for") with {
         stmt_tag: Stmt.For("", ExprId(0), ExprId(0), StmtId(0)),
         stmt_keyword: "kw_for",
-        parse_stmt: (p: Parser) -> p.parse_for_statement(),
         emit_stmt: emit_for,
         resolve_stmt: for_resolve,
         check_stmt: for_check,

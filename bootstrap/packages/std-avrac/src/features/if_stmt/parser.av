@@ -21,32 +21,6 @@ type IfLetHeader = { tmp: string, binding: string, subject_id: ExprId }
 
 impl Parser {
 
-    fn parse_if_statement(self) -> Result<StmtId, string> {
-        self.advance()
-        // Bind-fresh `if let v = x { … }`: `let` right after `if`.
-        if self.check(Tk.KwLet) { return self.parse_if_let_statement() }
-        let saved = self.allow_struct_lit
-        self.allow_struct_lit = false
-        let condition_opt = self.parse_expression()
-        self.allow_struct_lit = saved
-        let cond_id = condition_opt?
-
-        if !self.check(Tk.LeftBrace) {
-            self.report(DiagCode.ExpectedBlock, "expected `{` after if condition")
-            return .Err("parse error")
-        }
-
-        let then_id = self.parse_statement()?
-
-        if self.check(Tk.KwElse) {
-            self.advance()
-            let else_id = self.parse_statement()?
-            return .Ok(self.alloc_stmt_leaf(Stmt.If(cond_id, then_id, else_id)))
-        }
-
-        .Ok(self.alloc_stmt_leaf(Stmt.If(cond_id, then_id, none)))
-    }
-
     // `if let v = x { THEN } else { ELSE }` desugars to
     //   { let __t = x;  if __t != none { let v = __t!;  THEN } else { ELSE } }
     // The temp evaluates the subject exactly once; `v` is a fresh immutable
