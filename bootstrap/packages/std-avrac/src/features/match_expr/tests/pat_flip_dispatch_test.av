@@ -1,45 +1,66 @@
-// ps3t.6.5.12 — the pattern-family FLIP dispatch (parse_pattern_or → grammar-DSL).
+// t-bgf8 — the pattern-family ENGINE differential.
 //
-// parse_pattern_or routes through run_dsl_pattern_at_shared (the inverse-@hand
-// pattern runner over avra_pat_grammar's `pattern_or` rule) when the parser's
-// `pat_flip` field is set, falling back to the hand parser on a DSL error. The
-// field is read once from AVRA_PARSER_PAT_FLIP at construction but is a plain
-// `mut bool` a test can set directly — exercising the flip path with no
-// process-env dependency (the full-selfhost flip proof is memory-heavy and
-// lives in the promotion step; this pins the dispatch + fallback wiring).
+// `parse_pattern_or` is UNCONDITIONAL now: it runs the pattern grammar and owns
+// its own error path. The `pat_flip` field and the hand parser
+// `parse_pattern_or_hand` it used to fall through to are both DELETED — patterns
+// were the FOURTH and last family to keep a hand parser, after expressions
+// (t-47hc.4.1), statements (t-47hc.37) and types.
 //
-// Parity = same tree AND same accept/reject: for every VALID pattern form the
-// flip path (DSL) and the hand path (parse_pattern_or_hand — called explicitly
-// so it stays a real hand baseline under the promoted default) build the same
-// Pattern; for INVALID forms both must REJECT. flip_pat/hand_pat return the SAME
-// "<err>" sentinel on a parse error, so a mutual rejection is agreement (a
-// bare identifier cannot bind at pattern top level, and a variant sub-pattern
-// cannot mix with a bare-ident sub — both parsers reject those identically).
+// THIS FILE WAS THE MEASUREMENT THAT MADE THE DELETION SAFE, and then had to be
+// repointed by it. Refusing `parse_pattern_or` turned 4 of its 5 specs red, which
+// is the positive control proving the refusal probe could fire at all — and with
+// that established, the same probe firing ZERO times over the whole @std::avrac
+// compile, the 24-file difftest corpus, ten malformed pattern fixtures and
+// `bs2 expr` meant the hand chain was reachable only from tests. Production
+// parses `match` through the generated declaration parser and never enters these
+// `impl Parser` methods.
+//
+// WHICH TWO ENGINES IT COMPARES NOW: `pat_static` selects the CHECKED-IN
+// generated parser (run_static_pat, parse/gen_pat_parser.av) or the tree
+// INTERPRETER (run_dsl_pattern_at_shared). Both ship, so this is a live
+// differential rather than a museum piece — the same shape the type family took.
+//
+// Parity = same tree AND same accept/reject. Both helpers return the SAME "<err>"
+// sentinel, so a mutual rejection is agreement; and the valid-form helper
+// additionally requires a NON-error render, because bare equality passes on a
+// mutual "<err>" and that is how a valid-form group goes vacuous without a single
+// assertion changing (the vacuity review caught in the statement sibling, #1221).
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_pat_id}
 
+/// The INTERPRETER engine.
 fn flip_pat(src: string) -> string {
     mut p = parser_new(src)
-    p.pat_flip = true
+    p.pat_static = false
     match p.parse_pattern_or() {
-        .Ok(id) -> render_pat_id(p.store, id)
+        .Ok(id) -> if p.had_error { "<err>" } else { render_pat_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }
 
+/// The GENERATED engine — pinned, not ambient, so the two sides cannot collapse
+/// onto one engine and compare a path against itself.
 fn hand_pat(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_pattern_or_hand() {
-        .Ok(id) -> render_pat_id(p.store, id)
+    p.pat_static = true
+    match p.parse_pattern_or() {
+        .Ok(id) -> if p.had_error { "<err>" } else { render_pat_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }
 
+/// Valid-form parity: both engines must PARSE and render the SAME Pattern.
+fn agree_ok(src: string) -> bool {
+    let f = flip_pat(src)
+    f != "<err>" && f == hand_pat(src)
+}
+
+/// Reject parity: both engines must return the SHARED sentinel.
 fn agree(src: string) -> bool {
     flip_pat(src) == hand_pat(src)
 }
 
-spec "ps3t.6.5.12: parse_pattern_or flip dispatch == hand path (pat_flip field)" {
+spec "t-bgf8: parse_pattern_or — interpreter engine == generated engine" {
     given "the field toggles the path (sanity: flip really took the DSL branch)" {
         then "flip builds a real tree and agrees with hand for a representative form" {
             flip_pat(".Foo(a, b)") != "<err>" &&
@@ -48,21 +69,21 @@ spec "ps3t.6.5.12: parse_pattern_or flip dispatch == hand path (pat_flip field)"
     }
     given "wildcard, rest, and literals (incl. negatives)" {
         then "each atom shape agrees" {
-            agree("_") && agree("rest") &&
-            agree("1") && agree("-1") && agree("1.5") && agree("-2.5") &&
-            agree("\"hi\"") && agree("true") && agree("false")
+            agree_ok("_") && agree_ok("rest") &&
+            agree_ok("1") && agree_ok("-1") && agree_ok("1.5") && agree_ok("-2.5") &&
+            agree_ok("\"hi\"") && agree_ok("true") && agree_ok("false")
         }
     }
     given "variant patterns: nullary, bindings, nested sub-patterns" {
         then "each variant shape agrees" {
-            agree(".None") && agree(".Some(x)") && agree(".Pair(a, b)") &&
-            agree(".Wrap(.Inner(y))")
+            agree_ok(".None") && agree_ok(".Some(x)") && agree_ok(".Pair(a, b)") &&
+            agree_ok(".Wrap(.Inner(y))")
         }
     }
     given "or-patterns (right-recursive) and the optional-match surface" {
         then "or chains and let/none/null agree" {
-            agree(".A or .B") && agree("1 or 2 or 3") && agree(".Some(x) or .None") &&
-            agree("let v") && agree("none") && agree("null")
+            agree_ok(".A or .B") && agree_ok("1 or 2 or 3") && agree_ok(".Some(x) or .None") &&
+            agree_ok("let v") && agree_ok("none") && agree_ok("null")
         }
     }
     given "reject parity: both parsers reject the same invalid forms" {

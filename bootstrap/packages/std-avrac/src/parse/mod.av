@@ -285,18 +285,22 @@ export type Parser = {
     // the whole or-pattern to the grammar-DSL (avra_pat_grammar), with a hand
     // fallback on any DSL error. Read once at construction. PROMOTED: the DSL is
     // now the DEFAULT pattern parser — proven byte-identical to the hand parser
-    // across the whole selfhost (781802 lines). `AVRA_PARSER_PAT_FLIP=0` restores
-    // the hand path as a debug escape. `dsl_pat_grammar` caches avra_pat_grammar()
-    // (the isolated pattern grammar — the program grammar carries no pattern
-    // rules yet) lazily, once, exactly like `dsl_grammar`.
-    mut pat_flip: bool,
+    // across the whole selfhost (781802 lines). `dsl_pat_grammar` caches
+    // avra_pat_grammar() (the isolated pattern grammar — the program grammar
+    // carries no pattern rules yet) lazily, once, exactly like `dsl_grammar`.
+    //
+    // t-bgf8: the `pat_flip` field and `AVRA_PARSER_PAT_FLIP` are DELETED with the
+    // hand path they were the escape to. A flag whose off-state selects nothing is
+    // the failure that has now cost FIVE variables (AVRA_NO_STATIC_FALLBACK,
+    // DECL_FLIP, EXPR_STATIC, TYPE_FLIP, PAT_FLIP) — delete the switch in the same
+    // change as the parser it selects.
     // t-47hc.4.4 Phase 3d (pattern half): when true, parse_pattern_or drives the
     // CHECKED-IN generated static pattern parser (parse/gen_pat_parser.av's
     // parse_pattern_or, via run_static_pat) instead of the Grammar-tree interpreter
     // (run_dsl_pattern_at_shared). Straight-line speed, byte-identical to both the
     // interpreter flip AND the hand parser (diff-test-gated). PROMOTED default-ON
-    // (sibling of type_static); `AVRA_PARSER_PAT_STATIC=0` falls back to the
-    // interpreter (pat_flip), then hand.
+    // (sibling of type_static); `AVRA_PARSER_PAT_STATIC=0` selects the
+    // interpreter. There is no third option — the hand is deleted.
     mut pat_static: bool,
     mut dsl_pat_grammar: Grammar?,
     // ps3t.6.7 expression-family swap-in: when true, parse_expression delegates
@@ -305,7 +309,7 @@ export type Parser = {
     // and the @hand(hand_unary) procedural leaf), threading this parser's live
     // modes so the leaf reproduces the mode-sensitive parse. Read once at
     // construction, settable by tests. Default OFF until proven byte-identical on
-    // the full selfhost, then promoted (like pat_flip).
+    // the full selfhost, then promoted (like pat_static).
     // dsl_expr_grammar caches avra_expr_grammar() lazily (the per-family expr view
     // carries the full ladder; the program grammar still has an older leaf).
     //
@@ -789,7 +793,6 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         grammar_toks: [],
         grammar_lex_diags: [],
         dsl_grammar: null,
-        pat_flip: avra_process_env_get("AVRA_PARSER_PAT_FLIP") != "0",
         pat_static: avra_process_env_get("AVRA_PARSER_PAT_STATIC") != "0",
         dsl_pat_grammar: null,
         // Which GRAMMAR ENGINE runs the expression grammar: the tree interpreter
@@ -813,7 +816,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // escape hatch back to a hand RD driver. Both went with the `@hand(decl_hand)`
         // leaf. The shared hand-delegate (ensure_hand_delegate) still exists for the
         // leaves that remain in family-isolated grammar views, and is still a
-        // SINGLE-LEVEL parser (its own pat_flip is OFF) so bodies
+        // SINGLE-LEVEL parser (its own `*_static` toggles are OFF) so bodies
         // do not re-enter the DSL through it. Proven byte-identical over the full
         // selfhost + corpus.
         dsl_decl_grammar: null,
@@ -1420,7 +1423,6 @@ impl Parser {
             d.decl_static = false
             d.type_static = false
             d.pat_static = false
-            d.pat_flip = false
             // There is no `type_flip` to clear any more, and that is this slice.
             // Review on #1221 asked for `d.type_flip = false` here beside
             // `d.type_static = false`; it was declined because clearing `*_static`
@@ -1432,10 +1434,11 @@ impl Parser {
             // closed rather than answered: `parse_type_expr` is unconditional and
             // there is nothing left for a flag here to choose between.
             //
-            // What remains true of the list above: every `*_static` cleared here
-            // still picks the interpreter over the generated parser for the same
-            // grammar, and `pat_flip` is the last entry that still selects a hand
-            // parser at all.
+            // t-bgf8 finished the job: `pat_flip` is gone from this list too, with
+            // `parse_pattern_or_hand`. Every entry that remains clears a `*_static`
+            // toggle, which picks the INTERPRETER over the generated parser for the
+            // same grammar. Not one of them selects a hand parser, because there is
+            // no hand parser in any family left to select.
             self.hand_delegate = d
         }
         self.hand_delegate!

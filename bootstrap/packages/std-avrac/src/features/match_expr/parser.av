@@ -9,7 +9,9 @@
 use core.{Stmt, Expr, Pattern, MatchArm, WhenArm, ParamEntry, pattern_optional_present, pattern_optional_absent}
 use core.{NodeRef, ExprId, StmtId, PatId, byte_span_none}
 use parse.{Parser, table_zip_entries}
+use diagnostics.{syntax_diag_code}
 use core.{Tk}
+use diagnostics.{DiagCode}
 // ps3t.6.5.12 pattern-family swap-in: parse_pattern_or / parse_pattern delegate
 // to the grammar-DSL when pat_flip is set (the inverse of the @hand bridge).
 use features.grammar.{run_dsl_pattern_at_shared, DslPatResult, Grammar}
@@ -165,42 +167,60 @@ impl Parser {
         self.dsl_pat_grammar ?? avra_pat_grammar()
     }
 
-    // Pattern-family flip entry (ps3t.6.5.12): when pat_flip is set, delegate the
-    // whole or-pattern to the DSL `pattern_or` rule (which parses atoms, `or`,
-    // and nested variant sub-patterns itself), resyncing the token cursor by byte
-    // position — the pattern-family mirror of parse_type_expr. Hand fallback on a
-    // DSL error so the flip can never regress.
+    // Pattern-family entry, UNCONDITIONAL (t-bgf8): the grammar owns or-patterns.
+    // `pat_static` picks the CHECKED-IN generated parser (run_static_pat) or the
+    // tree INTERPRETER (run_dsl_pattern_at_shared) — two engines driving the
+    // identical pattern-builders, so the DslPatResult is the same either way.
+    // There is no third choice: `parse_pattern_or_hand` and the `pat_flip` field
+    // that used to select it are deleted, making patterns the FOURTH and last
+    // family to retire its hand parser, after expressions (t-47hc.4.1),
+    // statements (t-47hc.37) and types.
+    //
+    // MEASURED BEFORE DELETING, and the measurement corrected the premise. t-bgf8
+    // was filed saying this fallback was "a LIVE production fallback, reached on
+    // invalid input" — read off the `// DSL parse error → fall through` comment
+    // rather than measured. A refusal probe at this entry fired ZERO times over
+    // the whole @std::avrac compile, all 24 difftest corpus files, ten malformed
+    // pattern fixtures, and `bs2 expr` — with the flags forced off. The probe was
+    // NOT blind: refusing it turned 4 of 5 specs in pat_flip_dispatch_test red,
+    // which is the positive control that makes the zeros mean something. The hand
+    // chain was reachable only from tests, exactly like the statement subgraph
+    // #1221 removed, because production parses `match` through the generated
+    // declaration parser and never enters these `impl Parser` methods.
     fn parse_pattern_or(self) -> Result<PatId, string> {
-        if self.pat_static || self.pat_flip {
-            // t-47hc.4.4 Phase 3d: the STATIC generated pattern parser (run_static_pat)
-            // when pat_static, else the Grammar-tree interpreter (run_dsl_pattern_at_shared).
-            // Both share the token stream + store + resync below — they differ only in HOW
-            // they drive the identical pattern-builders, so the DslPatResult is byte-identical.
-            let dsl = if self.pat_static {
-                run_static_pat(self.grammar_tokens(), self.current_start, self.source, self.store)
-            } else {
-                run_dsl_pattern_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_pattern_grammar(), "pattern_or")
-            }
-            if !dsl.had_error {
-                while self.current_start < dsl.stop_byte && !self.is_at_end() {
-                    self.advance_token()
-                }
-                return .Ok(dsl.pat)
-            }
-            // DSL parse error → fall through to the authoritative hand parser.
+        let dsl = if self.pat_static {
+            run_static_pat(self.grammar_tokens(), self.current_start, self.source, self.store)
+        } else {
+            run_dsl_pattern_at_shared(self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_pattern_grammar(), "pattern_or")
         }
-        self.parse_pattern_or_hand()
-    }
-
-    fn parse_pattern_or_hand(self) -> Result<PatId, string> {
-        let left = self.parse_pattern()?
-        if !self.check(Tk.KwOr) { return .Ok(left) }
-        self.advance()
-        let right = self.parse_pattern_or()?
-        // F2: the branches ARE ids — the payload is the child mechanism now,
-        // so no PatRef edges (the walker sees ids as scalars; the native alloc
-        // mirrors the ingest's leaf view, the F1a when-arm rule).
-        .Ok(self.alloc_pat_leaf(Pattern.Or(left, right)))
+        if !dsl.had_error {
+            while self.current_start < dsl.stop_byte && !self.is_at_end() {
+                self.advance_token()
+            }
+            return .Ok(dsl.pat)
+        }
+        // OWN THE RECOVERY. With no hand to fall through to, this seam is the only
+        // place a pattern diagnostic can reach the user — so surface the grammar's
+        // own, by span, rather than a generic stand-in. This is the defect review
+        // caught on the TYPE seam in #1223 (it reported the caller's placeholder and
+        // dropped `dsl.diags` entirely); the pattern seam had the same shape and it
+        // is fixed here in the same change that makes it reachable.
+        if dsl.diags.length == 0 {
+            self.report(DiagCode.SyntaxError, "expected pattern")
+        } else {
+            mut gi = 0
+            while gi < dsl.diags.length {
+                let gd = dsl.diags[gi]
+                let dc = syntax_diag_code(gd.code)
+                if dc != null {
+                    self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
+                } else {
+                    self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
+                }
+                gi = gi + 1
+            }
+        }
+        .Err("pattern parse error")
     }
 
     fn parse_match_arm_list(self) -> Result<MatchArmsParsed, string> {
