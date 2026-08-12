@@ -957,6 +957,93 @@ seed_lock_field() {
 # Every failure RETURNS non-zero (with the reason on stderr) instead
 # of die-ing: callers decide severity — the build path aborts, while
 # --seed-merge falls through to its next candidate seed.
+# Retry flags for every seed fetch, as a word-split string.
+#
+# --retry-all-errors is curl >= 7.71. An older curl (macOS still ships 7.64)
+# treats it as an unknown option and exits 2 BEFORE making a request, which
+# would look exactly like a dead URL and route every fetch down the fallback.
+# Probe once per process and memoize.
+SEED_CURL_RETRY=""
+seed_curl_retry() {
+  if [ -z "$SEED_CURL_RETRY" ]; then
+    if curl --help all 2>/dev/null | grep -q -- '--retry-all-errors'; then
+      SEED_CURL_RETRY="--retry 5 --retry-all-errors --retry-delay 2"
+    else
+      SEED_CURL_RETRY="--retry 5 --retry-delay 2"
+    fi
+  fi
+  printf '%s' "$SEED_CURL_RETRY"
+}
+
+# Secondary route to a pinned release artifact: the GitHub REST API.
+#
+# `releases/download/…` is served by release-assets.githubusercontent.com,
+# a DIFFERENT edge from api.github.com — and it fails independently of the
+# release being healthy. Measured 2026-08-12: for ~an hour every CI job died
+# here on `503` then `curl (56) connection died`, while the same URL served
+# 200 / 7462300 bytes from a dev box and the API handed back byte-identical
+# content. A pinned toolchain that a single CDN edge can halt is not pinned.
+#
+# Eligibility is by URL SHAPE, so a lock pointing at any other host produces
+# no request at all. The token (when present) goes ONLY to the API host this
+# function builds itself — never to the lock's URL — so the "no credentials
+# to lock-controlled hosts" rule at the call site is preserved. Integrity is
+# unchanged: the caller still verifies the sha256 pin over whatever arrives.
+#
+# AVRA_SEED_API_BASE is the test seam: with it set, any */releases/download/*
+# URL is eligible, which lets the spec drive this whole path from file://
+# URLs and keeps the suite hermetic.
+seed_fetch_via_api() {
+  local url="$1" out="$2"
+  command -v jq >/dev/null 2>&1 || return 1
+
+  local api="${AVRA_SEED_API_BASE:-}"
+  if [ -n "$api" ]; then
+    case "$url" in */releases/download/*) ;; *) return 1 ;; esac
+  else
+    api="https://api.github.com"
+    case "$url" in https://github.com/*/releases/download/*) ;; *) return 1 ;; esac
+  fi
+
+  # <base>/<owner>/<repo>/releases/download/<tag>/<file>. The tag itself
+  # contains a slash (`seed/v534`), so the FILE is the last component and
+  # everything between `download/` and it is the tag.
+  local before="${url%%/releases/download/*}"
+  local repo_part="${before##*/}"
+  local owner_head="${before%/*}"
+  local owner_part="${owner_head##*/}"
+  local tail_part="${url#*/releases/download/}"
+  local file="${tail_part##*/}"
+  local tag="${tail_part%/*}"
+  [ -n "$owner_part" ] && [ -n "$repo_part" ] && [ -n "$tag" ] && [ -n "$file" ] \
+    || return 1
+
+  local auth=()
+  local tok="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+  [ -n "$tok" ] && auth=(-H "Authorization: Bearer $tok")
+
+  warn "primary seed URL failed — retrying the same artifact via the GitHub API"
+  local retry=""
+  case "$api" in http://*|https://*) retry=$(seed_curl_retry) ;; esac
+  local meta
+  # shellcheck disable=SC2086  # word-splitting the retry flags is intended
+  meta=$(curl -fsSL $retry --connect-timeout 15 --max-time 60 \
+              ${auth[@]+"${auth[@]}"} \
+              "$api/repos/$owner_part/$repo_part/releases/tags/$tag" 2>/dev/null) \
+    || return 1
+  local asset
+  asset=$(printf '%s' "$meta" \
+            | jq -r --arg n "$file" '.assets[]? | select(.name == $n) | .url' \
+            | head -1)
+  [ -n "$asset" ] && [ "$asset" != "null" ] || return 1
+  local asset_retry=""
+  case "$asset" in http://*|https://*) asset_retry=$(seed_curl_retry) ;; esac
+  # shellcheck disable=SC2086  # word-splitting the retry flags is intended
+  curl -fsSL $asset_retry --connect-timeout 15 --max-time 600 \
+       -H "Accept: application/octet-stream" ${auth[@]+"${auth[@]}"} \
+       -o "$out" "$asset"
+}
+
 fetch_seed_from_lock() {
   [ $# -eq 2 ] || die "usage: fetch_seed_from_lock <lockfile> <dest.ll>"
   local lock="$1" dest="$2"
@@ -1001,7 +1088,19 @@ fetch_seed_from_lock() {
     # file, and shipping a credential to an attacker-controlled host is
     # how tokens leak. Release assets on this (public) repo download
     # anonymously; integrity comes from the sha256 pin, not the channel.
-    if ! curl -fsSL --retry 3 --connect-timeout 15 --max-time 600 -o "$gz" "$url"; then
+    # --retry-all-errors because the observed CDN failure alternates between
+    # a 5xx (which bare --retry covers) and a dropped connection mid-transfer
+    # (which it does not) — retrying only half of a flapping edge is the same
+    # as not retrying it.
+    # Retries are for a flapping NETWORK. A file:// path that cannot be
+    # opened will not open on the fifth try, and retrying it would put ten
+    # seconds into every dead-URL case in the spec.
+    local retry=""
+    case "$url" in http://*|https://*) retry=$(seed_curl_retry) ;; esac
+    # shellcheck disable=SC2086  # word-splitting the retry flags is intended
+    if ! curl -fsSL $retry \
+              --connect-timeout 15 --max-time 600 -o "$gz" "$url" \
+       && ! seed_fetch_via_api "$url" "$gz"; then
       rm -f "$gz"
       err "seed fetch failed: $url"
       err "Offline? A previously materialized seed/seed.ll keeps working; otherwise"
@@ -5379,6 +5478,12 @@ dt_build_compiler() {
   if [ "${AVRA_FORCE_DIFFTEST:-0}" != "1" ] && [ -x "$out/bs2" ] \
      && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
     log "diff-test: compiler @ $ref (${ref_sha:0:12}) cached"
+    # Record WHICH windows were served from a marker rather than built here.
+    # A divergence between a restored compiler and a freshly-built one has two
+    # possible causes — the source change, or the restored window — and the
+    # verdict cannot tell them apart. dt_recheck_without_cache (below) resolves
+    # it by rebuilding, and needs to know there was something to rebuild.
+    DT_CACHED_WINDOWS="${DT_CACHED_WINDOWS:-} $out"
     return 0
   fi
   log "diff-test: building compiler @ $ref (${ref_sha:0:12})"
@@ -5398,6 +5503,57 @@ dt_build_compiler() {
       "$out/runtime.o" "$out/llvm_wrapper.o" \
     || { cat "$out/bs2.build.log" >&2; die "diff-test: $ref compiler link failed"; }
   printf '%s' "$fp" > "$marker"
+}
+
+# Re-decide a SELFHOST divergence when one side's compiler was RESTORED rather
+# than built in this run — returns 0 when the divergence does NOT survive a
+# rebuild (i.e. the restored window caused it), non-zero otherwise.
+#
+# WHY this exists. diff-test's whole claim is that an IR difference is
+# attributable to compiler SOURCE alone: same seed (asserted), same input (one
+# path, both compilers), same machine. Caching the OLD window breaks the last
+# leg silently — the restored `bs2` was produced by an earlier run, possibly on
+# a different runner image, and `window_fingerprint` covers the seed and the ref
+# SHA but not the environment that linked it. The workflow comment concedes the
+# point ("Correctness is the marker's (not the key's), and diff-test's own
+# byte-identical IR comparison is the backstop") — but the backstop cannot
+# distinguish the two causes, so when it fires the reader gets "the change is
+# NOT behaviour-preserving" for what may be a stale cache entry.
+#
+# Observed exactly that on #1221: two identical CI failures, wholesale ORDER
+# differences (identical `__init_*` module set, renumbered `.str` pool) with the
+# CI log reading `compiler @ … cached` for OLD and `building` for NEW, while a
+# hermetic COLD local run of the same tree was byte-identical, and CI's OLD did
+# not match a fresh local build of the same commit. Rebuilding is the only thing
+# that separates those, so do it automatically instead of asking a human to
+# guess — and cost nothing on the common path, since this runs only after a
+# divergence has already been reported.
+dt_recheck_without_cache() {
+  local base="$1" old="$2" self="$3" old_bs2="$4" new_bs2="$5" wd="$6" newd="$7"
+  case " ${DT_CACHED_WINDOWS:-} " in
+    *" $old "*) ;;
+    *) return 1 ;;   # OLD was built in this run — the divergence stands.
+  esac
+  warn "diff-test: OLD was served from a RESTORED window, so the divergence above is"
+  warn "           NOT yet attributable to this branch. Rebuilding OLD from its ref and"
+  warn "           re-comparing — this is the only thing that separates the two causes."
+  AVRA_FORCE_DIFFTEST=1 dt_build_compiler "$base" "$old" || {
+    err "diff-test: rebuilding OLD failed — cannot adjudicate; treating the divergence as real"
+    return 1
+  }
+  # The rebuild replaces OLD's tree, so BOTH sides must recompile against it.
+  dt_compile_ir "$self" "$old_bs2" "$old"  "$wd/self.old.ll" || {
+    err "diff-test: rebuilt OLD failed to compile its own source"; return 1; }
+  dt_compile_ir "$self" "$new_bs2" "$newd" "$wd/self.new.ll" || {
+    err "diff-test: NEW failed to compile the rebuilt OLD's source"; return 1; }
+  if diff -q "$wd/self.old.ll" "$wd/self.new.ll" >/dev/null 2>&1; then
+    warn "diff-test: the restored OLD window was stale — evict it. The cache key"
+    warn "           (avra-difftest-…) shares entries by prefix across PRs on the"
+    warn "           same seed pin, so a bad entry re-poisons every later run."
+    return 0
+  fi
+  err "diff-test: the divergence SURVIVES a rebuilt OLD — it is attributable to this branch"
+  return 1
 }
 
 # Compile $1 (an absolute .av path) with the compiler BINARY $2, writing the
@@ -5856,7 +6012,15 @@ mode_diff_test() {
     err "diff-test: SELFHOST IR DIVERGED — the compiler compiles itself differently"
     err "  full IR: $wd/self.old.ll  vs  $wd/self.new.ll"
     diff -u "$wd/self.old.ll" "$wd/self.new.ll" | head -80 >&2
-    fails=$((fails+1))
+    # A divergence is only attributable to the SOURCE if both compilers were
+    # built the same way in this run. When one side came from a restored
+    # window, it is not, and the verdict above is a guess dressed as a finding.
+    # Rebuild and re-compare rather than leaving the reader to infer it.
+    if dt_recheck_without_cache "$base" "$old" "$self" "$old_bs2" "$new_bs2" "$wd" "$newd"; then
+      ok "diff-test: selfhost IR byte-identical once OLD was REBUILT — the restored window was the divergence, not this branch"
+    else
+      fails=$((fails+1))
+    fi
   fi
 
   # ── Corpus differential: the CURATED standalone corpus

@@ -117,6 +117,47 @@ spec "seed.lock fetch: pinned-artifact materialization" {
                 && avra_shell_exec("test -f ${dir}/out.ll && echo exists").trim() != "exists"
         }
     }
+    // The pin is only as available as the channel serving it. On 2026-08-12
+    // GitHub's release-asset CDN 503'd / dropped connections for ~an hour and
+    // every CI job died fetching the seed, while the same URL served 200
+    // elsewhere — so the fetch now falls back to the SAME artifact over the
+    // GitHub API, a different edge. AVRA_SEED_API_BASE is the test seam that
+    // keeps this hermetic: with it set, any */releases/download/* URL is
+    // eligible, so the whole rescue runs over file:// with no network.
+    given "the primary download URL is dead but the API serves the artifact" {
+        then "the fallback rescues the fetch and the pin still verifies" {
+            let dir = case_dir("apifb")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR iota")
+            avra_shell_exec("rm -rf build/cache/seed/${sha}.ll")
+            // owner/repo are fixed by the URL shape, not by the scratch path.
+            write_lock(dir, sha, "file://${dir}/o/r/releases/download/seed/v1/artifact.gz")
+            avra_shell_exec("mkdir -p ${dir}/api/repos/o/r/releases/tags/seed && printf '{\"assets\":[{\"name\":\"artifact.gz\",\"url\":\"file://${dir}/artifact.gz\"}]}' > ${dir}/api/repos/o/r/releases/tags/seed/v1")
+            let out = sh("AVRA_SEED_API_BASE=file://${dir}/api bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            if avra_shell_exec("command -v jq >/dev/null && echo yes").trim() == "yes" {
+                out.contains("retrying the same artifact via the GitHub API")
+                    && out.contains("rc=0")
+                    && avra_shell_exec("cat ${dir}/out.ll").contains("fake seed IR iota")
+            } else {
+                // No jq: the fallback declines rather than guessing at JSON,
+                // which is exactly the pre-fallback behaviour. Assert THAT,
+                // so the case still discriminates on a jq-less box.
+                !out.contains("rc=0") && out.contains("seed fetch failed")
+            }
+        }
+    }
+    given "a lock URL that is not a release-download URL at all" {
+        then "no fallback is attempted — a foreign host never triggers a GitHub call" {
+            let dir = case_dir("nofb")
+            avra_shell_exec("rm -rf ${dir}")
+            let sha = setup(dir, "fake seed IR kappa")
+            avra_shell_exec("rm -rf build/cache/seed/${sha}.ll && rm ${dir}/artifact.gz")
+            write_lock(dir, sha, "file://${dir}/artifact.gz")
+            let out = sh("AVRA_SEED_API_BASE=file://${dir}/api bash scripts/diagnose.sh --seed-fetch-from ${dir}/test.lock ${dir}/out.ll")
+            !out.contains("rc=0") && out.contains("seed fetch failed")
+                && !out.contains("via the GitHub API")
+        }
+    }
     given "the artifact is unreachable and nothing is cached" {
         then "fetch fails with the offline guidance" {
             let dir = case_dir("dead")

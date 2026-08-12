@@ -42,6 +42,26 @@ runs:
           exit 1
         fi
         echo "ver=$ver" >> "$GITHUB_OUTPUT"
+    # The materialized seed IR itself, so the pinned artifact is downloaded
+    # ONCE per pin instead of once per job of every run. Its own entry, keyed
+    # on seed.lock ALONE: the seed binary's key also folds runtime.c and
+    # llvm_wrapper.c, and a C-side edit must not force a re-download of an
+    # artifact whose pin did not move.
+    #
+    # This is a resilience gate, not just a speed one. On 2026-08-12 GitHub's
+    # release-asset CDN 503'd and dropped connections for ~an hour and every
+    # job of every run died fetching the seed — while the same URL served 200
+    # from a dev box. Nothing in the toolchain had changed. A cached artifact
+    # makes that outage invisible for as long as the pin holds; the fallback
+    # route in fetch_seed_from_lock covers the cold-cache case.
+    #
+    # fetch_seed_from_lock content-addresses this dir by the PINNED sha and
+    # re-verifies on the hit path, so a truncated or tampered restore is
+    # dropped and refetched rather than installed.
+    - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+      with:
+        path: bootstrap/build/cache/seed
+        key: avra-seedir-${{ hashFiles('bootstrap/seed/seed.lock') }}
     - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
       with:
         path: |
