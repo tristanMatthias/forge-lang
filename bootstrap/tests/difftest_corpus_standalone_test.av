@@ -30,3 +30,42 @@ spec "diff-test corpus stays standalone-compilable (51zr)" {
         out.contains("corpus_bad=0") && !out.contains("corpus_total=0")
     }
 }
+
+// t-od7g: a SELFHOST divergence is attributable to compiler SOURCE only when
+// both compilers were built the same way in the same run. CI caches the OLD
+// window, so often they were not — and the verdict cannot then tell a real
+// regression from a stale restore. `dt_recheck_without_cache` adjudicates by
+// rebuilding OLD and re-comparing, but ONLY when OLD actually came from a
+// restored window; otherwise it must decline, or every genuine regression
+// would pay for a full rebuild to re-report the divergence it already had.
+//
+// The two cases must be told apart by something other than the exit code —
+// both end non-zero here — so the stub REPORTS when the rebuild is reached.
+// Asserting rc alone would pass whatever the guard did.
+fn recheck_probe(cached: string) -> string {
+    avra_shell_exec(
+        "bash -c '" +
+        "set -uo pipefail; " +
+        "warn() { :; }; err() { :; }; log() { :; }; ok() { :; }; " +
+        "dt_compile_ir() { return 0; }; " +
+        "dt_build_compiler() { echo REBUILD_REACHED; return 1; }; " +
+        "DT_CACHED_WINDOWS=\"" + cached + "\"; " +
+        "eval \"$(sed -n \"/^dt_recheck_without_cache()/,/^}/p\" scripts/diagnose.sh)\"; " +
+        "dt_recheck_without_cache X /w/old S O N W D; " +
+        "echo rc=$?" +
+        "' 2>&1")
+}
+
+spec "diff-test: the cached-window recheck fires only for a RESTORED old window" {
+    given "OLD was built in this run (not in the cached-window list)" {
+        then "the recheck declines without rebuilding" {
+            let out = recheck_probe("")
+            out.contains("rc=1") && !out.contains("REBUILD_REACHED")
+        }
+    }
+    given "OLD was served from a restored window" {
+        then "the recheck reaches the rebuild" {
+            recheck_probe(" /w/old ").contains("REBUILD_REACHED")
+        }
+    }
+}

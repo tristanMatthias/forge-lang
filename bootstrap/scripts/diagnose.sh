@@ -5478,6 +5478,12 @@ dt_build_compiler() {
   if [ "${AVRA_FORCE_DIFFTEST:-0}" != "1" ] && [ -x "$out/bs2" ] \
      && [ "$(cat "$marker" 2>/dev/null)" = "$fp" ]; then
     log "diff-test: compiler @ $ref (${ref_sha:0:12}) cached"
+    # Record WHICH windows were served from a marker rather than built here.
+    # A divergence between a restored compiler and a freshly-built one has two
+    # possible causes — the source change, or the restored window — and the
+    # verdict cannot tell them apart. dt_recheck_without_cache (below) resolves
+    # it by rebuilding, and needs to know there was something to rebuild.
+    DT_CACHED_WINDOWS="${DT_CACHED_WINDOWS:-} $out"
     return 0
   fi
   log "diff-test: building compiler @ $ref (${ref_sha:0:12})"
@@ -5497,6 +5503,57 @@ dt_build_compiler() {
       "$out/runtime.o" "$out/llvm_wrapper.o" \
     || { cat "$out/bs2.build.log" >&2; die "diff-test: $ref compiler link failed"; }
   printf '%s' "$fp" > "$marker"
+}
+
+# Re-decide a SELFHOST divergence when one side's compiler was RESTORED rather
+# than built in this run — returns 0 when the divergence does NOT survive a
+# rebuild (i.e. the restored window caused it), non-zero otherwise.
+#
+# WHY this exists. diff-test's whole claim is that an IR difference is
+# attributable to compiler SOURCE alone: same seed (asserted), same input (one
+# path, both compilers), same machine. Caching the OLD window breaks the last
+# leg silently — the restored `bs2` was produced by an earlier run, possibly on
+# a different runner image, and `window_fingerprint` covers the seed and the ref
+# SHA but not the environment that linked it. The workflow comment concedes the
+# point ("Correctness is the marker's (not the key's), and diff-test's own
+# byte-identical IR comparison is the backstop") — but the backstop cannot
+# distinguish the two causes, so when it fires the reader gets "the change is
+# NOT behaviour-preserving" for what may be a stale cache entry.
+#
+# Observed exactly that on #1221: two identical CI failures, wholesale ORDER
+# differences (identical `__init_*` module set, renumbered `.str` pool) with the
+# CI log reading `compiler @ … cached` for OLD and `building` for NEW, while a
+# hermetic COLD local run of the same tree was byte-identical, and CI's OLD did
+# not match a fresh local build of the same commit. Rebuilding is the only thing
+# that separates those, so do it automatically instead of asking a human to
+# guess — and cost nothing on the common path, since this runs only after a
+# divergence has already been reported.
+dt_recheck_without_cache() {
+  local base="$1" old="$2" self="$3" old_bs2="$4" new_bs2="$5" wd="$6" newd="$7"
+  case " ${DT_CACHED_WINDOWS:-} " in
+    *" $old "*) ;;
+    *) return 1 ;;   # OLD was built in this run — the divergence stands.
+  esac
+  warn "diff-test: OLD was served from a RESTORED window, so the divergence above is"
+  warn "           NOT yet attributable to this branch. Rebuilding OLD from its ref and"
+  warn "           re-comparing — this is the only thing that separates the two causes."
+  AVRA_FORCE_DIFFTEST=1 dt_build_compiler "$base" "$old" || {
+    err "diff-test: rebuilding OLD failed — cannot adjudicate; treating the divergence as real"
+    return 1
+  }
+  # The rebuild replaces OLD's tree, so BOTH sides must recompile against it.
+  dt_compile_ir "$self" "$old_bs2" "$old"  "$wd/self.old.ll" || {
+    err "diff-test: rebuilt OLD failed to compile its own source"; return 1; }
+  dt_compile_ir "$self" "$new_bs2" "$newd" "$wd/self.new.ll" || {
+    err "diff-test: NEW failed to compile the rebuilt OLD's source"; return 1; }
+  if diff -q "$wd/self.old.ll" "$wd/self.new.ll" >/dev/null 2>&1; then
+    warn "diff-test: the restored OLD window was stale — evict it. The cache key"
+    warn "           (avra-difftest-…) shares entries by prefix across PRs on the"
+    warn "           same seed pin, so a bad entry re-poisons every later run."
+    return 0
+  fi
+  err "diff-test: the divergence SURVIVES a rebuilt OLD — it is attributable to this branch"
+  return 1
 }
 
 # Compile $1 (an absolute .av path) with the compiler BINARY $2, writing the
@@ -5955,7 +6012,15 @@ mode_diff_test() {
     err "diff-test: SELFHOST IR DIVERGED — the compiler compiles itself differently"
     err "  full IR: $wd/self.old.ll  vs  $wd/self.new.ll"
     diff -u "$wd/self.old.ll" "$wd/self.new.ll" | head -80 >&2
-    fails=$((fails+1))
+    # A divergence is only attributable to the SOURCE if both compilers were
+    # built the same way in this run. When one side came from a restored
+    # window, it is not, and the verdict above is a guess dressed as a finding.
+    # Rebuild and re-compare rather than leaving the reader to infer it.
+    if dt_recheck_without_cache "$base" "$old" "$self" "$old_bs2" "$new_bs2" "$wd" "$newd"; then
+      ok "diff-test: selfhost IR byte-identical once OLD was REBUILT — the restored window was the divergence, not this branch"
+    else
+      fails=$((fails+1))
+    fi
   fi
 
   # ── Corpus differential: the CURATED standalone corpus
