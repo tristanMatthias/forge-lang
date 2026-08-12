@@ -112,3 +112,46 @@ jobs:
             echo "intended-strictness-change label present — a NEW-only rejection of OLD's source is an expected outcome"
           fi
           bash bootstrap/scripts/diagnose.sh --diff-test --base "origin/${BASE_REF}" --new HEAD $extra
+
+      # t-47hc.14 / t-jova: on a divergence, KEEP THE EVIDENCE. Every diagnosis of this
+      # failure so far has been inferred from the job log, which serves only a ~600KB tail
+      # and which `diff` itself truncates with a broken pipe — so the actual divergence has
+      # never once been read whole. Four occurrences produced three wrong attributions and
+      # two reverts of innocent commits. The files are a few MB; the guessing is not cheap.
+      - name: Capture the divergent IR (on failure)
+        if: failure()
+        run: |
+          wd=bootstrap/build/difftest/work
+          if [ ! -f "$wd/self.old.ll" ] || [ ! -f "$wd/self.new.ll" ]; then
+            echo "no selfhost IR pair — the divergence was in the corpus, or the compile itself failed"
+            ls -la "$wd" 2>/dev/null || echo "(no work dir)"
+            exit 0
+          fi
+          echo "=== selfhost IR: line counts"
+          wc -l "$wd/self.old.ll" "$wd/self.new.ll"
+          echo "=== divergence summary (first 200 diff lines, unified)"
+          diff -u "$wd/self.old.ll" "$wd/self.new.ll" | head -200 || true
+          echo "=== are the differing lines TYPE DECLARATIONS, and are they MISSING or REORDERED?"
+          # The recorded signature is a block of named struct types on one side only. Sorting
+          # both sides answers presence-vs-order in one line: if the sorted sets match, the
+          # emission REORDERED; if they differ, one side genuinely emitted fewer types.
+          grep -E '^%"' "$wd/self.old.ll" | sort > /tmp/t.old || true
+          grep -E '^%"' "$wd/self.new.ll" | sort > /tmp/t.new || true
+          echo "old type decls: $(wc -l < /tmp/t.old), new: $(wc -l < /tmp/t.new)"
+          if diff -q /tmp/t.old /tmp/t.new >/dev/null 2>&1; then
+            echo "VERDICT: same type SET, different ORDER -> an emission-ordering bug"
+          else
+            echo "VERDICT: type SETS DIFFER -> not ordering; one side emitted different types"
+            diff /tmp/t.old /tmp/t.new | head -40 || true
+          fi
+
+      - name: Upload the divergent IR (on failure)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: difftest-divergence-${{ github.run_id }}
+          path: |
+            bootstrap/build/difftest/work/self.old.ll
+            bootstrap/build/difftest/work/self.new.ll
+          retention-days: 14
+          if-no-files-found: ignore
