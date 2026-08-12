@@ -20,18 +20,24 @@ fn dsl_expr(src: string) -> string {
     render_expr_id(r.store, r.root)
 }
 
-// The hand parser's rendered expr for the same `src` (parse_primary is where the
-// hand parser handles the Tk.Template arm).
-fn hand_expr(src: string) -> string {
+// The PRODUCTION parser's rendered expr for the same `src`. Was the hand
+// `parse_primary` (its Tk.Template arm); that ladder is deleted (t-47hc.4.1), so this
+// is the generated static parser via `parse_expression`. Interpreter-vs-emit remains a
+// genuine differential: two engines, one grammar.
+fn prod_expr(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_primary() {
+    // PIN the engine — see the sibling note in brace_hand_test. An ambient
+    // AVRA_PARSER_EXPR_FLIP=1 would route this into the same interpreter `dsl_expr`
+    // drives, collapsing the differential onto one engine.
+    p.expr_flip = false
+    match p.parse_expression() {
         .Ok(id) -> render_expr_id(p.store, id)
-        .Err(_) -> "<hand err>"
+        .Err(_) -> "<prod err>"
     }
 }
 
 fn agree(src: string) -> bool {
-    dsl_expr(src) == hand_expr(src)
+    dsl_expr(src) == prod_expr(src)
 }
 
 // Build the SOURCE of an interpolated string literal WITHOUT the "${" appearing
@@ -43,7 +49,7 @@ fn interp(body: string) -> string {
 // NOTE: no interpolation syntax appears in ANY string literal here (not even in
 // descriptions) — the interpolated SOURCE under test is built by concatenating a
 // lone "$" with "{...}", so this file itself never triggers interpolation.
-spec "t-47hc.19: grammar-native template_lit == hand parser" {
+spec "t-47hc.19: grammar-native template_lit — interpreter == generated parser" {
     given "a lone interpolation" {
         then "hi-x interpolation agrees and is not a DSL error" {
             let d = "$"

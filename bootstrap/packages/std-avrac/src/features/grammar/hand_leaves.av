@@ -106,8 +106,6 @@ fn hand_if_expr(p: Parser) -> Result<ExprId, string> { p.parse_if_expression() }
 /// `[ … ]` list literals and comprehensions.
 fn hand_list_expr(p: Parser) -> Result<ExprId, string> { p.parse_list_expr() }
 
-/// `( … )` — the paren/tuple/lambda-parameter ambiguity.
-fn hand_paren_expr(p: Parser) -> Result<ExprId, string> { p.parse_paren_expr() }
 
 /// A lambda BODY: a block `{ … }` or a bare expression. Block-as-expression
 /// couples to the statement machinery, so the paren flip delegates it here.
@@ -121,25 +119,13 @@ fn hand_ident_primary(p: Parser) -> Result<ExprId, string> { p.parse_ident_expr(
 
 /// The ident-or-`@`-led primary, via the full primary dispatch.
 
-/// The remaining primaries served by `parse_primary`: enum constructors
-/// (`.Variant(…)`) and list literals.
-fn hand_more_primary(p: Parser) -> Result<ExprId, string> { p.parse_primary() }
 
-/// The WHOLE procedural leaf: prefix unary ops + `with`/splice + the
-/// newline-sensitive postfix chain + every primary form. The DSL owns only the
-/// declarative binary/infix ladder above this.
-fn hand_hand_unary(p: Parser) -> Result<ExprId, string> { p.parse_unary() }
 
 /// The `with`-BASE leaf: `parse_unary` WITHOUT the `with` loop. Not
 /// `parse_call` — the `~` splice/BitNot prefix must stay here so splice-in-quote
 /// stays byte-identical.
 
-/// The primary BASE (splice/prefix + `parse_primary`, NO postfix chain); the
-/// grammar's `unary` rule owns the postfix loop over it.
-fn hand_primary_base(p: Parser) -> Result<ExprId, string> { p.parse_primary_base() }
 
-/// ONE postfix step over the grammar-threaded base.
-fn hand_postfix_suffix(p: Parser) -> Result<ExprId, string> { p.parse_postfix_suffix() }
 
 // ── The table ──
 //
@@ -168,13 +154,8 @@ export fn hand_expr_leaf(name: string) -> HandExprLeaf? {
         "match_expr"        -> HandExprLeaf { name, seeds_postfix: true,  run: hand_match_expr }
         "if_expr"           -> HandExprLeaf { name, seeds_postfix: true,  run: hand_if_expr }
         "list_expr"         -> HandExprLeaf { name, seeds_postfix: true,  run: hand_list_expr }
-        "paren_expr"        -> HandExprLeaf { name, seeds_postfix: true,  run: hand_paren_expr }
         "ident_primary"     -> HandExprLeaf { name, seeds_postfix: true,  run: hand_ident_primary }
-        "primary_base"      -> HandExprLeaf { name, seeds_postfix: true,  run: hand_primary_base }
         "lambda_body"       -> HandExprLeaf { name, seeds_postfix: false, run: hand_lambda_body }
-        "more_primary"      -> HandExprLeaf { name, seeds_postfix: false, run: hand_more_primary }
-        "hand_unary"        -> HandExprLeaf { name, seeds_postfix: false, run: hand_hand_unary }
-        "postfix_suffix"    -> HandExprLeaf { name, seeds_postfix: false, run: hand_postfix_suffix }
         _                   -> null
     }
 }

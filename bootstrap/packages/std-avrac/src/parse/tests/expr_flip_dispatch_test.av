@@ -1,21 +1,27 @@
-// ps3t.6.7 — the expression-family FLIP dispatch (parse_expression → grammar-DSL).
+// ps3t.6.7 — the expression-family ENGINE dispatch (parse_expression's two engines).
 //
-// parse_expression routes through run_dsl_expr_at_shared (the inverse-@hand
-// expression runner) when the parser's `expr_flip` field is set, falling back to
-// the hand parser on a DSL error. The field is read once from AVRA_PARSER_EXPR_FLIP
-// at construction, but is a plain `mut bool` so a test can set it directly —
-// exercising the flip path (reused @hand delegate, seek-based leaf positioning,
-// seek-based cursor resync) with NO process-env dependency, in a single low-memory
-// process. The full-selfhost byte-identity proof is memory-heavy and lives in the
-// diff-test / promotion step; this pins the dispatch + field wiring + the mode
-// threading (allow_struct_lit in control-flow headers, etc.).
+// `expr_flip` selects WHICH ENGINE runs the expression grammar: the tree INTERPRETER
+// (run_dsl_expr_at_shared) when set, the CHECKED-IN GENERATED static parser
+// (run_static_expr) when not. Since t-47hc.4.1 that is the whole choice — the hand
+// ladder this file used to compare against is deleted, so both sides below are
+// grammar-driven and the differential is INTERPRETER vs EMIT. That is still two
+// independent code paths compiled from one grammar, which is exactly the pair worth
+// pinning: they are the two implementations that can drift.
+//
+// The field is read once from AVRA_PARSER_EXPR_FLIP at construction, but is a plain
+// `mut bool` so a test can set it directly — exercising the interpreter path (reused
+// @hand delegate, seek-based leaf positioning, seek-based cursor resync) with NO
+// process-env dependency, in a single low-memory process. The full-selfhost
+// byte-identity proof is memory-heavy and lives in the diff-test; this pins the
+// dispatch + field wiring + the mode threading (allow_struct_lit in control-flow
+// headers, etc.).
 //
 // Sibling of parse/tests/type_flip_dispatch_test.av + match_expr/tests/
 // pat_flip_dispatch_test.av — the three family flips share one dispatch shape.
 use @std.avrac.parse.{parser_new}
 use @std.avrac.features.grammar.{dump_expr}
 
-// parse_expression via the FLIP path (expr_flip set → DSL authoritative).
+// parse_expression via the INTERPRETER engine (expr_flip set).
 fn flip_expr(src: string) -> string {
     mut p = parser_new(src)
     p.expr_flip = true
@@ -25,24 +31,25 @@ fn flip_expr(src: string) -> string {
     }
 }
 
-// The HAND path explicitly (parse_expression_hand) — robust to a future promoted
-// default, so this stays a real hand baseline regardless of the flag's default.
-fn hand_expr(src: string) -> string {
+// parse_expression via the GENERATED static engine — pinned explicitly rather than
+// left to the default, so this stays a real second baseline if the default ever moves.
+fn static_expr(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_expression_hand() {
+    p.expr_flip = false
+    match p.parse_expression() {
         .Ok(id) -> dump_expr(p.store, id)
         .Err(_) -> "<parse error>"
     }
 }
 
 fn agree(src: string) -> bool {
-    flip_expr(src) == hand_expr(src)
+    flip_expr(src) == static_expr(src)
 }
 
-spec "ps3t.6.7: parse_expression flip dispatch == hand path (expr_flip field)" {
-    given "the field toggles the path (sanity: flip really took the DSL branch)" {
-        then "flip and hand build the same non-error tree for a representative form" {
-            flip_expr("a + b * c") == hand_expr("a + b * c") &&
+spec "ps3t.6.7: parse_expression interpreter engine == generated engine (expr_flip field)" {
+    given "the field toggles the engine (sanity: flip really took the interpreter branch)" {
+        then "both engines build the same non-error tree for a representative form" {
+            flip_expr("a + b * c") == static_expr("a + b * c") &&
             !flip_expr("a + b * c").contains("parse error")
         }
     }
@@ -54,7 +61,7 @@ spec "ps3t.6.7: parse_expression flip dispatch == hand path (expr_flip field)" {
             agree("a && b || c") && agree("a or b and c") && agree("a ?? b ?? c")
         }
     }
-    given "the @hand leaf — unary / postfix / primary forms" {
+    given "the @hand leaves — unary / postfix / primary forms" {
         then "prefix unary, calls, field/index, closures, match/if agree" {
             agree("-a") && agree("!x") && agree("~b") && agree("not a") &&
             agree("f(1, 2)") && agree("a.b.c") && agree("a[0][1]") && agree("f(a).b(c)") &&

@@ -1002,7 +1002,6 @@ impl PState {
         d.records_roots = 0
         d.stmt_flip = false
         d.expr_flip = false
-        d.expr_static = false
         self.hand_delegate = d
         self.hand_delegate
     }
@@ -1324,7 +1323,6 @@ export fn new_pstate(src: string) -> PState {
     d.records_roots = 0
     d.stmt_flip = false
     d.expr_flip = false
-    d.expr_static = false
     PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
 }
 
@@ -2926,6 +2924,94 @@ fn sameline_ok(st: PState, item: GItem) -> bool {
     prev_line == cur_line
 }
 
+/// The EXECUTOR half of the table-cell binary guard — emit's twin is the
+/// `(tx == "+" || tx == "-") && st.modes.cell_mode && …` line it renders into
+/// `parse_binary_pratt_g_id` (emit.av, the Pratt-loop template).
+///
+/// Inside a table cell a leading `+`/`-` on the NEXT LINE starts the next ROW; it is not
+/// a binary operator continuing this cell. The generated parser has refused it since the
+/// Pratt loop was emitted. The interpreter never did, because it has no Pratt loop — it
+/// walks the `fold_binary` ladder as ordinary repetitions, and a repetition's FIRST-check
+/// does not consult modes. So `table<R2> { a | b / 1 | 2 / -3 | 4 }` folded `2 - 3` into
+/// one cell and reported "row has 3 cell(s) but the header declares 2 columns", on the
+/// engine that still ships for the TYPE family.
+///
+/// This is the mirror-direction lockstep gap: a rule fixed on ONE engine. It stayed
+/// invisible while the recovery corpus compared emit against the hand — neither side was
+/// the interpreter — and surfaced the moment t-47hc.4.1 made that corpus emit-vs-exec.
+/// The grammar comment at `table_row` predicted exactly this input and said it could not
+/// be made to diverge; it diverges here.
+fn cell_mode_blocks_binary(st: PState) -> bool {
+    if !st.modes.cell_mode { return false }
+    let tx = st.cur().text
+    if tx != "+" && tx != "-" { return false }
+    if st.pos == 0 { return false }
+    let prev_line = st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line
+    let cur_line = st.store.lines.to_linecol(st.cur().pos).line
+    prev_line != cur_line
+}
+
+/// Does this repetition consume the current token AS A BINARY OPERATOR?
+///
+/// The scope half of the guard above, and it is load-bearing rather than defensive
+/// (raised in review on PR #1220). Emit checks `cell_mode` in ONE place —
+/// `parse_binary_pratt_g_id`, where the operator is consumed — so a guard the executor
+/// applies to EVERY repetition is wider than the rule it mirrors, and the two engines
+/// diverge on any repetition whose ELEMENT merely begins with `+`/`-`. A `when_arm`
+/// repetition nested in a table cell is the shape: emit continues it, an unscoped
+/// executor guard would stop it.
+///
+/// The binary ladder's repetitions are `( op:("+" | "-") r:<rule> )*` — the repeated
+/// GROUP LEADS with the operator LITERAL. Everything else leads with a rule reference,
+/// a named terminal, or a different literal. So "the group's first item is a literal
+/// matching the current token" separates the two exactly, with no list of rule names to
+/// keep in sync.
+fn repeat_lead_is_current_literal(item: GItem, st: PState) -> bool {
+    let tx = st.cur().text
+    match item.prim {
+        .Group(inner) -> {
+            match inner {
+                .Alt(branches) -> {
+                    for b in branches {
+                        if b.items.length > 0 {
+                            if prim_matches_literal(b.items[0].prim, tx) { return true }
+                        }
+                    }
+                    false
+                }
+                _ -> false
+            }
+        }
+        _ -> prim_matches_literal(item.prim, tx)
+    }
+}
+
+/// Is `prim` the literal `tx`, or an alternation of literals containing it? The
+/// operator position in a `fold_binary` rule is spelled both ways — `op:"+"` for a
+/// single operator and `op:("+" | "-")` for a stratum with several.
+fn prim_matches_literal(prim: GPrim, tx: string) -> bool {
+    match prim {
+        .Lit(t) -> t == tx
+        .Group(inner) -> {
+            match inner {
+                .Alt(branches) -> {
+                    for b in branches {
+                        if b.items.length == 1 {
+                            match b.items[0].prim {
+                                .Lit(t) -> { if t == tx { return true } }
+                                _ -> {}
+                            }
+                        }
+                    }
+                    false
+                }
+                _ -> false
+            }
+        }
+        _ -> false
+    }
+}
+
 /// Execute one postfix item, honouring its repetition, and bind its
 /// capture (scalar in a normal position, list-append inside `*`/`+`).
 fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
@@ -3284,8 +3370,13 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
     }
     mut taken = already
     // ps3t.6.7: a `^`-marked repetition stops at a cross-line token — the DSL
-    // mirror of the hand parser's newline-terminated postfix loop.
-    while tok_starts_prim(g, item.prim, st, empty) && sameline_ok(st, item) {
+    // mirror of the hand parser's newline-terminated postfix loop. `cell_mode_blocks_binary`
+    // is the modes-driven sibling: inside a table cell a cross-line `+`/`-` belongs to the
+    // NEXT ROW, so an OPERATOR repetition may not take it (emit's Pratt loop `break`s on
+    // the same test). `repeat_lead_is_current_literal` is what keeps that scoped to
+    // operator repetitions — see its comment; without it the guard is wider than emit's.
+    while tok_starts_prim(g, item.prim, st, empty) && sameline_ok(st, item)
+            && !(cell_mode_blocks_binary(st) && repeat_lead_is_current_literal(item, st)) {
         if cap >= 0 && taken >= cap { return }
         let before = st.pos
         let v = exec_primary(g, item.prim, st, env, true, annots)
@@ -3926,7 +4017,6 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
     // *_hand entry for the CURRENT item, so bp flipping its BODIES never re-parses
     // the same item (no infinite recursion).
     bp.expr_flip = false
-    bp.expr_static = false
     // Reproduce the ORIGINAL parse context (a no-op on the fresh-parser oracle
     // path, where st.modes are a fresh parser's defaults).
     bp.allow_struct_lit = st.modes.allow_struct_lit
@@ -4282,7 +4372,7 @@ export fn run_dsl_expr_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
 /// (`exec_rule`). Same builders, same PState, same `@hand` leaf ⇒ byte-identical
 /// AST to both the interpreter flip AND the hand parser, at straight-line speed
 /// (no per-node Grammar dispatch / capture-env allocation). Proven byte-identical
-/// by the selfhost + corpus differential under AVRA_PARSER_EXPR_STATIC=1.
+/// by the selfhost + corpus differential (it is now the only expression parser).
 export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
     // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
@@ -4495,7 +4585,6 @@ export fn run_hand_expr(name: string, st: PState) -> ExprId {
     // statements by hand, never re-entering the statement flip on this delegate.
     bp.stmt_flip = false
     bp.expr_flip = false
-    bp.expr_static = false
     // `advance()`, NOT `advance_token()`: only the former maintains `prev_line`
     // (`advance` is literally `prev_line = current_line; advance_token()`). The hand's
     // postfix entry guard is newline-sensitive — `(` / `[` on a NEW line starts a new

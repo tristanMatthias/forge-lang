@@ -5594,39 +5594,34 @@ dt_run_equiv_check() {
 # non-zero on any divergence.
 # ── t-47hc.5 parser-differential probes ───────────────────────────────────────
 #
-# THREE implementations answer declaration parsing, and knowing which one a
-# command exercises is the difference between a real measurement and a false
-# one (CLAUDE.md keeps the table). Both modes below set EVERY routing field
-# explicitly rather than only the one that distinguishes their mode: set just
-# one and the others stay ambient, so a run that pins only (say)
-# `AVRA_PARSER_EXPR_STATIC=0` collapses several modes onto the hand and the
-# probe compares it against itself — the vacuity class these probes exist to
-# detect.
-# t-47hc.4.3 — `AVRA_NO_STATIC_FALLBACK` is GONE from these strings because the thing it
-# switched off no longer exists: the interpreter re-parse fallback is deleted, so the
-# static generated parser IS the production declaration path. EMIT and PROD therefore
-# name the same engine now and the probe prints two identical rows for them — kept
-# separate deliberately, so that if a fallback is ever reintroduced the probe shows it
-# rather than hiding it behind a collapsed row.
+# TWO engines answer parsing now, and knowing which one a command exercises is the
+# difference between a real measurement and a false one. Every mode below sets EVERY
+# routing variable explicitly rather than only the one that distinguishes it: set just
+# one and the rest stay ambient, so several modes collapse onto the same engine and the
+# probe compares it against itself — the vacuity class these probes exist to detect.
 #
-# t-bw9s — `AVRA_PARSER_DECL_FLIP` is GONE for the same reason, one step further along:
-# the compiler does not read it AT ALL any more (`parse/mod.av` has exactly one decl env
-# read, `AVRA_PARSER_DECL_STATIC`). It died with the `@hand(decl_hand)` leaf, and pinning
-# a variable nothing reads does not select a parser — it just reads as though it does.
+# THE HAND ROW IS GONE (t-47hc.4.1), and this is the third variable to go the same way,
+# so the pattern is worth stating once:
 #
-# That matters for what `hand` below now MEANS, and the honest answer is narrower than
-# the name: with the dead pin dropped, HAND and EMIT differ only in the EXPR fields, so
-# `hand` is the hand parser for EXPRESSIONS and STATEMENTS and is the GENERATED parser
-# for DECLARATIONS. There is no decl hand left to compare against — `parse_declaration`
-# has no flip branch to take. A decl-level divergence therefore CANNOT be caught by
-# these probes, and a `hand` vs `emit` agreement on a decl-only input is vacuous
-# (`error_recovery_differential_test.av` documents the same collapse for its corpus and
-# pins it with a dedicated spec). The rows are kept — they are still a real oracle for
-# the expression and statement families, which is most of what the probes are used for.
-PARSER_MODE_HAND="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_EMIT="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_PROD="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_EXEC="AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=1"
+#   AVRA_NO_STATIC_FALLBACK  (t-47hc.4.3) — the interpreter re-parse fallback it
+#     switched off was deleted. EMIT and PROD now name the same engine and print
+#     identical rows; they are kept separate deliberately, so a reintroduced fallback
+#     shows up as a divergence rather than hiding behind a collapsed row.
+#   AVRA_PARSER_DECL_FLIP    (t-bw9s) — the compiler stopped reading it at all when
+#     `@hand(decl_hand)` went away. It survived here and in ~15 test files, where
+#     pinning it looked like selecting an oracle and selected nothing.
+#   AVRA_PARSER_EXPR_STATIC  (t-47hc.4.1) — the hand expression ladder is deleted, so
+#     `=0` had no parser left to choose. Removed from the compiler as a field, not
+#     merely pinned ON, precisely so this row could not be resurrected.
+#
+# What remains is a genuine pair. EMIT is the checked-in generated static parser
+# (production). EXEC is the grammar tree interpreter, still the production parser for
+# the TYPE family. They are compiled from one grammar and CAN drift — the executor's
+# missing `cell_mode` guard on its binary ladder was found exactly this way, by the
+# recovery corpus once it started comparing these two instead of a deleted third.
+PARSER_MODE_EMIT="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_PROD="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
+PARSER_MODE_EXEC="AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1"
 
 # Resolve the probe's input to a file: `-f <path>` uses it directly, otherwise
 # the argument IS the source text.
@@ -5655,7 +5650,6 @@ mode_parser_probe() {
   # shellcheck disable=SC2086  # $1 is a `VAR=x VAR=y` list; env needs it SPLIT.
   _pp_run() { env $1 "$BS2" check "$fix" 2>&1 | sed 's/.\[[0-9;]*m//g' | grep -oE 'error.F[0-9]+.: .*' | tr '\n' '|'; }
   printf 'src : %s\n' "$(tr '\n' ' ' < "$fix")"
-  printf 'hand (expr/stmt only — no decl hand exists): %s\n' "$(_pp_run "$PARSER_MODE_HAND")"
   printf 'emit: %s\n' "$(_pp_run "$PARSER_MODE_EMIT")"
   printf 'prod: %s\n' "$(_pp_run "$PARSER_MODE_PROD")"
   printf 'exec: %s\n' "$(_pp_run "$PARSER_MODE_EXEC")"
@@ -5681,10 +5675,9 @@ mode_parser_tree() {
   # `-c` counts matching LINES and suppresses `-o`, so the `-o` was inert; the label
   # below says "err rows", which is the line count — keep the unit, drop the dead flag.
   _pt_errs() { printf '%s' "$1" | grep -c '(error)' || true; }
-  local h e x
-  h=$(_pt_run "$PARSER_MODE_HAND"); e=$(_pt_run "$PARSER_MODE_EMIT"); x=$(_pt_run "$PARSER_MODE_EXEC")
+  local e x
+  e=$(_pt_run "$PARSER_MODE_EMIT"); x=$(_pt_run "$PARSER_MODE_EXEC")
   printf 'src : %s\n' "$(tr '\n' ' ' < "$fix")"
-  printf 'hand (expr/stmt only) [%s err rows]: %s\n' "$(_pt_errs "$h")" "$(printf '%s' "$h" | tr '\n' ' ')"
   printf 'emit [%s err rows]: %s\n' "$(_pt_errs "$e")" "$(printf '%s' "$e" | tr '\n' ' ')"
   printf 'exec [%s err rows]: %s\n' "$(_pt_errs "$x")" "$(printf '%s' "$x" | tr '\n' ' ')"
 }

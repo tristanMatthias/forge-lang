@@ -10,15 +10,15 @@
 // sequence.
 //
 // WHAT IS BEING ASSERTED, precisely: PARSER PARITY, not a language capability. Where
-// the hand accepts and runs a form, the native paths must too; where it does not (a
-// `+`-joined bound is a TYPECK limitation on both paths, not a parse one), all three
-// must fail IDENTICALLY. Asserting the capability instead would have made this file a
-// test of the type checker that fails for reasons the parser cannot fix.
+// one engine accepts and runs a form, the other must too; where neither does (a
+// `+`-joined bound is a TYPECK limitation on both, not a parse one), both must fail
+// IDENTICALLY. Asserting the capability instead would have made this file a test of
+// the type checker that fails for reasons the parser cannot fix.
 //
-// Every assertion runs on all three paths — hand (the EXPRESSION oracle; declarations
-// parse natively on every leg), the EMIT-generated
-// static parser, and the EXECUTOR — because the two recovery oracles both disable the
-// fallback and would leave interpreter behaviour unmeasured (t-zrn3).
+// Every assertion runs on BOTH engines — the EMIT-generated static parser and the
+// EXECUTOR. The executor leg is not optional: the recovery oracles disable the
+// fallback and would leave interpreter behaviour unmeasured (t-zrn3), and the
+// executor is still the production parser for the type family.
 
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
@@ -39,31 +39,31 @@ fn run_out(name: string, env: string, src: string) -> string {
     "__status=${rc}\n" + avra_selfhost_read_file(log)
 }
 
-/// The EXPRESSION hand parser — a genuinely distinct engine, unlike the dead
-/// `AVRA_PARSER_DECL_FLIP` pin this used to carry alongside it (t-bw9s). Note what it
-/// therefore covers: `where`-clause DECLARATIONS parse natively on every leg here,
-/// because no hand declaration parser exists to compare against. What this leg still
-/// oracles is the expression/statement content inside them, which is real coverage —
-/// just narrower than "the hand parser answers this test".
-fn hand_env() -> string { "AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0" }
-fn emit_env() -> string { "AVRA_PARSER_EXPR_STATIC=1" }
+/// TWO legs, not three. This file used to carry a `hand_env` alongside these — first
+/// with the dead `AVRA_PARSER_DECL_FLIP` pin (t-bw9s), then narrowed to the expression
+/// pair alone. t-47hc.4.1 deleted the hand expression ladder and the variable that
+/// selected it, so the leg had nothing left to select and was removed rather than
+/// aliased onto `emit_env`, where it would have re-run the same engine under a name
+/// claiming otherwise.
+///
+/// What survives is a real pair: the generated static parser and the tree interpreter,
+/// two engines compiled from one grammar. `runs_same` therefore asserts both ENGINES
+/// produce a program that runs and prints the same thing.
+fn emit_env() -> string { "AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_FLIP=0" }
 fn exec_env() -> string { "AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1" }
 
 /// Every path RUNS the program and prints the same thing. Running (not merely
 /// compiling) is the point: a where clause that parsed but dropped its bounds would
 /// still compile, and only the monomorphised call proves the bound landed.
 fn runs_same(name: string, src: string, want: string) -> bool {
-    let h = run_out("${name}_hand", hand_env(), src)
     let e = run_out("${name}_emit", emit_env(), src)
     let x = run_out("${name}_exec", exec_env(), src)
-    h.contains("__status=0\n") && h.contains(want) &&
-        e.contains("__status=0\n") && e.contains(want) &&
+    e.contains("__status=0\n") && e.contains(want) &&
         x.contains("__status=0\n") && x.contains(want)
 }
 
-/// The three paths answer IDENTICALLY — used where the hand itself rejects, so
-/// "matches the oracle" is the whole claim and the rejection's cause is not this
-/// file's business.
+/// Both engines answer IDENTICALLY — used where the form is rejected, so "the two
+/// agree" is the whole claim and the rejection's cause is not this file's business.
 ///
 /// Compared on the DIAGNOSTIC, not the rendered output. Two reasons a raw string
 /// equality cannot serve: `run_out` names the fixture after the case and a rendered
@@ -72,11 +72,9 @@ fn runs_same(name: string, src: string, want: string) -> bool {
 /// render has no source snippet at all. That is why the recovery corpus compares
 /// F-codes and TREES rather than rendered text — the same reason applies here.
 fn agrees(name: string, src: string, msg: string) -> bool {
-    let h = run_out("${name}_hand", hand_env(), src)
     let e = run_out("${name}_emit", emit_env(), src)
     let x = run_out("${name}_exec", exec_env(), src)
-    !h.contains("__status=0\n") && h.contains(msg) &&
-        !e.contains("__status=0\n") && e.contains(msg) &&
+    !e.contains("__status=0\n") && e.contains(msg) &&
         !x.contains("__status=0\n") && x.contains(msg)
 }
 
@@ -89,7 +87,7 @@ fn prelude() -> string {
     "impl Tag for Boxy { fn tag(self) -> string { \"T\" } }\n"
 }
 
-spec "t-47hc.5: `fn` accepts a where clause on every parser path" {
+spec "t-47hc.5: `fn` accepts a where clause on both parser engines" {
     then "a bare `where T: Trait` binds the bound the angle brackets left open" {
         runs_same("basic", prelude() +
             "fn dump<T>(x: T) -> string where T: Show { x.show() }\n" +
@@ -110,11 +108,12 @@ spec "t-47hc.5: `fn` accepts a where clause on every parser path" {
             "fn main() { println(both(Boxy { v: 1 })) }\n", "S")
     }
 
-    then "a `+`-joined bound is answered IDENTICALLY by all three paths" {
-        // The hand rejects this at TYPECK (concatenating two generic trait-method
-        // results is what it will not check), and so must the native paths — byte for
-        // byte. This is the case that would otherwise be read as a parser regression
-        // when the parser is exactly right.
+    then "a `+`-joined bound is answered IDENTICALLY by both engines" {
+        // Both engines reject this at TYPECK (concatenating two generic trait-method
+        // results is what it will not check) — byte for byte. This is the case that
+        // would otherwise be read as a parser regression when the parser is exactly
+        // right. (Was "all three paths" / "the hand rejects this"; the hand leg is gone,
+        // t-47hc.4.1.)
         agrees("plus", prelude() +
             "fn dump<T>(x: T) -> string where T: Show + Tag { x.show() + x.tag() }\n" +
             "fn main() { println(dump(Boxy { v: 1 })) }\n",

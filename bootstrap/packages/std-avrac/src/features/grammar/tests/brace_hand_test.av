@@ -4,7 +4,7 @@
 // token twin of the hand is_map_literal, and `map_literal` is a real rule — the
 // @hand(brace_expr) bridge and hand parse_brace_expr are both deleted. This still
 // pins the same contract, now against the PRODUCTION grammar rather than a one-rule
-// @hand stub: the DSL must build the same map / block the hand parser does.
+// @hand stub: the interpreter must build the same map / block the generated parser does.
 //
 // Runtime executor path (parse_grammar + run_grammar_expr) — no comptime/seed dep.
 use @std.avrac.features.grammar.{run_grammar_expr}
@@ -18,19 +18,31 @@ fn dsl_brace(src: string) -> string {
     render_expr_id(r.store, r.root)
 }
 
-fn hand_brace(src: string) -> string {
+// The PRODUCTION parser's answer for the same source. This used to call the hand
+// `parse_primary`; that ladder is deleted (t-47hc.4.1), so the counterpart is now the
+// generated static parser reached through `parse_expression`. The comparison stays a
+// real two-ENGINE differential — interpreter above, emitted parser here — rather than
+// the vacuous native-against-native shape, because the two are separate code paths
+// compiled from the same grammar.
+fn prod_brace(src: string) -> string {
     mut p = parser_new(src)
-    match p.parse_primary() {
+    // PIN the engine. `parser_new` reads `expr_flip` from the environment, so under
+    // AVRA_PARSER_EXPR_FLIP=1 `parse_expression` routes into `run_dsl_expr_at_shared` —
+    // the SAME interpreter `dsl_brace` drives — and the comparison becomes one engine
+    // against itself. Raised in review on PR #1220; `rtree_at` in the recovery
+    // differential already pins every routing field for exactly this reason.
+    p.expr_flip = false
+    match p.parse_expression() {
         .Ok(id) -> render_expr_id(p.store, id)
         .Err(_) -> "<err>"
     }
 }
 
 fn agree(src: string) -> bool {
-    dsl_brace(src) == hand_brace(src)
+    dsl_brace(src) == prod_brace(src)
 }
 
-spec "t-47hc.18: grammar-native map-vs-block == hand parser" {
+spec "t-47hc.18: grammar-native map-vs-block — interpreter == generated parser" {
     given "map literals (string key + colon)" {
         then "single and multi-entry maps agree and are not errors" {
             dsl_brace("{ \"k\": 1 }") != "<err>" &&

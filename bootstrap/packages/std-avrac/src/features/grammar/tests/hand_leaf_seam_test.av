@@ -34,9 +34,13 @@ fn known_expr_leaves() -> List<string> {
     // retired leaf leaves it rather than being special-cased — and leaving it in is not
     // harmless, because every assertion here force-unwraps the lookup and a null ABORTS
     // the spec (SIGABRT), which the runner reports as "crashed", not "failed".
-    ["quote_expr", "match_expr", "if_expr", "list_expr", "paren_expr",
-     "ident_primary", "primary_base", "lambda_body",
-     "more_primary", "hand_unary", "postfix_suffix"]
+    //
+    // t-47hc.4.1 retired five more the same way — `paren_expr`, `primary_base`,
+    // `postfix_suffix`, `more_primary` and `hand_unary` — when the hand expression
+    // ladder they delegated into was deleted. Their grammar rules are native now, so
+    // there is nothing left for the leaf to call. Six remain, and every one of them
+    // delegates to a hand parser that still exists.
+    ["quote_expr", "match_expr", "if_expr", "list_expr", "ident_primary", "lambda_body"]
 }
 
 fn known_stmt_leaves() -> List<string> {
@@ -172,7 +176,9 @@ spec "t-47hc.7: seeds_postfix is a COLUMN of the leaf, not a parallel table" {
     // disagree with the dispatch beside it; it is now a field on the same record.
     then "the keyword-led and bracket primaries seed the postfix base" {
         mut ok = true
-        for n in ["primary_base", "match_expr", "if_expr", "quote_expr", "list_expr", "paren_expr", "ident_primary"] {
+        // t-47hc.4.1 — `primary_base` and `paren_expr` retired with the hand expression
+        // ladder; the rest of the seeding class is unchanged.
+        for n in ["match_expr", "if_expr", "quote_expr", "list_expr", "ident_primary"] {
             if !hand_expr_leaf(n)!.seeds_postfix { ok = false }
         }
         ok
@@ -181,8 +187,11 @@ spec "t-47hc.7: seeds_postfix is a COLUMN of the leaf, not a parallel table" {
         mut ok = true
         // t-47hc.5 — `call_leaf`, `ident_expr` and `lambda_block_body` dropped with the
         // dead leaves they named; `hand_expr_leaf` answers null for them and the `!` below
-        // would ABORT rather than fail.
-        for n in ["postfix_suffix", "hand_unary", "more_primary", "lambda_body"] {
+        // would ABORT rather than fail. t-47hc.4.1 took `postfix_suffix`, `hand_unary` and
+        // `more_primary` for the same reason, which leaves `lambda_body` as the whole
+        // non-seeding class — a one-element loop, kept as a loop so the next leaf that
+        // joins the class needs no re-shaping.
+        for n in ["lambda_body"] {
             if hand_expr_leaf(n)!.seeds_postfix { ok = false }
         }
         ok

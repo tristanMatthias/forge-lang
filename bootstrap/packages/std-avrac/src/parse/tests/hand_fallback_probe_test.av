@@ -120,15 +120,15 @@ fn fallback_lines(env: string, name: string, src: string, want_ok: bool) -> int 
 /// The EXPRESSION-only front end (`bs2 expr`, and `bs2 eval` alongside it): the
 /// one production command that reaches `parse_expression`, via
 /// `parse_expr_or_fail` -> `parse_expression_source` -> `parse_file_expression`.
-/// PIN every routing field, never just the one being measured. `expr_static`
-/// defaults ON and `expr_flip` defaults OFF, and the seam enters the generated
-/// parser on `expr_flip || expr_static` — so an ambient `AVRA_PARSER_EXPR_STATIC=0`
-/// is enough to send this probe down the HAND path and fail these assertions for a
-/// configuration reason that has nothing to do with the parser. Pinning both makes
-/// the row mean "the generated STATIC parser answered", which is what it claims:
-/// static=1 enters the branch, flip=0 selects the static parser over the executor.
+/// PIN every routing field, never just the one being measured — `expr_flip` selects
+/// the tree interpreter over the generated static parser, and leaving it ambient
+/// would make the row mean whichever engine the environment happened to pick.
+///
+/// t-47hc.4.1 dropped `AVRA_PARSER_EXPR_STATIC=1` from this prefix: the variable no
+/// longer exists, because there is no hand expression ladder for its off-state to
+/// select. What that costs this section is stated at the positive control below.
 fn expr_cmd_fallbacks(name: string, src: string, want_ok: bool) -> int {
-    fallback_lines_cmd("AVRA_REFUSE_HAND_FALLBACK='*' AVRA_PARSER_EXPR_STATIC=1 AVRA_PARSER_EXPR_FLIP=0", "expr", name, src, want_ok)
+    fallback_lines_cmd("AVRA_REFUSE_HAND_FALLBACK='*' AVRA_PARSER_EXPR_FLIP=0", "expr", name, src, want_ok)
 }
 
 /// Drive the EXPRESSION dispatcher in-process and count the marker lines the probe
@@ -140,19 +140,23 @@ fn expr_cmd_fallbacks(name: string, src: string, want_ok: bool) -> int {
 /// to use this entry: a control built on `parse_file_program` reports zero for the
 /// same reason the assertions do, and would "pass" while proving nothing.
 ///
-/// Setting BOTH fields explicitly is the discipline `rtree_at` documents:
-/// `parse_expression`'s guard is `expr_flip || expr_static`, an OR whose second
-/// term reads `!= "0"` — ON by default — so pinning one and leaving the other
-/// ambient would leave the generated parser running and measure nothing.
-fn expr_entry_markers(tag: string, expr_flip: bool, expr_static: bool) -> int {
+/// The routing field is pinned explicitly, per the discipline `rtree_at` documents:
+/// an ambient flag would leave the engine chosen by the environment.
+///
+/// Drives `parse_statement` DIRECTLY rather than a file entry, because that is the one
+/// dispatcher with a live hand tail left to control against (`parse_statement_hand`,
+/// reached whenever `stmt_flip` is off). `parse_file_expression` used to serve here and
+/// no longer can: t-47hc.4.1 deleted the expression ladder, so both settings of the
+/// expression routing now reach the same generated parser and the row would have gone
+/// quietly from a control to a second zero.
+fn stmt_entry_markers(tag: string, src: string, stmt_flip: bool) -> int {
     let log = "build/_handfb_log_${tag}.txt"
     let _ = avra_shell_exec("rm -f '${log}'")
     avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK", "*")
     avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK_LOG", log)
-    mut p = parser_new("1 + 2 * 3")
-    p.expr_flip = expr_flip
-    p.expr_static = expr_static
-    let _ = p.parse_file_expression()
+    mut p = parser_new(src)
+    p.stmt_flip = stmt_flip
+    let _ = p.parse_statement()
     // Disarm before returning: the probe is process-wide, and leaving it armed
     // would make every LATER parse in this test binary append to a stale log.
     avra_process_env_set("AVRA_REFUSE_HAND_FALLBACK", "")
@@ -272,7 +276,7 @@ spec "t-47hc.5: `bs2 expr` — the grammar owns VALID input; the tail owns recov
 }
 
 spec "t-47hc.5: the fall-through probe is NOT a blind instrument (positive control)" {
-    given "the expression dispatcher is driven in-process through parse_file_expression" {
+    given "the statement dispatcher is driven in-process through parse_statement" {
         true
     }
 
@@ -280,15 +284,46 @@ spec "t-47hc.5: the fall-through probe is NOT a blind instrument (positive contr
     // name typo, or a probe accidentally deleted would all read as "clean" — the
     // blind-instrument failure mode, where uniform zeros get counted as
     // independent confirmations instead of as one broken gauge.
-    then "with the expression flags OFF the probe FIRES" {
-        expr_entry_markers("ctl_on", false, false) > 0
+    //
+    // t-47hc.4.1 MOVED which family supplies the control, and the move is the point.
+    // It used to force the EXPRESSION tail with `expr_static = false`; that tail is
+    // deleted, so the same call proves nothing now and the row would have gone quietly
+    // from a control to a second zero — the blind-instrument failure this spec exists
+    // to prevent, arriving by deletion rather than by bug. The control moved to the
+    // STATEMENT dispatcher, whose hand tail is still live: `stmt_flip` is default OFF,
+    // so `parse_statement` reaches `parse_statement_hand` and the marker fires.
+    //
+    // This is a WEAKER control than the one it replaces, and worth saying so. It proves
+    // the probe, its two sinks, and the family allowlist all work; it does NOT prove
+    // that an expression-seam regression specifically would be seen, because nothing
+    // can any more. The expression rows above are pure regression guards now — same
+    // status the whole-program rows already carry.
+    //
+    // The INPUT is a bare expression statement, deliberately. `let z = …` does not
+    // discriminate: the production statement grammar routes `let` through
+    // `@hand(stmt_hand)`, so the tail is reached with the flip ON as well and both rows
+    // read nonzero. An expression statement is owned natively by the grammar, so the
+    // only thing separating the two rows is which dispatcher answered.
+    //
+    // MEASURED while making this move, and recorded because it sizes the next slice:
+    // with the probe armed over the ENTIRE compiler source, the 24-file difftest
+    // corpus, a wide-surface fixture (component / while / for / if / let-else /
+    // channel / quote type / match / lambda / where clause) and ten MALFORMED
+    // fixtures, the marker fired ZERO times. `--hand-leaves` agrees: zero production
+    // `@hand` leaves. Both surviving tails — `parse_statement_hand` and
+    // `parse_type_expr_hand` — are therefore unreachable from the front end, and this
+    // in-process control is the only thing that can still move the gauge. Deleting
+    // them is a promotion of `stmt_flip` (never proven byte-identical, hence default
+    // OFF), which is a diff-test-gated slice of its own, not a mechanical removal.
+    then "with the statement flip OFF the probe FIRES" {
+        stmt_entry_markers("ctl_on", "1 + 2 * 3", false) > 0
     }
 
     // The negative half, on the SAME entry and the SAME input: the only thing that
-    // changed is which parser answered. So the count above tracks the hand tail
-    // being taken, not merely "this helper writes to a log".
-    then "with the static expression parser ON the same entry logs nothing" {
-        expr_entry_markers("ctl_off", false, true) == 0
+    // changed is which parser answered. So the count above tracks a hand tail being
+    // taken, not merely "this helper writes to a log".
+    then "with the statement flip ON the same entry logs nothing" {
+        stmt_entry_markers("ctl_off", "1 + 2 * 3", true) == 0
     }
 }
 
