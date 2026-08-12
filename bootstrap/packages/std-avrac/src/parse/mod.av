@@ -1421,21 +1421,21 @@ impl Parser {
             d.type_static = false
             d.pat_static = false
             d.pat_flip = false
-            // `type_flip` is deliberately NOT cleared, and the asymmetry with
-            // `pat_flip` right above it is the whole point. Clearing `*_static`
-            // selects the slower ENGINE for the same grammar; clearing `*_flip`
-            // as well selects a DIFFERENT PARSER — the hand. Patterns still have
-            // a hand parser to fall back to. Types are mid-retirement: the
-            // executor is the type family's PRODUCTION engine (`type_flip` is
-            // what routes `parse_type_expr` through `exec_rule`, which is why
-            // the recovery corpus's executor coverage comes from types at all),
-            // so clearing it here would not pick a slower engine — it would send
-            // the delegate to `parse_type_expr_hand`, a second implementation,
-            // on a seam whose contract is byte-identical output. Raised in
-            // review on #1221; declined deliberately rather than taken as a
-            // quick win, because it is a production behaviour change with no
-            // evidence behind it. The flag and the hand tail it would select are
-            // both deleted by the type slice, which ends the question.
+            // There is no `type_flip` to clear any more, and that is this slice.
+            // Review on #1221 asked for `d.type_flip = false` here beside
+            // `d.type_static = false`; it was declined because clearing `*_static`
+            // picks a slower ENGINE for the same grammar while clearing `*_flip`
+            // picks a DIFFERENT PARSER, and `type_flip` was what routed
+            // `parse_type_expr` through `exec_rule` — the type family's production
+            // engine. Deleting `parse_type_expr_hand` removes the second
+            // implementation the request would have selected, so the question is
+            // closed rather than answered: `parse_type_expr` is unconditional and
+            // there is nothing left for a flag here to choose between.
+            //
+            // What remains true of the list above: every `*_static` cleared here
+            // still picks the interpreter over the generated parser for the same
+            // grammar, and `pat_flip` is the last entry that still selects a hand
+            // parser at all.
             self.hand_delegate = d
         }
         self.hand_delegate!
