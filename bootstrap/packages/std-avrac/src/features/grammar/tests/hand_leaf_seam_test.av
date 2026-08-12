@@ -169,13 +169,22 @@ spec "t-sjf9: the emitter's CapVal kind agrees with the dispatcher's class" {
         }
         ok
     }
-    // Raised in review on PR #1221: a row asserting `let_stmt` here could not fail,
-    // because the loop above already walks every entry of known_stmt_leaves() with the
-    // same predicate. Its original motive was `stmt_hand`, which `hand_kind` once omitted
-    // — a leaf the two consumers classified differently. That leaf is deleted, so the row
-    // points at the CLOSED-WORLD half instead, which no loop over registered leaves covers.
-    then "an unknown name is neither class to EITHER consumer" {
-        !is_hand_stmt_leaf("no_such_leaf") && hand_kind("no_such_leaf") != "stmt"
+    // Raised in review on PR #1221, TWICE, and the second round is the useful one.
+    // A row asserting `let_stmt` here could not fail — the loop above already walks
+    // every entry of known_stmt_leaves() with the same predicate — so it was repointed
+    // at an unknown name and titled "neither class to EITHER consumer". That title was
+    // wrong about `hand_kind`, which is `if is_hand_stmt_leaf(hf) { "stmt" } else
+    // { "expr" }`: it is a two-way SPLIT with `expr` as its DEFAULT, not a validator,
+    // so an unregistered name comes back "expr" and `!= "stmt"` passes trivially.
+    // Replacing one vacuous row with another is the failure this file exists to catch.
+    //
+    // The closed-world question therefore belongs to the MEMBERSHIP predicates, which
+    // do answer it, and hand_kind's own contract here is the default. Both halves can
+    // fail: a catch-all in either table breaks the first, a third answer or a flipped
+    // default breaks the second.
+    then "an unknown name is in NEITHER leaf table, and hand_kind defaults it to expr" {
+        !is_hand_stmt_leaf("no_such_leaf") && !is_hand_expr_leaf("no_such_leaf")
+            && hand_kind("no_such_leaf") == "expr"
     }
 }
 

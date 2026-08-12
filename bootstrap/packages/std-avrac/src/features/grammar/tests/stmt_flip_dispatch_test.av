@@ -33,10 +33,16 @@ use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id}
 
 /// The INTERPRETER engine, through the statement entry.
+///
+/// `.Ok` is NOT the same question as "parsed cleanly". Both entries distinguish a
+/// whole-item failure (`.Err`) from an already-recovered BODY error, so a partial
+/// tree can come back `.Ok` with `had_error` set — and rendering it would let the
+/// parity helpers below compare two RECOVERIES and call it agreement. Raised in
+/// review on PR #1221.
 fn flip_stmt(src: string) -> string {
     mut p = parser_new(src)
     match p.parse_statement() {
-        .Ok(id) -> render_stmt_id(p.store, id)
+        .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }
@@ -49,7 +55,7 @@ fn gen_stmt(src: string) -> string {
     mut p = parser_new(src)
     p.decl_static = true
     match p.parse_declaration() {
-        .Ok(id) -> render_stmt_id(p.store, id)
+        .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }

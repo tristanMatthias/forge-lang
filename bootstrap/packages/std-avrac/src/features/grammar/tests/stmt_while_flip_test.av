@@ -23,10 +23,13 @@
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id}
 
+/// `.Ok` is NOT "parsed cleanly": both entries hand back a RECOVERED partial tree
+/// as `.Ok` with `had_error` set, and rendering that would let `agree_ok` below
+/// compare two recoveries and call it agreement. Raised in review on PR #1221.
 fn flip_stmt(src: string) -> string {
     mut p = parser_new(src)
     match p.parse_statement() {
-        .Ok(id) -> render_stmt_id(p.store, id)
+        .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }
@@ -37,7 +40,7 @@ fn gen_stmt(src: string) -> string {
     mut p = parser_new(src)
     p.decl_static = true
     match p.parse_declaration() {
-        .Ok(id) -> render_stmt_id(p.store, id)
+        .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"
     }
 }
@@ -96,7 +99,7 @@ spec "t-47hc.13: grammar-native block body — inner statement variety agrees" {
     }
 }
 
-spec "t-47hc.13 S1: grammar-native `if` == hand parse_if_statement (stmt-flip)" {
+spec "t-47hc.13 S1: grammar-native `if` interpreter == generated statement rules" {
     then "if without else, with else, else-if chains" {
         agree_ok("if 1 { break }") &&
         agree_ok("if 1 { break } else { continue }") &&
@@ -111,7 +114,7 @@ spec "t-47hc.13 S1: grammar-native `if` == hand parse_if_statement (stmt-flip)" 
     }
 }
 
-spec "t-47hc.13 S1: grammar-native `for` == hand parse_for_statement (stmt-flip)" {
+spec "t-47hc.13 S1: grammar-native `for` interpreter == generated statement rules" {
     then "integer range + collection forms" {
         agree_ok("for i in 0..5 { break }") &&
         agree_ok("for i in 0..10 { break continue }") &&
@@ -155,23 +158,30 @@ spec "t-47hc.13 S1: bare-statement bodies are rejected by BOTH (the block `{`-re
         both_reject("if 1 break") &&
         both_reject("if 1 continue")
     }
-    // The `for` trio is PINNED rather than `both_reject`, and the reason is an ENTRY
-    // difference, not an engine one. `parse_statement` rejects a bare-statement body.
-    // `parse_declaration` parses ONE item and leaves the rest to its caller, so it
-    // returns `(for-in x coll (block ))` and leaves `break` on the stream — trailing
-    // tokens are not its business at that entry.
+    // This trio WAS pinned as an entry asymmetry — "the statement entry rejects, the
+    // declaration entry stops early" — asserting the literal tree
+    // `(for-in x coll (block ))` from the declaration side. Adding the `had_error`
+    // guard to the helpers (review on #1221) turned that assertion red, and the
+    // measurement behind it says the pin's premise was wrong, not the guard:
     //
-    // MEASURED that this is not a production leniency: in a real fn body both the
-    // branch build and `./build/seed` (the pinned integration compiler, the control)
-    // reject `for x in coll break` with F0001 "expected `}` after function body". The
-    // statement-list loop inside a block is what catches it, and neither entry here is
-    // that loop. Asserting `both_reject` would be asserting that a single-item entry
-    // enforces a whole-block property.
-    then "`for … <bare-stmt>` — the statement entry rejects; the declaration entry stops early" {
-        flip_stmt("for x in coll break") == "<err>" &&
-        flip_stmt("for i in 0..5 break") == "<err>" &&
-        flip_stmt("for i in a..b continue") == "<err>" &&
-        gen_stmt("for x in coll break") == "(for-in x coll (block ))"
+    //   parse_declaration("for x in coll break")
+    //     -> .Ok, had_error=1, error_message="parse error at 1:20: expected `}`"
+    //        tree=(for-in x coll (block ))
+    //
+    // The declaration entry is not lenient and does not "leave `break` for its
+    // caller". It REPORTS — `expected `}`` at the `break` — and hands back a partial
+    // tree as `.Ok`. So both entries reject this input; they differ only in HOW they
+    // say so, and the old row was rendering a recovered tree and reading it as a
+    // clean parse. That is the same vacuity the guard exists to catch, one layer up.
+    //
+    // The production control still holds and is now CONSISTENT rather than an
+    // exception: in a real fn body both this build and `./build/seed` (the pinned
+    // integration compiler) reject `for x in coll break` with F0001 "expected `}`
+    // after function body".
+    then "`for … <bare-stmt>` — both entries reject, the declaration one via a recovered .Ok" {
+        both_reject("for x in coll break") &&
+        both_reject("for i in 0..5 break") &&
+        both_reject("for i in a..b continue")
     }
 }
 
