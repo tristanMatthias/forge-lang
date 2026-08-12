@@ -40,9 +40,13 @@ fn dsl_type(src: string) -> string {
 // the arena'd ValueType.
 fn hand_type(src: string) -> string {
     mut p = parser_new(src)
-    // parse_type_expr_hand explicitly: parse_type_expr is DSL-by-default after
-    // the ps3t.6.5.12 promotion, so the hand baseline must call the hand method.
-    match p.parse_type_expr_hand("expected type") {
+    // t-47hc.37 — was `parse_type_expr_hand`, which is DELETED (the last of the three
+    // hand tails). The oracle half is the INTERPRETER engine now: `type_static = false`
+    // selects run_dsl_type_at_shared over the generated run_static_type. Two engines,
+    // one grammar — and the interpreter is still PRODUCTION for the type family, so this
+    // is a live differential rather than a museum piece.
+    p.type_static = false
+    match p.parse_type_expr("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
             render_type_id(p.store, tid)

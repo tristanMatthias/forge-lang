@@ -97,7 +97,6 @@ fn hand_only_program(src: string) -> string {
     // off too, even though `decl_flip = false` already takes that path out of play.
     mut p = parser_new(src)
     p.decl_static = false
-    p.type_flip = false
     p.type_static = false
     p.pat_flip = false
     p.pat_static = false
