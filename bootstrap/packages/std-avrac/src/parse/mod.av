@@ -28,7 +28,7 @@ use parse.static_decl_entry.{run_static_decl}
 use parse.static_type_entry.{run_static_type}
 // The GENERATED exact-match keyword recogniser (compiled from keyword_rules());
 // p_keyword_kind is now a thin string wrapper over it.
-use parse.{classify_keyword}
+use parse.{classify_keyword, scan_interp_region}
 use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, diag_with_help, span_new, span_at, syntax_diag_code}
 
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
@@ -649,20 +649,16 @@ export fn desugar_template_store(store: NodeStore, raw: string) -> Result<ExprId
                 let str_expr = Expr.String("\"${raw.substring(text_start, i)}\"")
                 acc = template_fold_store(store, acc, str_expr, store.exprs.add_leaf(str_expr))
             }
-            // Find matching `}` (no nesting — braces inside
-            // template expressions are not supported).
+            // Find the matching `}` with the SAME scanner the lexer uses for the region.
+            // This loop used to count braces itself and skip no literals, so a brace inside
+            // a nested string ended the expression early — `"a ${"}"} b"` broke here even
+            // though the lexer had scanned it correctly (t-50ov). Two implementations of one
+            // scan, and the weaker one decided. scan_interp_region returns the offset PAST
+            // the balancing `}`, so the close is one before it.
             let expr_start = i + 2
-            mut j = expr_start
-            mut brace_depth = 0
-            while j < len {
-                if raw[j] == "{" { brace_depth = brace_depth + 1 }
-                if raw[j] == "}" {
-                    if brace_depth == 0 { break }
-                    brace_depth = brace_depth - 1
-                }
-                j = j + 1
-            }
-            if j >= len {
+            let region_end = scan_interp_region(avra_bytes_from_string(raw), i)
+            mut j = region_end - 1
+            if region_end > len || j < expr_start {
                 return .Err("unterminated template expression in string")
             }
             // Parse the content between ${ and } as an expression.

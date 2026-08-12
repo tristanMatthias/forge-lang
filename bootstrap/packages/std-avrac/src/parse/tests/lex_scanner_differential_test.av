@@ -249,6 +249,15 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         scan_interp_region(avra_bytes_from_string(c), 0) == 8
     }
 
+    // t-50ov: the TEMPLATE SPLITTER in parse/mod.av had its own brace loop that skipped no
+    // literals, so a brace inside a nested literal ended the expression early even though
+    // the lexer had scanned the region correctly. It uses scan_interp_region now, so these
+    // three forms reach the parser intact — one scanner, not two disagreeing ones.
+    then "a brace inside a nested literal survives the template splitter" {
+        let out = avra_shell_exec("printf 'fn main() {\\n    println(\"a $" + "{\"}\"} b\")\\n}\\n' > /tmp/t50_spec.av && ./build/bs2 run /tmp/t50_spec.av 2>&1")
+        out.contains("a } b") && !out.contains("error[")
+    }
+
     then "block_comment spans the whole nested comment" {
         // "/* a /* b */ c */" is 17 bytes and balances at the end
         let c = "/* a /* b */ c */"
