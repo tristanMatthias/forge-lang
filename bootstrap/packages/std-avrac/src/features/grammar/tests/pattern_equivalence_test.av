@@ -24,7 +24,7 @@
 // Number/Float split without a separate DSL terminal.
 use @std.avrac.features.grammar.{run_grammar_pat}
 // t-47hc.8: the pattern grammar fragment is owned by the match feature (features/match.av).
-use @std.avrac.features.{avra_pat_grammar}
+use @std.avrac.features.match_expr.{avra_pat_grammar}
 use @std.avrac.parse.{parser_new, run_static_pat}
 use @std.avrac.core.{render_pat_id}
 

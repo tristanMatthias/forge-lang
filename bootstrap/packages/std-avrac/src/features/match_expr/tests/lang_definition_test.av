@@ -3,8 +3,9 @@
 // and the composed result must still carry the pattern + arm rule sets the
 // hand-maintained list used to name. Also guards the instance-block `name`
 // override (the binding can't be the keyword `match`).
-use @std.avrac.features.{match_lang, when_lang, feature_grammar_fragments, feature_keywords}
-use @std.avrac.features.grammar.{render_grammar, compose_fragments}
+use @std.avrac.features.match_expr.{match_lang, when_lang}
+use @std.avrac.features.{feature_grammar_fragments, feature_keywords}
+use @std.avrac.features.grammar.{compose_fragments, rule_index_of}
 use @std.avrac.list_ops.{list_contains_str}
 
 spec "match as a LanguageFeature" {
@@ -15,12 +16,12 @@ spec "match as a LanguageFeature" {
     }
     then "when carries its surface and owns no rules of its own" {
         let w = when_lang()
-        w.name == "match_when" && w.snippet.contains("when") && w.gram.rules.length == 0
+        w.name == "match_when" && w.snippet.contains("when") && w.gram.grammar.rules.length == 0
     }
-    then "the fragment fold serves the pattern + arm rules" {
-        let composed = render_grammar(compose_fragments(feature_grammar_fragments()))
-        composed.contains("pattern_or") && composed.contains("match_arm")
-            && composed.contains("match_when_arm") && composed.contains("variant_pat")
+    then "the fragment fold DEFINES the pattern + arm rules (by rule index, not rendered text)" {
+        let g = compose_fragments(feature_grammar_fragments())
+        rule_index_of(g, "pattern_or") >= 0 && rule_index_of(g, "match_arm") >= 0
+            && rule_index_of(g, "match_when_arm") >= 0 && rule_index_of(g, "variant_pat") >= 0
     }
     then "keywords derive from the owned rules" {
         let kws = feature_keywords(match_lang())

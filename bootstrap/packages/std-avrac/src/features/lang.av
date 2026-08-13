@@ -8,12 +8,17 @@
 // after the user ratifies the shape.
 
 use core.{feature_new, Registry, register}
-use features.grammar.{grammar_literals, code_at, is_ident_start_code, is_ident_cont_code}
+use features.grammar.{grammar_literals, grammar_checked, compose_fragments, Grammar, GrammarParse, code_at, is_ident_start_code, is_ident_cont_code}
 use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
-/// adapter onto the core Feature record while both forms coexist.
+/// adapter onto the core Feature record while both forms coexist. Also the
+/// point where EVERY definition's grammar is validated: a malformed
+/// `grammar { }` block hard-fails here at startup (F9999), spine-duplicated
+/// and composing grams alike — composition filters must never be the only
+/// path to the check, or a broken grammar silently vanishes instead.
 export fn register_lang(reg: Registry, f: LanguageFeature) {
+    let _validated = feature_gram(f)
     register(reg, feature_new(f.name) with {
         expr_tag: f.expr_tag,
         stmt_tag: f.stmt_tag,
@@ -30,10 +35,23 @@ export fn register_lang(reg: Registry, f: LanguageFeature) {
     })
 }
 
+/// The feature's grammar, validated — the ONE place a definition's
+/// `grammar { }` block is checked, so instances never carry the ceremony.
+/// A malformed compiled-in grammar dies loudly here (F9999).
+export fn feature_gram(f: LanguageFeature) -> Grammar {
+    grammar_checked(f.gram)
+}
+
+/// Wrap already-validated fragments for a `gram` field built by
+/// composition instead of an inline `grammar { }` block.
+export fn composed(fragments: List<Grammar>) -> GrammarParse {
+    GrammarParse { grammar: compose_fragments(fragments), error: "" }
+}
+
 /// A feature's keywords, derived from its declared grammar — the
 /// identifier-shaped literal terminals (`"defer"` yes, `"+"` no).
 export fn feature_keywords(f: LanguageFeature) -> List<string> {
-    [t for t in grammar_literals(f.gram) if is_keyword_shaped(t)] |> list_dedup_str
+    [t for t in grammar_literals(feature_gram(f)) if is_keyword_shaped(t)] |> list_dedup_str
 }
 
 /// True when the lexer would tokenize `t` as one identifier — the same

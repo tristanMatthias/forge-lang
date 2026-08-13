@@ -27,7 +27,7 @@
 // assertion changing (the vacuity review caught in the statement sibling, #1221).
 use @std.avrac.parse.{parser_new, run_static_pat}
 use @std.avrac.features.grammar.{run_grammar_pat}
-use @std.avrac.features.{avra_pat_grammar}
+use @std.avrac.features.match_expr.{avra_pat_grammar}
 use @std.avrac.core.{render_pat_id}
 
 /// The INTERPRETER engine.

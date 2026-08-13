@@ -3,7 +3,8 @@
 // declared grammar, and the declared rules stay in lockstep with the
 // production whole-program grammar — the drift guard until grammar
 // composition consumes the definitions directly (t-kd4y follow-up).
-use @std.avrac.features.{defer_lang, errdefer_lang, feature_keywords}
+use @std.avrac.features.defer_stmt.{defer_lang, errdefer_lang}
+use @std.avrac.features.{feature_keywords, feature_gram}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_grammar}
 
 spec "defer as a LanguageFeature" {
@@ -22,8 +23,8 @@ spec "defer as a LanguageFeature" {
         let stmt_view = render_grammar(avra_stmt_grammar())
         let defer_rule = "defer_stmt = \"defer\" e:expression -> MkDefer(e)"
         let errdefer_rule = "errdefer_stmt = \"errdefer\" e:expression -> MkErrdefer(e)"
-        render_grammar(defer_lang().gram).contains(defer_rule) && stmt_view.contains(defer_rule)
-            && render_grammar(errdefer_lang().gram).contains(errdefer_rule) && stmt_view.contains(errdefer_rule)
+        render_grammar(feature_gram(defer_lang())).contains(defer_rule) && stmt_view.contains(defer_rule)
+            && render_grammar(feature_gram(errdefer_lang())).contains(errdefer_rule) && stmt_view.contains(errdefer_rule)
     }
     then "the whole-program view lowers through the same builders" {
         let prod = render_grammar(avra_program_grammar())
