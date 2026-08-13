@@ -314,7 +314,7 @@ fn parse_alt(p: GP) -> GNode {
 // (annots before build), so parse them interleaved rather than fixing
 // a rigid build-then-annots order.
 /// True when the cursor is the `@try` branch marker — a leading, BRANCH-level
-/// speculation flag (bounded backtracking), distinct from the `@hand`/`@when`
+/// speculation flag (bounded backtracking), distinct from the `@when`-style
 /// primaries and the `@expect`/`@recover` annotations.
 fn at_try_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
@@ -394,7 +394,7 @@ fn parse_seq(p: GP) -> GSeq {
     // dispatched by FIRST at all — it is the UNCONDITIONAL tail, run precisely when no
     // earlier branch matched — so "never matches" is false for it, and a zero-width
     // tail is the only way an all-native alternation can own the "this token starts
-    // nothing" position that `@hand(primary_base)` used to hold.
+    // nothing" position.
     if ff_consuming == 0 && !fallback {
         p.fail("`@when`/`@peek` must gate a branch that consumes input (a predicate-only branch never matches)")
     }
@@ -413,7 +413,7 @@ fn parse_seq(p: GP) -> GSeq {
     // A `@try` branch is a bounded-speculation RECOGNIZER: emit lowers it to a
     // snapshot → run → commit-or-rollback block. Post-#995 (t-47hc GAP-3) that lowering
     // is faithful for the FULL item vocabulary — capturing builds, repetitions (list
-    // accumulators), groups/opt, `@on`/`@off` mode items, and `@hand` leaves — via the
+    // accumulators), groups/opt, and `@on`/`@off` mode items — via the
     // emitter's rich speculative path (emit_speculative_branch_rich, which reuses
     // emit_seq_stmts + emit_seq_result inside the rollback scaffold) and the interpreter's
     // exec_seq (which snapshots+restores env.caps across the speculative run so a
@@ -470,7 +470,7 @@ fn seq_can_continue(p: GP) -> bool {
     if p.at_end() { return false }
     if p.peek().kind == "ARROW" { return false }
     if p.is_punct("|") || p.is_punct(")") || p.is_punct("}") { return false }
-    // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
+    // `@when(...)`-style forms are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
     if p.is_punct("@") { return at_when_primary(p) || at_peek_primary(p) || at_gensym_primary(p) || at_rawbrace_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) || at_gate_marker(p) || at_onfail_marker(p) }
@@ -561,10 +561,10 @@ export fn peek_cond_expected_list() -> string {
 /// Kept in lockstep with executor.lookahead_ok (which maps each name to
 /// a token test) and emit.peek_guard (which emits the equivalent generated guard) — a
 /// new cond is added in all three. `ident_colon`: the current token is an IDENT and the
-/// next is `:` — the hand parse_paren_expr's `peek_after_ident_is_colon` (typed lambda).
+/// next is `:` — Parser.peek_after_ident_is_colon's question (typed lambda).
 /// `stmt_block` is the statement-position non-map-brace predicate;
 /// `for_destructure` and `comma_ident` select tuple-loop bindings and their
-/// non-trailing separator commas. `double_colon` preserves the hand parser's
+/// non-trailing separator commas. `double_colon` preserves the
 /// no-whitespace `::` requirement for qualified type names.
 export fn peek_cond_supported(cond: string) -> bool {
     // `lparen_ident_colon`: the position-0 twin of `ident_colon` — cur is `(`, the next
@@ -573,8 +573,8 @@ export fn peek_cond_supported(cond: string) -> bool {
     // `decl_lead`: "is this a DECLARATION lead?" — true for every non-IDENT lead,
     // and for an IDENT only in the component-instantiation shape `Comp inst {`
     // (t-47hc.24). See executor.lookahead_ok.
-    // `if_let`: `if` immediately followed by `let` — the bind-fresh if-let form,
-    // which stays the hand's. See executor.lookahead_ok.
+    // `if_let`: `if` immediately followed by `let` — the bind-fresh if-let form.
+    // See executor.lookahead_ok.
     // `ident_lbrace`: cur is an IDENT and the next token is `{` — the token twin of
     // Parser.peek_after_ident_is_lbrace, which distinguishes the `~Name { … }`
     // constructor-name splice from the greedy `~expr` form. See executor.lookahead_ok.
@@ -583,8 +583,7 @@ export fn peek_cond_supported(cond: string) -> bool {
     // literal, which a native struct-lit branch must gate on so it does not capture
     // `table { … }` or `grammar { … }` (t-47hc slice 8).
     // `ident_lbrace_feature`: the exact COMPLEMENT of that exclusion (plus the TYPED
-    // `table<Row> { … }`) — the feature-form seam, i.e. the only valid input that still
-    // reaches a production `@hand` leaf. See executor.lookahead_ok (t-myz7).
+    // `table<Row> { … }`) — the feature-form seam. See executor.lookahead_ok (t-myz7).
     // `dot_number`: cur is `.` and the next token is a NUMBER — the tuple-index reading
     // `t.0`, kept apart from the `.field` branch that shares its FIRST token. See
     // executor.lookahead_ok.
@@ -648,7 +647,7 @@ export fn on_flag_supported(flag: string) -> bool {
 }
 
 /// True when the cursor is `@off` — the leading mode-SET item marker (t-47hc),
-/// distinct from the `@hand`/`@when` primaries and the `@expect`/`@recover`
+/// distinct from the `@when`-style primaries and the `@expect`/`@recover`
 /// annotations. It prefixes the item it scopes, so seq_can_continue must treat
 /// it as an item-start (else the item-list loop stops before it).
 fn at_off_marker(p: GP) -> bool {
@@ -728,14 +727,8 @@ fn at_on_if_marker(p: GP) -> bool {
 // ── @off / @on mode-SET marker POSITION validation (t-47hc) ──
 
 /// Reject `@off(flag)`/`@on(flag)` in any position the GENERATED parser can't honor
-/// identically to the executor. The executor runs EVERY item through exec_item (so it
-/// honors the marker everywhere), but emit has specialised paths that BYPASS emit_item
-/// — emit_fold (a fold branch's seed + accumulators) and emit_speculative_branch (a
-/// `@try` branch's items) — and inlines structural `( … )` groups with a per-sequence
-/// item index that RESTARTS when nested (so two nested mode markers would emit a
-/// colliding `__modes_N` binding). So a mode marker is supported ONLY on a DIRECT item
-/// of a TOP-LEVEL, non-`@try`, non-fold rule branch, and never on a `@hand`/`@when`
-/// primary. Everything else is a HARD grammar error — keeping the executor and the
+/// identically to the executor — see check_mode_node for the restrictions.
+/// A violation is a HARD grammar error — keeping the executor and the
 /// generated parser in lockstep (BOTH reject the same grammars) instead of silently
 /// diverging. Runs after the tree is built (the fold/@try shape is structural).
 /// Returns "" when clean.
@@ -803,7 +796,7 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
                         // it, so a failure there never entered the wrapper at all.
                         //
                         // The use is `quote type { <type> }`: the type position needs
-                        // `@require` to abort with the hand's "expected a type inside
+                        // `@require` to abort with "expected a type inside
                         // `quote type { ... }`" instead of reporting a generic F0040 and then
                         // reporting the missing `}` too, and it needs `@bump(quote_depth)` so
                         // a splice inside it still sees a nonzero depth. Rejecting the pair
@@ -1335,8 +1328,8 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                         // single literal — that literal is the message key `@expect` and
                         // handle_missing are both indexed by, so without one there is no
                         // single "expected X" to report. This is what lets `@require
-                        // block_expr` say the hand's `if !check(LeftBrace) { report; return
-                        // .Err }` without inlining (and mis-spanning) the block.
+                        // block_expr` report-and-abort on a missing `{`
+                        // without inlining (and mis-spanning) the block.
                         if !prim_is_terminal_sp(item.prim) {
                             match item.prim {
                                 .Ref(rname) -> {
@@ -1353,7 +1346,7 @@ fn check_cut_node_ctx(g: Grammar, node: GNode, rule: string, in_try: bool, in_fo
                                     // type ref unrequired a missing type reported the type
                                     // view's own generic F0040 and yielded Unknown — so
                                     // `enum E { A(x: ) }` BUILT `(enum E (A(x:<unknown>)))`
-                                    // where the hand aborts the whole declaration.
+                                    // instead of aborting the whole declaration.
                                     if rule_first_literal(g, rname) == "" && !seq_expects_key_in(b, inherited, rname) {
                                         return "`@require` on rule reference `${rname}` (in rule `${rule}`) needs a single-literal FIRST or a declared `@expect(\"${rname}\", …)` — its FIRST is a disjunction or a token KIND, so there is no one token to name in the diagnostic and no message was supplied"
                                     }
@@ -1559,7 +1552,7 @@ fn parse_labeled(p: GP) -> GItem {
             }
         }
         // t-myz7 NON-ABORTING FAILURE POLICY: `@onfail(policy)` says what this position does
-        // when its sub-parse fails, for the rules whose hand parser RECOVERS where `@require`
+        // when its sub-parse fails, for the positions that must RECOVER where `@require`
         // and `@gate` abort. STRICT grammar `@` `onfail` `(` NAME `)`, the policy validated
         // against onfail_policy_supported — an unknown policy is a hard error rather than a
         // silent fall-through to the aborting default, which would look exactly like the bug
@@ -1611,9 +1604,9 @@ fn parse_labeled(p: GP) -> GItem {
             sameline = true
         }
         // t-47hc mode-SET marker `@off(flag)`: turn a settable ExprModes flag OFF for
-        // this item's sub-parse (the `while foo {` struct-literal disambiguation the
-        // hand parser does with `allow_struct_lit = false`). Distinguished from the
-        // `@hand`/`@when`/`@try` primaries by the second token being `off` (parsed
+        // this item's sub-parse (the `while foo {` struct-literal disambiguation
+        // via `allow_struct_lit = false`). Distinguished from the
+        // `@when`/`@try` primaries by the second token being `off` (parsed
         // later as the primary / branch marker). STRICT grammar: `@` `off` `(` NAME `)`
         // — the parens are required and the flag NAME is validated against
         // off_flag_supported. The raw NAME is interpolated into emitted source
@@ -1688,8 +1681,8 @@ fn parse_labeled(p: GP) -> GItem {
             p.expect_punct(")", "expected `)` to close `@on_if(pred, flag)`")
         }
         // t-47hc.32 counter-SET marker `@bump(counter)`: increment an ExprModes int cell for
-        // this item's sub-parse, then restore — the hand parse_quote's save/bump/restore
-        // around a quote body. Same STRICT grammar `@` `bump` `(` NAME `)`, validated against
+        // this item's sub-parse, then restore — the quote body's save/bump/restore
+        // (quote_depth). Same STRICT grammar `@` `bump` `(` NAME `)`, validated against
         // bump_counter_supported (its OWN list: a counter is not a settable bool).
         if at_bump_marker(p) {
             let _ = p.advance()   // "@"
@@ -1780,13 +1773,13 @@ fn parse_labeled(p: GP) -> GItem {
             p.fail("`@onfail(bail)` cannot carry a repetition — an absent optional/repeated item is not a failure")
         }
     }
-    // t-myz7/t-47hc.5 `@onfail(abort)` — `drop`'s ABORTING sibling, for a body loop whose
-    // hand parser PROPAGATES a child failure instead of recovering from it. The default
+    // t-myz7/t-47hc.5 `@onfail(abort)` — `drop`'s ABORTING sibling, for a body loop that
+    // PROPAGATES a child failure instead of recovering from it. The default
     // loop stands an `(error)` row and carries on (`parse_statement_list_ids`); `drop`
     // omits the row and carries on (`parse_spec_body`); this one ends the enclosing rule
     // (`parse_comp_block_body`, whose `parse_declaration()?` returns `.Err`), so the
     // caller's closer is never consumed and the stray `}` reaches statement-level
-    // recovery exactly as it does on the hand.
+    // recovery.
     if onfail == "abort" {
         match base.prim {
             .Ref(_) -> {}
