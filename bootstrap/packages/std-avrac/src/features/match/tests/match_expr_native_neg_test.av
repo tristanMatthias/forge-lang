@@ -1,16 +1,16 @@
-// WHY: t-47hc.25 — the native `match_expr` owns its own diagnostics now, and diff-test
+// WHY: t-47hc.25 — the native `match_expr` rule owns its own diagnostics, and diff-test
 // CANNOT see them: it compares IR for VALID programs, so the error text of an invalid one
 // is outside its oracle entirely. These are the isolate-run negative tests for that gap.
 //
 // The two messages come from `@require "{"` / `@require "}"` paired with `@expect`, which
-// together reproduce what the hand does with `consume(...) else return .Err`: report, then
-// ABORT the rule rather than error-tolerantly building a partial node. Getting the report
-// but losing the abort is the specific regression this pins — a `match` with a malformed
-// header would otherwise keep consuming and swallow whatever follows it.
+// together reproduce what the retired hand parser did with `consume(...) else return .Err`:
+// report, then ABORT the rule rather than error-tolerantly building a partial node. Getting
+// the report but losing the abort is the specific regression this pins — a `match` with a
+// malformed header would otherwise keep consuming and swallow whatever follows it.
 //
-// Each case is also checked against the HAND parser (AVRA_PARSER_DECL_FLIP=0). Asserting
-// the message alone would not catch the grammar and the hand drifting apart; asserting
-// only agreement would not catch BOTH regressing to the same wrong text.
+// The generated parser is the ONLY engine reachable from `bs2 check` (t-bw9s — see the
+// note on `no_ice`), so the strong rows pin its SPECIFIC messages and F-code signatures;
+// the `no_ice` rows are the crash floor beneath them.
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
 
@@ -27,30 +27,6 @@ fn check_out(env: string, source: string) -> string {
 
 fn dsl(source: string) -> string { check_out("", source) }
 
-/// t-bw9s — THERE IS NO HAND ORACLE AVAILABLE TO THIS FILE, and `agrees` below is
-/// therefore a self-comparison. Read this before trying to "restore" one.
-///
-/// The history: this pinned `AVRA_PARSER_DECL_FLIP=0`, which died with the declaration
-/// hand parser. The obvious repair — pin the EXPRESSION hand instead, since these are
-/// match-EXPRESSION cases — was tried and MEASURED, and it does not work. Under
-/// `bs2 check`, `AVRA_PARSER_EXPR_STATIC=0 AVRA_PARSER_EXPR_FLIP=0` produces
-/// byte-identical output to the default on every input tried, including
-/// `let a = (1) ->` — the documented hand-vs-generated divergence case — and logs zero
-/// `[hand-fallback]` markers under either setting.
-///
-/// The reason is structural: a whole-program compile is driven by the GENERATED
-/// declaration parser, which parses expressions with its own generated rules and never
-/// calls `Parser.parse_expression`. Those two flags gate that method, so nothing on this
-/// path ever consults them. The expression hand is reachable from `bs2 expr`, which
-/// parses an expression directly — not from `bs2 check`.
-///
-/// So `hand` is kept as an ALIAS, named for what it once selected, and the `agrees`
-/// rows below assert that the generated parser's F-code signature is stable rather than
-/// that two engines concur. What still has teeth here are the rows asserting a SPECIFIC
-/// signature (the `codes(out) == "..."` forms) — those fail if the generated parser's
-/// diagnostics change, which is the property this file actually guards.
-fn hand(source: string) -> string { check_out("", source) }
-
 // The occurrence-ordered F-code signature — set, order and count together.
 fn codes(out: string) -> string {
     mut sig = ""
@@ -65,20 +41,22 @@ fn codes(out: string) -> string {
     sig
 }
 
-/// t-bw9s — NOT an agreement check any more, and named for what it can still assert.
+/// t-bw9s — THERE IS NO SECOND ENGINE reachable from `bs2 check`, so no agreement
+/// check is possible in this file. Read this before trying to "restore" one.
 ///
-/// It was `codes(dsl(x)) == codes(hand(x))`, and `hand` is now an ALIAS for the same
-/// engine (see its definition above), so it read `x == x` — true for any input, including
-/// one that ICEd or produced nothing. No hand oracle is reachable from `bs2 check`, so a
-/// two-engine comparison is simply not available here; the file header explains why.
+/// The history: these rows pinned `AVRA_PARSER_DECL_FLIP=0`, which died with the
+/// declaration hand parser. The obvious repair — pin the EXPRESSION hand instead —
+/// was tried and MEASURED, and it never worked: a whole-program compile is driven
+/// by the GENERATED declaration parser, which parses expressions with its own
+/// generated rules and never calls `Parser.parse_expression`, so the expression
+/// flags were never consulted (byte-identical output under every setting, zero
+/// `[hand-fallback]` markers). The hand parsers are deleted outright now.
 ///
-/// What is available is that the generated parser handled the input WITHOUT an internal
-/// compiler error. That is deliberately modest: an arm-less `match` parses clean (measured
-/// — zero F-codes), so requiring a diagnostic would be wrong, and requiring a specific
-/// signature belongs on the rows that already pin one. An F9999 here fails the row.
-///
-/// The rows that pin a SPECIFIC signature (`codes(out) == "..."`) are the strong
-/// assertions in this file; these are a crash floor beneath them.
+/// What this row CAN assert is that the generated parser handled the input WITHOUT
+/// an internal compiler error. That is deliberately modest: an arm-less `match`
+/// parses clean (measured — zero F-codes), so requiring a diagnostic would be
+/// wrong. The strong assertions are the rows pinning a SPECIFIC message or
+/// signature; these are the crash floor beneath them.
 fn no_ice(source: string) -> bool { !codes(dsl(source)).contains("F9999") }
 
 fn missing_open() -> string {
@@ -93,19 +71,20 @@ spec "t-47hc.25: the native match expression reports its own brace diagnostics" 
     then "a missing `{` after the subject names the subject" {
         dsl(missing_open()).contains("expected `{` after match subject")
     }
+    then "a missing `}` after the arms names the arms" {
+        // Directly observable: the generated parser IS the production engine,
+        // so `bs2 check` renders this rule's own message (measured).
+        dsl(missing_close()).contains("expected `}` after match arms")
+    }
     then "both are REJECTED, not recovered into a silent partial parse" {
         !dsl(missing_open()).contains("\nok") && !dsl(missing_close()).contains("\nok")
     }
     then "the generated parser carries BOTH brace diagnostics and aborts on each" {
-        // Structural, because at whole-program level the grammar's own `}` message is not
-        // observable: on ANY DSL error the flip falls back to the authoritative hand
-        // parser, which then owns the reporting (by design — that is what keeps error
-        // trees byte-identical). So `bs2 check` shows the HAND's diagnostic even here,
-        // which is exactly why the agreement specs below are the load-bearing ones and a
-        // message assertion alone would prove little. What IS checkable is that the
-        // emitted parser reports and then RETURNS rather than error-tolerantly building a
-        // partial node — the `@require` abort that stops a malformed header from running
-        // away and swallowing what follows.
+        // Structural complement to the message rows above: rendered output cannot
+        // show that the emitted parser reports and then RETURNS rather than
+        // error-tolerantly building a partial node — the `@require` abort that
+        // stops a malformed header from running away and swallowing what follows.
+        // Pin the abort shape in the emitted source itself.
         let gen = generated_match_expr_source()
         gen.contains("expected `{` after match subject") &&
             gen.contains("expected `}` after match arms") &&
@@ -113,9 +92,9 @@ spec "t-47hc.25: the native match expression reports its own brace diagnostics" 
     }
 }
 
-spec "t-47hc.25: the native match expression agrees with the hand oracle on invalid input" {
-    then "missing `{` recovers to the same F-code sequence" { no_ice(missing_open()) }
-    then "missing `}` recovers to the same F-code sequence" { no_ice(missing_close()) }
+spec "t-47hc.25: invalid match expressions never ICE the generated parser" {
+    then "missing `{` is handled without an ICE" { no_ice(missing_open()) }
+    then "missing `}` is handled without an ICE" { no_ice(missing_close()) }
     then "a malformed ARM is handled without an ICE (the arm loop's own failure path)" {
         no_ice("fn f(n: int) -> int {\n    let v = match n {\n        0 -> \n        _ -> 2\n    }\n    return v\n}")
     }

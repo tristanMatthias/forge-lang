@@ -126,7 +126,7 @@ export fn defer_scope_enter(ctx: Ctx) -> int {
 export fn defer_scope_exit(ctx: Ctx, env: List<VarBinding>, base: int) -> Result<Ctx, string> {
     if ctx.defers.length <= base { return ok_ctx(ctx) }
     if !ctx.has_terminator() {
-        emit_frames_above(ctx, env, base, false)?
+        emit_frames_above(ctx, env, base)?
     }
     ok_ctx(ctx.with_defers(defers_without_frames_above(ctx.defers, base)))
 }
@@ -141,23 +141,23 @@ export fn defer_scope_exit(ctx: Ctx, env: List<VarBinding>, base: int) -> Result
 /// `errdefer` is skipped: leaving a loop via `break` is a normal exit,
 /// not an error one.
 export fn emit_defers_above(ctx: Ctx, env: List<VarBinding>, base: int) -> Result<int, string> {
-    emit_frames_above(ctx, env, base, false)
+    emit_frames_above(ctx, env, base)
 }
 
 /// LIFO worker for the two scope-exit entry points above. Walks
-/// tail-to-head down to `base`, running only `Frame` (and `ErrFrame`
-/// when `is_error`) — `Release` entries belong to the function-exit
-/// walk and are stepped over.
-fn emit_frames_above(ctx: Ctx, env: List<VarBinding>, base: int, is_error: int) -> Result<int, string> {
+/// tail-to-head down to `base`, running only `Frame` — `ErrFrame` is
+/// stepped over because every scope exit here is a NORMAL one (see
+/// `defer_scope_exit`'s rules: an error leaves through `return`, which
+/// walks the whole stack via `emit_defers_on_error`), and `Release`
+/// entries belong to the function-exit walk.
+fn emit_frames_above(ctx: Ctx, env: List<VarBinding>, base: int) -> Result<int, string> {
     mut i = ctx.defers.length - 1
     while i >= base {
         match ctx.defers[i] {
             .Frame(body) -> {
                 emit_defer_body(ctx, env, body, "defer")?
             }
-            .ErrFrame(body) -> {
-                if is_error { emit_defer_body(ctx, env, body, "errdefer")? }
-            }
+            .ErrFrame(_) -> {}
             .Release(_, _, _) -> {}
         }
         i = i - 1
@@ -190,7 +190,7 @@ fn defers_without_frames_above(stack: List<DeferEntry>, base: int) -> List<Defer
 /// LIFO worker shared by `emit_defers` and `emit_defers_on_error`.
 /// Walks the List<DeferEntry> tail-to-head — push appended so the
 /// most-recently-declared entry sits at the largest index.
-fn emit_stack_filtered(ctx: Ctx, env: List<VarBinding>, stack: List<DeferEntry>, is_error: int) -> Result<int, string> {
+fn emit_stack_filtered(ctx: Ctx, env: List<VarBinding>, stack: List<DeferEntry>, is_error: bool) -> Result<int, string> {
     mut i = stack.length - 1
     while i >= 0 {
         match stack[i] {

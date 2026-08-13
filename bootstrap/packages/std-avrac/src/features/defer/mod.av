@@ -1,7 +1,7 @@
 // defer / errdefer — scope-exit execution, LIFO (spec Axis 9.4 / 12.7).
 // The definitions carry the feature whole: syntax, docs, editor surface,
 // and hooks. The shared DeferStack machinery (unwound by return / `?` /
-// fall-through emitters) stays in defer_stmt/codegen.av.
+// fall-through emitters) stays in defer/codegen.av.
 use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
 use features.eval.{ok_result, value_null}
 use resolve.{resolve_expr}
@@ -57,7 +57,7 @@ and error propagation via `?`.
             match s { .Defer(b) -> resolve_body(r, b), _ -> r },
         check_stmt = (tc: TC, s: Stmt) ->
             match s { .Defer(b) -> check_effect_body(tc, b), _ -> tc },
-        // The eval path doesn't model deferred execution yet.
+        // The eval path doesn't model deferred execution yet (t-amoj).
         eval_stmt = (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
         gram_in_spine = true,
     }
@@ -87,6 +87,7 @@ reverses correctly on cleanup:
             match s { .Errdefer(b) -> resolve_body(r, b), _ -> r },
         check_stmt = (tc: TC, s: Stmt) ->
             match s { .Errdefer(b) -> check_effect_body(tc, b), _ -> tc },
+        // The eval path doesn't model deferred execution yet (t-amoj).
         eval_stmt = (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
         gram_in_spine = true,
     }

@@ -22,7 +22,8 @@
 // With both fixed, W4's substitution is observable: arm bodies type-
 // check, and the binding's substituted type is enforced.
 
-extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_read_file}
+use @std.avrac.test_runner.{write_fixture}
 
 enum WResult<T, E> {
     Ok(value: T)
@@ -50,13 +51,36 @@ spec "pattern binding substitutes generic type-args (so07.7.4)" {
     then "match on Err(42) binds error as int, runtime arithmetic flows" {
         wresult_unwrap_err(WResult.Err(42)) == 40
     }
-    then "binding's substituted type observable via strict-arg warning" {
-        // AVRA_STRICT_ARGS=1 + the W4 substitution: `value` binds as
-        // int from FResult<int, _>.Ok, then `want_str(value)` fires
-        // F9004 because int is not assignable to string. Without W4
-        // the binding would be Unknown, and the strict-arg check
-        // skips Unknown (still being resolved). Without the .Match-
-        // dispatch fix the arm body wouldn't be type-checked at all.
-        avra_shell_exec("cat > /tmp/avra_w4_observable_fixture.av <<'EOF'\nenum FResult<T, E> {\n    Ok(value: T)\n    Err(error: E)\n}\n\nfn want_str(s: string) -> string { s }\n\nfn misuse(r: FResult<int, int>) -> string {\n    match r {\n        .Ok(value) -> want_str(value)\n        .Err(_) -> \"\"\n    }\n}\n\nfn main() -> int { 0 }\nEOF\nAVRA_STRICT_ARGS=1 ./build/bs2 check /tmp/avra_w4_observable_fixture.av 2>&1 || true").contains("F9004")
+    then "binding's substituted type is enforced (F1000) and strict-args sees it (F9004)" {
+        // The W4 substitution binds `value` as int from FResult<int, _>.Ok,
+        // and `want_str(value)` then trips BOTH checks: the gating arg check
+        // rejects int→string (F1000 layout conflict — measured: the check
+        // exits non-zero even without strict args), and AVRA_STRICT_ARGS=1
+        // additionally surfaces F9004. Without W4 the binding would be
+        // Unknown and both checks skip Unknown (still being resolved);
+        // without the .Match-dispatch fix the arm body wouldn't be
+        // type-checked at all. The old `|| true` capture asserted only
+        // F9004 and never noticed the fixture is genuinely REJECTED.
+        let fixture = "/tmp/avra_w4_observable_fixture.av"
+        let log = "/tmp/avra_w4_observable_fixture.log"
+        write_fixture(fixture,
+            "enum FResult<T, E> {\n" +
+            "    Ok(value: T)\n" +
+            "    Err(error: E)\n" +
+            "}\n" +
+            "fn want_str(s: string) -> string { s }\n" +
+            "fn misuse(r: FResult<int, int>) -> string {\n" +
+            "    match r {\n" +
+            "        .Ok(value) -> want_str(value)\n" +
+            "        .Err(_) -> \"\"\n" +
+            "    }\n" +
+            "}\n" +
+            "fn main() -> int { 0 }\n")
+        let status = avra_shell_exec_status(
+            "AVRA_STRICT_ARGS=1 ./build/bs2 check '${fixture}' > '${log}' 2>&1")
+        let out = avra_selfhost_read_file(log)
+        status != 0
+            && out.contains("`want_str` parameter `s`: `int` is not assignable to `string`")
+            && out.contains("F9004")
     }
 }

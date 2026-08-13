@@ -1,5 +1,5 @@
 // WHY: t-47hc.8 — the fragment COMPOSITION seam. Each language feature owns its
-// own grammar fragment (e.g. features/match_expr/grammar.av `avra_pat_grammar`);
+// own grammar fragment (e.g. features/match `avra_pat_grammar`);
 // this module assembles an ORDERED list of fragments into the single
 // whole-language Grammar the executor/emitter consume. `compose_fragments` is
 // the N-ary generalisation of the old pairwise `compose_grammars` (now a thin

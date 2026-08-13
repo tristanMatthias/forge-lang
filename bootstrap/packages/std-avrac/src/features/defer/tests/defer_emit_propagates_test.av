@@ -2,7 +2,7 @@
 // (t-dy1j). This is the guard for that, and it is a guard that can fail —
 // see the mutation record at the bottom.
 //
-// Every emitter in `defer_stmt/codegen.av` used to call `ctx.emit(env, body)`
+// Every emitter in `defer/codegen.av` used to call `ctx.emit(env, body)`
 // and throw the `Result` away. A deferred body that could not be emitted was
 // dropped on the floor: no diagnostic, no F-code, exit 0. The deferred call
 // simply did not appear in the output and the program ran as though the
