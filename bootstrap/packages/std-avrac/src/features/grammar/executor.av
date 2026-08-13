@@ -5736,7 +5736,7 @@ export fn mk_use_pkg(st: PState, pkg: List<Token>, segs: List<Token>, names: Lis
 /// the surrounding match body at expansion time. Legal only inside a quote body, which is
 /// the `@when(in_quote_body)` on the rule; the marker has no meaning outside one.
 ///
-/// The ENCODING is the hand's, verbatim (features/match_expr/parser.av): a SENTINEL arm
+/// The ENCODING is the historical hand parser's, verbatim: a SENTINEL arm
 /// whose pattern is `TypePattern("__quote_splice_arms__", "")` and whose body is the
 /// splice expression. The quote lowerer (`construct_match_arm_list`) recognises that exact
 /// type name and emits `list_concat` over the segments between sentinels — so this must
@@ -5878,7 +5878,7 @@ export fn mk_match(st: PState, subject_cv: CapVal, arms_cv: CapVal) -> CapVal {
 }
 
 /// t-47hc.29 — the match TABLE's arms, desugared exactly as the hand
-/// `parse_match_table_arms` / `parse_match_table_rows` do (features/match_expr/parser.av).
+/// `parse_match_table_arms` / `parse_match_table_rows` did in the hand parser.
 ///
 /// The header's FIRST column names the PATTERN column and is DISCARDED; the rest are the
 /// value columns, so `#cols` IS the hand's `value_count = header_count - 1`. That identity

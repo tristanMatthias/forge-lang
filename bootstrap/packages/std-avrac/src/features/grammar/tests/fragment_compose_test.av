@@ -1,14 +1,14 @@
 // WHY: t-47hc.8 — proves the per-feature grammar-fragment COMPOSITION seam
 // (features/grammar/compose.av). Fragments authored in DIFFERENT feature modules
 // (the expression ladder in features.grammar, the pattern grammar in
-// features.match_expr) compose into one Grammar: the rule set is their union,
+// features/match.av) compose into one Grammar: the rule set is their union,
 // the first fragment's start rule leads, and rule-name clashes across fragments
 // are detected. This is the mechanism the whole modular-grammar epic sits on —
 // adding a feature adds only its fragment; the composer joins them, no central
-// edit. The cross-MODULE compose (grammar + match_expr) is the load-bearing
+// edit. The cross-MODULE compose (grammar + match) is the load-bearing
 // assertion: fragments genuinely live with their owning features.
 use @std.avrac.features.grammar.{compose_fragments, compose_grammars, fragment_rule_conflicts, avra_expr_dispatch_grammar, avra_type_grammar, Grammar, parse_grammar}
-use @std.avrac.features.match_expr.{avra_pat_grammar}
+use @std.avrac.features.{avra_pat_grammar}
 
 // Two tiny fragments that intentionally CLASH on a rule name (`shared`), to
 // exercise the conflict detector. Authored via the `grammar { }` surface (parsed
@@ -34,7 +34,7 @@ spec "t-47hc.8: per-feature grammar fragments compose cross-module" {
         let c = compose_fragments([e])
         c.rules.length == e.rules.length && c.name == e.name
     }
-    then "expr (features.grammar) + pat (features.match_expr) compose; rule set is the union" {
+    then "expr (features.grammar) + pat (features/match.av) compose; rule set is the union" {
         let e = avra_expr_dispatch_grammar()
         let p = avra_pat_grammar()
         let c = compose_fragments([e, p])

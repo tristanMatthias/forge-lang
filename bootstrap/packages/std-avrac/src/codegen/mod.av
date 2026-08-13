@@ -19,7 +19,7 @@ use features.let_stmt.{emit_var_decl}
 use features.if_stmt.{emit_if}
 use features.list_lit.{emit_list_reduce_typed, emit_list_method_call}
 use features.map_lit.{emit_map_method_call}
-use features.match_expr.{emit_match_expr}
+use features.{emit_match_expr}
 use features.trait_decl.{emit_trait_dispatch, box_for_trait, resolve_concrete_type_name, push_vtable_entries_call}
 use features.fn_decl.{emit_call, emit_call_named, emit_method_call}
 use features.error_propagation.{Result}

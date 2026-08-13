@@ -19,7 +19,6 @@ use features.let_stmt.{let_destructure_feature, let_keyword_feature, const_keywo
 use features.list_comp.{list_comp_feature}
 use features.list_lit.{list_lit_feature}
 use features.map_lit.{map_lit_feature}
-use features.match_expr.{match_feature, when_feature, avra_pat_grammar, avra_match_arm_grammar}
 use features.modules.{mod_feature, use_feature}
 use features.null_safety.{null_coalesce_feature, optional_chain_feature, optional_method_call_feature, try_feature, catch_feature}
 use features.parallel_stmt.{parallel_feature}
@@ -65,6 +64,10 @@ component LanguageFeature {
         title: string = "",
         docs: string = "",
         gram: Grammar = no_grammar(),
+        // TRANSITION (dies with t-47hc.8): true = this feature's rules are
+        // still duplicated inside the central grammar views (drift-guarded,
+        // NOT composed); false = `gram` joins feature_grammar_fragments.
+        gram_in_spine: bool = false,
         diags: List<DiagSpec> = [],
         snippet: string = "",
         expr_tag: Expr? = null,
@@ -99,8 +102,6 @@ export fn init_features(reg: Registry) {
     register(reg, parallel_feature())
 
     // ── Expressions ──
-    register(reg, match_feature())
-    register(reg, when_feature())
     register(reg, closures_feature())
     register(reg, is_keyword_feature())
     register(reg, in_operator_feature())
@@ -152,31 +153,17 @@ export fn init_features(reg: Registry) {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang()]
 }
 
-/// t-47hc.8: the per-feature grammar fragments, collected in ONE place —
-/// the grammar-side mirror of `init_features` above. Each entry is a fragment a
-/// feature OWNS in its own `features/<name>/grammar.av` (patterns live with
-/// `match_expr` today, via `avra_pat_grammar`). This is the composition step's
-/// input on the feature side: when a family's hand leaf migrates into its
-/// feature's fragment (Phase 3), the feature is added here with ONE line — never
-/// a central grammar-file edit. Assembled into the whole-language grammar with
-/// `features.grammar.compose_fragments`, alongside the shared cross-cutting base
-/// (the expression precedence ladder + the type-atom spine — `avra_expr_grammar`
-/// / `avra_type_grammar` — which no single feature owns). The collected
-/// fragments are rule-disjoint from each other and from the shared base
-/// (guarded by `fragment_rule_conflicts` in the registry spec), so the assembly
-/// is a clean union with a well-defined start symbol.
+/// The per-feature grammar fragments, folded straight out of the feature
+/// DEFINITIONS: every LanguageFeature whose `gram` composes (not spine-
+/// duplicated, non-empty), in registration order, plus the decl-keyword
+/// fragments (collected in features/grammar/avra_grammar.av — the one list
+/// the whole-program grammar composes from, so the two views cannot drift).
+/// Rule-disjointness is guarded by `fragment_rule_conflicts` in the specs.
 export fn feature_grammar_fragments() -> List<Grammar> {
-    mut all: List<Grammar> = [
-        avra_pat_grammar(),        // match_expr — pattern syntax (`pattern_or` …)
-        avra_match_arm_grammar(),  // match_expr — match/when ARM syntax (`match_arm`, `match_when_arm`)
-    ]
-    // t-47hc slice 9 — the DECLARATION-keyword fragments (fn / type / enum /
-    // trait / impl / use+mod), each owned by its feature. Collected from the ONE
-    // list in features/grammar/avra_grammar.av rather than restated here, so the
-    // whole-program grammar and this registry view cannot drift apart.
+    mut all = [f.gram for f in language_features() if !f.gram_in_spine && f.gram.rules.length > 0]
     for g in feature_decl_grammar_fragments() {
         all.push(g)
     }
