@@ -541,6 +541,25 @@ export type GDiag = { code: string, msg: string, at: int, byte: int, end_byte: i
 /// worse — see `seed_lex_diags`. The interleave happens in `boundary_diags`.
 export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, host: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool, lex_diags: List<LexDiag>, first_pos: int }
 
+/// One feature-supplied build lowering (t-kd4y.3): a definition that declares
+/// `-> Name(args)` in its gram can OWN the lowering too, instead of the engine
+/// carrying it in the central tables. `build` is the executor's entry — the
+/// normalized ABI every central arm already reduces to (capture values in
+/// declaration order). `module` + `export_name` are how EMIT spells the same
+/// lowering in a generated parser: `export_name(st, [args…])` plus a derived
+/// `use module.{export_name}` header line. `kind` mirrors `build_kind`'s
+/// classification and `arity` the reference's capture count — both checked
+/// against the referencing grammar when the registry is built
+/// (features/lang.av), so a mismatch is a startup error, not a parse surprise.
+export type BuilderBind = {
+    name: string,
+    kind: string,
+    arity: int,
+    module: string,
+    export_name: string,
+    build: fn(PState, List<CapVal>) -> CapVal,
+}
+
 /// One in-place token-stream mutation (today: only `split_gt`'s `>>` → `>`),
 /// journalled so a rollback can UNDO it. The stream is SHARED — across the
 /// static parse, the interpreter fallback re-parse, and the type/pattern flips
@@ -3954,6 +3973,19 @@ fn retype_self_param(st: PState, params: List<ParamEntry>, target: string) -> Li
 }
 
 fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> CapVal {
+    // Feature-supplied lowerings first (t-kd4y.3): a definition that carries
+    // its own builders owns this name, and the central arms below shrink as
+    // features migrate. The manifest rides the store's registry (the
+    // program-wide parse-registry seam — NOT `st.host`, which is lazy), so
+    // an empty manifest costs one null-checked method call. Linear scan:
+    // the manifest is small; index it if the wide migration makes it hot.
+    for b in st.store.parse_features().builder_binds {
+        if b.name == name && args.length == b.arity {
+            mut vals: List<CapVal> = []
+            for a in args { vals.push(env.get(a)) }
+            return b.build(st, vals)
+        }
+    }
     // Dispatch on the build name — one arm per grammar `-> Build(...)`, the
     // one target-specific seam (mirroring the derive engine's pluggable
     // emitters). Each arm is arity-guarded (`if args.length == N`); an

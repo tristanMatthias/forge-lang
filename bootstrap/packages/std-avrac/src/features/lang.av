@@ -8,7 +8,8 @@
 // after the user ratifies the shape.
 
 use core.{feature_new, Registry, register}
-use features.grammar.{grammar_literals, grammar_checked, compose_fragments, Grammar, GrammarParse, text_is_word}
+use features.grammar.{grammar_literals, grammar_checked, grammar_startup_fail, compose_fragments, Grammar, GrammarParse, text_is_word}
+use features.grammar.{grammar_build_refs, central_build_kind, BuilderBind}
 use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
@@ -16,9 +17,12 @@ use list_ops.{list_dedup_str}
 /// point where EVERY definition's grammar is validated: a malformed
 /// `grammar { }` block hard-fails here at startup (F9999), spine-duplicated
 /// and composing grams alike — composition filters must never be the only
-/// path to the check, or a broken grammar silently vanishes instead.
+/// path to the check, or a broken grammar silently vanishes instead. The
+/// builder manifest is validated at the same gate (t-kd4y.3).
 export fn register_lang(reg: Registry, f: LanguageFeature) {
     let _validated = feature_gram(f)
+    let err = builder_validation_error(f)
+    if err != "" { grammar_startup_fail(err) }
     register(reg, feature_new(f.name) with {
         expr_tag: f.expr_tag,
         stmt_tag: f.stmt_tag,
@@ -52,6 +56,62 @@ export fn composed(fragments: List<Grammar>) -> GrammarParse {
 /// identifier-shaped literal terminals (`"defer"` yes, `"+"` no).
 export fn feature_keywords(f: LanguageFeature) -> List<string> {
     [t for t in grammar_literals(feature_gram(f)) if text_is_word(t)] |> list_dedup_str
+}
+
+/// t-kd4y.3 compose-time builder validation, as a pure predicate ("" = ok)
+/// so the specs can exercise every rejection without a child process;
+/// `register_lang` hard-fails on the first nonempty answer. Three contracts:
+///
+///   1. Every build name `f.gram` references RESOLVES — feature-supplied
+///      first, the engine's central `build_kind` rows as the fallback. An
+///      unresolved name would otherwise surface mid-parse as an error node.
+///   2. Every supplied builder is COHERENT with the grammar that carries it:
+///      referenced at least once (an orphan is a lowering nothing can reach)
+///      and arity-consistent with every reference.
+///   3. A supplied builder that shadows a central name must agree with
+///      `build_kind` about its result kind — the accumulator-typing
+///      classification emit relies on at grammar-analysis time.
+export fn builder_validation_error(f: LanguageFeature) -> string {
+    builder_validation_error_for(f.name, feature_gram(f), f.builders)
+}
+
+/// The value-level core of the validation, so the specs can feed toy grams
+/// and manifests directly — a test shard cannot instantiate the component
+/// cross-package, but it can build these values.
+export fn builder_validation_error_for(fname: string, gram: Grammar, builders: List<BuilderBind>) -> string {
+    let refs = grammar_build_refs(gram)
+    for b in builders {
+        mut referenced = false
+        for r in refs {
+            if r.name == b.name {
+                referenced = true
+                if r.argc != b.arity {
+                    return "feature `${fname}`: rule `${r.rule}` calls `${b.name}` with ${r.argc} arg(s) but its builder declares arity ${b.arity}"
+                }
+            }
+        }
+        if !referenced {
+            return "feature `${fname}`: builder `${b.name}` is supplied but no rule in its gram references it"
+        }
+        // central_build_kind, not build_kind: the analysis wrapper defaults
+        // unknown names to "expr", which would both hide unresolved
+        // references and false-conflict every non-expr feature builder.
+        let central = central_build_kind(b.name)
+        if central != "" && central != b.kind {
+            return "feature `${fname}`: builder `${b.name}` declares kind `${b.kind}` but the engine classifies it `${central}`"
+        }
+    }
+    for r in refs {
+        if central_build_kind(r.name) == "" && !supplies(builders, r.name) {
+            return "feature `${fname}`: rule `${r.rule}` references build `${r.name}` (${r.argc} arg(s)) which resolves to no builder — supply it in `builders` or use an engine build"
+        }
+    }
+    ""
+}
+
+fn supplies(builders: List<BuilderBind>, name: string) -> bool {
+    for b in builders { if b.name == name { return true } }
+    false
 }
 
 

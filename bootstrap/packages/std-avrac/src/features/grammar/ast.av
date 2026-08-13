@@ -136,6 +136,43 @@ fn node_literals(acc: List<string>, node: GNode) -> List<string> {
     out
 }
 
+/// One `-> Name(args)` build reference in a grammar: the rule it appears in
+/// (for diagnostics), the build name, and its argument count. The unit
+/// `grammar_build_refs` collects and builder validation (features/lang.av
+/// register_lang) checks resolution against — t-kd4y.3.
+export type BuildRef = { rule: string, name: string, argc: int }
+
+/// Every `.Call` build reference anywhere in `g`, in declaration order,
+/// duplicates kept (one per referencing sequence). The sibling of
+/// `grammar_literals`: builds sit on sequences (`GSeq.build`), including
+/// sequences nested inside `Group`s, so the walk covers both.
+export fn grammar_build_refs(g: Grammar) -> List<BuildRef> {
+    mut out: List<BuildRef> = []
+    for r in g.rules { out = node_build_refs(out, r.name, r.body) }
+    out
+}
+
+fn node_build_refs(acc: List<BuildRef>, rule: string, node: GNode) -> List<BuildRef> {
+    mut out = acc
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                match b.build {
+                    .Call(name, args) -> out.push(BuildRef { rule: rule, name: name, argc: args.length })
+                    _ -> {}
+                }
+                for item in b.items {
+                    match item.prim {
+                        .Group(inner) -> out = node_build_refs(out, rule, inner)
+                        _ -> {}
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 export fn build_rule_index(rules: List<Rule>) -> ptr {
     let m = avra_map_new_cstr()
     mut i = 0
@@ -777,7 +814,11 @@ export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
     }
 }
 
-export fn build_kind(bn: string) -> string {
+/// The engine's central build-name → result-kind rows, EXACT: "" means the
+/// engine does not know this name. The builder-manifest validation
+/// (features/lang.av) needs the exact answer; `build_kind` below keeps the
+/// historical lenient "expr" default for the grammar-analysis callers.
+export fn central_build_kind(bn: string) -> string {
     if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkIfLet" || bn == "MkQuote" || bn == "MkQuoteType" || bn == "MkQuoteArm" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkSpliceStruct" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkGrammarBlock" || bn == "MkTaggedTemplate" || bn == "MkTableHeader" || bn == "MkTableRow" || bn == "MkTableLit" || bn == "MkPrimaryFail" { return "expr" }
     if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" || bn == "MkIfLetStmt" { return "stmt" }
     if bn == "MkArmReturn" { return "expr" }
@@ -819,7 +860,17 @@ export fn build_kind(bn: string) -> string {
     if bn == "MkEVariant" { return "variant" }
     if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" || bn == "OptPresent" || bn == "OptAbsent" { return "pat" }
     if bn == "TyUnion" || bn == "MkFn" || bn == "TyDyn" || bn == "TyList" || bn == "TyParen" || bn == "MkNamed" || bn == "MkQualified" { return "type" }
-    "expr"
+    ""
+}
+
+/// Result-kind classification with the historical default: a name the
+/// central rows don't list classifies as "expr". Grammar analysis
+/// (accumulator typing, alternation kind inference) keeps this leniency;
+/// exact membership questions go to `central_build_kind`.
+export fn build_kind(bn: string) -> string {
+    let k = central_build_kind(bn)
+    if k == "" { return "expr" }
+    k
 }
 
 /// True iff the primary is a zero-width predicate (emit side) — `@when(flag)` mode read

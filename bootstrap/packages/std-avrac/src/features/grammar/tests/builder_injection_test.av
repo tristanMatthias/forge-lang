@@ -1,0 +1,148 @@
+// WHY: t-kd4y.3 slice A — the grammar-DSL builder-injection MECHANISM.
+// `grammar_build_refs` collects every `-> Name(args)` reference a grammar
+// makes; `builder_validation_error_for` (the register_lang gate's core)
+// rejects a manifest that is unresolved, orphaned, arity-drifted, or
+// kind-conflicting as a STARTUP error, never a mid-parse surprise; and
+// `builder_import_lines_for` derives the generated-parser import header
+// from the manifest. The empty-manifest identity (production today) is
+// pinned by emit-gen-check + diff-test; the executor's feature path goes
+// live with the MkDefer/MkErrdefer migration (slice B), which is its proof.
+//
+// Toys are (gram, manifest) VALUES, not LanguageFeature instances — a test
+// shard sees the component only through package metadata, which does not
+// register its instance-block parse form. The value-level cores exist for
+// exactly this seam.
+
+// parse_grammar: the `grammar { }` expression desugars to it — required in
+// scope wherever a block appears, same as fragment_compose_test.
+use @std.avrac.features.grammar.{grammar_build_refs, builder_import_lines_for, grammar_checked, parse_grammar, Grammar, BuilderBind, PState, CapVal}
+use @std.avrac.features.{builder_validation_error_for, feature_builders}
+
+/// ABI-shaped no-op — never invoked; these specs exercise validation and
+/// derivation, not execution (slice B's live pair covers that).
+fn nil_build(st: PState, vals: List<CapVal>) -> CapVal { CapVal.Nil }
+
+fn bind(name: string, kind: string, arity: int, module: string, export_name: string) -> BuilderBind {
+    BuilderBind { name: name, kind: kind, arity: arity, module: module, export_name: export_name, build: nil_build }
+}
+
+/// Two rules, a one-arg build over a captured rule ref and a nullary one.
+fn toy_gram() -> Grammar {
+    let g = grammar {
+        top  = a:leaf -> Phantom(a)
+        leaf = "ztok" -> Zed()
+    }
+    grammar_checked(g)
+}
+
+fn toy_binds() -> List<BuilderBind> {
+    [
+        bind("Phantom", "expr", 1, "features.toy", "phantom_build"),
+        bind("Zed", "expr", 0, "features.toy", "zed_build"),
+    ]
+}
+
+/// References only an engine build — the central-fallback control.
+fn central_gram() -> Grammar {
+    let g = grammar { top = "break" -> Break() }
+    grammar_checked(g)
+}
+
+fn no_binds() -> List<BuilderBind> {
+    let empty: List<BuilderBind> = []
+    empty
+}
+
+spec "t-kd4y.3: grammar_build_refs collects every build reference" {
+    then "each `-> Name(args)` yields (rule, name, argc), in declaration order" {
+        let refs = grammar_build_refs(toy_gram())
+        refs.length == 2
+            && refs[0].rule == "top" && refs[0].name == "Phantom" && refs[0].argc == 1
+            && refs[1].rule == "leaf" && refs[1].name == "Zed" && refs[1].argc == 0
+    }
+    then "alternation branches each contribute their build" {
+        let g = grammar {
+            top = "atok" -> Alpha() | "btok" -> Beta()
+        }
+        let refs = grammar_build_refs(grammar_checked(g))
+        refs.length == 2 && refs[0].name == "Alpha" && refs[1].name == "Beta"
+    }
+}
+
+spec "t-kd4y.3: builder validation gates the manifest at registry build" {
+    then "a fully-supplied manifest validates clean" {
+        builder_validation_error_for("toy", toy_gram(), toy_binds()) == ""
+    }
+    then "engine builds need no supplying — the central fallback resolves them" {
+        builder_validation_error_for("toy", central_gram(), no_binds()) == ""
+    }
+    then "a reference no builder resolves is rejected, naming rule and build" {
+        let err = builder_validation_error_for("toy", toy_gram(), no_binds())
+        err.contains("toy") && err.contains("top") && err.contains("Phantom")
+            && err.contains("resolves to no builder")
+    }
+    then "an orphan builder (supplied, never referenced) is rejected" {
+        let orphan = [bind("Phantom", "expr", 0, "features.toy", "phantom_build")]
+        let err = builder_validation_error_for("toy", central_gram(), orphan)
+        err.contains("Phantom") && err.contains("no rule")
+    }
+    then "an arity drift between rule and builder is rejected" {
+        let drifted = [
+            bind("Phantom", "expr", 2, "features.toy", "phantom_build"),
+            bind("Zed", "expr", 0, "features.toy", "zed_build"),
+        ]
+        let err = builder_validation_error_for("toy", toy_gram(), drifted)
+        err.contains("1 arg(s)") && err.contains("arity 2")
+    }
+    then "shadowing a central name with a different kind is rejected" {
+        let g = grammar {
+            top  = a:leaf -> MkDefer(a)
+            leaf = "ztok" -> Zed()
+        }
+        let shadow = [
+            bind("MkDefer", "expr", 1, "features.toy", "defer_build"),
+            bind("Zed", "expr", 0, "features.toy", "zed_build"),
+        ]
+        let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
+        err.contains("MkDefer") && err.contains("`expr`") && err.contains("`stmt`")
+    }
+}
+
+spec "t-kd4y.3: generated import headers derive from the manifest" {
+    then "referenced binds group per owning module; unreferenced ones stay out" {
+        let binds = [
+            bind("Phantom", "expr", 1, "features.toy", "phantom_build"),
+            bind("Zed", "expr", 0, "features.toy", "zed_build"),
+            bind("Unused", "expr", 0, "features.other", "unused_build"),
+        ]
+        builder_import_lines_for(toy_gram(), binds) == "use features.toy.{phantom_build, zed_build}\n"
+    }
+    then "two owning modules derive two lines" {
+        let binds = [
+            bind("Phantom", "expr", 1, "features.toy", "phantom_build"),
+            bind("Zed", "expr", 0, "features.other", "zed_build"),
+        ]
+        builder_import_lines_for(toy_gram(), binds)
+            == "use features.toy.{phantom_build}\nuse features.other.{zed_build}\n"
+    }
+    then "an empty manifest derives nothing — the pre-injection header identity" {
+        builder_import_lines_for(toy_gram(), no_binds()) == ""
+    }
+}
+
+spec "t-kd4y.3: the production manifest is duplicate-free" {
+    then "no build name is supplied by two features" {
+        let binds = feature_builders()
+        mut clean = true
+        mut i = 0
+        while i < binds.length {
+            mut j = i + 1
+            while j < binds.length {
+                if binds[i].name == binds[j].name { clean = false }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        clean
+    }
+}
