@@ -16,7 +16,7 @@
 // the ONLY default, never `else`, which `when { … }` DOES accept. Merging them widens the
 // language silently; duplicating them lets the copies drift into the same outcome. Being
 // ONE definition is the whole point, so that is what these specs pin.
-use @std.avrac.features.match_expr.{avra_match_arm_grammar}
+use @std.avrac.features.{avra_match_arm_grammar}
 use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, avra_stmt_flip_grammar, avra_decl_flip_grammar, fragment_rule_conflicts, render_grammar, emit_parser_source, Grammar}
 use @std.avrac.features.{feature_grammar_fragments}
 

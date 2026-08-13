@@ -14,7 +14,7 @@
 // `bash scripts/diagnose.sh --emit-regen-pat` to rewrite the checked-in file, then
 // commit it; the guard test fails until you do.
 
-use features.match_expr.grammar.{avra_pat_grammar}
+use features.{avra_pat_grammar}
 use features.grammar.{emit_parser_source_ex}
 
 /// The fixed import header of the production pattern static-parser module: exactly the

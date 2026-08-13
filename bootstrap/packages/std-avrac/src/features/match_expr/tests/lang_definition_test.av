@@ -1,0 +1,29 @@
+// The match/when LanguageFeature definitions (features/match.av). The load-
+// bearing pin: feature_grammar_fragments now folds OUT of the definitions,
+// and the composed result must still carry the pattern + arm rule sets the
+// hand-maintained list used to name. Also guards the instance-block `name`
+// override (the binding can't be the keyword `match`).
+use @std.avrac.features.{match_lang, when_lang, feature_grammar_fragments, feature_keywords}
+use @std.avrac.features.grammar.{render_grammar, compose_fragments}
+use @std.avrac.list_ops.{list_contains_str}
+
+spec "match as a LanguageFeature" {
+    then "the definition carries name, docs, and its owned diagnostic" {
+        let m = match_lang()
+        m.name == "match" && m.docs.contains("EXHAUSTIVE")
+            && m.diags.length == 1 && m.diags[0].code == "F9001"
+    }
+    then "when carries its surface and owns no rules of its own" {
+        let w = when_lang()
+        w.name == "match_when" && w.snippet.contains("when") && w.gram.rules.length == 0
+    }
+    then "the fragment fold serves the pattern + arm rules" {
+        let composed = render_grammar(compose_fragments(feature_grammar_fragments()))
+        composed.contains("pattern_or") && composed.contains("match_arm")
+            && composed.contains("match_when_arm") && composed.contains("variant_pat")
+    }
+    then "keywords derive from the owned rules" {
+        let kws = feature_keywords(match_lang())
+        list_contains_str(kws, "or") && list_contains_str(kws, "if") && list_contains_str(kws, "return")
+    }
+}

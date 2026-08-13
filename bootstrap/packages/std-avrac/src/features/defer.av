@@ -2,12 +2,6 @@
 // The definitions carry the feature whole: syntax, docs, editor surface,
 // and hooks. The shared DeferStack machinery (unwound by return / `?` /
 // fall-through emitters) stays in defer_stmt/codegen.av.
-//
-// (`LanguageFeature_new(..) with {..}` is the factory the schema expands
-// to; the `LanguageFeature defer {}` instance-block spelling needs this
-// PR's program-wide parse registry to reach the SEED first — the spelling
-// flips after the next seed cycle.)
-
 use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
 use features.eval.{ok_result, value_null}
 use resolve.{resolve_expr}
@@ -33,9 +27,10 @@ fn check_effect_body(tc: TC, body: ExprId) -> TC {
 }
 
 export fn defer_lang() -> LanguageFeature {
-    LanguageFeature_new("defer") with {
-        title: "defer — run an expression at scope exit",
-        docs: """
+    LanguageFeature defer_def {
+        name = "defer",
+        title = "defer — run an expression at scope exit",
+        docs = """
 `defer expr` runs `expr` when the enclosing scope exits, in LIFO order
 with respect to other `defer` / `errdefer` statements in the same scope.
 The expression's result is discarded — defers exist for side effects,
@@ -53,24 +48,27 @@ an `if` branch fires when that block exits, not at function return.
 Defers run on EVERY exit path: normal return, fall-through, `break`,
 and error propagation via `?`.
 """,
-        gram: grammar { defer_stmt = "defer" e:expression -> MkDefer(e) } |> grammar_checked,
-        snippet: r"defer ${1:cleanup()}",
-        stmt_tag: Stmt.Defer(ExprId(0)),
-        emit_stmt: (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->
+        gram = grammar { defer_stmt = "defer" e:expression -> MkDefer(e) } |> grammar_checked,
+        snippet = r"defer ${1:cleanup()}",
+        stmt_tag = Stmt.Defer(ExprId(0)),
+        emit_stmt = (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->
             match s { .Defer(b) -> stack_entry(ctx, env, DeferEntry.Frame(b)), _ -> err_sr("expected Defer") },
-        resolve_stmt: (r: Resolver, s: Stmt) ->
+        resolve_stmt = (r: Resolver, s: Stmt) ->
             match s { .Defer(b) -> resolve_body(r, b), _ -> r },
-        check_stmt: (tc: TC, s: Stmt) ->
+        check_stmt = (tc: TC, s: Stmt) ->
             match s { .Defer(b) -> check_effect_body(tc, b), _ -> tc },
         // The eval path doesn't model deferred execution yet.
-        eval_stmt: (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
+        eval_stmt = (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
+        gram_in_spine = true,
     }
+    defer_def
 }
 
 export fn errdefer_lang() -> LanguageFeature {
-    LanguageFeature_new("errdefer") with {
-        title: "errdefer — run an expression only on error exit",
-        docs: """
+    LanguageFeature errdefer_def {
+        name = "errdefer",
+        title = "errdefer — run an expression only on error exit",
+        docs = """
 `errdefer expr` is `defer` that only fires on ERROR exit — when the
 enclosing function returns `Result.Err(_)` (explicitly or propagated by
 `?`) or null from a nullable-returning fn. Success paths skip it. It
@@ -80,15 +78,17 @@ reverses correctly on cleanup:
     let buf = alloc_buf()
     errdefer free_buf(buf)     // only if a later step fails
 """,
-        gram: grammar { errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e) } |> grammar_checked,
-        snippet: r"errdefer ${1:rollback()}",
-        stmt_tag: Stmt.Errdefer(ExprId(0)),
-        emit_stmt: (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->
+        gram = grammar { errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e) } |> grammar_checked,
+        snippet = r"errdefer ${1:rollback()}",
+        stmt_tag = Stmt.Errdefer(ExprId(0)),
+        emit_stmt = (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->
             match s { .Errdefer(b) -> stack_entry(ctx, env, DeferEntry.ErrFrame(b)), _ -> err_sr("expected Errdefer") },
-        resolve_stmt: (r: Resolver, s: Stmt) ->
+        resolve_stmt = (r: Resolver, s: Stmt) ->
             match s { .Errdefer(b) -> resolve_body(r, b), _ -> r },
-        check_stmt: (tc: TC, s: Stmt) ->
+        check_stmt = (tc: TC, s: Stmt) ->
             match s { .Errdefer(b) -> check_effect_body(tc, b), _ -> tc },
-        eval_stmt: (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
+        eval_stmt = (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
+        gram_in_spine = true,
     }
+    errdefer_def
 }

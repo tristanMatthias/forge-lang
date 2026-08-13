@@ -899,7 +899,7 @@ export fn package_module_name(path: string) -> string {
 /// Skips uses that are already package-qualified (`@scope.pkg.…`)
 /// and uses already qualified to *this* package — those carry their
 /// anchor explicitly. The recursion goes into every Module body so
-/// sub-files (e.g. `features/match_expr/typeck.av`) get anchored
+/// sub-files (e.g. `features/match.av`) get anchored
 /// just like the package's top-level body does.
 fn qualify_uses_recursively(store: NodeStore, stmts: List<StmtId>, pkg_qual: string) -> List<StmtId> {
     list_map(stmts, (id: StmtId) -> qualify_use_in_stmt(store, id, pkg_qual))

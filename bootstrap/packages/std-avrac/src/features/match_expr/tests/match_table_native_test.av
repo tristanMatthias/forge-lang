@@ -1,5 +1,5 @@
 // WHY: t-47hc.29 — the `match_table` flip. The table sub-language is now GRAMMAR-NATIVE
-// (`match_table_stmt` in features/match_expr/grammar.av + `table_cell` in avra_expr_core),
+// (`match_table_stmt` in features/match.av + `table_cell` in avra_expr_core),
 // so `@hand(match_table)` is retired and --hand-leaves drops 8 -> 7.
 //
 // Two things were genuinely at risk here, and neither is visible in ordinary code:

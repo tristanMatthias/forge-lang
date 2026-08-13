@@ -9,7 +9,7 @@
 
 use @std.avrac.features.grammar.{emit_parser_source}
 // t-47hc.8: the pattern grammar fragment is owned by the match_expr feature.
-use @std.avrac.features.match_expr.{avra_pat_grammar}
+use @std.avrac.features.{avra_pat_grammar}
 
 fn emit_all() -> string {
     emit_parser_source(avra_pat_grammar())

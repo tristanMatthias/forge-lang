@@ -2369,7 +2369,7 @@ AVEOF
 
 # t-47hc.4.4 (Phase 3d, pattern half) — regenerate the CHECKED-IN production PATTERN
 # static parser (packages/std-avrac/src/parse/gen_pat_parser.av) from avra_pat_grammar().
-# Run this after editing the pattern grammar (features/match_expr/grammar.av); the guard
+# Run this after editing the pattern grammar (features/match.av); the guard
 # test parse/tests/gen_pat_parser_regen_test.av fails until the file is regenerated and
 # committed. Single source of truth: emit_pat_parser_file (gen_pat_file.av). Sibling of
 # --emit-regen-expr / --emit-regen-decl / --emit-regen-type.
@@ -2562,7 +2562,7 @@ mode_emit_gen_check() {
 // parse fns + the differential harness that compares the generated parser's
 // tree to the hand parser's over the §2 corpus.
 use @std.avrac.features.grammar.{avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, emit_parser_source}
-use @std.avrac.features.match_expr.{avra_pat_grammar}
+use @std.avrac.features.{avra_pat_grammar}
 use @std.avrac.core.{avra_selfhost_write_file}
 
 // The expression and statement harnesses render COMPOSED interpreter views
@@ -2661,7 +2661,7 @@ fn stmt_harness_block() -> string {
 fn pat_imports_block() -> string {
     "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_pat, capval_to_pat_list, capval_tok_text, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks, run_grammar_pat}\n" +
     "use @std.avrac.parse.{parser_new}\n" +
-    "use @std.avrac.features.match_expr.{avra_pat_grammar}\n" +
+    "use @std.avrac.features.{avra_pat_grammar}\n" +
     "use @std.avrac.core.{Pattern, PatId, ValueType, NodeStore, render_pat_id, pattern_optional_present, pattern_optional_absent}\n\n"
 }
 

@@ -2761,7 +2761,7 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
         // predicate used by the expression dispatch itself.
         if name == "expression" { return "tok_starts_expr_leaf(st.cur())" }
         if name == "pattern_or" { return "tok_starts_pattern(st.cur())" }
-        // The shared match-ARM fragment (features/match_expr/grammar.av) is DEFINED in the
+        // The shared match-ARM fragment (features/match.av) is DEFINED in the
         // declaration dispatch view and referenced from the expression view's `match_expr`.
         // Both generated parsers live in the `parse/` module namespace, which MERGES — so
         // the expression parser calls the declaration parser's parse_match_arm directly,
