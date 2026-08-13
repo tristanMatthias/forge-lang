@@ -10,8 +10,8 @@ use core.{Expr, Pattern, Stmt, ValueType, VarBinding, env_extend, env_lookup, fi
 
 use core.{build_registry, dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit, registry_new}
 use features.closures.{emit_closure_call_typed, emit_indirect_call, emit_indirect_call_from_global, emit_indirect_call_typed, emit_indirect_call_value, emit_typed_lambda_arg, emit_lambda_typed, emit_expected}
-use features.defer_stmt.{emit_defers, emit_defers_on_error}
-use features.defer_stmt.{defer_scope_enter, defer_scope_exit, emit_defers_above}
+use features.defer.{emit_defers, emit_defers_on_error}
+use features.defer.{defer_scope_enter, defer_scope_exit, emit_defers_above}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_optional_coerce}
 use features.fn_decl.{emit_function_bodies}
@@ -19,7 +19,7 @@ use features.let_stmt.{emit_var_decl}
 use features.if_stmt.{emit_if}
 use features.list_lit.{emit_list_reduce_typed, emit_list_method_call}
 use features.map_lit.{emit_map_method_call}
-use features.match_expr.{emit_match_expr}
+use features.match.{emit_match_expr}
 use features.trait_decl.{emit_trait_dispatch, box_for_trait, resolve_concrete_type_name, push_vtable_entries_call}
 use features.fn_decl.{emit_call, emit_call_named, emit_method_call}
 use features.error_propagation.{Result}

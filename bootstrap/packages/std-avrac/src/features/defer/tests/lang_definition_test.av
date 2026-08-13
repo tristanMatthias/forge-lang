@@ -3,7 +3,7 @@
 // declared grammar, and the declared rules stay in lockstep with the
 // production whole-program grammar — the drift guard until grammar
 // composition consumes the definitions directly (t-kd4y follow-up).
-use @std.avrac.features.defer_stmt.{defer_lang, errdefer_lang}
+use @std.avrac.features.defer.{defer_lang, errdefer_lang}
 use @std.avrac.features.{feature_keywords, feature_gram}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_grammar}
 

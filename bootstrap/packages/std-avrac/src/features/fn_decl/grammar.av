@@ -2,7 +2,7 @@
 // FRAGMENT registry. The `fn` feature OWNS its declaration rule here, colocated
 // with its parser/codegen/resolver/typeck/tests, instead of living in the
 // central features/grammar/avra_grammar.av monolith. This is the same motion
-// `match_expr` already made for patterns (avra_pat_grammar), now applied to the
+// the match feature already made for patterns (avra_pat_grammar), now applied to the
 // declaration family — the step the `decl_hand` flip spends: once every decl
 // keyword owns its own fragment, retiring the monolithic `@hand(decl_hand)`
 // dispatch is adding rules to a registry rather than editing one central file.

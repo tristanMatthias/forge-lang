@@ -450,14 +450,20 @@ spec "t-vmkc: a nested block is a defer scope" {
             let out = avra_test_capture_stop()
             // `e-defer` is the positive control: it proves the scope exit ran
             // at all, so the absent errdefer line means "correctly skipped"
-            // rather than "nothing happened".
-            out == "e-defer\ne-after"
+            // rather than "nothing happened". The Ok(1) check pins that the
+            // function actually took the success path.
+            let succeeded = match r { .Ok(v) -> v == 1, _ -> false }
+            out == "e-defer\ne-after" && succeeded
         }
         then "an error return DOES run it" {
             avra_test_capture_start()
             let r = scope_errdefer_error()
             let out = avra_test_capture_stop()
-            out == "g-errdefer"
+            // The Err check pins that the errdefer line came from the ERROR
+            // path — without it, a regression that returned Ok while still
+            // emitting the body would stay green.
+            let errored = match r { .Err(e) -> e == "boom", _ -> false }
+            out == "g-errdefer" && errored
         }
     }
 }

@@ -102,40 +102,42 @@ spec "rest remains an ordinary identifier outside bare pattern position" {
 
 // ── Lint behavior: F9001 fires for `_` hiding >2 variants, stays silent for
 // `rest` hiding the same variants, and rest satisfies exhaustiveness (no
-// non-exhaustive error). Compile fixtures via a child bs2 and assert on the
-// rendered output.
-extern fn avra_shell_exec(cmd: string) -> string
+// non-exhaustive error). Compile fixtures via a child bs2; the exit status
+// pins compiled-vs-rejected, the log carries the rendered diagnostics.
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_read_file}
 use @std.avrac.test_runner.{write_fixture}
 
-fn rst_compile_out(source: string) -> string {
+fn rst_compile_status(source: string) -> int {
     let path = "/tmp/avra_rst_neg.av"
     write_fixture(path, source)
-    avra_shell_exec("./build/bs2 compile '${path}' 2>&1 && echo __AVRA_COMPILE_OK__ || true")
+    avra_shell_exec_status("./build/bs2 compile '${path}' > /tmp/avra_rst_neg.log 2>&1")
 }
+fn rst_log() -> string { avra_selfhost_read_file("/tmp/avra_rst_neg.log") }
 
 spec "rest is exempt from the F9001 hidden-variants lint" {
     then "a `_` wildcard hiding 3 variants warns (control: the lint is alive)" {
-        let out = rst_compile_out("enum Four { A, B, C, D }
+        let status = rst_compile_status("enum Four { A, B, C, D }
 fn f(x: Four) -> int { match x { .A -> 1  _ -> 0 } }
 fn main() { let r = f(Four.A) }")
-        out.contains("hides 3 variants")
+        // A warning must not gate: the compile still succeeds.
+        status == 0 && rst_log().contains("hides 3 variants")
     }
     then "a `rest` arm hiding the SAME 3 variants is silent and compiles" {
-        let out = rst_compile_out("enum Four { A, B, C, D }
+        let status = rst_compile_status("enum Four { A, B, C, D }
 fn f(x: Four) -> int { match x { .A -> 1  rest -> 0 } }
 fn main() { let r = f(Four.A) }")
-        out.contains("__AVRA_COMPILE_OK__") && !out.contains("hides")
+        status == 0 && !rst_log().contains("hides")
     }
     then "rest satisfies exhaustiveness (no F9001 non-exhaustive error)" {
-        let out = rst_compile_out("enum Four { A, B, C, D }
+        let status = rst_compile_status("enum Four { A, B, C, D }
 fn f(x: Four) -> int { match x { rest -> 0 } }
 fn main() { let r = f(Four.A) }")
-        out.contains("__AVRA_COMPILE_OK__") && !out.contains("non-exhaustive")
+        status == 0 && !rst_log().contains("non-exhaustive")
     }
     then "omitting rest still errors non-exhaustive (control: the check is alive)" {
-        let out = rst_compile_out("enum Four { A, B, C, D }
+        let status = rst_compile_status("enum Four { A, B, C, D }
 fn f(x: Four) -> int { match x { .A -> 1 } }
 fn main() { let r = f(Four.A) }")
-        out.contains("non-exhaustive")
+        status != 0 && rst_log().contains("non-exhaustive")
     }
 }

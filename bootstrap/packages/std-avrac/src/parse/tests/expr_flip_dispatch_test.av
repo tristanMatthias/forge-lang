@@ -16,7 +16,7 @@
 // dispatch + field wiring + the mode threading (allow_struct_lit in control-flow
 // headers, etc.).
 //
-// Sibling of parse/tests/type_flip_dispatch_test.av + match_expr/tests/
+// Sibling of parse/tests/type_flip_dispatch_test.av + features/match/tests/
 // pat_flip_dispatch_test.av — the three family flips share one dispatch shape.
 use @std.avrac.parse.{parser_new}
 use @std.avrac.features.grammar.{dump_expr}

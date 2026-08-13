@@ -36,8 +36,8 @@ use features.while_stmt.{while_feature}
 use features.with_expr.{with_expr_feature}
 use features.component_decl.{component_decl_feature}
 use core.{register}
-use features.defer_stmt.{defer_lang, errdefer_lang}
-use features.match_expr.{match_lang, when_lang}
+use features.defer.{defer_lang, errdefer_lang}
+use features.match.{match_lang, when_lang}
 use core.{noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt, noop_parse_expr}
 use features.grammar.{Rule, build_rule_index, GrammarParse}
 

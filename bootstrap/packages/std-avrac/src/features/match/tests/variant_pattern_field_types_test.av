@@ -38,8 +38,8 @@ enum WrapNest {
 
 fn wrap_depth(w: WrapNest) -> int {
     match w {
-        .Empty       -> 0
-        .Single(_) -> 1
+        .Empty         -> 0
+        .Single(inner) -> 1 + wrap_depth(inner)
     }
 }
 
@@ -65,7 +65,11 @@ spec "so07.5: variant pattern bindings carry Self-recursive field types" {
         shape_children(Shape.Leaf).length == 0
     }
     then "single Self-field binding compiles without Unknown leakage" {
-        wrap_depth(WrapNest.Single(WrapNest.Empty)) == 1
+        // The recursive call USES `inner` where a WrapNest is required, so the
+        // direct-Self binding is exercised, not just accepted: depth 2 needs
+        // the payload's actual value to flow through the binding.
+        wrap_depth(WrapNest.Single(WrapNest.Single(WrapNest.Empty))) == 2
+            && wrap_depth(WrapNest.Single(WrapNest.Empty)) == 1
     }
     then "scalar+list mixed variant binds the list correctly" {
         tagged_item_count(Tagged.Group("g", [Tagged.Leaf, Tagged.Leaf])) == 2

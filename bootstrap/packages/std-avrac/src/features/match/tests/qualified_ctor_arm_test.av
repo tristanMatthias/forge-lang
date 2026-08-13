@@ -16,9 +16,11 @@
 // historical symptoms ("expected `->` after pattern", the knock-on
 // "unexpected `}`") stay absent.
 
-use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_read_file, avra_selfhost_write_file}
 
-fn qc_check_output() -> string {
+/// Check the fixture via a child bs2, exit status as the verdict and the
+/// log for the two historical symptoms.
+fn qc_check_status() -> int {
     let fixture = "build/_qualified_ctor_arm_fixture.av"
     let src = "fn probe(x: int) -> int {\n" +
         "    match x {\n" +
@@ -29,15 +31,17 @@ fn qc_check_output() -> string {
         "}\n" +
         "fn main() { println(\"ok\") }\n"
     let _ = avra_selfhost_write_file(fixture, src)
-    avra_shell_exec("./build/bs2 check ${fixture} 2>&1 || true")
+    avra_shell_exec_status("./build/bs2 check ${fixture} > build/_qualified_ctor_arm_fixture.log 2>&1")
 }
+fn qc_log() -> string { avra_selfhost_read_file("build/_qualified_ctor_arm_fixture.log") }
 
 spec "a qualified enum-ctor arm body doesn't swallow the next arm (t-jgc0 parser layer)" {
     then "the fixture parses — no arm-pattern leak" {
-        let out = qc_check_output()
-        !out.contains("expected `->` after pattern") && !out.contains("unexpected `}`")
+        let status = qc_check_status()
+        let out = qc_log()
+        status == 0 && !out.contains("expected `->` after pattern") && !out.contains("unexpected `}`")
     }
     then "the fixture is fully clean (parse + resolve + typecheck)" {
-        !qc_check_output().contains("error[")
+        qc_check_status() == 0 && !qc_log().contains("error[")
     }
 }
