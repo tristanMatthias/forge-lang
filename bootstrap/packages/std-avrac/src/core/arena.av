@@ -404,6 +404,14 @@ export type NodeStore = {
     // entry. This is the arena home for what used to live on the boxed arg's
     // `.ty` field.
     arg_tys: SparseTable<ExprId, ValueType>,
+    // The PROGRAM-wide parse registry (t-kd4y). Component declarations
+    // register their names here at parse time, and every file of a
+    // multi-file program parses with the SAME store — so a `component`
+    // declared in one file is instantiable from any file parsed after it
+    // (the module parent parses before its siblings). Installed lazily by
+    // the first Parser over this store (`NodeStore.parse_features`); null
+    // until then. Sub-parses share it via `share_arenas_keep_lines`.
+    parse_registry: Registry?,
     // ── Pure-leaf hash-consing (§14.4, ps3t.3.5) ──
     // Intern maps: variant-qualified content-key hash (`expr_intern_key` /
     // `pat_intern_key` through `content_id_for`) -> the raw row id first
@@ -731,6 +739,7 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
         roots,
         provenance,
         arg_tys,
+        parse_registry: null,
         expr_interns: avra_intmap_new(),
         pat_interns: avra_intmap_new(),
         intern_hits: 0,

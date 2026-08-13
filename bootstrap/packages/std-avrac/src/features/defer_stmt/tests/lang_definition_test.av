@@ -1,0 +1,28 @@
+// The defer/errdefer LanguageFeature definitions (features/defer.av): the
+// definition carries title/docs/snippet, its keywords are DERIVED from the
+// declared grammar, and the declared rules stay in lockstep with the
+// production whole-program grammar — the drift guard until grammar
+// composition consumes the definitions directly (t-kd4y follow-up).
+use @std.avrac.features.{defer_lang, errdefer_lang, feature_keywords}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar}
+
+spec "defer as a LanguageFeature" {
+    then "keywords derive from the declared grammar" {
+        let kws = feature_keywords(defer_lang())
+        let ekws = feature_keywords(errdefer_lang())
+        kws.length == 1 && kws[0] == "defer" && ekws.length == 1 && ekws[0] == "errdefer"
+    }
+    then "title, docs, and editor snippet are carried" {
+        let f = defer_lang()
+        let e = errdefer_lang()
+        f.title.length > 0 && f.docs.contains("LIFO") && f.snippet.contains("defer")
+            && e.title.length > 0 && e.docs.contains("ERROR exit") && e.snippet.contains("errdefer")
+    }
+    then "declared rules match the production whole-program grammar" {
+        let prod = render_grammar(avra_program_grammar())
+        let d = render_grammar(defer_lang().gram)
+        let e = render_grammar(errdefer_lang().gram)
+        d.contains("MkDefer(e)") && e.contains("MkErrdefer(e)")
+            && prod.contains("MkDefer(") && prod.contains("MkErrdefer(")
+    }
+}

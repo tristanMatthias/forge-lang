@@ -320,6 +320,10 @@ export fn parse_program_source_shared(source: string, file: string, store: NodeS
     // resolve every position here against the wrong text — including the `^`
     // sameline gate. See `share_arenas_keep_lines`.
     parser.store = share_arenas_keep_lines(store, parser.store)
+    // The ctor read its registry off the throwaway fresh store — re-sync to
+    // the ENTRY store's program-wide parse registry, or component names
+    // registered by earlier files are invisible here (t-kd4y).
+    parser.features = store.parse_features()
     parser.records_roots = 0
     parser.parse_file_program()
 }
@@ -674,7 +678,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         postfix_sp_start: 0,
         gensym_seq: 0,
         bag: bag_new(),
-        features: build_registry(),
+        features: store.parse_features(),
         store,
         records_roots: 1,
         type_static: avra_process_env_get("AVRA_PARSER_TYPE_STATIC") != "0",

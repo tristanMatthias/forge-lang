@@ -6,7 +6,6 @@
 // registers their factory functions.
 
 use features.closures.{closures_feature}
-use features.defer_stmt.{defer_feature, errdefer_feature}
 use features.enum_decl.{enum_decl_feature}
 use features.extern_decl.{extern_decl_feature}
 use features.fn_decl.{fn_decl_feature}
@@ -38,6 +37,52 @@ use features.while_stmt.{while_feature}
 use features.with_expr.{with_expr_feature}
 use features.component_decl.{component_decl_feature}
 use core.{register}
+use core.{noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt, noop_parse_expr}
+use features.grammar.{Rule, build_rule_index}
+
+// ── What a feature IS ──
+//
+// The `LanguageFeature` component: every feature instantiates it to describe
+// itself in one place — title, reference docs, the grammar rules it owns,
+// the F-codes it can raise, an editor snippet, and its pass hooks. The
+// schema lives HERE (the module parent) because component declarations must
+// parse before any sibling file instantiates them; the adapter + derived
+// surfaces live in lang.av, the instances in one file per feature.
+
+/// One diagnostic a feature owns: the stable F-code, a one-line title, and
+/// the explanation `avra explain <code>` renders.
+export type DiagSpec = { code: string, title: string, explain: string }
+
+/// Default for features that own no grammar rules — constructed directly
+/// (`parse_grammar` rejects rule-less sources by design).
+fn no_grammar() -> Grammar {
+    let rules: List<Rule> = []
+    Grammar { name: "", rules, rule_idx: build_rule_index(rules) }
+}
+
+fn no_diags() -> List<DiagSpec> { [] }
+
+component LanguageFeature {
+    config {
+        title: string = "",
+        docs: string = "",
+        gram: Grammar = no_grammar(),
+        diags: List<DiagSpec> = no_diags(),
+        snippet: string = "",
+        expr_tag: Expr? = null,
+        stmt_tag: Stmt? = null,
+        expr_keyword: string = "",
+        parse_expr: fn(Parser, int) -> Result<ExprId, string> = noop_parse_expr,
+        emit_expr: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string> = noop_emit_expr,
+        emit_stmt: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string> = noop_emit_stmt,
+        resolve_expr: fn(Resolver, Expr) -> Resolver = noop_resolve_expr,
+        resolve_stmt: fn(Resolver, Stmt) -> Resolver = noop_resolve_stmt,
+        check_expr: fn(TC, Expr) -> ExprResult = noop_check_expr,
+        check_stmt: fn(TC, Stmt) -> TC = noop_check_stmt,
+        eval_expr: fn(Runtime, Expr) -> StepResult = noop_eval_expr,
+        eval_stmt: fn(Runtime, Stmt) -> StepResult = noop_eval_stmt,
+    }
+}
 
 /// Register every built-in language feature with the compiler's
 /// dispatch registry. Called once during compiler init; each
@@ -46,8 +91,9 @@ use core.{register}
 /// position.
 export fn init_features(reg: Registry) {
     // ── Statements ──
-    register(reg, defer_feature())
-    register(reg, errdefer_feature())
+    // LanguageFeature instances (t-kd4y prototype) — defined in defer.av
+    register_lang(reg, defer_lang())
+    register_lang(reg, errdefer_lang())
     register(reg, if_stmt_feature())
     register(reg, while_feature())
     register(reg, for_feature())
