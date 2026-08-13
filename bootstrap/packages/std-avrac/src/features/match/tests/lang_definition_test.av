@@ -3,7 +3,7 @@
 // and the composed result must still carry the pattern + arm rule sets the
 // hand-maintained list used to name. Also guards the instance-block `name`
 // override (the binding can't be the keyword `match`).
-use @std.avrac.features.match_expr.{match_lang, when_lang}
+use @std.avrac.features.match.{match_lang, when_lang}
 use @std.avrac.features.{feature_grammar_fragments, feature_keywords}
 use @std.avrac.features.grammar.{compose_fragments, rule_index_of}
 use @std.avrac.list_ops.{list_contains_str}

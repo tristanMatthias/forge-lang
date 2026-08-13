@@ -8,7 +8,7 @@
 // edit. The cross-MODULE compose (grammar + match) is the load-bearing
 // assertion: fragments genuinely live with their owning features.
 use @std.avrac.features.grammar.{compose_fragments, compose_grammars, fragment_rule_conflicts, avra_expr_dispatch_grammar, avra_type_grammar, Grammar, parse_grammar}
-use @std.avrac.features.match_expr.{avra_pat_grammar}
+use @std.avrac.features.match.{avra_pat_grammar}
 
 // Two tiny fragments that intentionally CLASH on a rule name (`shared`), to
 // exercise the conflict detector. Authored via the `grammar { }` surface (parsed

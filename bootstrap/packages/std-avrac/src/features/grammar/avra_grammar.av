@@ -1,7 +1,7 @@
 // WHY: ps3t.6.5.11 — Avra's grammar, DOGFOODED into compiler `src/` as an
 
 use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_grammars, compose_fragments}
-use features.match_expr.{avra_pat_grammar, avra_match_arm_grammar, avra_match_table_grammar}
+use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_table_grammar}
 // t-47hc slice 9 — the DECL-keyword grammar fragments, each owned by the feature
 // that owns the keyword (the same colocation `match` already has for
 // patterns). Imported here rather than assembled in features/mod.av because this
