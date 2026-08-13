@@ -40,23 +40,29 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 /// below therefore bind `useg` with at most ONE `.One` item plus repetitions — the
 /// shape both engines already agree on. Filed separately.
 ///
+/// Path SEGMENTS are `WORD` (identifier-or-keyword, t-kd4y.1) so a module —
+/// i.e. a directory — may be keyword-named: `use features.defer.{…}`. The
+/// package scope (`upkg`) and the imported NAMES stay IDENT: symbols cannot
+/// be keyword-named, so widening them would only mask real errors.
+///
 /// `use_tail` exists so the two branches are FIRST-disjoint (`@` vs IDENT). Kept on
 /// `use_decl` itself they would share the `"use"` FIRST, the engines would commit to
 /// branch one, and every non-package import would fail on the mandatory `@`.
 export fn avra_modules_grammar() -> Grammar {
     let gp = grammar {
   use_decl    = @try "use" @cut ut:use_tail -> ut
-  use_tail    = "@" @require upkg:IDENT @require "." @require useg:IDENT ( "." ( useg:IDENT )? )* @require "{" ( unames:IDENT ","? )* @require "}"
+  use_tail    = "@" @require upkg:IDENT @require "." @require useg:WORD ( "." ( useg:WORD )? )* @require "{" ( unames:IDENT ","? )* @require "}"
                 @expect("IDENT", "expected package name")
+                @expect("WORD", "expected module path segment")
                 @expect(".", "expected `.` after package scope")
                 @expect("{", "expected `{` in use declaration")
                 @expect("}", "expected `}` in use declaration") -> MkUsePkg(upkg, useg, unames)
-              | @fallback @require useg:IDENT ( "." ( useg:IDENT )? )* @require "{" ( unames:IDENT ","? )* @require "}"
-                @expect("IDENT", "expected module path after `use`")
+              | @fallback @require useg:WORD ( "." ( useg:WORD )? )* @require "{" ( unames:IDENT ","? )* @require "}"
+                @expect("WORD", "expected module path after `use`")
                 @expect("{", "expected `{` in use declaration")
                 @expect("}", "expected `}` in use declaration") -> MkUseBare(useg, unames)
-  mod_decl    = @try "mod" @cut @require mdname:IDENT
-                @expect("IDENT", "expected module name after `mod`") -> MkModule(mdname)
+  mod_decl    = @try "mod" @cut @require mdname:WORD
+                @expect("WORD", "expected module name after `mod`") -> MkModule(mdname)
     }
     grammar_checked(gp)
 }

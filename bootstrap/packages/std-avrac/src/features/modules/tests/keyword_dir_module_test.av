@@ -1,0 +1,17 @@
+// t-kd4y.1 end-to-end: a DIRECTORY literally named `defer` loads as a
+// module (`mod defer`) and its exports import through a keyword path
+// segment — the whole pipeline (lex → parse → dir-module load → resolve →
+// run), not just the parser.
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "keyword-named directory as a module" {
+    then "mod + use through a `defer` directory resolves and runs" {
+        let root = "/tmp/avra_kwseg_fixture"
+        avra_shell_exec("rm -rf ${root}")
+        avra_shell_exec("mkdir -p ${root}/defer")
+        avra_shell_exec("printf 'export fn kw_dir_value() -> int { 42 }\n' > ${root}/defer/x.av")
+        avra_shell_exec("printf 'mod defer\nuse defer.{kw_dir_value}\n\nfn main() -> int {\n    println(string(kw_dir_value()))\n    0\n}\n' > ${root}/main.av")
+        let out = avra_shell_exec("./build/bs2 run ${root}/main.av 2>&1")
+        out.contains("42") && !out.contains("error[")
+    }
+}
