@@ -8,7 +8,7 @@
 // after the user ratifies the shape.
 
 use core.{feature_new, Registry, register}
-use features.grammar.{grammar_literals, code_at, is_ident_start_code}
+use features.grammar.{grammar_literals, code_at, is_ident_start_code, is_ident_cont_code}
 use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
@@ -36,6 +36,12 @@ export fn feature_keywords(f: LanguageFeature) -> List<string> {
     [t for t in grammar_literals(f.gram) if is_keyword_shaped(t)] |> list_dedup_str
 }
 
+/// True when the lexer would tokenize `t` as one identifier — the same
+/// char classes the lexer uses, over the WHOLE literal.
 fn is_keyword_shaped(t: string) -> bool {
-    t.length > 0 && is_ident_start_code(code_at(t, 0))
+    if t.length == 0 || !is_ident_start_code(code_at(t, 0)) { return false }
+    for i in 1..t.length {
+        if !is_ident_cont_code(code_at(t, i)) { return false }
+    }
+    true
 }
