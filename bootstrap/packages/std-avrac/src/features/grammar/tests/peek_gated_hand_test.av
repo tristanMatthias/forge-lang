@@ -33,22 +33,22 @@ fn count_of(hay: string, needle: string) -> int {
 
 spec "a @peek-gated lone @hand emits exactly once, and its result is returned" {
     then "the hand call appears exactly ONCE (not duplicated)" {
-        count_of(emitted("r = @peek(match_table) @hand(match_table)"), "run_hand_stmt(\"match_table\"") == 1
+        count_of(emitted("r = @peek(match_table) @hand(let_stmt)"), "run_hand_stmt(\"let_stmt\"") == 1
     }
     then "its result is the rule's VALUE, not discarded for CapVal.Nil" {
-        let src = emitted("r = @peek(match_table) @hand(match_table)")
-        src.contains("CapVal.SNode(run_hand_stmt(\"match_table\", st))") &&
+        let src = emitted("r = @peek(match_table) @hand(let_stmt)")
+        src.contains("CapVal.SNode(run_hand_stmt(\"let_stmt\", st))") &&
             !src.contains("let _ = ") && !src.contains("CapVal.Nil")
     }
     then "CONTROL: an UNGATED lone @hand emits identically" {
         // The gate is zero-width, so gating a lone primary must not change the body.
-        emitted("r = @peek(match_table) @hand(match_table)") == emitted("r = @hand(match_table)")
+        emitted("r = @peek(match_table) @hand(let_stmt)") == emitted("r = @hand(let_stmt)")
     }
     then "in a MULTI-branch rule the gated lone @hand returns exactly once" {
         // The dispatch form — the shape match_stmt actually uses.
-        let src = emitted("r = \"+\" | @peek(match_table) @hand(match_table)")
-        count_of(src, "run_hand_stmt(\"match_table\"") == 1 &&
-            src.contains("return CapVal.SNode(run_hand_stmt(\"match_table\", st))")
+        let src = emitted("r = \"+\" | @peek(match_table) @hand(let_stmt)")
+        count_of(src, "run_hand_stmt(\"let_stmt\"") == 1 &&
+            src.contains("return CapVal.SNode(run_hand_stmt(\"let_stmt\", st))")
     }
     then "a @peek-gated lone TERMINAL is also still lone (the literal-build path)" {
         let src = emitted("r = @peek(match_table) \"+\"")

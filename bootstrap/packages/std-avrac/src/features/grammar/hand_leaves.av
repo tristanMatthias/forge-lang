@@ -85,6 +85,15 @@ fn hand_let_stmt(p: Parser) -> Result<StmtId, string> { p.parse_let_statement() 
 /// inside the body parse as `Expr.Splice` instead of bitwise-NOT.
 fn hand_quote_expr(p: Parser) -> Result<ExprId, string> { p.parse_quote() }
 
+/// A lambda BODY: a block `{ … }` or a bare expression. Block-as-expression
+/// couples to the statement machinery, so the paren flip delegates it here.
+/// KEPT (t-47hc): unlike the other seven retired leaves this one is still the
+/// vehicle for the @try / @on / @peek primitive tests, whose grammars need a
+/// body that can be a block. Repointing them at quote_expr changes the parse
+/// they assert, so the leaf stays until those grammars express a block body
+/// natively.
+fn hand_lambda_body(p: Parser) -> Result<ExprId, string> { p.parse_lambda_body() }
+
 /// A lambda body known to be a BLOCK.
 
 /// The ident-or-`@`-led primary, via the full primary dispatch.
@@ -117,6 +126,7 @@ export fn hand_stmt_leaf(name: string) -> HandStmtLeaf? {
 export fn hand_expr_leaf(name: string) -> HandExprLeaf? {
     match name {
         "quote_expr"        -> HandExprLeaf { name, seeds_postfix: true,  run: hand_quote_expr }
+        "lambda_body"       -> HandExprLeaf { name, seeds_postfix: false, run: hand_lambda_body }
         _                   -> null
     }
 }

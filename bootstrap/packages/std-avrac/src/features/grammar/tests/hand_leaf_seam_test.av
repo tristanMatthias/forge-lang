@@ -40,7 +40,18 @@ fn known_expr_leaves() -> List<string> {
     // ladder they delegated into was deleted. Their grammar rules are native now, so
     // there is nothing left for the leaf to call. Six remain, and every one of them
     // delegates to a hand parser that still exists.
-    ["quote_expr", "match_expr", "if_expr", "list_expr", "ident_primary", "lambda_body"]
+    // t-47hc — SEVEN more retired in one pass: `match_expr`, `if_expr`, `list_expr`
+    // and `ident_primary` here, plus `component_decl`, `return_stmt` and `match_table`
+    // below. Each was a table row with ZERO live `@hand(...)` uses in any grammar —
+    // 30 of the 32 occurrences in avra_grammar.av are comments — and all ten leaves
+    // were proven off the production path first (AVRA_REFUSE_HAND_LEAF='*': zero
+    // refusals over the whole @std::avrac compile and the difftest corpus, with the
+    // refusal turning specs in THIS file red as the positive control).
+    //
+    // `lambda_body` STAYS: it is the vehicle for the @try / @on / @peek primitive
+    // tests, whose grammars need a body that can be a block. Repointing those at
+    // quote_expr changes the parse they assert, so the leaf outlives the sweep.
+    ["quote_expr", "lambda_body"]
 }
 
 fn known_stmt_leaves() -> List<string> {
@@ -52,7 +63,9 @@ fn known_stmt_leaves() -> List<string> {
     // referenced it, and the list is the registry's contract, so it leaves rather
     // than being special-cased (a retired leaf left here force-unwraps to null and
     // ABORTS the spec, which the runner reports as "crashed", not "failed").
-    ["component_decl", "let_stmt", "return_stmt", "match_table"]
+    // t-47hc — see the expression half: `component_decl`, `return_stmt` and
+    // `match_table` retired together, each a dead row with no live grammar use.
+    ["let_stmt"]
 }
 
 fn run_render(input: string) -> string {
@@ -197,7 +210,11 @@ spec "t-47hc.7: seeds_postfix is a COLUMN of the leaf, not a parallel table" {
         mut ok = true
         // t-47hc.4.1 — `primary_base` and `paren_expr` retired with the hand expression
         // ladder; the rest of the seeding class is unchanged.
-        for n in ["match_expr", "if_expr", "quote_expr", "list_expr", "ident_primary"] {
+        // t-47hc — the seeding class is `quote_expr` alone now: match_expr, if_expr,
+        // list_expr and ident_primary retired in the leaf sweep. Kept as a loop so the
+        // next leaf joining the class needs no re-shaping, and so a retired name left
+        // here still ABORTS loudly rather than silently asserting nothing.
+        for n in ["quote_expr"] {
             if !hand_expr_leaf(n)!.seeds_postfix { ok = false }
         }
         ok
