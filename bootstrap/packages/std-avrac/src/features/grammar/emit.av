@@ -854,7 +854,6 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq, track_spec: bool) -> string
     // t-47hc.21 COMMIT POINT: only a cut-bearing branch declares `s_cut`, so every
     // existing grammar regenerates byte-identically.
     if has_cut { out = out + "        mut s_cut = false\n" }
-    out = out + "        let s_hand = st.save_hand_state()\n"
     // The PState's own hygiene counter rolls back with the store truncation —
     // the emit twin of the executor's s_gensym (see PState.fresh's WHY).
     out = out + "        let s_gensym = st.gensym_seq\n"
@@ -889,7 +888,6 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq, track_spec: bool) -> string
     if has_cut { out = out + "            break\n        }\n" }
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
-    out = out + "        st.restore_hand_state(s_hand)\n"
     out = out + "        st.set_gensym_seq(s_gensym)\n"
     out = out + "        st.restore_postfix_state(s_postfix)\n"
     out = out + "    }\n"
@@ -908,7 +906,6 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq, track_spec: bool) -> string
     out = out + "        let s_mark = st.store.mark()\n"
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
-    out = out + "        let s_hand = st.save_hand_state()\n"
     // The PState's own hygiene counter rolls back with the store truncation —
     // the emit twin of the executor's s_gensym (see PState.fresh's WHY).
     out = out + "        let s_gensym = st.gensym_seq\n"
@@ -952,7 +949,6 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq, track_spec: bool) -> string
     out = out + "        }\n"
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
-    out = out + "        st.restore_hand_state(s_hand)\n"
     out = out + "        st.set_gensym_seq(s_gensym)\n"
     out = out + "        st.restore_postfix_state(s_postfix)\n"
     out = out + "    }\n"

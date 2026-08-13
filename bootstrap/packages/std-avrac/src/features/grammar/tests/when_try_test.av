@@ -62,29 +62,7 @@ spec "t-47hc.3: @try emit — generated parser mirrors the interpreter" {
         src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
         src.contains("st.store.truncate_to_mark(s_mark)") &&
         src.contains("st.restore_to(s_pos, s_diags, s_err)") &&
-        src.contains("let s_hand = st.save_hand_state()") &&
-        src.contains("st.restore_hand_state(s_hand)") &&
         src.contains("if tried_spec { return CapVal.Nil }")
-    }
-    then "the delegate snapshot does NOT depend on which sibling retries" {
-        // t-3keo. This assertion used to run the other way: the snapshot was armed only
-        // when some NON-speculative sibling LED with an `@hand` leaf, so the FIRST
-        // grammar here emitted it and the SECOND did not. That gate asks about the RETRY
-        // branch, but the thing that moves the delegate is the SPECULATIVE branch's own
-        // body reaching a hand leaf — an unrelated question. `paren_expr` is where they
-        // came apart: its native branches lead with `"("` so nothing armed, while its
-        // `@try` branches parse `a:expression` and reach `@hand(ident_primary)` on any
-        // bare IDENT. The rollback rewound `st.pos` and left the delegate ahead, so `(v)`
-        // failed to parse where `(1)` / `(true)` / `([1])` succeeded.
-        //
-        // Both shapes must emit the SAME scaffold now, which is what makes the arming
-        // independent of the sibling — the property whose absence was the bug.
-        let with_hand = emit_rule("r = @try NUMBER STRING NUMBER | @hand(ident)", "r")
-        let native_only = emit_rule("r = @try NUMBER STRING NUMBER | NUMBER STRING", "r")
-        with_hand.contains("let s_hand = st.save_hand_state()") &&
-        with_hand.contains("st.restore_hand_state(s_hand)") &&
-        native_only.contains("let s_hand = st.save_hand_state()") &&
-        native_only.contains("st.restore_hand_state(s_hand)")
     }
     then "a later terminal in a @try branch REPORTS on mismatch (the rollback signal)" {
         // The idx>0 terminal is checked-and-reporting (not the lenient consume) so
@@ -92,11 +70,8 @@ spec "t-47hc.3: @try emit — generated parser mirrors the interpreter" {
         emit_rule("r = @try NUMBER STRING NUMBER | NUMBER STRING", "r").contains("st.report(")
     }
     then "a non-speculative dispatch emits NO speculation machinery" {
-        // The remaining boundary now that the delegate snapshot no longer keys off a
-        // sibling: it rides the SPECULATION, so a rule with no `@try` gets none of it.
         let src = emit_rule("r = NUMBER STRING NUMBER | NUMBER STRING", "r")
-        !src.contains("tried_spec") && !src.contains("truncate_to_mark") &&
-        !src.contains("save_hand_state") && !src.contains("restore_hand_state")
+        !src.contains("tried_spec") && !src.contains("truncate_to_mark")
     }
 }
 

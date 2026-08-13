@@ -84,8 +84,8 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         // The `@try`/`@cut` pair lives INSIDE each binding rule now (routing `let`
         // moved it there, so the dispatcher references all three bare — the shape
         // `mut`/`const` already had). The property asserted is unchanged: the branch
-        // is speculative, and its rollback restores the store, the cursor, the hand
-        // state AND the hygiene counter (property 2 in the WHY).
+        // is speculative, and its rollback restores the store, the cursor, AND the
+        // hygiene counter (property 2 in the WHY).
         mut ok = true
         for head in ["fn parse_let_decl(st: PState) -> CapVal",
                      "fn parse_mut_decl(st: PState) -> CapVal",
@@ -93,7 +93,6 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
             let body = emitted_rule_body(src, head)
             if !(emitted_rule_speculates(src, head) &&
                  body.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
-                 body.contains("st.restore_hand_state(s_hand)") &&
                  body.contains("st.set_gensym_seq(s_gensym)")) {
                 println("not speculative / incomplete rollback: ${head}")
                 ok = false
