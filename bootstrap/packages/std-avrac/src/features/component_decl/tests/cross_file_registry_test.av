@@ -1,0 +1,19 @@
+// t-kd4y: component declarations register into the PROGRAM-wide parse
+// registry (NodeStore.parse_registry), so a component declared in one file
+// is instantiable from any later-parsed file of the same program. Before
+// this every Parser built a fresh registry, and a cross-file instance block
+// was a parse error — which is also why the second spec pins the fresh-store
+// failure: the sharing IS the property.
+use @std.avrac.parse.{parse_program_source_at, parse_program_source_shared}
+
+spec "cross-file component instances" {
+    then "a component declared in file A instantiates in file B over the shared store" {
+        let a = parse_program_source_at("component cross_probe {\n    config { title: string = \"\" }\n}\n", "a.av")
+        let b = parse_program_source_shared("fn use_it() -> string {\n    cross_probe inst { title = \"from b\" }\n    inst.title\n}\n", "b.av", a.store)
+        a.had_error == 0 && b.had_error == 0
+    }
+    then "the same instance over a fresh store is a parse error (nothing registered)" {
+        let solo = parse_program_source_at("fn use_it() -> int {\n    cross_probe inst { title = \"x\" }\n    0\n}\n", "solo.av")
+        solo.had_error != 0
+    }
+}

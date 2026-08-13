@@ -1,0 +1,94 @@
+// defer / errdefer — scope-exit execution, LIFO (spec Axis 9.4 / 12.7).
+// The definitions carry the feature whole: syntax, docs, editor surface,
+// and hooks. The shared DeferStack machinery (unwound by return / `?` /
+// fall-through emitters) stays in defer_stmt/codegen.av.
+//
+// (`LanguageFeature_new(..) with {..}` is the factory the schema expands
+// to; the `LanguageFeature defer {}` instance-block spelling needs this
+// PR's program-wide parse registry to reach the SEED first — the spelling
+// flips after the next seed cycle.)
+
+use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
+use features.eval.{ok_result, value_null}
+use resolve.{resolve_expr}
+use typeck.{check_expr, tc_gate_unthreaded_lambda}
+use features.grammar.{grammar_checked, parse_grammar}
+use list_ops.{list_push_copy}
+
+/// Push one DeferStack entry — the body emits later, at each scope exit.
+fn stack_entry(ctx: Ctx, env: List<VarBinding>, entry: DeferEntry) -> Result<StmtResult, string> {
+    ok_sr(ctx with { defers: list_push_copy(ctx.defers, entry) }, env)
+}
+
+/// Resolve a defer/errdefer body in the current scope.
+fn resolve_body(r: Resolver, body: ExprId) -> Resolver {
+    resolve_expr(r, r.nodes.exprs.get(body))
+}
+
+/// Type-check a body run only for its side effects: any type goes, but an
+/// unannotated lambda inside is F1006 (row 22, ps3t.4.5).
+fn check_effect_body(tc: TC, body: ExprId) -> TC {
+    let e = tc.nodes.exprs.get(body)
+    check_expr(tc_gate_unthreaded_lambda(tc, e), e).tc
+}
+
+export fn defer_lang() -> LanguageFeature {
+    LanguageFeature_new("defer") with {
+        title: "defer — run an expression at scope exit",
+        docs: """
+`defer expr` runs `expr` when the enclosing scope exits, in LIFO order
+with respect to other `defer` / `errdefer` statements in the same scope.
+The expression's result is discarded — defers exist for side effects,
+typically releasing a resource acquired just above:
+
+    fn read_file(path: string) -> Result<string, IoError> {
+        let f = file_open(path)?
+        defer file_close(f)
+        ...
+    }
+
+Multiple defers stack: `defer println("1")  defer println("2")` prints
+`2` then `1`. Nested blocks each get their own stack — a `defer` inside
+an `if` branch fires when that block exits, not at function return.
+Defers run on EVERY exit path: normal return, fall-through, `break`,
+and error propagation via `?`.
+""",
+        gram: grammar { defer_stmt = "defer" e:expression -> MkDefer(e) } |> grammar_checked,
+        snippet: r"defer ${1:cleanup()}",
+        stmt_tag: Stmt.Defer(ExprId(0)),
+        emit_stmt: (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->
+            match s { .Defer(b) -> stack_entry(ctx, env, DeferEntry.Frame(b)), _ -> err_sr("expected Defer") },
+        resolve_stmt: (r: Resolver, s: Stmt) ->
+            match s { .Defer(b) -> resolve_body(r, b), _ -> r },
+        check_stmt: (tc: TC, s: Stmt) ->
+            match s { .Defer(b) -> check_effect_body(tc, b), _ -> tc },
+        // The eval path doesn't model deferred execution yet.
+        eval_stmt: (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
+    }
+}
+
+export fn errdefer_lang() -> LanguageFeature {
+    LanguageFeature_new("errdefer") with {
+        title: "errdefer — run an expression only on error exit",
+        docs: """
+`errdefer expr` is `defer` that only fires on ERROR exit — when the
+enclosing function returns `Result.Err(_)` (explicitly or propagated by
+`?`) or null from a nullable-returning fn. Success paths skip it. It
+interleaves with `defer` in the same LIFO stack, so acquisition order
+reverses correctly on cleanup:
+
+    let buf = alloc_buf()
+    errdefer free_buf(buf)     // only if a later step fails
+""",
+        gram: grammar { errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e) } |> grammar_checked,
+        snippet: r"errdefer ${1:rollback()}",
+        stmt_tag: Stmt.Errdefer(ExprId(0)),
+        emit_stmt: (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->
+            match s { .Errdefer(b) -> stack_entry(ctx, env, DeferEntry.ErrFrame(b)), _ -> err_sr("expected Errdefer") },
+        resolve_stmt: (r: Resolver, s: Stmt) ->
+            match s { .Errdefer(b) -> resolve_body(r, b), _ -> r },
+        check_stmt: (tc: TC, s: Stmt) ->
+            match s { .Errdefer(b) -> check_effect_body(tc, b), _ -> tc },
+        eval_stmt: (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
+    }
+}

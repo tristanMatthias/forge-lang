@@ -75,37 +75,39 @@ export type Feature = {
 // ── No-op handlers ──
 //
 // Default handlers used by `feature_new` so a Feature only has to
-// override the callbacks it actually implements. The codegen and
+// override the callbacks it actually implements — and the config defaults
+// of the `LanguageFeature` component (features/lang.av), hence exported.
+// The codegen and
 // eval no-ops return a "no handler" error so bugs that route a node
 // to an unregistered feature surface loudly instead of silently;
 // the resolver / typecheck no-ops pass through unchanged because
 // those passes have non-error fallback shapes.
 
 /// Codegen no-op for expressions — `err_emit("no expr handler")`.
-fn noop_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
+export fn noop_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
 /// Codegen no-op for statements — `err_sr("no stmt handler")`.
-fn noop_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> { err_sr("no stmt handler") }
+export fn noop_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> { err_sr("no stmt handler") }
 /// Resolver no-op for expressions — pass-through.
-fn noop_resolve_expr(r: Resolver, expr: Expr) -> Resolver { r }
+export fn noop_resolve_expr(r: Resolver, expr: Expr) -> Resolver { r }
 /// Resolver no-op for statements — pass-through.
-fn noop_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver { r }
+export fn noop_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver { r }
 /// Typecheck no-op for expressions — yields `Unknown`.
-fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, .Unknown) }
+export fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, .Unknown) }
 /// Typecheck no-op for statements — pass-through.
-fn noop_check_stmt(tc: TC, stmt: Stmt) -> TC { tc }
+export fn noop_check_stmt(tc: TC, stmt: Stmt) -> TC { tc }
 /// Eval no-op for expressions — error step ("no eval_expr handler").
-fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+export fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
     StepResult { runtime: rt, value: value_null(), had_error: true, is_return: false, error_message: "no eval_expr handler" }
 }
 /// Eval no-op for statements — error step ("no eval_stmt handler").
-fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+export fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     StepResult { runtime: rt, value: value_null(), had_error: true, is_return: false, error_message: "no eval_stmt handler" }
 }
 /// Parser no-op — returns null so the parser falls back to the
 /// in-tree dispatch when no feature claims this keyword.
 fn noop_parse(p: Parser) -> Result<StmtId, string> { .Err("no parser registered") }
 /// Expression-parser no-op — mirror of `noop_parse` for `parse_expr`.
-fn noop_parse_expr(p: Parser, start: int) -> Result<ExprId, string> { .Err("no expr parser registered") }
+export fn noop_parse_expr(p: Parser, start: int) -> Result<ExprId, string> { .Err("no expr parser registered") }
 
 /// Construct a Feature with no-op handlers. Each feature module
 /// builds on this with `with`-updates to register its own callbacks.
@@ -311,6 +313,18 @@ export fn component_is_raw_body(reg: Registry, name: string) -> bool {
 }
 
 // ── Build the registry ──
+
+/// The parse registry for a program's shared NodeStore — built on first
+/// use, then reused by every subsequent file parsed over the same store,
+/// so parse-time component registration is program-wide, not per-file.
+impl NodeStore {
+    fn parse_features(self) -> Registry {
+        if self.parse_registry == null {
+            self.parse_registry = build_registry()
+        }
+        self.parse_registry!
+    }
+}
 
 /// Construct + populate the Registry. Called once at compiler
 /// startup; downstream passes look up handlers from the result.

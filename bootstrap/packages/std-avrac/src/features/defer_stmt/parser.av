@@ -1,8 +1,0 @@
-// WHY: parses `defer expr` and `errdefer expr` statements.
-// defer runs at scope exit always. errdefer runs only on error exit (spec Axis 12.7).
-
-use core.{Stmt, Expr}
-use parse.{Parser}
-
-impl Parser {
-}

@@ -120,6 +120,13 @@ export fn list_each<T>(xs: List<T>, step: fn(T) -> void) {
 
 /// Concatenate `a ++ b` into a fresh `List<T>`. Both inputs are
 /// left intact. O(N+M) — copies element references, no deep clone.
+/// Order-preserving string dedup — first occurrence wins.
+export fn list_dedup_str(xs: List<string>) -> List<string> {
+    let seed: List<string> = []
+    list_fold(xs, seed, (acc: List<string>, x: string) ->
+        if list_contains_str(acc, x) { acc } else { list_push_copy(acc, x) })
+}
+
 export fn list_concat<T>(a: List<T>, b: List<T>) -> List<T> {
     mut out: List<T> = []
     for x in a { out = out.push(x) }

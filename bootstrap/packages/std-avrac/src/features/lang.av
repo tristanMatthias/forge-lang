@@ -1,0 +1,47 @@
+// WHY: `LanguageFeature` — the component every language feature instantiates
+// to describe itself in ONE place: title, reference docs, the grammar rules
+// it owns, the F-codes it can raise, an editor snippet, and its pass hooks.
+// The compiler assembles itself from these definitions (`language_features`
+// in mod.av is the one list every surface folds over); everything derivable
+// from a definition — keywords, highlighting — is DERIVED, never declared
+// twice. t-kd4y prototype: defer + match first; the rest migrates only
+// after the user ratifies the shape.
+
+use core.{feature_new, Registry, register}
+use features.grammar.{grammar_literals, code_at, is_ident_start_code, is_ident_cont_code}
+use list_ops.{list_dedup_str}
+
+/// Register a LanguageFeature's hooks into the dispatch registry — the
+/// adapter onto the core Feature record while both forms coexist.
+export fn register_lang(reg: Registry, f: LanguageFeature) {
+    register(reg, feature_new(f.name) with {
+        expr_tag: f.expr_tag,
+        stmt_tag: f.stmt_tag,
+        expr_keyword: f.expr_keyword,
+        parse_expr: f.parse_expr,
+        emit_expr: f.emit_expr,
+        emit_stmt: f.emit_stmt,
+        resolve_expr: f.resolve_expr,
+        resolve_stmt: f.resolve_stmt,
+        check_expr: f.check_expr,
+        check_stmt: f.check_stmt,
+        eval_expr: f.eval_expr,
+        eval_stmt: f.eval_stmt,
+    })
+}
+
+/// A feature's keywords, derived from its declared grammar — the
+/// identifier-shaped literal terminals (`"defer"` yes, `"+"` no).
+export fn feature_keywords(f: LanguageFeature) -> List<string> {
+    [t for t in grammar_literals(f.gram) if is_keyword_shaped(t)] |> list_dedup_str
+}
+
+/// True when the lexer would tokenize `t` as one identifier — the same
+/// char classes the lexer uses, over the WHOLE literal.
+fn is_keyword_shaped(t: string) -> bool {
+    if t.length == 0 || !is_ident_start_code(code_at(t, 0)) { return false }
+    for i in 1..t.length {
+        if !is_ident_cont_code(code_at(t, i)) { return false }
+    }
+    true
+}
