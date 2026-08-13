@@ -69,20 +69,9 @@ export type HandExprLeaf = {
 // WHICH parse the grammar is opting out of, so the table reads as the catalogue
 // of what the DSL cannot yet say.
 
-/// `component` declarations (ps3t.6.5.7) — a component's raw/structured body
-/// is registry-sensitive, so the whole declaration stays hand-parsed.
-fn hand_component_decl(p: Parser) -> Result<StmtId, string> { p.parse_component_decl() }
-
 /// `let` / `mut` / `const` bindings, including the `let … else` bind-fresh
 /// desugar (which mints a hygienic temp name).
 fn hand_let_stmt(p: Parser) -> Result<StmtId, string> { p.parse_let_statement() }
-
-/// `return` statements.
-fn hand_return_stmt(p: Parser) -> Result<StmtId, string> { p.parse_return_statement() }
-
-/// The residual match-STATEMENT edge oracle (subjectless / table / bare-return /
-/// quote-splice arms) — narrower than the generic statement leaf.
-fn hand_match_table(p: Parser) -> Result<StmtId, string> { p.parse_match_statement() }
 
 /// The whole STATEMENT dispatch (block, if/while/for/match/defer/errdefer/
 /// return). The `_hand` entry, so the delegate does not re-flip THIS statement —
@@ -96,25 +85,7 @@ fn hand_match_table(p: Parser) -> Result<StmtId, string> { p.parse_match_stateme
 /// inside the body parse as `Expr.Splice` instead of bitwise-NOT.
 fn hand_quote_expr(p: Parser) -> Result<ExprId, string> { p.parse_quote() }
 
-/// `match` as an EXPRESSION (Phase 3a-11 keyword-led primary).
-fn hand_match_expr(p: Parser) -> Result<ExprId, string> { p.parse_match_expression() }
-
-/// `if` as an EXPRESSION, including the `if let` desugar.
-fn hand_if_expr(p: Parser) -> Result<ExprId, string> { p.parse_if_expression() }
-
-/// `[ … ]` list literals and comprehensions.
-fn hand_list_expr(p: Parser) -> Result<ExprId, string> { p.parse_list_expr() }
-
-
-/// A lambda BODY: a block `{ … }` or a bare expression. Block-as-expression
-/// couples to the statement machinery, so the paren flip delegates it here.
-fn hand_lambda_body(p: Parser) -> Result<ExprId, string> { p.parse_lambda_body() }
-
 /// A lambda body known to be a BLOCK.
-
-/// The identifier-led primary (bare ident / struct literal / table / feature
-/// keyword / tagged template).
-fn hand_ident_primary(p: Parser) -> Result<ExprId, string> { p.parse_ident_expr() }
 
 /// The ident-or-`@`-led primary, via the full primary dispatch.
 
@@ -137,10 +108,7 @@ fn hand_ident_primary(p: Parser) -> Result<ExprId, string> { p.parse_ident_expr(
 /// The STATEMENT/DECLARATION leaf named `name`, or null when `name` names none.
 export fn hand_stmt_leaf(name: string) -> HandStmtLeaf? {
     match name {
-        "component_decl" -> HandStmtLeaf { name, run: hand_component_decl }
         "let_stmt"       -> HandStmtLeaf { name, run: hand_let_stmt }
-        "return_stmt"    -> HandStmtLeaf { name, run: hand_return_stmt }
-        "match_table"    -> HandStmtLeaf { name, run: hand_match_table }
         _                -> null
     }
 }
@@ -149,11 +117,6 @@ export fn hand_stmt_leaf(name: string) -> HandStmtLeaf? {
 export fn hand_expr_leaf(name: string) -> HandExprLeaf? {
     match name {
         "quote_expr"        -> HandExprLeaf { name, seeds_postfix: true,  run: hand_quote_expr }
-        "match_expr"        -> HandExprLeaf { name, seeds_postfix: true,  run: hand_match_expr }
-        "if_expr"           -> HandExprLeaf { name, seeds_postfix: true,  run: hand_if_expr }
-        "list_expr"         -> HandExprLeaf { name, seeds_postfix: true,  run: hand_list_expr }
-        "ident_primary"     -> HandExprLeaf { name, seeds_postfix: true,  run: hand_ident_primary }
-        "lambda_body"       -> HandExprLeaf { name, seeds_postfix: false, run: hand_lambda_body }
         _                   -> null
     }
 }
