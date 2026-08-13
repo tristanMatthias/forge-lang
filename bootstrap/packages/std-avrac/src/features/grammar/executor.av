@@ -1047,6 +1047,11 @@ fn list_has(xs: List<string>, s: string) -> bool {
 /// is the recurring failure mode in this slice (`base_field_access`, `dot_number`).
 fn named_tok_matches(name: string, tok: Token) -> bool {
     if name == "FIELDNAME" { return tk_is_field_name(tok.tk) }
+    // WORD: any identifier-shaped token — identifiers AND keywords — so
+    // module-path segments can be keyword-named (`use features.defer.{…}`,
+    // t-kd4y.1). Same predicate the emitted guard calls; word_terminal_test
+    // pins the two to one set.
+    if name == "WORD" { return text_is_word(tok.text) }
     tok.kind == name
 }
 

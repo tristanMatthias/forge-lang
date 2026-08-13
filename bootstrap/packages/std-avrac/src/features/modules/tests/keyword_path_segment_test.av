@@ -1,0 +1,35 @@
+// t-kd4y.1: module-path SEGMENTS accept keywords (`WORD` terminal) — a
+// directory named `defer` or `match` is addressable. The package scope and
+// the imported names stay IDENT-only: symbols cannot be keyword-named.
+use @std.avrac.parse.{parse_program_source_at}
+
+fn parses(src: string) -> bool {
+    parse_program_source_at(src, "kwseg.av").had_error == 0
+}
+
+spec "keyword module-path segments" {
+    then "a keyword segment parses in a bare use path" {
+        parses("use features.defer.{defer_lang}\n")
+            && parses("use features.match.{match_lang}\n")
+    }
+    then "keyword segments parse at any depth and in @-package paths" {
+        parses("use a.defer.b.{x}\n")
+            && parses("use @std.avrac.features.match.{match_lang}\n")
+    }
+    then "the keyword sweep: every reserved word works as a segment" {
+        parses("use a.if.{x}\n") && parses("use a.for.{x}\n")
+            && parses("use a.while.{x}\n") && parses("use a.return.{x}\n")
+            && parses("use a.let.{x}\n") && parses("use a.mut.{x}\n")
+            && parses("use a.const.{x}\n") && parses("use a.fn.{x}\n")
+            && parses("use a.type.{x}\n") && parses("use a.enum.{x}\n")
+            && parses("use a.trait.{x}\n") && parses("use a.impl.{x}\n")
+            && parses("use a.spawn.{x}\n") && parses("use a.select.{x}\n")
+            && parses("use a.parallel.{x}\n") && parses("use a.component.{x}\n")
+    }
+    then "non-word segments still reject" {
+        !parses("use a.1.{x}\n") && !parses("use a.+.{x}\n")
+    }
+    then "imported NAMES stay identifier-only" {
+        !parses("use a.b.{defer}\n")
+    }
+}

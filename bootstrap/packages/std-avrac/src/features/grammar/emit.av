@@ -2594,6 +2594,10 @@ fn tk_guard(text: string) -> string {
 /// vocabulary keeps the `.kind` string compare (defensive; the set is closed).
 fn named_tk_guard(tok: string) -> string {
     if tok == "IDENT"    { return "st.cur().tk == Tk.Identifier" }
+    // WORD (ident-or-keyword, t-kd4y.1): no closed Tk disjunction exists — the
+    // keyword set grows — so this one is a CALL; text_is_word ships in the
+    // generated import headers (gen_*_file.av). Executor twin: named_tok_matches.
+    if tok == "WORD"     { return "text_is_word(st.cur().text)" }
     // The one terminal that is NOT a `tk_to_grammar_kind` kind string: the field-name
     // set `consume_field_name` accepts. Spelled inline as the Tk disjunction rather
     // than as a call to `tk_is_field_name` because the generated file's import header
