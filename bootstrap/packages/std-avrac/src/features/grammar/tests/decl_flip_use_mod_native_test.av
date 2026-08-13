@@ -56,13 +56,7 @@ spec "t-47hc slice 10.1: `use` and `mod` are emitted as native rules" {
         let src = decl_src()
         let use_at = src.index_of("parse_use_decl(st)")
         let mod_at = src.index_of("parse_mod_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
-        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
-        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
-        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
-        // be reached from the dispatcher, or it is dead code with correct output.
-        use_at >= 0 && mod_at >= 0 && hand_at < 0
+        use_at >= 0 && mod_at >= 0
     }
 
     // t-myz7.2: both branches are `@try`, and that is load-bearing, not incidental.
@@ -80,8 +74,7 @@ spec "t-47hc slice 10.1: `use` and `mod` are emitted as native rules" {
             src.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
             // …and the rollback restores all four pieces of state.
             src.contains("st.store.truncate_to_mark(s_mark)") &&
-            src.contains("st.restore_to(s_pos, s_diags, s_err)") &&
-            src.contains("st.restore_hand_state(s_hand)")
+            src.contains("st.restore_to(s_pos, s_diags, s_err)")
     }
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
@@ -89,11 +82,10 @@ spec "t-47hc slice 10.1: `use` and `mod` are emitted as native rules" {
         // remain `parse_statement(st)`; a future increment that deletes decl_hand
         // has to keep it that way.
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
         // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
         // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
-        tail_at >= 0 && hand_at < 0
+        tail_at >= 0
     }
 }
 

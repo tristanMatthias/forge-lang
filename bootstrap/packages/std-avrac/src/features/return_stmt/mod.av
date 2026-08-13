@@ -8,6 +8,5 @@ use core.{feature_new, Feature}
 export fn return_stmt_feature() -> Feature {
     feature_new("return_stmt") with {
         stmt_keyword: "kw_return",
-        parse_stmt: (p: Parser) -> p.parse_return_statement(),
     }
 }

@@ -19,7 +19,7 @@
 // Oracle: run the generated parser AND the hand parser over the §2 expression
 // corpus and compare the canonical dump_expr trees (the same acceptance path
 // parser_equivalence_test.av's interpreter already passes).
-use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, run_hand, fold_binary_expr, fold_logical_expr, unary_expr, fold_postfix_expr, dump_expr}
+use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, fold_binary_expr, fold_logical_expr, unary_expr, fold_postfix_expr, dump_expr}
 use @std.avrac.parse.{parse_expression_native_probe}
 use @std.avrac.core.{Expr, ExprId, NodeStore}
 
@@ -190,7 +190,7 @@ fn parse_primary(st: PState) -> CapVal {
     if st.cur().kind == "STRING" { return CapVal.Node(literal_node(st, st.advance())) }
     if st.cur().text == "true" { return CapVal.Node(literal_node(st, st.advance())) }
     if st.cur().text == "false" { return CapVal.Node(literal_node(st, st.advance())) }
-    if st.cur().kind == "IDENT" { return CapVal.Node(run_hand("ident", st)) }
+    if st.cur().kind == "IDENT" { return CapVal.Node(literal_node(st, st.advance())) }
     if st.cur().text == "(" {
         let _ = st.advance()
         let e = parse_expression(st)
@@ -254,7 +254,7 @@ spec "grammar-DSL GENERATED static parser == hand-written parser (expression fam
             agree("1 | 2 ^ 3 & 4 == 5 < 6 << 7 + 8 * 9 % 2")
         }
     }
-    given "identifiers (@hand(ident)), strings, and postfix field/index/call" {
+    given "identifiers (IDENT), strings, and postfix field/index/call" {
         then "the escape hatch, literals, and postfix chains agree" {
             agree("x") && agree("foo + bar") && agree("a * b + c") &&
             agree("\"hello\"") && agree("\"a\" == \"b\"") && agree("x + \"lit\"") &&

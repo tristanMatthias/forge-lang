@@ -25,28 +25,25 @@
 // additionally requires a NON-error render, because bare equality passes on a
 // mutual "<err>" and that is how a valid-form group goes vacuous without a single
 // assertion changing (the vacuity review caught in the statement sibling, #1221).
-use @std.avrac.parse.{parser_new}
+use @std.avrac.parse.{parser_new, run_static_pat}
+use @std.avrac.features.grammar.{run_grammar_pat}
+use @std.avrac.features.match_expr.{avra_pat_grammar}
 use @std.avrac.core.{render_pat_id}
 
 /// The INTERPRETER engine.
 fn flip_pat(src: string) -> string {
-    mut p = parser_new(src)
-    p.pat_static = false
-    match p.parse_pattern_or() {
-        .Ok(id) -> if p.had_error { "<err>" } else { render_pat_id(p.store, id) }
-        .Err(_) -> "<err>"
-    }
+    let r = run_grammar_pat(avra_pat_grammar(), src)
+    if r.had_error { return "<err>" }
+    render_pat_id(r.store, r.root)
 }
 
 /// The GENERATED engine — pinned, not ambient, so the two sides cannot collapse
 /// onto one engine and compare a path against itself.
 fn hand_pat(src: string) -> string {
     mut p = parser_new(src)
-    p.pat_static = true
-    match p.parse_pattern_or() {
-        .Ok(id) -> if p.had_error { "<err>" } else { render_pat_id(p.store, id) }
-        .Err(_) -> "<err>"
-    }
+    let dsl = run_static_pat(p.grammar_tokens(), p.current_start, p.source, p.store)
+    if dsl.had_error { return "<err>" }
+    render_pat_id(p.store, dsl.pat)
 }
 
 /// Valid-form parity: both engines must PARSE and render the SAME Pattern.

@@ -58,13 +58,7 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
         // mode, so it is asserted structurally on the emitted source.
         let src = decl_src()
         let exp_at = src.index_of("parse_export_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
-        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
-        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
-        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
-        // be reached from the dispatcher, or it is dead code with correct output.
-        exp_at >= 0 && hand_at < 0
+        exp_at >= 0
     }
 
     then "the branch is COMMITTED — the rule owns its own recovery" {
@@ -121,8 +115,7 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
         // requirement — `export` is simply not among its alternatives.
         let body = emitted_rule_body(decl_src(), "fn parse_exportable_inner(st: PState) -> CapVal")
         body != "" &&
-            body.index_of("lookahead_ok(\"decl_table_kw\", st)") < 0 &&
-            body.index_of("run_hand_stmt(\"decl_hand\"") < 0
+            body.index_of("lookahead_ok(\"decl_table_kw\", st)") < 0
     }
 
     then "the INNER declaration is stamped with its own position" {
@@ -159,11 +152,10 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
         // unguarded error-recovery role. Nothing was removed here and the tail must
         // stay `parse_statement(st)`.
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
         // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
         // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
-        tail_at >= 0 && hand_at < 0
+        tail_at >= 0
     }
 }
 

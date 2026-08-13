@@ -48,7 +48,6 @@ export fn select_feature() -> Feature {
     let empty_arms: List<SelectArm> = []
     feature_new("select") with {
         stmt_tag: Stmt.Select(empty_arms),
-        decl_keyword: "kw_select",
         emit_stmt: select_emit_stmt,
         resolve_stmt: select_resolve,
         check_stmt: select_check,

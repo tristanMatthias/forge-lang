@@ -6,7 +6,5 @@ use core.{feature_new, Feature}
 /// `impl Trait for Type { ... }`) and routes to the parser's
 /// `parse_impl_declaration`.
 export fn impl_decl_feature() -> Feature {
-    feature_new("impl_decl") with {
-        decl_keyword: "kw_impl",
-    }
+    feature_new("impl_decl")
 }

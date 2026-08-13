@@ -19,7 +19,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
-use @std.avrac.features.grammar.{hand_leaf_refused, avra_program_grammar, Grammar, GNode, GAnnot, emit_parser_source_ex, avra_decl_dispatch_grammar, avra_expr_grammar}
+use @std.avrac.features.grammar.{avra_program_grammar, Grammar, GNode, GAnnot, emit_parser_source_ex, avra_decl_dispatch_grammar, avra_expr_grammar}
 use @std.avrac.features.grammar.{emit_lookup_rule, rule_body_has_cut}
 
 fn flip_decl(src: string) -> string {
@@ -236,59 +236,10 @@ fn fixture_path(name: string) -> string {
     "build/_frontier_${name}.av"
 }
 
-fn refuse_out(refusal: string, name: string, src: string) -> string {
+fn check_only(name: string, src: string) -> string {
     let fixture = fixture_path(name)
     let _ = avra_selfhost_write_file(fixture, src)
-    avra_shell_exec("AVRA_REFUSE_HAND_LEAF=${refusal} ./build/bs2 check '${fixture}' 2>&1")
-}
-
-/// Does any refusal reach THIS file (as opposed to an imported module)? Refusals
-/// reported inside an IMPORTED module are another file's dependency, not this form's
-/// — counting them measures the import closure instead of the input, which is exactly
-/// the wrong answer (an early version of this probe reported `use` as
-/// delegate-dependent on that basis; the refusal was coming from a `@std` source the
-/// import pulled in). This ticket records hitting that trap twice.
-///
-/// ATTRIBUTION, not a marker string. The previous filter was
-/// `!line.contains("error in module")`, and it does NOTHING here: that text is not
-/// emitted at all for this diagnostic shape. Measured —
-/// `use @std.avrac.core.{Expr}` plus a trivial `fn` reports 11 refusals under `*`
-/// (7 `decl_hand` + 4 `primary_base`), every one of them located in
-/// `features/modules/grammar.av`, and the string "error in module" appears zero
-/// times in that output. The corpus was safe only because no fixture has a `use` —
-/// an accident, not a guard, and the kind that fails the moment someone adds one.
-///
-/// So attribute instead: a refusal counts only when the LOCATION line that follows it
-/// names the fixture under test. The message line carries no path (the renderer puts
-/// it on the next `╭─[…]` line), which is why a per-line predicate could never have
-/// worked.
-fn refusal_in_file(out: string, fixture: string) -> bool {
-    let lines = out.split("\n")
-    mut i = 0
-    while i < lines.length {
-        if lines[i].contains("is refused") {
-            // Scan forward for this diagnostic's location line. A small window: the
-            // renderer emits it immediately after the message, and stopping at the
-            // first one found keeps a LATER diagnostic's path from being credited here.
-            mut j = i + 1
-            while j < lines.length && j < i + 5 {
-                if lines[j].contains(".av:") {
-                    if lines[j].contains(fixture) { return true }
-                    j = lines.length
-                } else {
-                    j = j + 1
-                }
-            }
-        }
-        i = i + 1
-    }
-    false
-}
-
-/// The shared core of both frontier helpers — parameterised on the refusal so the `*`
-/// branch is exercised by a real parse rather than only by the pure predicate.
-fn refused_here(refusal: string, name: string, src: string) -> bool {
-    refusal_in_file(refuse_out(refusal, name, src), fixture_path(name))
+    avra_shell_exec("./build/bs2 check '${fixture}' 2>&1")
 }
 
 /// Did `src` fail to PARSE? Raised in review, and it is the ROOT CAUSE of the defect
@@ -323,23 +274,17 @@ fn parse_failed(out: string) -> bool {
     false
 }
 
-/// Does `src` parse, and parse WITHOUT the `decl_hand` delegate? BOTH halves are
-/// load-bearing — see `parse_failed`. One shell exec answers both.
-fn native_without_delegate(name: string, src: string) -> bool {
-    let out = refuse_out("decl_hand", name, src)
-    !parse_failed(out) && !refusal_in_file(out, fixture_path(name))
+/// Does `src` parse clean? See `parse_failed` for the phase gating.
+fn parses_native(name: string, src: string) -> bool {
+    !parse_failed(check_only(name, src))
 }
 
-/// The RECOVERY twin of `native_without_delegate`: did `src` fail to parse, and fail
-/// WITHOUT the delegate? Both halves are load-bearing for the same reason the valid-
-/// input probe needs both — "the leaf was not refused" ALSO holds when nothing
-/// reported at all, so a negative alone would stay green if a converted keyword
-/// started silently ACCEPTING its malformed forms. That is not hypothetical: a gated
-/// `enum E { 5 }` did exactly that during this slice (bound `5` as a variant name,
-/// exit 0), which is what this asserts against.
-fn recovery_without_delegate(name: string, src: string) -> bool {
-    let out = refuse_out("decl_hand", name, src)
-    parse_failed(out) && !refusal_in_file(out, fixture_path(name))
+/// The RECOVERY twin: did `src` fail to PARSE (not merely resolve/typecheck)?
+/// A negative alone would stay green if a converted keyword started silently
+/// ACCEPTING its malformed forms — a gated `enum E { 5 }` did exactly that
+/// during this slice (bound `5` as a variant name, exit 0).
+fn recovers(name: string, src: string) -> bool {
+    parse_failed(check_only(name, src))
 }
 
 /// The `@expect` message the grammar declares for `key` on rule `rule`, or "".
@@ -507,127 +452,41 @@ spec "t-myz7: a `@cut`-committed rule is never dispatched under `@try`" {
     }
 }
 
-spec "t-47hc.4.3: the decl_hand frontier is CLOSED — nothing depends on the leaf" {
-    then "the probe is DORMANT unless asked" {
-        // A guard that cannot fail is worth nothing, and a probe that fires by
-        // accident is worse: it would refuse the leaf in every production build.
-        !hand_leaf_refused("decl_hand") && !hand_leaf_refused("primary_base")
+spec "t-47hc.4.3: every declaration keyword parses natively" {
+    then "the declaration keywords parse clean" {
+        parses_native("fn", "fn f() -> int { 1 }") &&
+        parses_native("exportfn", "export fn f() -> int { 1 }") &&
+        parses_native("genfn", "fn f<T>(x: T) -> T { x }") &&
+        parses_native("externfn", "extern fn e(a: int) -> int") &&
+        parses_native("typestruct", "type T = { x: int }") &&
+        parses_native("newtype", "type U = int") &&
+        parses_native("enum", "enum E { A, B }") &&
+        parses_native("trait", "trait Tr { fn m(self) -> int }")
     }
 
-    then "`*` refuses NOTHING — the leaf is gone, exercised by a real parse" {
-        // The predicate assertion above runs in a process with no refusal set, so it
-        // only ever reaches the early return — the `want == "*"` branch is never
-        // executed by it. This runs a real compile under `*` and requires the known
-        // gap to report, which is the only thing that proves the wildcard is wired to
-        // the leaf rather than merely present in the source.
-        //
-        // Uses the same recovery anchor as the discriminating assertion below, so this
-        // control cannot go vacuous when a form graduates — the failure that retired
-        // the previous fixture (see BARE_IDENT_COMP_INST).
-        // t-47hc.4.3 INVERTS this, and the inversion IS the milestone: `@hand(decl_hand)`
-        // is deleted, so the wildcard has nothing left to refuse on this path. The former
-        // anchor — the bare-IDENT component instantiation the `@peek(decl_lead)` gate used
-        // to admit — parses CLEAN under `*` now.
-        //
-        // Read the honesty note on `native_without_delegate` below before adding to this
-        // spec: with no reachable leaf the refusal half of that helper can no longer come
-        // back true, so this file's remaining probes assert "parses clean", not "parses
-        // clean WITHOUT the delegate". The distinction stopped being observable when the
-        // last leaf went.
-        !refused_here("*", "wildcard", MALFORMED_DECL()) &&
-        // ...and the SAME wildcard reports NOTHING for a valid file that merely IMPORTS.
-        //
-        // HONEST LABEL: this case does NOT fail against the previous filter *here*, and
-        // it is kept anyway. Under `bs2 test` the `@std` import is served from the
-        // metadata fast-path rather than re-parsed, so no imported source runs under the
-        // refusal and there is nothing to contaminate — both filters see an empty
-        // result. It is a same-environment invariant, not a fail-before demonstration,
-        // and calling it one would be the vacuity this file exists to police.
-        //
-        // It is still worth pinning, because the contamination is REAL in the other
-        // environment. Running the identical command from a shell, where `@std` IS
-        // parsed from source, that fixture reports 11 refusals under `*` (7 `decl_hand`
-        // + 4 `primary_base`), every one located in `features/modules/grammar.av` and
-        // none in the fixture — and the string "error in module" appears ZERO times, so
-        // the previous `!line.contains("error in module")` filter counted all 11. That
-        // is the trap t-myz7 records having been believed TWICE, and the corpus avoided
-        // it only because no fixture had a `use`: an accident, not a guard.
-        //
-        // Hence the predicate is now attribution-based (`refusal_in_file`) — correct by
-        // construction in both environments rather than by which one it runs in.
-        !refused_here("*", "import_closure",
-            "use @std.avrac.core.{Expr}\nfn f() -> int { 1 }")
-    }
-
-    then "the declaration keywords parse with the delegate REFUSED" {
-        native_without_delegate("fn", "fn f() -> int { 1 }") &&
-        native_without_delegate("exportfn", "export fn f() -> int { 1 }") &&
-        native_without_delegate("genfn", "fn f<T>(x: T) -> T { x }") &&
-        native_without_delegate("externfn", "extern fn e(a: int) -> int") &&
-        native_without_delegate("typestruct", "type T = { x: int }") &&
-        native_without_delegate("newtype", "type U = int") &&
-        native_without_delegate("enum", "enum E { A, B }") &&
-        native_without_delegate("trait", "trait Tr { fn m(self) -> int }")
-    }
-
-    then "not even a malformed declaration needs the delegate (the probe has no subjects left)" {
-        // THE ANTI-VACUITY HALF. Every assertion above is "no refusal", which a helper
-        // that never detects one would satisfy perfectly. These are the cases that must
-        // come back false.
-        //
-        // ERROR RECOVERY is what `decl_hand` still owns — see MALFORMED_DECL. Asserted
-        // across SEVERAL keywords rather than one, because the point is that this is a
-        // property of the `@try` gate itself and not of any single rule: if it were one
-        // rule's gap, closing that rule would silently make this assertion vacuous
-        // again, which is the exact trap the previous anchor fell into.
-        //
-        // The set is the STILL-REFUSING keywords, re-pointed this slice: `enum`
-        // graduated (its malformed forms now report natively and are asserted as such
-        // in the recovery spec below), so keeping it here would have been a guard that
-        // cannot fail — the precise vacuity this half exists to prevent. `fn` stays,
-        // for the statement-body reason recorded on MALFORMED_DECL.
-        // t-47hc.4.3 — the anti-vacuity half has RUN OUT OF SUBJECTS, and saying so is
-        // the only honest move left. Every one of these forms used to come back false
-        // because it reached `@hand(decl_hand)`; the leaf is deleted, so none does, and
-        // asserting `!native_without_delegate(...)` for any of them would now be a guard
-        // that can only fail. They are inverted rather than removed, because "no form
-        // reaches the leaf" is exactly the claim this slice has to make and keep making.
-        //
-        // What is LOST with them is real and is recorded rather than papered over: the
-        // refusal half of `native_without_delegate` is inert from here on, so every
-        // assertion in this spec that uses it is now a PARSES-CLEAN test and nothing more.
-        // Verified by hand, not assumed — `AVRA_REFUSE_HAND_LEAF=*` over these fixtures
-        // reports zero refusals, valid and malformed alike.
-        // `recovery_without_delegate`, not `native_without_delegate`: for MALFORMED input
-        // the meaningful claim is "it still REPORTS, and reports without the delegate".
-        // That keeps the half this block actually cares about — a routed keyword that
-        // started silently ACCEPTING its malformed forms fails here, which is the
-        // `enum E { 5 }` regression the helper's own doc records. Only the delegate half
-        // went inert with the leaf; the reports-at-all half is as live as it ever was.
-        //
-        // MALFORMED_DECL is the exception and stays on the clean-parse helper: it names a
-        // bare-IDENT component instantiation, which is well-formed syntax whose component
-        // merely is not declared, so it PARSES and is rejected later.
-        native_without_delegate("malformed_let", MALFORMED_DECL()) &&
-        recovery_without_delegate("malformed_type", "type Foo = {\n") &&
-        recovery_without_delegate("malformed_component", "component C {\n") &&
-        recovery_without_delegate("malformed_fn", "fn foo(\n") &&
-        recovery_without_delegate("malformed_enum", "enum E {\n") &&
+    then "malformed declarations still FAIL to parse (the anti-vacuity half)" {
+        // `parses_native` alone would stay green if a keyword started silently
+        // ACCEPTING its malformed forms; these must come back as parse failures.
+        parses_native("malformed_let", MALFORMED_DECL()) &&
+        recovers("malformed_type", "type Foo = {\n") &&
+        recovers("malformed_component", "component C {\n") &&
+        recovers("malformed_fn", "fn foo(\n") &&
+        recovers("malformed_enum", "enum E {\n") &&
         // ...and the VALID counterpart of the same keyword does NOT report, which is
         // what pins the discriminator to malformed-ness rather than to the keyword.
-        native_without_delegate("wellformed_fn", "fn foo() -> int { 1 }")
+        parses_native("wellformed_fn", "fn foo() -> int { 1 }")
     }
 
     then "and the wrappers, bindings, and block forms" {
         // `while { let … }` sits here rather than in the gap assertion because the
         // `block` rule now reads its body as `declaration*`, matching the hand's
         // `parse_statement_list_ids`. Kept as corpus so it cannot silently regress.
-        native_without_delegate("while_let",
+        parses_native("while_let",
             "fn f() -> int {\n mut lo = 0\n while lo < 3 {\n  let m = 1\n  lo = m\n }\n lo\n}") &&
-        native_without_delegate("for_let",
+        parses_native("for_let",
             "fn f() -> int {\n mut lo = 0\n for i in 0..3 {\n  let m = 1\n  lo = m\n }\n lo\n}") &&
-        native_without_delegate("doc", "/// d\nfn f() -> int { 1 }") &&
-        native_without_delegate("mut_struct_field", "type S = {\n mut a: int,\n b: int\n}") &&
+        parses_native("doc", "/// d\nfn f() -> int { 1 }") &&
+        parses_native("mut_struct_field", "type S = {\n mut a: int,\n b: int\n}") &&
         // t-myz7: a TRAILING COMMA in a parameter list — the third and last delimiter
         // of the #1140 bug (call args were guarded, #1140 did `]`, params never got it).
         // These 37 sites across 5 files were the whole remaining compiler-source
@@ -635,18 +494,18 @@ spec "t-47hc.4.3: the decl_hand frontier is CLOSED — nothing depends on the le
         // Asserted HERE rather than through a `dsl_program` parity helper because that
         // helper runs `avra_program_grammar()` — a reduced view that lags production and
         // rejects a trailing comma even in a CALL, which has carried the guard for ages.
-        native_without_delegate("tc_params_fn", "fn f(a: int, b: int,) -> int {\n a\n}") &&
-        native_without_delegate("tc_params_multiline", "fn f(\n a: int,\n b: int,\n) -> int {\n a\n}") &&
-        native_without_delegate("tc_params_extern", "extern fn e(a: int, b: int,) -> int") &&
-        native_without_delegate("tc_params_impl", "type T = { x: int }\nimpl T {\n fn m(self, a: int,) -> int {\n a\n }\n}") &&
-        native_without_delegate("tc_params_trait", "trait Tr {\n fn m(self, a: int,) -> int\n}") &&
-        native_without_delegate("doc_impl_method",
+        parses_native("tc_params_fn", "fn f(a: int, b: int,) -> int {\n a\n}") &&
+        parses_native("tc_params_multiline", "fn f(\n a: int,\n b: int,\n) -> int {\n a\n}") &&
+        parses_native("tc_params_extern", "extern fn e(a: int, b: int,) -> int") &&
+        parses_native("tc_params_impl", "type T = { x: int }\nimpl T {\n fn m(self, a: int,) -> int {\n a\n }\n}") &&
+        parses_native("tc_params_trait", "trait Tr {\n fn m(self, a: int,) -> int\n}") &&
+        parses_native("doc_impl_method",
             "type T = { x: int }\nimpl T {\n /// doc\n fn m(self) -> int { 1 }\n}") &&
-        native_without_delegate("annot", "@inline\nfn f() -> int { 1 }") &&
-        native_without_delegate("mod", "mod m { fn g() -> int { 1 } }") &&
-        native_without_delegate("shape", "shape S = { n: string }") &&
-        native_without_delegate("const", "const C = 1\nfn main() { }") &&
-        native_without_delegate("spec", "spec \"s\" {\n then \"t\" { true }\n}") &&
+        parses_native("annot", "@inline\nfn f() -> int { 1 }") &&
+        parses_native("mod", "mod m { fn g() -> int { 1 } }") &&
+        parses_native("shape", "shape S = { n: string }") &&
+        parses_native("const", "const C = 1\nfn main() { }") &&
+        parses_native("spec", "spec \"s\" {\n then \"t\" { true }\n}") &&
         // The component INSTANTIATION forms, graduated from the anti-vacuity anchor
         // (t-47hc.5.1 slice C: `bare_comp_inst` / `bare_comp_inst_raw`). Both the BARE
         // form (`acct a { … }`, the `decl_lead` IDENT branch) and the KEYWORD-PREFIXED
@@ -654,12 +513,12 @@ spec "t-47hc.4.3: the decl_hand frontier is CLOSED — nothing depends on the le
         // position — because the discriminator for this family has historically been
         // POSITION rather than shape: a bare-tail `with` and a statement-position map
         // literal were both frontier items that their `let`-init siblings were not.
-        native_without_delegate("bare_ident_comp_inst", BARE_IDENT_COMP_INST()) &&
-        native_without_delegate("bare_comp_inst_toplevel",
+        parses_native("bare_ident_comp_inst", BARE_IDENT_COMP_INST()) &&
+        parses_native("bare_comp_inst_toplevel",
             "component acct { config { balance: int = 100 } }\nacct a { balance = 40 }") &&
-        native_without_delegate("kw_comp_inst_toplevel",
+        parses_native("kw_comp_inst_toplevel",
             "component acct { config { balance: int = 100 } }\ncomponent acct a { balance = 40 }") &&
-        native_without_delegate("kw_comp_inst_stmt",
+        parses_native("kw_comp_inst_stmt",
             "component acct { config { balance: int = 100 } }\nfn u() -> int {\n component acct a { balance = 40 }\n 0\n}") &&
         // SURFACE COVERAGE, added with the anchor correction. These are not previously
         // refusing forms being graduated — every one measured native the first time it
@@ -673,17 +532,17 @@ spec "t-47hc.4.3: the decl_hand frontier is CLOSED — nothing depends on the le
         // forms PRESENT in the corpus (t-axu9, one level up: the test corpus is not
         // representative either), so these were picked to hit surface the compiler's
         // own sources and its tests happen not to exercise much.
-        native_without_delegate("assoc_type", "trait Tr {\n type Item\n fn m(self) -> int\n}") &&
-        native_without_delegate("generic_impl",
+        parses_native("assoc_type", "trait Tr {\n type Item\n fn m(self) -> int\n}") &&
+        parses_native("generic_impl",
             "type B<T> = { v: T }\nimpl<T> B<T> {\n fn get(self) -> T { self.v }\n}") &&
-        native_without_delegate("impl_for",
+        parses_native("impl_for",
             "trait Tr { fn m(self) -> int }\ntype T = { x: int }\nimpl Tr for T {\n fn m(self) -> int { 1 }\n}") &&
-        native_without_delegate("union_type", "type E = int | string") &&
-        native_without_delegate("comp_method",
+        parses_native("union_type", "type E = int | string") &&
+        parses_native("comp_method",
             "component c {\n let a: int = 1\n fn m(self) -> int { 1 }\n}") &&
-        native_without_delegate("export_mut", "export mut G = 1") &&
-        native_without_delegate("module_doc", "//! module doc\nfn f() -> int { 1 }") &&
-        native_without_delegate("spec_given", "spec \"s\" {\n given \"g\" {\n  then \"t\" { true }\n }\n}")
+        parses_native("export_mut", "export mut G = 1") &&
+        parses_native("module_doc", "//! module doc\nfn f() -> int { 1 }") &&
+        parses_native("spec_given", "spec \"s\" {\n given \"g\" {\n  then \"t\" { true }\n }\n}")
     }
 
     // ── The two leaves are a MUTUAL FALLBACK, and that changes what a zero means ──
@@ -727,25 +586,13 @@ spec "t-47hc.4.3: the decl_hand frontier is CLOSED — nothing depends on the le
     // survive ONLY as the error-recovery tail, which is what t-47hc.5 has left to do.
     then "the feature-form literals need NEITHER leaf — the seam is closed" {
         // Neither leaf alone is required...
-        native_without_delegate("feat_grammar_dh",
+        parses_native("feat_grammar_dh",
             "fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
-        native_without_delegate("feat_table_dh",
+        parses_native("feat_table_dh",
             "fn t() -> int {\n let x = table { }\n 0\n}") &&
-        // ...and now NEITHER form needs either leaf, so even `*` leaves both untouched.
-        !refused_here("*", "feat_grammar_all",
-            "fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
-        !refused_here("*", "feat_table_all",
-            "fn t() -> int {\n let x = table { }\n 0\n}") &&
-        // ...and a plain fn needs neither, which pins the discriminator to the feature
-        // form rather than to "any program reaches a leaf under `*`".
-        //
-        // ANTI-VACUITY: every assertion in this `then` is now NEGATIVE, so on its own it
-        // would also pass if `refused_here` had simply stopped detecting refusals. The
-        // POSITIVE evidence lives one spec up — "the probe DISCRIMINATES — a malformed
-        // declaration still needs the delegate" — which asserts a refusal that must FIRE.
-        // Both leaves remain reachable for error recovery, so that probe stays live and
-        // keeps this one honest. If it is ever deleted, these negatives go vacuous.
-        !refused_here("*", "feat_control_all", "fn f() -> int { 1 }")
+        // ...and a plain fn parses clean, pinning the discriminator to the
+        // feature form rather than to "any program parses".
+        parses_native("feat_control_all", "fn f() -> int { 1 }")
     }
 
     // t-myz7 — the FIRST MALFORMED form to stop needing the leaf.
@@ -768,51 +615,51 @@ spec "t-47hc.4.3: the decl_hand frontier is CLOSED — nothing depends on the le
     then "malformed `mod` and `use` own their recovery, with no leaf beneath them" {
         // All three of the hand's abort paths for `mod` are native now. Each asserts
         // BOTH halves — reports, and reports without the delegate.
-        recovery_without_delegate("mod_bare", "mod\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("mod_num", "mod 5\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("mod_brace", "mod {\nfn f() -> int { 1 }") &&
+        recovers("mod_bare", "mod\nfn f() -> int { 1 }") &&
+        recovers("mod_num", "mod 5\nfn f() -> int { 1 }") &&
+        recovers("mod_brace", "mod {\nfn f() -> int { 1 }") &&
         // `use` follows, via `@try … @cut` on use_decl plus `@fallback` on the bare
         // branch so a token that starts NEITHER form still reports "expected module
         // path after `use`" instead of falling through un-owned.
-        recovery_without_delegate("use_bare", "use\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("use_dot", "use .{x}\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("use_no_brace", "use foo\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("use_pkg_noname", "use @std.{}\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("use_pkg_dotdot", "use @std..{x}\nfn f() -> int { 1 }") &&
+        recovers("use_bare", "use\nfn f() -> int { 1 }") &&
+        recovers("use_dot", "use .{x}\nfn f() -> int { 1 }") &&
+        recovers("use_no_brace", "use foo\nfn f() -> int { 1 }") &&
+        recovers("use_pkg_noname", "use @std.{}\nfn f() -> int { 1 }") &&
+        recovers("use_pkg_dotdot", "use @std..{x}\nfn f() -> int { 1 }") &&
         // The keywords that GRADUATED this slice. Each was previously an anti-vacuity
         // anchor in the spec above (asserted to still need the leaf); moving them here
         // rather than deleting them is what keeps the frontier's coverage monotone —
         // the claim changes from "still needs the leaf" to "reports WITHOUT it", and
         // both directions stay under test the whole way across.
-        recovery_without_delegate("trait_open", "trait T {\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("trait_noname", "trait {\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("shape_open", "shape S = {\nfn f() -> int { 1 }") &&
+        recovers("trait_open", "trait T {\nfn f() -> int { 1 }") &&
+        recovers("trait_noname", "trait {\nfn f() -> int { 1 }") &&
+        recovers("shape_open", "shape S = {\nfn f() -> int { 1 }") &&
         // `impl` GRADUATED (t-myz7) — its malformed forms move here rather than being
         // deleted, so the frontier's coverage grows with it instead of thinning.
-        recovery_without_delegate("impl_open", "impl Foo {\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("impl_noname", "impl {\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("impl_badmember", "impl Foo { 5 }\nfn f() -> int { 1 }") &&
+        recovers("impl_open", "impl Foo {\nfn f() -> int { 1 }") &&
+        recovers("impl_noname", "impl {\nfn f() -> int { 1 }") &&
+        recovers("impl_badmember", "impl Foo { 5 }\nfn f() -> int { 1 }") &&
         // `component` GRADUATED (t-47hc.5) — all four header shapes, the config /
         // children / body-marker blocks, and both body loops.
-        recovery_without_delegate("comp_field", "component acct_sr { balance: int = 100 }\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("comp_noname", "component\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("comp_nobrace", "component C\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("comp_config", "component C { config }\nfn f() -> int { 1 }") &&
+        recovers("comp_field", "component acct_sr { balance: int = 100 }\nfn f() -> int { 1 }") &&
+        recovers("comp_noname", "component\nfn f() -> int { 1 }") &&
+        recovers("comp_nobrace", "component C\nfn f() -> int { 1 }") &&
+        recovers("comp_config", "component C { config }\nfn f() -> int { 1 }") &&
         // `let` GRADUATED (t-47hc.5 Phase 4) — the last KEYWORD off the leaf. Its
         // malformed forms move here rather than being deleted, same as every keyword
         // before it, so the frontier's coverage grows instead of thinning. All eight
         // are the forms the binding specs cover: missing name, missing `=`, missing
         // initializer, a non-name where the name goes, the empty type annotation on
         // all three binding keywords, and the destructure list.
-        recovery_without_delegate("let_eq", "let = 5\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("let_bare", "let\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("let_noeq", "let x\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("let_noinit", "let x =\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("let_num", "let 5 = 1\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("let_notype", "let x: = 1\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("mut_notype", "mut x: = 1\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("const_notype", "const X: = 1\nfn f() -> int { 1 }") &&
-        recovery_without_delegate("letdes_bad", "let (a b) = t\nfn f() -> int { 1 }") &&
+        recovers("let_eq", "let = 5\nfn f() -> int { 1 }") &&
+        recovers("let_bare", "let\nfn f() -> int { 1 }") &&
+        recovers("let_noeq", "let x\nfn f() -> int { 1 }") &&
+        recovers("let_noinit", "let x =\nfn f() -> int { 1 }") &&
+        recovers("let_num", "let 5 = 1\nfn f() -> int { 1 }") &&
+        recovers("let_notype", "let x: = 1\nfn f() -> int { 1 }") &&
+        recovers("mut_notype", "mut x: = 1\nfn f() -> int { 1 }") &&
+        recovers("const_notype", "const X: = 1\nfn f() -> int { 1 }") &&
+        recovers("letdes_bad", "let (a b) = t\nfn f() -> int { 1 }") &&
         // ANTI-VACUITY: negatives alone would also pass if `refused_here` simply
         // stopped detecting refusals, so one form must still refuse. `enum` held this
         // role, then `impl`, then `component`, then `let` — every one of them a
@@ -830,8 +677,6 @@ spec "t-47hc.4.3: the decl_hand frontier is CLOSED — nothing depends on the le
         // stopped being true as each keyword took a `@cut` — a committed rule owns its
         // recovery and never rolls back — and `let = 5` refusing ZERO times is the
         // measurement that says so.
-        // t-47hc.4.3: was `refused_here(...)` — the bare-IDENT instantiation was the LAST
-        // form that needed the leaf. With the leaf deleted it is refused by nothing.
-        !refused_here("decl_hand", "bare_inst_no_longer_needs_leaf", "Foo bar { x: 1 }\nfn f() -> int { 1 }")
+        parses_native("bare_inst_parses", "Foo bar { x: 1 }\nfn f() -> int { 1 }")
     }
 }

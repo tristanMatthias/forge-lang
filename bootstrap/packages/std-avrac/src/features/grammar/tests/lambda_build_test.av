@@ -32,11 +32,11 @@ fn emit_rule(grammar_src: string, rule: string) -> string {
     ""
 }
 
-// The untyped-lambda grammar: `( p, p, … ) -> body` -> MkLambda. Params are `@hand(ident)`
+// The untyped-lambda grammar: `( p, p, … ) -> body` -> MkLambda. Params are `IDENT`
 // (a bare Expr.Ident node, exactly what the real paren_expr's `expression` yields for a
-// bare `x`), so lambda_exprs_to_params extracts real names; the body is `@hand(number)`.
+// bare `x`), so lambda_exprs_to_params extracts real names; the body is `NUMBER`.
 // The optional-comma-list makes 0/1/N params uniform (Nil -> []).
-fn lam_g() -> string { "r = \"(\" ( p:@hand(ident) ( \",\" p:@hand(ident) )* )? \")\" \"->\" b:@hand(number) -> MkLambda(p, b)" }
+fn lam_g() -> string { "r = \"(\" ( p:pid ( \",\" p:pid )* )? \")\" \"->\" b:NUMBER -> MkLambda(p, b)\npid = IDENT" }
 
 spec "t-47hc: DORMANT lambda build (mk_lambda) — interpreter builds Expr.Lambda" {
     then "a multi-param lambda builds Expr.Lambda with names in source order" {

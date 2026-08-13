@@ -27,7 +27,7 @@ this doc describes the ps3t.6 *program*, not a single PR.
 |---|---|---|
 | "the package's parser" (§12.4 step 3–4) | the generator/executor — a grammar → an error-tolerant RD parser producing typed AST | **landed** (expression family) |
 | good errors + a usable tree on a half-typed block (LSP/compile-validate) | `@expect`/`@recover` → partial-tree recovery (`Expr.Error`/`Missing`) | **landed** |
-| a sublanguage's gnarly corners without bloating its grammar | the `@hand(fn)` escape-hatch | **landed** |
+| a sublanguage's gnarly corners without bloating its grammar | ~~the `@hand(fn)` escape-hatch~~ | **deleted 2026-08-13** — the DSL expresses everything natively; no escape hatch exists |
 | switching how you lex on entering `sql { … }` / `html"…{x}…"` | lexer modes (`ps3t.6.7`) — the SAME machinery as string interpolation | **planned** (`.6.7`) |
 | authoring a sublanguage as *Avra source* (unquoted `grammar { }` block) | the `grammar { }` surface syntax (`ps3t.6.5`, seed-gated) | **planned** (`.6.5`) — grammars are read from strings today |
 

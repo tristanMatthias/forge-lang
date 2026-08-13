@@ -115,7 +115,7 @@ spec "t-47hc: @on(flag) — POSITION validation (accepted where emit HONORS it, 
         perr("r = @on(allow_it_sugar) l:num -> fold_binary(l)\nnum = NUMBER") != ""
     }
     then "@on cannot wrap a @hand primary (the delegate owns its own modes)" {
-        perr("r = @on(allow_it_sugar) @hand(foo)\ng = \"x\"") != ""
+        perr("r = @on(allow_it_sugar) @peek(match_table)\ng = \"x\"") != ""
     }
 }
 

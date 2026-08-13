@@ -101,7 +101,6 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("while st.cur().tk == Tk.PipeGt {") &&
         src.contains("parse_logic_or(st)") &&
         src.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
-        !src.contains("run_hand_expr(\"pipe_rhs\", st)") &&
         src.contains("CapVal.Node(fold_pipe_expr(st, sp_start, l, CapVal.Nodes(r_list)))")
     }
 
@@ -109,8 +108,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         let src = emit_all()
         src.contains("fn parse_channel_expr(st: PState) -> CapVal {") &&
         src.contains("let base = parse_channel_expr(st)") &&
-        src.contains("mk_channel(st, sp_start, elem, cap)") &&
-        !src.contains("run_hand_expr(\"channel_expr\", st)")
+        src.contains("mk_channel(st, sp_start, elem, cap)")
     }
 
     then "subjectless when arms and their default are generated, not hand delegated" {
@@ -119,17 +117,14 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("fn parse_when_arm(st: PState) -> CapVal {") &&
         src.contains("mk_when_arm(st, cond, body)") &&
         src.contains("mk_when_default(st, body)") &&
-        src.contains("mk_when(st, sp_start, CapVal.WArms(a_list))") &&
-        !src.contains("run_hand_expr(\"when_expr\", st)")
+        src.contains("mk_when(st, sp_start, CapVal.WArms(a_list))")
     }
 
     then "lambda expression and block bodies recurse entirely through generated rules" {
         let src = emit_all()
         src.contains("fn parse_lambda_body(st: PState) -> CapVal {") &&
         src.contains("return parse_block_expr(st)") &&
-        src.contains("parse_expression(st)") &&
-        !src.contains("run_hand_expr(\"lambda_body\", st)") &&
-        !src.contains("run_hand_expr(\"lambda_block_body\", st)")
+        src.contains("parse_expression(st)")
     }
 
     then "expression blocks power generated spawn and isolated primaries" {
@@ -139,9 +134,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("let __cv = parse_declaration(st)") &&
         src.contains("mk_expr_block(st, sp_start, CapVal.SNodes(stmts_list))") &&
         src.contains("mk_spawn(st, sp_start, body)") &&
-        src.contains("mk_isolated(st, sp_start, body)") &&
-        !src.contains("run_hand_expr(\"spawn_expr\", st)") &&
-        !src.contains("run_hand_expr(\"isolated_expr\", st)")
+        src.contains("mk_isolated(st, sp_start, body)")
     }
 
     then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
@@ -246,7 +239,6 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // with the hand parser's exact message AND code so all three paths agree:
         // `parse_leaf_common` reports F0040 `expected expression`, and an uncoded arm
         // surfaced as F0001 — the single divergence that kept the leaf alive.
-        !src.contains("run_hand_expr(\"primary_base\"") &&
         // t-47hc.33: the loop guard is the UNION of `postfix_suffix`'s branch FIRSTs, so
         // it GROWS as forms go native — the `?` form contributes its full entry guard
         // (mode + token + same-line) and `catch` its keyword, both ordered before the
@@ -268,7 +260,6 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // gone with it — what remains is the union of the NATIVE branches' FIRSTs, and
         // the `.` now enters through the @fallback branch that owns the trailing-dot
         // diagnostic rather than through a hand tail.
-        !src.contains("run_hand_expr(\"postfix_suffix\", st)") &&
         src.contains("st.cur().tk == Tk.Dot") &&
         src.contains("st.cur().text == \"catch\"") &&
         // Both stateful hand steps are SHARED delegate rules (`postfix_suffix = @hand(…)`,
@@ -307,7 +298,6 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // so its delegate rule must no longer route through run_hand_expr — it parses the
         // field list itself and folds it via mk_with_suffix. Assert the absence too, so a
         // regression back to the @hand leaf fails loudly here.
-        !src.contains("run_hand_expr(\"with_suffix\"") &&
         // `@onfail(bail)` on the field element binds a temp and error-checks it, so the
         // direct-call form became `let __bres<N> = parse_field_init(st)` + guard + push.
         // That bail is what makes `T { x: }` abort the literal the way the hand does.

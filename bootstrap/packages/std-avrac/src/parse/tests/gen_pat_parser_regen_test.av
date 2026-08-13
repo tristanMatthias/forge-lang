@@ -3,13 +3,13 @@
 // equal emit_pat_parser_file() = the fixed import header + emit_parser_source_ex(
 // avra_pat_grammar(), true). Editing the pattern grammar (features/match_expr/grammar.av)
 // without running `bash scripts/diagnose.sh --emit-regen-pat` leaves the checked-in parser
-// stale (silently parsing the OLD grammar in production under AVRA_PARSER_PAT_STATIC=1) —
+// stale (silently parsing the OLD grammar in production) —
 // and this test fails until it's regenerated + committed.
 //
 // Fast + in-process: the emitter is already linked via the import, so no nested compile.
 // The BEHAVIOURAL proof that the emitted text parses byte-equivalent to the hand parser is
-// diagnose.sh --emit-gen-check plus the full-selfhost differential under
-// AVRA_PARSER_PAT_STATIC=1 (the default). Sibling of gen_expr/gen_decl/gen_type_parser_regen.
+// diagnose.sh --emit-gen-check plus the full-selfhost differential.
+// Sibling of gen_expr/gen_decl/gen_type_parser_regen.
 
 use @std.avrac.features.grammar.{emit_pat_parser_file}
 use @std.avrac.core.{avra_selfhost_read_file}

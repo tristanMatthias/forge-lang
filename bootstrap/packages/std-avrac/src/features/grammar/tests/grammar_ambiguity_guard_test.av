@@ -42,6 +42,9 @@ fn is_intended_shadow(a: GAmbiguity) -> bool {
     a.rule == "unary" && a.i == 1 && a.j == 2 ||
     a.rule == "unary" && a.i == 1 && a.j == 3 ||
     a.rule == "unary" && a.i == 2 && a.j == 3 ||
+    // The §2 whole-program view's `un` carries the same complementary pair
+    // (branch 1 at_quote_top `~` → BITNOT, branch 2 in_quote_body `~` → SPLICE).
+    a.rule == "un" && a.i == 1 && a.j == 2 ||
     // t-47hc.18: `brace_expr` went grammar-native, so its `{` is a CONCRETE FIRST where
     // `@hand(brace_expr)` used to be opaque. That EXPOSES two pre-existing ordered-choice
     // shadows (it does not create them): at a `{`, a lambda body and a statement are a

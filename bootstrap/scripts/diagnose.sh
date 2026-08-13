@@ -546,11 +546,6 @@ RUN MODES
                        total instruction count + per-symbol lexer self-costs. The
                        perf rail — run before/after a lexer slice and compare.
                        Dev-only (needs valgrind + python3; run make build-quick first).
-  --hand-leaves        t-47hc's ONE NUMBER: the `@hand` leaves still on the
-                       PRODUCTION path, read off the checked-in generated
-                       parsers (what the compiler actually routes to) rather
-                       than grepping the grammar text — which also contains
-                       family-ISOLATED views that inflate the count.
   --emit-gen-check     ps3t.6.5.11 behavioural gate: render the grammar-DSL
                        parser via emit.av, then COMPILE + RUN the generated
                        source and assert it parses byte-equivalent to the hand
@@ -593,10 +588,6 @@ DIFF & ANALYSIS
                        Same three-way probe over the RECOVERY TREE, with
                        `(error)` row counts. Messages can agree while the trees
                        do not — that is the `let a = (1) ->` blocker.
-  --parser-frontier [keyword]
-                       Which declaration keywords still need @hand(decl_hand)
-                       on MALFORMED input (REFUSES vs native). A keyword
-                       graduates when its malformed forms stop needing the leaf.
   --diff-test [--base <ref>] [--new <ref>] [--new-prebuilt] [--run-equiv]
               [--intended-strictness]
                        Differential test (HRN): build the
@@ -2558,38 +2549,6 @@ PY
   log "lexer-bench: artifacts in $dir — re-run after a lexer change and compare TOTAL + per-symbol"
 }
 
-mode_hand_leaves() {
-  # t-47hc's headline metric, measured rather than eyeballed.
-  #
-  # Counting `@hand(...)` in avra_grammar.av OVERSTATES it: that file holds the
-  # production grammars AND the family-ISOLATED §2 views the equivalence tests use
-  # (avra_program_grammar, avra_stmt_grammar, ...). A leaf that appears only in an
-  # isolated view is not on the compiler's path and must not be counted as remaining
-  # work — `let_stmt` is exactly that case, and it inflated the reported number by one
-  # until this mode existed.
-  #
-  # The honest source is the CHECKED-IN GENERATED PARSERS: whatever they call through
-  # run_hand_stmt/run_hand_expr is, by construction, what production routes to.
-  local gendir="packages/std-avrac/src/parse"
-  local prod all
-  prod=$(grep -ohE 'run_hand_(stmt|expr)\("[a-z_]+"' "$gendir"/gen_*.av 2>/dev/null \
-           | sed -E 's/.*"([a-z_]+)"/\1/' | sort -u)
-  all=$(grep -vE '^[[:space:]]*//' "packages/std-avrac/src/features/grammar/avra_grammar.av" \
-           | grep -ohE '@hand\([a-z_]+\)' | sed -E 's/@hand\(([a-z_]+)\)/\1/' | sort -u)
-
-  echo "PRODUCTION @hand leaves (the number that matters):"
-  if [ -n "$prod" ]; then echo "$prod" | sed 's/^/  /'; else echo "  (none)"; fi
-  echo "  -> $(printf '%s\n' "$prod" | grep -c . || true)"
-
-  local only
-  only=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$prod") | grep . || true)
-  if [ -n "$only" ]; then
-    echo
-    echo "Grammar-text-only (family-ISOLATED views; NOT production, do not count):"
-    echo "$only" | sed 's/^/  /'
-  fi
-  ok "hand-leaves: $(printf '%s\n' "$prod" | grep -c . || true) leaf(s) on the production path"
-}
 
 mode_emit_gen_check() {
   cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
@@ -2616,7 +2575,7 @@ use @std.avrac.core.{avra_selfhost_write_file}
 // shared by both blocks, kept a superset of the union of the gen_*_file.av
 // headers plus the harness-only probes (new_pstate, dump_expr).
 fn grammar_core_imports() -> string {
-    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, run_hand, run_hand_expr, run_hand_stmt, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, unary_expr, fold_postfix_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, mk_channel, tok_starts_expr_leaf, tok_starts_pattern, tok_starts_type, capval_tok_text, capval_tok_list, capval_present, capval_to_stmt, capval_to_pat, capval_to_arm, capval_to_ann, capval_to_when_arm, capval_to_texpr, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_finit, dump_expr, lookahead_ok, base_pred, gensym_token, modes_with_flag_on, modes_with_flag_off, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_splice_arm, mk_arm_return, mk_match, mk_match_table, mk_match_table_expr, mk_match_expr, mk_expr_block, mk_if_expr, mk_if_let, mk_if_let_stmt, mk_grammar_block, mk_table_header, mk_table_row, mk_table_lit, mk_quote, mk_quote_type, mk_quote_arm, mk_spawn, mk_isolated, mk_none_cap, mk_when, mk_when_arm, mk_when_default, mk_field_init, mk_with_suffix, fold_type_union, mk_named_type, mk_splice_type, mk_qualified_type, mk_paren_type, mk_dyn_type, mk_fn_type, mk_use, mk_use_pkg, mk_module, mk_fn_decl_g, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_evariant, mk_field, mk_param, mk_export_decl, mk_stamp_stmt_at, mk_splice, mk_splice_struct, mk_template, mk_tagged_template, fold_postfix_with_expr, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_field_access, mk_force_unwrap, mk_generic_call_suffix, mk_group_or_empty, mk_index_suffix, mk_lambda, mk_lambda_typed, mk_list_comp, mk_list_lit, mk_map_lit, mk_opt_chain, mk_opt_method_call, mk_qualified, mk_struct_lit, mk_try_suffix, mk_tuple_fr, mk_tuple_index, modes_with_counter_bumped, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, mk_let_destructure_g, mk_parallel_g, mk_select_g, mk_select_arm_g, capval_to_select_arm, mk_spec_block_g, mk_given_block_g, mk_then_block_g, mk_comp_config_g, mk_children_slot_g, mk_comp_field_g, mk_component_def_g, mk_component_paren_def_g, mk_comp_config_pair_g, mk_component_block_g, mk_raw_component_block_g, mk_method_shorthand_g, rawbrace_scan, capval_to_comp_config, capval_to_comp_config_pair, capval_to_comp_config_pair_list, capval_to_children_slot, capval_tok_texts, capval_is_error_expr, capval_is_error_stmt, error_stmt_of, mk_assoc_type_def, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_list, mk_fn_decl_where_g, mk_plain_name, mk_splice_name, mk_trait_list, mk_where_param}\n"
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, unary_expr, fold_postfix_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, mk_channel, tok_starts_expr_leaf, tok_starts_pattern, tok_starts_type, capval_tok_text, capval_tok_list, capval_present, capval_to_stmt, capval_to_pat, capval_to_arm, capval_to_ann, capval_to_when_arm, capval_to_texpr, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_finit, dump_expr, lookahead_ok, base_pred, gensym_token, modes_with_flag_on, modes_with_flag_off, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks, mk_block, mk_while, mk_if, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_splice_arm, mk_arm_return, mk_match, mk_match_table, mk_match_table_expr, mk_match_expr, mk_expr_block, mk_if_expr, mk_if_let, mk_if_let_stmt, mk_grammar_block, mk_table_header, mk_table_row, mk_table_lit, mk_quote, mk_quote_type, mk_quote_arm, mk_spawn, mk_isolated, mk_none_cap, mk_when, mk_when_arm, mk_when_default, mk_field_init, mk_with_suffix, fold_type_union, mk_named_type, mk_splice_type, mk_qualified_type, mk_paren_type, mk_dyn_type, mk_fn_type, mk_use, mk_use_pkg, mk_module, mk_fn_decl_g, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_evariant, mk_field, mk_param, mk_export_decl, mk_stamp_stmt_at, mk_splice, mk_splice_struct, mk_template, mk_tagged_template, fold_postfix_with_expr, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_field_access, mk_force_unwrap, mk_generic_call_suffix, mk_group_or_empty, mk_index_suffix, mk_lambda, mk_lambda_typed, mk_list_comp, mk_list_lit, mk_map_lit, mk_opt_chain, mk_opt_method_call, mk_qualified, mk_struct_lit, mk_try_suffix, mk_tuple_fr, mk_tuple_index, modes_with_counter_bumped, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, mk_let_destructure_g, mk_parallel_g, mk_select_g, mk_select_arm_g, capval_to_select_arm, mk_spec_block_g, mk_given_block_g, mk_then_block_g, mk_comp_config_g, mk_children_slot_g, mk_comp_field_g, mk_component_def_g, mk_component_paren_def_g, mk_comp_config_pair_g, mk_component_block_g, mk_raw_component_block_g, mk_method_shorthand_g, rawbrace_scan, capval_to_comp_config, capval_to_comp_config_pair, capval_to_comp_config_pair_list, capval_to_children_slot, capval_tok_texts, capval_is_error_expr, capval_is_error_stmt, error_stmt_of, mk_assoc_type_def, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_list, mk_fn_decl_where_g, mk_plain_name, mk_splice_name, mk_trait_list, mk_where_param}\n"
 }
 
 fn imports_block() -> string {
@@ -2700,8 +2659,9 @@ fn stmt_harness_block() -> string {
 }
 
 fn pat_imports_block() -> string {
-    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_pat, capval_to_pat_list, capval_tok_text, run_hand, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks}\n" +
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_pat, capval_to_pat_list, capval_tok_text, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks, run_grammar_pat}\n" +
     "use @std.avrac.parse.{parser_new}\n" +
+    "use @std.avrac.features.match_expr.{avra_pat_grammar}\n" +
     "use @std.avrac.core.{Pattern, PatId, ValueType, NodeStore, render_pat_id, pattern_optional_present, pattern_optional_absent}\n\n"
 }
 
@@ -2713,11 +2673,9 @@ fn pat_harness_block() -> string {
     "    render_pat_id(st.store, root)\n" +
     "}\n\n" +
     "fn hand_pat(src: string) -> string {\n" +
-    "    mut p = parser_new(src)\n" +
-    "    match p.parse_pattern_or() {\n" +
-    "        .Ok(id) -> render_pat_id(p.store, id)\n" +
-    "        .Err(_) -> \"<parse error>\"\n" +
-    "    }\n" +
+    "    let r = run_grammar_pat(avra_pat_grammar(), src)\n" +
+    "    if r.had_error { return \"<parse error>\" }\n" +
+    "    render_pat_id(r.store, r.root)\n" +
     "}\n\n" +
     "fn agree(src: string) -> bool { gen_pat(src) == hand_pat(src) }\n\n" +
     "fn main() {\n" +
@@ -2732,7 +2690,7 @@ fn pat_harness_block() -> string {
 }
 
 fn type_imports_block() -> string {
-    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_texpr, capval_to_texpr_list, capval_present, capval_tok_text, run_hand, lookahead_ok, fold_type_union, mk_named_type, mk_splice_type, mk_qualified_type, mk_paren_type, mk_fn_type, mk_dyn_type}\n" +
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_texpr, capval_to_texpr_list, capval_present, capval_tok_text, lookahead_ok, fold_type_union, mk_named_type, mk_splice_type, mk_qualified_type, mk_paren_type, mk_fn_type, mk_dyn_type}\n" +
     "use @std.avrac.parse.{parser_new}\n" +
     "use @std.avrac.core.{TypeExpr, NodeStore, render_type_id, type_expr_to_vtype}\n\n"
 }
@@ -2774,7 +2732,7 @@ fn type_harness_block() -> string {
 }
 
 fn program_imports_block() -> string {
-    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, capval_to_stmt, capval_to_texpr, capval_to_pentry, capval_to_field, capval_to_variant, capval_to_tparam, capval_tok_text, capval_tok_list, capval_present, run_hand, run_hand_stmt, run_hand_expr, literal_node, lookahead_ok, modes_with_flag_on, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, fold_postfix_expr, unary_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, mk_channel, tok_starts_expr_leaf, fold_type_union, mk_named_type, mk_splice_type, mk_qualified_type, mk_paren_type, mk_dyn_type, mk_fn_type, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_block, mk_while, mk_if, mk_for_loop, mk_return_opt, mk_fn_decl, mk_fn_decl_g, mk_type_decl, mk_type_decl_any, mk_type_param, mk_enum_decl, mk_enum_decl_g, mk_shape_decl, mk_extern_fn, mk_trait_decl, mk_impl, mk_use, mk_use_pkg, mk_module, mk_field, mk_evariant, mk_param, mk_assoc_type, mk_trait_method, mk_method, mk_field_init, mk_with_suffix, capval_to_finit, capval_to_tparam, mk_map_lit, mk_qualified, capval_toks, mk_template, mk_doc_annotated, capval_is_error_expr, capval_is_error_stmt, error_stmt_of, mk_assoc_type_def, mk_fn_decl_where_g, mk_plain_name, mk_splice_name, mk_where_param}\n" +
+    "use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, capval_to_stmt, capval_to_texpr, capval_to_pentry, capval_to_field, capval_to_variant, capval_to_tparam, capval_tok_text, capval_tok_list, capval_present, literal_node, lookahead_ok, modes_with_flag_on, mk_binary, fold_binary_expr, fold_logical_expr, fold_nullish_expr, fold_postfix_expr, unary_expr, mk_assign_expr, fold_pipe_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, mk_channel, tok_starts_expr_leaf, fold_type_union, mk_named_type, mk_splice_type, mk_qualified_type, mk_paren_type, mk_dyn_type, mk_fn_type, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_block, mk_while, mk_if, mk_for_loop, mk_return_opt, mk_fn_decl, mk_fn_decl_g, mk_type_decl, mk_type_decl_any, mk_type_param, mk_enum_decl, mk_enum_decl_g, mk_shape_decl, mk_extern_fn, mk_trait_decl, mk_impl, mk_use, mk_use_pkg, mk_module, mk_field, mk_evariant, mk_param, mk_assoc_type, mk_trait_method, mk_method, mk_field_init, mk_with_suffix, capval_to_finit, capval_to_tparam, mk_map_lit, mk_qualified, capval_toks, mk_template, mk_doc_annotated, capval_is_error_expr, capval_is_error_stmt, error_stmt_of, mk_assoc_type_def, mk_fn_decl_where_g, mk_plain_name, mk_splice_name, mk_where_param, gensym_token, mk_let_binding_g, mk_quote, mk_expr_block, mk_splice, modes_with_counter_bumped}\n" +
     "use @std.avrac.parse.{parse_program_source}\n" +
     "use @std.avrac.core.{Expr, ExprId, Stmt, StmtId, TypeExpr, ParamEntry, FieldEntry, FieldInit, Variant, ValueType, NodeStore, render_stmt_ids}\n\n"
 }
@@ -4514,7 +4472,6 @@ main() {
     --emit-regen-kw)      mode_emit_regen_kw "$@" ;;
     --emit-regen-run)     mode_emit_regen_run "$@" ;;
     --lexer-bench)        mode_lexer_bench "$@" ;;
-    --hand-leaves)        mode_hand_leaves "$@" ;;
     --emit-gen-check)     mode_emit_gen_check "$@" ;;
     --bs2-stale-check)    mode_bs2_stale_check "$@" ;;
     --bs2-stale-report)   mode_bs2_stale_report "$@" ;;
@@ -4527,7 +4484,6 @@ main() {
     --diff-test)          mode_diff_test "$@" ;;
     --parser-probe)       mode_parser_probe "$@" ;;
     --parser-tree)        mode_parser_tree "$@" ;;
-    --parser-frontier)    mode_parser_frontier "$@" ;;
     --score)              mode_score "$@" ;;
     --rank)               mode_rank "$@" ;;
     --asan)               mode_asan "$@" ;;
@@ -5838,41 +5794,6 @@ mode_parser_tree() {
   printf 'exec [%s err rows]: %s\n' "$(_pt_errs "$x")" "$(printf '%s' "$x" | tr '\n' ' ')"
 }
 
-# --parser-frontier: which declaration keywords still need `@hand(decl_hand)` on
-# MALFORMED input. `AVRA_REFUSE_HAND_LEAF=decl_hand` makes reaching the leaf an
-# error, so REFUSES means "this keyword's recovery is still the hand's". A keyword
-# GRADUATES when its malformed forms stop needing the leaf — routing it before
-# then is the "routed on no evidence" trap, since valid input agrees either way.
-# Pass a keyword name to run only its row.
-mode_parser_frontier() {
-  cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
-  [ -x "$BS2" ] || die "parser probe: no bs2 at $BS2 (run make build-quick)"
-  local only="${1:-}"
-  _pf_probe() {
-    [ -n "$only" ] && [ "$only" != "$1" ] && return 0
-    local f="${TMPDIR:-/tmp}/avra_frontier.$$.av"
-    printf '%s\n' "$2" > "$f"
-    local out
-    out=$(AVRA_REFUSE_HAND_LEAF=decl_hand "$BS2" check "$f" 2>&1 | sed 's/.\[[0-9;]*m//g')
-    rm -f "$f"
-    if printf '%s' "$out" | grep -q "is refused"; then printf '%-12s REFUSES\n' "$1"
-    else printf '%-12s native\n' "$1"; fi
-  }
-  _pf_probe mod       'mod {'
-  _pf_probe use       'use @std.{'
-  _pf_probe const     'const X ='
-  _pf_probe trait     'trait T {'
-  _pf_probe shape     'shape S = {'
-  _pf_probe enum      'enum E {'
-  _pf_probe select    'select { x }'
-  _pf_probe spec      'spec "s" { given }'
-  _pf_probe fn        'fn foo('
-  _pf_probe type      'type Foo = {'
-  _pf_probe impl      'impl Foo {'
-  _pf_probe export    'export'
-  _pf_probe component 'component acct_sr { balance: int = 100 }'
-  _pf_probe let       'let = 5'
-}
 
 mode_diff_test() {
   local base="" new="HEAD" prebuilt=0 run_equiv=0 intended=0 strictness=0 strictness_seen=0

@@ -6,7 +6,5 @@ use core.{feature_new, Feature}
 /// keyword to the parser's `parse_function_declaration`. Codegen
 /// for function bodies and call sites lives in `codegen.av`.
 export fn fn_decl_feature() -> Feature {
-    feature_new("fn_decl") with {
-        decl_keyword: "kw_fn",
-    }
+    feature_new("fn_decl")
 }

@@ -27,16 +27,21 @@ use @std.avrac.core.{render_expr_id}
 
 fn expr_grammar_src() -> string {
     "grammar Expr {\n" +
-    "  expression = unary\n" +
-    // `~`/`-`/`!` prefix — the pure BITNOT side (outside a quote). Inside a
-    // quote the `~` is never seen here: the whole quote is one @hand primary.
-    "  unary      = op:(\"!\" | \"-\" | \"~\") operand:unary -> Unary(op, operand) | postfix\n" +
+    "  expression = l:unary ( op:(\"+\") r:unary )* -> fold_binary(l, op, r)\n" +
+    // `~` splits on quote depth: bitwise-NOT outside a quote, splice inside one.
+    "  unary      = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand)\n" +
+    "             | @when(at_quote_top) op:(\"~\") operand:unary -> Unary(op, operand)\n" +
+    "             | @when(in_quote_body) \"~\" t:unary -> MkSplice(t)\n" +
+    "             | postfix\n" +
     "  postfix    = base:primary ( s:suffix )* -> fold_postfix(base, s)\n" +
     "  suffix     = \".\" name:IDENT -> field_suffix(name)\n" +
     "             | \"(\" ( a:expression ( \",\" a:expression )* )? \")\" -> call_suffix(a)\n" +
-    // @hand(quote_expr) FIRST is the `quote` keyword; bare names/numbers use the
-    // pure atoms. So `quote { ~x }` routes to parse_quote (splice), `~x` doesn't.
-    "  primary    = @hand(quote_expr) | NUMBER | @hand(ident)\n" +
+    "  primary    = quote_expr | NUMBER | IDENT\n" +
+    "  quote_expr = \"quote\" ( qk:(\"stmt\" | \"stmts\" | \"decl\") )? @bump(quote_depth) qb:quote_body -> MkQuote(qk, qb)\n" +
+    "  quote_body = \"{\" ( qs:qstatement )* \"}\" -> MkExprBlock(qs)\n" +
+    "  qstatement = let_stmt | qexpr_stmt\n" +
+    "  let_stmt   = @try \"let\" @cut @require n:IDENT @require \"=\" @onfail(bail) init:expression -> MkLetBinding(m, n, ty, init, e, tmp)\n" +
+    "  qexpr_stmt = qe:expression -> ExprStmt(qe)\n" +
     "}"
 }
 
@@ -55,7 +60,7 @@ fn hand_expr(src: string) -> string {
 
 fn agree(src: string) -> bool { dsl_expr(src) == hand_expr(src) }
 
-spec "grammar-DSL gnarly-5%: ~ splice-vs-bitnot via @hand(quote_expr) == hand parser (ps3t.6.5.10)" {
+spec "grammar-DSL: ~ splice-vs-bitnot == production parser (ps3t.6.5.10)" {
     given "`~` OUTSIDE a quote is bitwise-NOT (pure grammar, no false splice)" {
         then "the bitnot / neg / not prefixes agree with the hand parser" {
             agree("~5") &&
@@ -68,7 +73,7 @@ spec "grammar-DSL gnarly-5%: ~ splice-vs-bitnot via @hand(quote_expr) == hand pa
             !dsl_expr("~x").contains("splice")
         }
     }
-    given "`~` INSIDE a quote body is a Splice (the @hand(quote_expr) route)" {
+    given "`~` INSIDE a quote body is a Splice" {
         then "the quote construct + inner splice agree with the hand parser" {
             agree("quote { ~x }") &&
             agree("quote { ~foo }") &&
@@ -92,7 +97,7 @@ spec "grammar-DSL gnarly-5%: ~ splice-vs-bitnot via @hand(quote_expr) == hand pa
             !dsl_expr("quote { x }").contains("splice")
         }
     }
-    given "`@hand(quote_expr)` composes with the pure grammar around it" {
+    given "`quote_expr` composes with the pure grammar around it" {
         then "the quote nests as one primary among the pure unary/postfix rules" {
             // A splice inside a quote differs from a bitnot outside it — the two
             // meanings of `~` are routed to the two different builders.

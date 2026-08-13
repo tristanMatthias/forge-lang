@@ -26,10 +26,10 @@ fn emit_top(gsrc: string) -> string {
     ""
 }
 
-// An alternation with BOTH a `@try` branch and a bare-ref tail whose rule reaches an
-// `@hand` leaf — the shape of the production `declaration` rule.
+// An alternation with BOTH a `@try` branch and a bare-ref tail whose rule OWNS its
+// recovery (a multi-branch dispatch) — the shape of the production `declaration` rule.
 fn spec_plus_tail() -> string {
-    emit_top("top = @try lead | rest\nlead = \"use\" IDENT\nrest = @hand(quote_expr)")
+    emit_top("top = @try lead | rest\nlead = \"use\" IDENT\nrest = \"quote\" IDENT | \"mod\" IDENT")
 }
 
 // The same alternation with the tail REMOVED: a `@try` branch and a purely native

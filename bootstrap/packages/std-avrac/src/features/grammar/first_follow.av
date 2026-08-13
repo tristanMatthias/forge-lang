@@ -16,10 +16,9 @@
 // its first item's FIRST, extended through any NULLABLE (Opt/Star) leading
 // items; a One/Plus item is non-nullable and stops the FIRST there. Rule refs
 // are cycle-guarded (a re-visited rule contributes nothing, matching
-// tok_starts_rule's `list_has(visited,name) -> false`). `@hand(fn)` primaries
-// are OPAQUE — their FIRST is a hand predicate the CFG can't see — so they mark
+// tok_starts_rule's `list_has(visited,name) -> false`). `@rawbrace` primaries
+// are OPAQUE — they accept any token — so they mark
 // the set opaque and are NOT reported as concrete overlaps (soundness: no false
-// positives; a follow-up can surface hand-vs-hand overlaps once hand FIRST-sets
 // are declared).
 //
 // Terminal ids are PREFIXED so a literal terminal and a named terminal never
@@ -28,7 +27,7 @@
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, rule_index_of}
 
 /// A materialised FIRST set: the concrete terminal ids that can begin a form,
-/// plus `opaque` = "this form also admits an @hand(fn) leaf whose FIRST the CFG
+/// plus `opaque` = "this form also admits a leaf whose FIRST the CFG
 /// cannot enumerate" (so an empty-`terms` opaque set is NOT the empty language).
 export type FirstSet = { terms: List<string>, opaque: bool }
 
@@ -62,10 +61,9 @@ fn first_prim(g: Grammar, prim: GPrim, visited: List<string>) -> FirstSet {
         .Named(k) -> FirstSet { terms: ["tok:" + k], opaque: false }
         .Ref(name) -> first_rule(g, name, visited)
         .Group(inner) -> first_node(g, inner, visited)
-        .Hand(_) -> FirstSet { terms: [], opaque: true }
         // A `@when` predicate is zero-width — it contributes NO FIRST terminal
         // (and is not opaque: it gates the branch on a mode, it doesn't hide a
-        // hand-parsed leaf). first_seq skips it so the scan continues past it.
+        // leaf). first_seq skips it so the scan continues past it.
         .Pred(_) -> ffs_empty()
         // `@peek` is the same zero-width, non-opaque shape (a token-lookahead gate,
         // not a hidden leaf) — no FIRST terminal, scanned past identically.
@@ -75,7 +73,7 @@ fn first_prim(g: Grammar, prim: GPrim, visited: List<string>) -> FirstSet {
         // that mints before its keyword would compute an empty FIRST and never dispatch.
         .Gensym(_) -> ffs_empty()
         // `@rawbrace` consumes an arbitrary token run — its FIRST cannot be
-        // enumerated, which is exactly what `opaque` expresses (same as `@hand`). In
+        // enumerated, which is exactly what `opaque` expresses. In
         // practice it never leads a branch (it follows the `"{"` that opened the
         // block), so the opaque marker is a truthful placeholder, not a live gate.
         .RawBrace(_) -> FirstSet { terms: [], opaque: true }
@@ -192,7 +190,7 @@ fn ff_lookup_rule(g: Grammar, name: string) -> Rule {
 }
 
 /// The concrete FIRST terminals shared by two alternatives (empty = disjoint).
-/// @hand opacity is NOT counted as a shared terminal (soundness: no false
+/// Opacity is NOT counted as a shared terminal (soundness: no false
 /// positives; concrete-terminal overlap only).
 fn shared_terms(a: FirstSet, b: FirstSet) -> List<string> {
     mut out: List<string> = []

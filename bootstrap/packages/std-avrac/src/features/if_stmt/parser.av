@@ -45,19 +45,6 @@ impl Parser {
         .Ok(IfLetHeader { tmp: tmp, binding: binding, subject_id: subject_id })
     }
 
-    fn parse_if_let_statement(self) -> Result<StmtId, string> {
-        let h = self.parse_if_let_header()?
-        let then_id = self.parse_statement()?
-        mut else_opt: StmtId? = none
-        if self.check(Tk.KwElse) {
-            self.advance()
-            else_opt = self.parse_statement()?
-        }
-        // Rows built by the SHARED core (core/arena.av) so the grammar frontend's
-        // native `if let` lowers to exactly these — see build_if_let_stmt's header.
-        .Ok(build_if_let_stmt(self.store, h.tmp, h.binding, h.subject_id, then_id, else_opt))
-    }
-
     // Expression-position `if let v = x { THEN } else { ELSE }`. Same
     // bind-fresh desugar as the statement form, but lowered to a block
     // EXPRESSION whose value is the inner `if`-expression:

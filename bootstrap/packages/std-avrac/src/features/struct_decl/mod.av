@@ -58,17 +58,13 @@ export fn field_assign_feature() -> Feature {
 
 /// Register the `type Foo = { ... }` declaration feature.
 export fn type_decl_feature() -> Feature {
-    feature_new("type_decl") with {
-        decl_keyword: "kw_type",
-    }
+    feature_new("type_decl")
 }
 
 /// Register the structural-typing `shape Foo = { ... }`
 /// declaration feature. Shapes use width subtyping (spec Axis 1).
 export fn shape_decl_feature() -> Feature {
-    feature_new("shape_decl") with {
-        decl_keyword: "kw_shape",
-    }
+    feature_new("shape_decl")
 }
 
 /// Codegen hook for `StructLit`. Forwards to `emit_struct_lit`.

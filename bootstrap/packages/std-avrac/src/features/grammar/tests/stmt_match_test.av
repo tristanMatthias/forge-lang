@@ -20,10 +20,6 @@ use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id}
 
-// A statement-match grammar composing the match, pattern, and expression
-// families. `match_arm` = pattern (optional `if` guard) `->` body; arms are
-// comma-separated with an optional trailing comma (as parse_match_arm_list,
-// which consumes an optional `,` after each arm).
 fn match_grammar_src() -> string {
     "grammar Stmt {\n" +
     "  match_stmt  = \"match\" subj:expression \"{\" ( arms:match_arm \",\"? )* \"}\" -> MkMatch(subj, arms)\n" +
@@ -44,7 +40,7 @@ fn match_grammar_src() -> string {
     "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
     "  factor     = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
     "  un         = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
-    "  primary    = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\" | IDENT\n" +
     "             | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
     "}"
 }

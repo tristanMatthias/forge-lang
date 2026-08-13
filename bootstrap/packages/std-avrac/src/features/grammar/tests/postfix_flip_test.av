@@ -69,9 +69,6 @@ spec "t-47hc.33: `expr?` is grammar-native" {
     then "and the SAME-LINE test — a `?` opening the next line ends the chain" {
         postfix_rule_src().contains("to_linecol(st.toks[st.pos - 1].pos).line")
     }
-    then "the `@hand` tail is GONE — every form is native (t-47hc.33.2)" {
-        !postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
-    }
     then "the loop over the rule keeps its no-progress break" {
         // The hand tail can return WITHOUT consuming (guard unmatched / generic-call
         // speculation failed / trailing non-postfix arm). The break is the loop's exit;
@@ -108,9 +105,6 @@ spec "t-47hc.33: `expr?.field` is grammar-native" {
         // IDENT-only guard and proved nothing.
         postfix_rule_src().contains("st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved")
     }
-    then "the `@hand` tail is GONE — no excluded case is left to reach it" {
-        !postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
-    }
 }
 
 // Form 4 — `expr.field`. The lesson this form encodes: a branch is dispatched on its
@@ -131,12 +125,6 @@ spec "t-47hc.33: `expr.field` is grammar-native" {
         // dot_is_postfix is a decision TREE, not a conjunction of markers, so it is one
         // shared base predicate rather than @when(cell_mode) + ^ + a base read.
         postfix_rule_src().contains("base_pred(\"dot_postfix_ok\", st)")
-    }
-    then "the `@hand` tail is GONE — the `.`-led readings are all native" {
-        // Was "the enum-ctor reading stays hand-owned" until form 6 flipped it. The
-        // `.`-led readings are now BOTH native and separated by their peeks; the tail
-        // remains for `!` and the compound shapes it re-dispatches into.
-        !postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
     }
 }
 
@@ -441,25 +429,5 @@ spec "t-47hc.33: `expr!` is grammar-native" {
         let s = postfix_rule_src()
         let start = s.index_of("st.cur().tk == Tk.Bang")
         start >= 0 && s.substring(0, start).contains("st.modes.allow_dot_postfix != 0")
-    }
-    then "the `@hand` tail is RETIRED — `!` was the last form, and the dot fallback closed the hole" {
-        // BOTH reasons this spec once listed are closed, and NEITHER was what it said.
-        //
-        //   1. The reserved-keyword-field gap — closed by t-47hc.33.1 (FIELDNAME). Its
-        //      example was wrong too: `if` / `match` are ACTIVE keywords the hand REJECTS
-        //      in field position, never evidence of the gap.
-        //   2. The `!`-loop fallthrough — NOT the blocker for the tail, but a real bug
-        //      in its own right, and this comment used to state the measurement that
-        //      MISSED it ("every compound agrees"). It did not: `x!\n?` folded into a
-        //      Try that the entry guard would have rejected. Fixed by re-testing the
-        //      guard on the fallthrough dispatch; all six agree now, and they are
-        //      corpus (error_recovery_differential_test) rather than a sentence here.
-        //
-        // The real blocker was a TRAILING DOT. Every `.`-led branch is @peek-gated on a
-        // valid field name, so `a.` completed none of them and fell to the delegate —
-        // which ENTERS the hand `.` arm (guard: `Tk.Dot && dot_is_postfix`, no lookahead)
-        // and reports "expected field name after `.`". Without a tail nothing owned that
-        // diagnostic. The `@fallback` `.` branch does now.
-        !postfix_rule_src().contains("run_hand_expr(\"postfix_suffix\", st)")
     }
 }

@@ -1,63 +1,14 @@
 // WHY: ps3t.6.5.11 — the code-generation face of the generator. Where
-// executor.av INTERPRETS a Grammar value as error-tolerant recursive
-// descent, emit.av RENDERS the same lowering as a STATIC parser's
-// *source*: one straight-line `fn parse_<rule>(st: PState) -> CapVal`
-// per rule (Nystrom's grammar→RD correspondence, GRAMMAR_DSL.md §4), no
-// interpreter and no Grammar value at run time.
-//
-// The emitted text is REAL, COMPILABLE Avra that drives the executor
-// vocabulary now exported for exactly this (ps3t.6.5.11 GAP-1): a PState
-// (the real-lexer token cursor + shared NodeStore), the `CapVal` capture
-// union, and the existing build helpers (fold_binary_expr / fold_logical_expr
-// / unary_expr / fold_postfix_expr) + leaf builders (literal_node, run_hand).
-// The GOLDEN REFERENCE this must match, behaviourally, is the hand-written
-// tests/gen_expr_parser_test.av; the emitter's output is verified by
-// COMPILING + RUNNING it against the same differential oracle
-// (tests/emit_generated_run_test.av) — the ticket's "generated fns compile +
-// pass the differential test", proven behaviourally rather than by a brittle
-// byte-for-byte format match.
-//
-// The lowering, construct by construct (mirrors executor.av's model):
-//   rule name = …             → fn parse_name(st: PState) -> CapVal { … }
-//   nonterminal foo           → parse_foo(st)                (returns a CapVal)
-//   terminal "+" / NUMBER      → st.advance() under a st.cur().text/kind guard
-//   l:X ( op:(…) r:X )* -> B  → a fold loop: seed `let l =`, `mut`-list
-//                               accumulators, `while <FIRST>`, then B(…)
-//   a | b   (alternation)     → an if/else-if chain on each branch's FIRST,
-//                               a bare-ref last branch as the fallthrough tail
-//   ( … )?                    → if <FIRST> { … }
-//   -> Ctor(a, b)             → apply_build's twin: one emission per build name
-//   @hand(fn)                 → run_hand / run_hand_expr / run_hand_stmt /
-//                               run_hand_stmt/run_hand_expr by rule class
-//   @expect / @recover        → a checked consume with st.report + st.synchronize
-//
-// The build-name → emission map (emit_call_build) is the single
-// target-specific seam, mirroring executor.av's apply_build one-to-one — so
-// a build added there is added HERE, in lockstep (rule 8: one seam, not a
-// forest of special cases).
 
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
 // t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
 // The local wrappers below delegate to it so the two engines cannot drift.
-use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, seq_is_leading_hand, rule_owns_recovery}
+use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, rule_owns_recovery}
 use features.grammar.{ExpectHit, expect_for, rule_own_expect_msg, rule_first_expect_msg, rule_first_expect_msg_leaf, gated_ref_of, node_has_onfail}
 use features.grammar.{grammar_has_gate, rule_body_has_gate, rule_first_is_ident}
-use features.grammar.{is_hand_stmt_leaf, is_hand_expr_leaf}
-use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule, hand_kind}
+use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule}
 
 // ── Pratt collapse of the uniform binary-operator ladder (ps3t.6.7 Step G, slice 1) ──
-//
-// The grammar spells the operator precedence ladder as a CHAIN of uniform
-// left-assoc fold rules — `bitor = l:bitxor ( op:("|") r:bitxor )* -> fold_binary`,
-// `bitxor = l:bitand …`, … down to `factor = l:unary …`. Emitting one parse fn per
-// rule makes the generated parser DESCEND all N frames per leaf — exactly the cost
-// the hand parser shed by collapsing those same levels into ONE `parse_binary_pratt`
-// loop (mod.av). We give the GENERATED parser the same collapse: detect the chain,
-// emit a single precedence-climbing loop over a binding-power table, and lower each
-// chain rule to a one-line wrapper `parse_<rule>(st) = parse_binary_pratt_g(st, <lbp>)`
-// so every call site keeps its exact entry precedence. Byte/tree-identical to the
-// fold descent (both build left-assoc `Expr.Binary` via the shared `binop_of`), and
-// N frames per leaf become 1.
 type ChainRule = { name: string, operand: string, ops: List<string>, lbp: int }
 
 /// The rule name a `.Ref` primary points at (else "").
@@ -145,8 +96,8 @@ fn rule_binary_fold(r: Rule) -> ChainRule {
 
 /// Detect the binary-operator ladder as an ORDERED chain, loosest first. The head
 /// is the fold rule that is no other fold's operand; we then follow operand links
-/// down to the leaf. Each level's lbp = 10 + 2*index (matching the hand parser's
-/// bitor=10 … factor=22). Empty when the grammar has no such ladder.
+/// down to the leaf. Each level's lbp = 10 + 2*index
+/// (bitor=10 … factor=22). Empty when the grammar has no such ladder.
 fn binary_fold_chain(g: Grammar) -> List<ChainRule> {
     mut folds: List<ChainRule> = []
     for r in g.rules {
@@ -184,38 +135,13 @@ fn chain_lbp_of(chain: List<ChainRule>, name: string) -> int {
     -1
 }
 
-/// The ExprId-returning call for the ladder's leaf (ps3t.6.7 Step G slice 2). When
-/// the leaf rule is a bare `@hand` expression delegation (`unary = @hand(hand_unary)`),
-/// call `run_hand_expr` DIRECTLY — it already yields an `ExprId`, so the Pratt loop
-/// skips the `CapVal.Node` box + `capval_to_expr` unbox round-trip per leaf. Any
-/// other leaf shape falls back to the boxed `capval_to_expr(parse_<leaf>)`.
+/// The ExprId-returning call for the ladder's leaf.
 fn leaf_exprid_call(g: Grammar, leaf: string) -> string {
-    for r in g.rules {
-        if r.name == leaf {
-            match r.body {
-                .Alt(branches) -> {
-                    // Only a STRICT bare delegation gets the inline: one branch, one
-                    // item, `One` repetition (not `*`/`+`), and NO build. Otherwise a
-                    // repetition or a `-> build` on the leaf would be silently dropped
-                    // by inlining run_hand_expr — fall back to the boxed parse_<leaf>.
-                    if branches.length == 1 && branches[0].items.length == 1 &&
-                        rep_is_one(branches[0].items[0].rep) && build_is_none(branches[0].build) {
-                        match branches[0].items[0].prim {
-                            .Hand(hf) -> {
-                                if is_hand_expr_leaf(hf) { return "run_hand_expr(\"${hf}\", st)" }
-                            }
-                            _ -> {}
-                        }
-                    }
-                }
-            }
-        }
-    }
     "capval_to_expr(st, parse_${leaf}(st))"
 }
 
 /// The emitted Pratt prelude: `binary_lbp_g` (generated from the chain's operators)
-/// + the precedence-climbing loop, the generated twin of the hand `parse_binary_pratt`
+/// + the precedence-climbing loop
 /// (incl. the table-cell `+`/`-` newline guard). Slice 2: the loop is emitted
 /// ExprId-internal (`parse_binary_pratt_g_id`) — no `CapVal.Node` box on the leaf or
 /// the recursion, dropping a malloc + rc_set per node — with ONE thin `CapVal`
@@ -491,23 +417,6 @@ fn emit_single_branch(g: Grammar, seq: GSeq) -> string {
 }
 
 /// True for `name = otherrule` — one One-item nonterminal, no build. THE SAME
-/// predicate the dispatch path uses (`is_bare_ref`), because they decide the same
-/// thing about the same shape and a divergence is invisible on valid input.
-///
-/// It used to be a naive `seq.items.length == 1`, which counted a zero-width GATE
-/// as an item and so failed the test for `@peek(c) ref`. The dispatch path had
-/// already migrated to the shared `seq_lone_item_index` (which skips gates), so
-/// the two disagreed on exactly one shape — a single-alternative rule with a
-/// leading `@peek`. `comp_block_item = @peek(comp_body_plain) declaration` was
-/// it: emit fell to the general sequence path, ran `declaration` for its side
-/// effect, and returned the build-less `CapVal.Nil`. `capval_to_stmt` reports on
-/// Nil, so EVERY component-instance body item raised a diagnostic, which rolled
-/// the enclosing `@try comp_inst` back to the hand parser — the native rule
-/// committed only for bodies with ZERO statements, and `body:comp_block_item*`
-/// was dead code for a month. Nothing caught it: the hand produces identical
-/// trees, positions and IR, so the tree, F-code, count and SrcPos oracles were
-/// all green on a path none of them was actually reaching (see the routing spec
-/// in comp_inst_native_routing_test).
 fn is_passthrough(seq: GSeq) -> bool { seq_is_bare_ref(seq) }
 
 /// True for the operator-fold shape `l:X ( <accumulators> )* -> Build(…)`:
@@ -549,7 +458,7 @@ fn emit_fold(g: Grammar, seq: GSeq) -> string {
     out = out + "    let ${seed.label} = ${emit_ref_call(seed.prim)}\n"
     // ps3t.6.7 Step G perf: fast-path the operator-ABSENT case (the common one for
     // every expression that isn't a `??`/`||`/`&&` chain) — return the seed directly
-    // with ZERO list allocation and no fold call, matching the hand parser's bare-ExprId
+    // with ZERO list allocation and no fold call — bare-ExprId
     // threading. Byte-identical: fold_X_expr(seed, [], []) folds nothing and returns
     // capval_to_expr(seed), and the seed is already a CapVal.Node (every parse_<rule>
     // returns one), so `seed` == `CapVal.Node(fold_X_expr(seed, [], []))`. The list
@@ -595,7 +504,7 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
                 rendered.push(emit_fold_arg(a, seed_label, inner))
             }
             // fold_logical/fold_nullish take the rule-entry sp_start (emit_fold
-            // captures it); fold_binary→Pratt and fold_postfix→@hand do not.
+            // captures it); fold_binary→Pratt and fold_postfix do not.
             let sp_arg = if build_uses_sp_start(name) { "sp_start, " } else { "" }
             "CapVal.Node(${build_fn(name)}(st, ${sp_arg}${join_commas(rendered)}))"
         }
@@ -603,7 +512,7 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
     }
 }
 
-/// The DSL compound builders that take the hand parser's rule-entry `sp_start`
+/// The DSL compound builders that take the rule-entry `sp_start`
 /// (executor.av) to stamp [production-entry, next-token) byte spans — the twin
 /// of the executor builders' new signatures. Rules whose build is one of these
 /// emit `let sp_start = st.cur().pos` at fn entry (emit_fold / emit_single_branch);
@@ -719,28 +628,6 @@ fn emit_fold_arg(arg: string, seed_label: string, inner: GSeq) -> string {
 /// whole-construct error node (executor.exec_node's no-match arm).
 fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
     // A `@try` (speculative) branch snapshots the parse state, runs, and COMMITS
-    // only if it added no diagnostic — else it rolls the cursor + node store back
-    // and falls through to the next alternative. When ANY branch is speculative
-    // the dispatch tracks `tried_spec` and, on total no-match, returns a clean
-    // CapVal.Nil (a rolled-back attempt already restored diags/had_error — the
-    // caller decides) instead of synthesising an error node. This mirrors
-    // executor.exec_node's speculative arm one-for-one so the generated parser and
-    // the interpreter agree — the same lockstep discipline as @when's mode preds.
-    //
-    // …but ONLY when the alternation has no UNGUARDED TAIL (t-myz7.2). The three tail
-    // forms below (bare-ref-to-a-hand-owning rule / `@fallback` / leading-`@hand`) exist
-    // precisely because the catch-all delegate must see a token no branch's FIRST
-    // matched — that is what routes a stray top-level token (`* 5`, `else`) into the
-    // hand parser's F0040 recovery instead of the alternation's own generic F0001. Those
-    // cases used to require `!has_spec`, which silently DELETED the tail the moment any
-    // sibling became `@try`: adding `@try use_decl` to `declaration` turned its
-    // `| statement` tail into a FIRST-guarded branch and regressed stray-token recovery
-    // across the board. The tail's role has nothing to do with speculation, so it now
-    // wins, and `tried_spec` is tracked only when there is no tail to fall into.
-    //
-    // No existing grammar moves: the two `@try`-bearing alternations (list_expr,
-    // paren_expr) both END in a full sequence, which is not a tail form under any of the
-    // three tests — so their emitted text is byte-identical either way.
     let has_spec = any_speculative(branches)
     let track_spec = has_spec && !dispatch_has_tail(g, branches)
     mut out = ""
@@ -752,11 +639,11 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
         if b.speculative {
             out = out + emit_speculative_branch(g, b, track_spec)
         } else if is_bare_ref(b) && i == last && rule_self_validates(g, prim_ref_name(b.items[lone_item_index(b)].prim), []) {
-            // UNGUARDED catch-all tail — ONLY when the referenced rule reaches an
-            // `@hand` delegate that owns recovery (unary's `| postfix`, statement's
-            // `| expr_stmt`). A pure-native last ref (`type_atom … | named_type`) falls
+            // UNGUARDED catch-all tail — ONLY when the referenced rule owns its
+            // recovery (unary's `| postfix`, statement's `| expr_stmt`). A pure-native
+            // last ref (`type_atom … | named_type`) falls
             // to the FIRST-guarded branch below + the no-match error tail, so a
-            // non-FIRST token sets had_error (⇒ the caller's hand fallback fires)
+            // non-FIRST token sets had_error
             // instead of being swallowed into a bogus node — matching the interpreter,
             // which FIRST-guards every branch (the type error-recovery oracle's catch).
             // emit_ref_result honors a `@off(flag)` on the bare ref (exec_item does),
@@ -768,32 +655,13 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             out = out + "    }\n"
         } else if b.fallback && i == last {
             // t-47hc.33 `@fallback`: the UNCONDITIONAL tail, emitted with no FIRST guard
-            // and no trailing error node — the native twin of the trailing-`@hand` case
-            // below. The branch itself owns the diagnostic for "nothing matched", which
-            // is what lets a rule whose alternatives are ALL native reproduce a hand
-            // parser's own message (`index_tail`'s two closing-`]` wordings) instead of
+            // and no trailing error node. The branch itself owns the diagnostic for
+            // "nothing matched", which
+            // is what lets a rule whose alternatives are ALL native carry its
+            // own message (`index_tail`'s two closing-`]` wordings) instead of
             // the alternation's generic "expected expression".
             let fb_pre = if seq_build_uses_sp_start(b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
             tail = fb_pre + emit_seq_stmts_from(g, b, "    ", 1) + "    ${emit_seq_result(g, b)}\n"
-        } else if is_leading_hand(b) && i == last {
-            // A LEADING-`@hand` LAST branch is the UNGUARDED tail — the delegate owns
-            // every case earlier branches didn't match, INCLUDING error recovery
-            // (its own diagnostics), exactly like the single-branch `x = @hand(f)`
-            // form. Guarding it with the delegate's FIRST + a grammar error_node
-            // tail would divert a stray token (e.g. `* 5`) to a DSL error instead of
-            // the hand parser's recovery — the recovery-tree oracle's exact catch.
-            // Covers both a BARE `@hand` tail (`| @hand(hand_unary)`) and a `@hand`-
-            // BASE tail with trailing postfix folds (`base:@hand(call_leaf) ( … )* ->
-            // fold_with`): the trailing items only post-process the base, and never
-            // consume the stray token, so recovery still flows through the leading
-            // @hand. The sp_start prelude + item statements emit exactly as the
-            // guarded general branch below, minus the `if`-guard and error tail.
-            let sp_pre = if seq_build_uses_sp_start(b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
-            tail = sp_pre + emit_seq_stmts(g, b, "    ") + "    ${emit_seq_result(g, b)}\n"
-        } else if is_bare_hand(b) {
-            out = out + "    if ${seq_first_guard(g, b, [])} {\n"
-            out = out + "        return ${emit_seq_result(g, b)}\n"
-            out = out + "    }\n"
         } else {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
             // A span-stamping build (e.g. fold_with) captures the rule-entry byte
@@ -810,8 +678,8 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
     }
     if tail != "" {
         // The unguarded catch-all tail OWNS every token no branch matched, including
-        // one a rolled-back `@try` left behind — the delegate's recovery is exactly what
-        // the tail exists to reach.
+        // one a rolled-back `@try` left behind — the tail rule's recovery is exactly what
+        // it exists to reach.
         out = out + tail
     } else if has_spec {
         // No tail: a rolled-back attempt is a clean "no match" (diags/had_error already
@@ -843,7 +711,7 @@ fn any_speculative(branches: List<GSeq>) -> bool {
 /// scaffold): a FLAT terminal/ref recognizer (`emit_speculative_branch_flat`, the
 /// incumbent — list_expr's `@try "[" list_comp "]" -> cb`) and a RICH sequence
 /// (`emit_speculative_branch_rich`) with groups / repetitions (`_list` accumulators)
-/// / `@hand` / `@on`-`@off` mode items — the twin of exec_node's speculative arm over
+/// / `@on`-`@off` mode items — the twin of exec_node's speculative arm over
 /// exec_seq's FULL item vocabulary. Dispatch on `spec_branch_is_flat` so an existing
 /// flat @try emits BYTE-IDENTICALLY (the rich path is dormant until a grammar uses a
 /// complex @try branch — e.g. the paren spend's paren_tail).
@@ -862,7 +730,7 @@ fn spec_tracker_line(track_spec: bool) -> string {
 /// A @try branch is FLAT when every token-bearing item is a One-rep terminal or rule
 /// ref with NO mode marker — the incumbent recognizer shape the flat emitter's
 /// straight-line `s_last` body handles. A repetition (Opt/Star/Plus → `_list`
-/// accumulator), a group, a `@hand` leaf, or an `@on`/`@off` mode item needs the rich
+/// accumulator), a group, or an `@on`/`@off` mode item needs the rich
 /// emitter (it reuses emit_seq_stmts). Zero-width predicates (`@when`/`@peek`) are
 /// skipped by BOTH emitters, so they don't force the rich path.
 fn spec_branch_is_flat(seq: GSeq) -> bool {
@@ -922,7 +790,7 @@ fn node_has_cut(node: GNode) -> bool {
 
 /// The RICH speculative branch: the snapshot/commit/rollback scaffold wrapping
 /// emit_seq_stmts (the SAME per-item emitter the non-speculative path uses — list
-/// accumulators, opt-scalars, `@on`/`@off`, `@hand`, groups) + emit_seq_result (the
+/// accumulators, opt-scalars, `@on`/`@off`, groups) + emit_seq_result (the
 /// branch's `-> build` reading those bound labels on commit). A later-item MISMATCH
 /// reports a diagnostic (emit_one's checked terminal / a failed sub-rule), which grows
 /// st.diags → the commit guard fails → truncate_to_mark + restore rolls back and the
@@ -941,7 +809,6 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq, track_spec: bool) -> string
     // t-47hc.21 COMMIT POINT: only a cut-bearing branch declares `s_cut`, so every
     // existing grammar regenerates byte-identically.
     if has_cut { out = out + "        mut s_cut = false\n" }
-    out = out + "        let s_hand = st.save_hand_state()\n"
     // The PState's own hygiene counter rolls back with the store truncation —
     // the emit twin of the executor's s_gensym (see PState.fresh's WHY).
     out = out + "        let s_gensym = st.gensym_seq\n"
@@ -976,7 +843,6 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq, track_spec: bool) -> string
     if has_cut { out = out + "            break\n        }\n" }
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
-    out = out + "        st.restore_hand_state(s_hand)\n"
     out = out + "        st.set_gensym_seq(s_gensym)\n"
     out = out + "        st.restore_postfix_state(s_postfix)\n"
     out = out + "    }\n"
@@ -995,7 +861,6 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq, track_spec: bool) -> string
     out = out + "        let s_mark = st.store.mark()\n"
     out = out + "        let s_diags = st.diags.length\n"
     out = out + "        let s_err = st.had_error\n"
-    out = out + "        let s_hand = st.save_hand_state()\n"
     // The PState's own hygiene counter rolls back with the store truncation —
     // the emit twin of the executor's s_gensym (see PState.fresh's WHY).
     out = out + "        let s_gensym = st.gensym_seq\n"
@@ -1039,7 +904,6 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq, track_spec: bool) -> string
     out = out + "        }\n"
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
     out = out + "        st.restore_to(s_pos, s_diags, s_err)\n"
-    out = out + "        st.restore_hand_state(s_hand)\n"
     out = out + "        st.set_gensym_seq(s_gensym)\n"
     out = out + "        st.restore_postfix_state(s_postfix)\n"
     out = out + "    }\n"
@@ -1094,36 +958,12 @@ fn lone_item_index(seq: GSeq) -> int { seq_lone_item_index(seq) }
 
 fn is_bare_ref(seq: GSeq) -> bool { seq_is_bare_ref(seq) }
 
-/// True for `| @hand(fn)` — a lone One @hand-delegation branch (no build). As the
-/// LAST branch it is the unguarded tail (the delegate owns every unmatched case +
-/// its own error recovery), matching the single-branch `x = @hand(f)` lowering.
-fn is_bare_hand(seq: GSeq) -> bool {
-    seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
-        prim_is_hand(seq.items[0].prim) && build_is_none(seq.build)
-}
-
-/// True for a branch whose FIRST item is a One `@hand` delegate AND whose remaining
-/// items are all NULLABLE (Star/Opt) postfix folds — the catch-all tail shape, a
-/// SUPERSET of is_bare_hand: the bare form (`| @hand(f)`) AND a `@hand`-BASE with
-/// trailing NULLABLE postfix folds (`base:@hand(call_leaf) ( s:@hand(with_suffix)
-/// )* -> fold_with`). As the LAST dispatch branch it emits UNGUARDED (emit_dispatch):
-/// the leading @hand owns error recovery, and the nullable trailing items only
-/// post-process its result — so a stray token still reaches the hand parser's
-/// recovery, not a DSL error node (the recovery-tree oracle's invariant).
-///
-/// A REQUIRED trailing item (One/Plus) after the leading @hand would make the branch
-/// a genuine sequence whose @hand must NOT run on tokens outside its FIRST set (that
-/// would bypass dispatch and diverge from executor.exec_node) — so such a branch is
-/// NOT a leading-hand tail; it must be FIRST-guarded like any other. Only nullable
-/// (Star/Opt) trailing items qualify.
-fn is_leading_hand(seq: GSeq) -> bool { seq_is_leading_hand(seq) }
-
 // ── Sequence statements (a dispatch branch's / general seq's body) ──
 
 /// The statement lines for a sequence: list accumulators declared once at the
 /// top (for every label captured under a repetition anywhere in the branch),
 /// then one emission per item in order. A lone primary with no build is
-/// consumed BY its result (literal_node / run_hand), so it emits no statements.
+/// consumed BY its result (literal_node), so it emits no statements.
 fn emit_seq_stmts(g: Grammar, seq: GSeq, ind: string) -> string {
     emit_seq_stmts_from(g, seq, ind, 0)
 }
@@ -1151,22 +991,22 @@ fn emit_seq_stmts_from(g: Grammar, seq: GSeq, ind: string, idx_base: int) -> str
 }
 
 /// A sequence whose result consumes its sole primary itself: a lone unlabelled
-/// terminal (the default literal build) or a lone @hand primary. These emit no
-/// pre-consume — emit_seq_result's `st.advance()` / run_hand does it.
+/// terminal (the default literal build). These emit no
+/// pre-consume — emit_seq_result's `st.advance()` does it.
 ///
 /// Keyed on `lone_item_index`, so a leading zero-width `@peek`/`@when` gate does not
 /// hide the lone primary. It MUST agree with emit_seq_result's own lone check: if this
 /// says "not lone" while that one says "lone", the primary is emitted twice (the item
 /// body runs it, then the result runs it AGAIN); if the reverse, the item runs and its
 /// value is discarded for a `CapVal.Nil`. Both were live with a raw `items.length == 1`
-/// check the moment a `@peek`-gated `@hand` appeared.
+/// check the moment a `@peek`-gated lone primary appeared.
 fn is_lone_primary_result(seq: GSeq) -> bool {
     let lone = lone_item_index(seq)
     if lone < 0 || !rep_is_one(seq.items[lone].rep) || !build_is_none(seq.build) {
         return false
     }
     let p = seq.items[lone].prim
-    (prim_is_terminal(p) && seq.items[lone].label == "") || prim_is_hand(p)
+    prim_is_terminal(p) && seq.items[lone].label == ""
 }
 
 /// The per-item lines (no list declarations — those are hoisted by the
@@ -1181,21 +1021,6 @@ fn seq_seeds_postfix_e(seq: GSeq) -> bool {
 }
 
 /// A nested group carries no annotations of its own, so an `@expect` written on the
-/// OWNING sequence must still reach items inside its `( … )*`. Prefer the inner seq's
-/// own annots when it has them; otherwise inherit the outer sequence's.
-/// The annotations in scope for a sequence's items: its OWN first, then the inherited
-/// ones. A branch's `@expect` therefore wins for the token it names while every message
-/// declared on the enclosing rule stays reachable — which is what lets two branches of one
-/// group each own a DIFFERENT message for the SAME token. `type X = { … }` and
-/// `type X = Base without { … }` both close on `}` and the hand words them differently
-/// ("expected `}` after fields" / "after type operator fields"), and there is no other
-/// seam to say that in: `@expect` keys on the token, so one shared annotation set can
-/// only carry one of the two.
-///
-/// Previously inner REPLACED outer, which made a branch that declared anything lose every
-/// inherited message at once — so the only safe branch annotation was a complete one.
-/// `expect_for` / `handle_missing` both take the FIRST match, so ordering is the whole
-/// mechanism.
 fn annots_or(inner: List<GAnnot>, outer: List<GAnnot>) -> List<GAnnot> {
     if inner.length == 0 { return outer }
     if outer.length == 0 { return inner }
@@ -1244,11 +1069,9 @@ fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: s
         // sequence is never speculative — so it is exactly the "safe to `break`" test the
         // cut abort needs (t-x2fb).
         out = out + emit_item(g, item, idx, annots_or(seq.annots, outer_annots), ind, list_labels, opts, abortable, ctx, seq.speculative)
-        // Phase 3a base-threading (twin of exec_seq's hook): after a grammar-BUILT base
-        // (fold_postfix_with item 0 that is NOT @hand — a literal terminal), seed
-        // st.postfix_base so the ( postfix_suffix )* loop wraps it. The @hand base seeds
-        // itself inside run_hand_expr, so it is skipped (no redundant seed on the hot path).
-        if seeds_postfix && idx == idx_base && !prim_is_hand(item.prim) {
+        // Phase 3a base-threading (twin of exec_seq's hook): after the base parses,
+        // seed st.postfix_base so the ( postfix_suffix )* loop wraps it.
+        if seeds_postfix && idx == idx_base {
             out = out + "${ind}st.seed_postfix(capval_to_expr(st, ${item.label}), sp_start)\n"
         }
         idx = idx + 1
@@ -1426,7 +1249,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             // `@require <rule>` (t-47hc.24): the rule must START here, or the enclosing
             // rule reports and ABORTS. Checked on the rule's FIRST BEFORE the call — not
             // on whether the callee errored, which cannot tell an ABSENT sub-rule from a
-            // sub-rule whose BODY was malformed (the hand recovers the latter). This is
+            // sub-rule whose BODY was malformed (recovery keeps the latter). This is
             // the emit twin of the executor's .Ref branch in exec_item, and the same
             // s_cut guard the terminal abort needs: a @try branch that fails before its
             // cut must still roll back rather than return past the rollback scaffold.
@@ -1445,13 +1268,13 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 let rmsg = if exp.found { exp.msg } else { "expected `${key}`" }
                 // The F-CODE travels with the message here too (t-47hc.5) — a `@require`
                 // on a REF is the same missing-token report as on a terminal, and `if cond
-                // expr` (the hand's F0010) reaches it through this arm, not that one.
+                // expr` (F0010) reaches it through this arm, not that one.
                 let rrep = if exp.found && exp.code != "" { "st.report_coded(\"${exp.code}\", \"${rmsg}\")" } else { "st.report(\"${rmsg}\")" }
                 // Raise the propagation flag, exactly as the required-TERMINAL abort
                 // does (`abort_ret` in emit_one_terminal). Omitting it here meant a
                 // required REF aborted its own rule and stopped: `enum E { A(x: ) }`
                 // reported the missing type and then let `variant` finish, building
-                // `(enum E (A(:<unknown>)))` where the hand aborts to `(error)`. The
+                // `(enum E (A(:<unknown>)))` instead of aborting to `(error)`. The
                 // gated unwinds in `variant` and `enum_decl` are what carry it out, and
                 // they were reading a flag nobody set.
                 let rraise = if grammar_has_gate(g) { "${ind}    st.set_abort_prop(true)\n" } else { "" }
@@ -1469,7 +1292,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             // NON-LEADING ref makes no such promise, so calling it on a token it does not
             // start BINDS that token (`enum E< { A }` took the `{` as a type-parameter
             // name). Guarding the call is therefore the whole fix; leaving the abort off
-            // is what lets the rest of the sequence still report (the hand's second
+            // is what lets the rest of the sequence still report (the second
             // diagnostic, "expected `>` after type parameters") and still build a node.
             // The message is keyed EXACTLY as `@require`'s is — the rule's single-literal
             // FIRST when it has one, else the rule NAME, looked up in the caller's
@@ -1481,7 +1304,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 let key = if lit != "" { lit } else { name }
                 let exp = expect_for(annots, key)
                 let smsg = if exp.found { exp.msg } else { "expected `${key}`" }
-                // An IDENT position keeps the hand's reserved-keyword diagnostic (so07.2),
+                // An IDENT position keeps the reserved-keyword diagnostic (so07.2),
                 // the same split `handle_missing` makes in the interpreter.
                 let srep = if key == "IDENT" { "st.report_ident(\"${smsg}\")" }
                     else if exp.found && exp.code != "" { "st.report_coded(\"${exp.code}\", \"${smsg}\")" }
@@ -1497,21 +1320,17 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             // other `capval_to_*`) answers a non-matching CapVal by reporting — and an
             // aborted sub-parse returns exactly that, a silent error node — so pushing
             // the failed arm and popping it afterwards left two diagnostics behind for
-            // a case the hand reports once. Bind the call, decide, then capture.
+            // a case that must report once. Bind the call, decide, then capture.
             // t-myz7 `@onfail(bail)`: the CALLEE owns the message, the caller owns the
             // control flow. Detected by the union of "the sub-parse came back an error
             // node" and "diagnostics grew" — deliberately NOT `@require`'s FIRST check,
             // because that reports for the callee and so replaces its message.
             // `select { x <- }` must stay the expression view's F0040.
             //
-            // The union is the hand's `?`: `parse_let_statement` does `parse_expression()?`
-            // and the hand's expression parser reports and returns `Err` together, so
-            // `let b = x is Foo` kills the whole binding rather than keeping a partial one.
-            // The narrower "error node only" reading was a carve-out for `let a = (1) ->`,
-            // where the expression view reported and still handed back `(group 1)` that the
-            // hand KEEPS; `paren_expr`'s `@peek(paren_lambda_ahead)` removed that input (the
-            // group now parses clean and the dangling `->` is the next statement's F0040),
-            // and with it the last reason to disagree with this policy's own doc.
+            // The union matters because a sub-parse can report and still hand back a
+            // node, and a reported sub-parse must kill the whole binding —
+            // `let b = x is Foo` ends the statement rather than keeping a partial one
+            // (ast.GItem.onfail pins the policy).
             if item.onfail == "bail" {
                 let braise = if grammar_has_gate(g) { "${ind}    st.set_abort_prop(true)\n" } else { "" }
                 let bret = braise + "${ind}    return CapVal.Node(st.error_node_silent())\n"
@@ -1546,7 +1365,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             // capturing it is itself a report: every `capval_to_*` answers a
             // non-matching CapVal with one ("expected a variant", "expected a select
             // arm"), and an aborted sub-parse returns exactly that — a silent error
-            // node. So the abort produced a SECOND diagnostic the hand never emits,
+            // node. So the abort produced a spurious SECOND diagnostic,
             // on top of the one that caused it. The caller-side `gated_abort_unwind`
             // could not prevent it: it runs after the push, which is where the
             // coercion already happened.
@@ -1581,7 +1400,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             // on to build a node around its silent error — `export enum { A }` did
             // exactly that, wrapping the aborted `enum` in an `(export …)` and so
             // reaching the seam as a NON-Error statement, which is adopted verbatim
-            // instead of handed back for the caller's synchronize. The hand's second
+            // instead of handed back for the caller's synchronize. The second
             // diagnostic (the stray `}`) vanished with it. The pre-call guard cannot
             // see this: it distinguishes an ABSENT sub-rule, not a sub-rule whose body
             // aborted, which is precisely the split the comment above draws.
@@ -1606,7 +1425,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
                 // `SNode` — a perfectly good statement to a flag-only test. `export let (a
                 // b) = t` built `(export (error))` off that, which the seam adopts as a
                 // NON-Error item instead of handing back for the caller's synchronize, so
-                // the tail re-parsed and added an F0040 the hand never emits. This is the
+                // the tail re-parsed and added a spurious F0040. This is the
                 // same signal the gate arm reads, for the same reason.
                 return req +
                     "${ind}st.set_abort_prop(false)\n" +
@@ -1616,25 +1435,13 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             }
             req + emit_ref_capture(g, item, name, ind, list_labels, opts)
         }
-        .Hand(hf) -> {
-            // A `@hand` primary captured under a repetition (`( s:@hand(f) )*`)
-            // accumulates into the branch's list (the emit twin of the .Ref list
-            // case, and of the executor's bind→append_node). run_hand_* yields a
-            // raw id boxed by emit_hand_result; coerce it back to the list element.
-            if str_in(list_labels, item.label) {
-                return "${ind}${item.label}_list.push(${kind_coerce(hand_kind(hf))}(st, ${emit_hand_result(hf)}))\n"
-            }
-            if str_in(opts, item.label) { return "${ind}${item.label} = ${emit_hand_result(hf)}\n" }
-            if item.label == "" { return "${ind}let _ = ${emit_hand_result(hf)}\n" }
-            "${ind}let ${item.label} = ${emit_hand_result(hf)}\n"
-        }
         // `@gensym` mints in PARSE ORDER, which is the whole reason it is a positional
         // primary rather than a build helper — see GPrim.Gensym. It emits a plain `let`
         // of the shared `gensym_token`, so the generated parser and the interpreter mint
         // the same name from the same counter.
         .Gensym(tag) -> {
             // The capture shapes, in the same order and for the same reasons as the
-            // .Ref/.Hand arms above. `@gensym` rejects a repetition suffix on ITSELF,
+            // .Ref arm above. `@gensym` rejects a repetition suffix on ITSELF,
             // but an enclosing GROUP may still repeat (`( t:@gensym(x) "," )*`), and
             // then `list_labels_of` puts the label in the list set via `under_multi`
             // and `list_decl_type` declares `t_list: List<Token>`. Emitting a plain
@@ -1691,7 +1498,7 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
 /// A later (idx > 0) MANDATORY terminal — scalar, list-captured, optional-captured,
 /// OR a terminal-alternation group — is VALIDATED strict-by-default, matching the
 /// interpreter's exec_primary/handle_missing: it st.reports on a mismatch
-/// (→ had_error → the authoritative hand fallback); @expect swaps the message,
+/// (→ had_error); @expect swaps the message,
 /// @recover synchronises. The guard is `prim_first_guard` (not `term_guard`) so a
 /// mandatory `("a" | "b")` group emits its FIRST disjunction rather than a bogus
 /// always-failing `false`.
@@ -1705,28 +1512,25 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // A ">" terminal (the generic-arg-list close) ALSO matches ">>" (Tk.Shr) and
     // splits it — consuming ONE ">" and leaving the second in-slot for the enclosing
     // generic's own close — the emit mirror of the interpreter's exec split_gt
-    // (executor.av) and the hand parser's maybe_split_shr. Without it, List<List<T>> /
-    // Map<K, List<V>> (the pervasive nested-generic close) errors on the merged ">>"
-    // and re-parses through the hand fallback instead of natively. `adv` is the
+    // (executor.av) and Parser.maybe_split_shr. Without it, List<List<T>> /
+    // Map<K, List<V>> (the pervasive nested-generic close) errors on the merged
+    // ">>". `adv` is the
     // token-consuming expression (split-aware for ">", a plain advance otherwise);
     // `cond` widens the ">" FIRST guard to accept the ">>" slot.
     let cond = if t == ">" { "(" + base_cond + " || st.cur().text == \">>\")" } else { base_cond }
     let adv = if t == ">" { "(if st.cur().text == \">>\" { st.split_gt() } else { st.advance() })" } else { "st.advance()" }
     let exp = expect_for(annots, t)
-    // BACKTICKED, matching the executor's `handle_missing` (executor.av ~4570).
+    // BACKTICKED, matching the executor's `handle_missing` (executor.av).
     //
-    // This read "the message is DISCARDED on the production fallback (only had_error
-    // matters), so a plain `expected <t>` (no backticks) is deterministic" — true when
-    // written, and false now. The interpreter re-parse fallback went in t-47hc.4.3 and
-    // the expression hand fallback in #1201, so the generated parser's message IS what
-    // the user sees. The bare form was reaching users as `expected }` / `expected for`
+    // The generated parser's message IS what the user sees. The bare form was
+    // reaching users as `expected }` / `expected for`
     // while the executor said `` expected `}` `` for the same input — one input, two
     // generated engines, two spellings (t-bw9s).
     //
     // A group has no single lexeme (t == "") → a generic label, unbackticked because
     // there is no lexeme to quote.
     let msg = if exp.found { exp.msg } else if t == "" { "expected token" } else { "expected `${t}`" }
-    // so07.2 / 1rzz: an IDENT binding position keeps the hand parser's
+    // so07.2 / 1rzz: an IDENT binding position keeps the
     // RESERVED-KEYWORD diagnostic ("`move` is a reserved keyword …") instead of
     // reporting the generic `@expect` message at a `Tk.KwReserved` token. Routed via
     // the PState method so the generated parser and the executor's `handle_missing`
@@ -1759,7 +1563,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // the gated FIRST check does: the caller cannot otherwise tell an abort from an
     // ordinary result and keeps consuming. Without it `shape S = { a int, b: int }`
     // reported the missing colon, re-entered parse_field, took `int` as the next field
-    // name and reported AGAIN — where the hand stops the field list at the first
+    // name and reported AGAIN — instead of stopping the field list at the first
     // failure. Only the committed path raises it; a pre-cut failure still rolls back.
     let raise = if grammar_has_gate(g) { "${ind}    st.set_abort_prop(true)\n" } else { "" }
     let abort_ret = "${raise}${ind}    return CapVal.Node(st.error_node_silent())\n"
@@ -1767,9 +1571,8 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         else if spec_ctx == spec_committed() { "${ind}    if s_cut {\n    ${abort_ret}${ind}    }\n" }
         else { abort_ret }
     // t-myz7 `@onfail(discard, <label>)`: report the missing closer, then THROW AWAY the
-    // list the bracket was collecting, and carry on. `parse_type_params` is exactly this
-    // — `if !consume(Greater, …) { return empty }` — so `enum E<T { A }` is
-    // `(enum E (A()))` on the hand: `T` is parsed and then dropped with the unterminated
+    // list the bracket was collecting, and carry on — so `enum E<T { A }` is
+    // `(enum E (A()))`: `T` is parsed and then dropped with the unterminated
     // bracket. Emitted into the same mismatch `else` every other terminal policy uses, so
     // the report still happens and nothing else about the position changes.
     //
@@ -1812,10 +1615,10 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // A MANDATORY non-first SCALAR terminal. BYTE-IDENTICAL on VALID input: the
     // token is present, the `if` is taken, the `else` is dead; and on a mismatch the
     // cursor does not advance either way, so the built tree is identical — only
-    // had_error flips (→ the fallback, which re-parses with the hand oracle).
+    // had_error flips.
     if item.label != "" {
         // Bind the label to the current token in the else so downstream
-        // capval_tok_text stays safe (does NOT advance — mirrors the hand leaf).
+        // capval_tok_text stays safe (does NOT advance).
         mut outl = "${ind}let ${item.label} = if ${cond} { CapVal.Tok(${adv}) } else {\n"
         outl = outl + "${ind}    ${rep}\n"
         if sync != "" { outl = outl + "${ind}    st.synchronize(\"${sync}\")\n" }
@@ -1843,16 +1646,6 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
 }
 
 /// The emit twin of the executor's `sameline_ok` (executor.av): a `^`-marked
-/// item's newline gate, folded into the enclosing `if`/`while` FIRST guard. When
-/// the item is NOT `^`-marked (every production grammar today — the only `^` in
-/// avra_grammar.av is the bitxor operator) it returns the guard UNCHANGED, so the
-/// generated parsers regen byte-identical. When marked it WRAPS the guard in
-/// parens (so `&&` binds over the whole FIRST disjunction, not just its last `||`
-/// term) and ANDs the exact LineIndex comparison `sameline_ok` runs: the current
-/// token must sit on the same source line as the previously-consumed one, else
-/// the optional/repetition stops (the cross-line postfix cutoff). This closes the
-/// latent lockstep gap where a `^` rule would parse differently under the
-/// generated static parser than under the interpreter.
 fn same_line_wrap(item: GItem, guard: string) -> string {
     if !item.sameline { return guard }
     "(" + guard + ") && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)"
@@ -1889,33 +1682,18 @@ fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_lab
     }
 }
 
-/// A starred/plus group `( … )*` → a while guarded by the group's FIRST.
-/// True iff a repeat group's body is a SINGLE @hand item (one branch, one item,
-/// a `.Hand`). Such a body can consume NOTHING (a @hand delegate whose entry guard
-/// is a superset of its own precise predicate — the Phase-3a postfix chain), so its
-/// emitted `while` needs a no-progress break to mirror the interpreter's exec_repeat
-/// (which already breaks on no progress). Always-progressing single-@hand loops
-/// (with_suffix) get a dead-but-harmless break.
-/// True iff the group is a single `@hand` delegate — INCLUDING one reached through a
-/// one-line delegate rule (`postfix_suffix = @hand(postfix_suffix)`).
-///
-/// This gates the no-progress break emitted below, which is LOAD-BEARING: a hand step
-/// that consumes nothing must END the chain, because the loop's FIRST guard can stay
-/// true while the step declines to consume (the postfix chain guards on `Tk.Less`, so
-/// `a < b` re-enters forever once the generic-call step decides it is a comparison).
-///
-/// Sharing one delegate behind a named rule — so 19 FIRST-disjoint bases reference it
-/// once instead of duplicating it — is a SPELLING change, not a semantic one, so the
-/// guard must survive it. Resolving one level of bare-ref indirection here keeps the
-/// emitted loop identical whether the delegate is written inline or named.
-fn group_is_single_hand(g: Grammar, node: GNode) -> bool {
+/// True iff a repeat group's body is a single ref to a rule that can decline
+/// WITHOUT consuming (a speculative alternative rolls back to zero width). Such
+/// a body's emitted `while` needs a no-progress break: the loop's FIRST guard
+/// can stay true while the step declines to consume (the postfix chain guards
+/// on `Tk.Less`, so `a < b` re-enters forever once the generic-call step
+/// decides it is a comparison).
+fn group_can_stall(g: Grammar, node: GNode) -> bool {
     match node {
         .Alt(branches) -> {
             if branches.length != 1 || branches[0].items.length != 1 { return false }
-            let p = branches[0].items[0].prim
-            if prim_is_hand(p) { return true }
-            match p {
-                .Ref(nm) -> rule_reaches_hand(g, nm)
+            match branches[0].items[0].prim {
+                .Ref(nm) -> rule_reaches_spec(g, nm)
                 _ -> false
             }
         }
@@ -1923,46 +1701,6 @@ fn group_is_single_hand(g: Grammar, node: GNode) -> bool {
 }
 
 /// True iff rule `name` has an alternative that can return WITHOUT consuming a token,
-/// so a `( name )*` loop over it needs the no-progress break or it spins forever.
-///
-/// TWO productions can do this, and the second was missed until the delegate was
-/// actually deleted (t-47hc.33.2):
-///
-///   - a `@hand` delegate, which may decline and return the base unchanged; and
-///   - a SPECULATIVE `@try` branch, which is entered when its FIRST holds and then
-///     ROLLS BACK on failure, restoring the cursor it started from. `postfix_suffix`'s
-///     `<T>(args)` generic call is exactly that: `a < b` enters on the `<` and un-decides.
-///
-/// The old comment here asserted the opposite — "a NATIVE alternative cannot: it is
-/// entered only when its FIRST holds and then consumes" — which is true of every native
-/// form EXCEPT a speculative one. While `@hand(postfix_suffix)` was still the tail the
-/// error was masked: the hand disjunct alone kept the predicate true, so the break was
-/// emitted anyway. Deleting the delegate dropped it, leaving `a < b` to spin.
-///
-/// Widening it is DORMANT on any grammar that still has the hand tail (a rule with both
-/// keeps returning true), so it is byte-identical until the deletion spends it.
-///
-/// `postfix_suffix`'s
-/// `parse_postfix_suffix` returns the base UNCHANGED for its three former loop-exit
-/// paths (entry guard not matched, generic-call speculation failed, trailing non-postfix
-/// arm); the break is what turns that into the hand `while` loop's exit. A NATIVE
-/// alternative cannot: it is entered only when its FIRST holds and then consumes.
-///
-/// Widened from "the rule is EXACTLY `name = @hand(f)`" for t-47hc.33, which flips
-/// `postfix_suffix`'s forms to native one at a time while keeping `@hand(postfix_suffix)`
-/// as the tail alternative. Under the old bare-hand test the very first native
-/// alternative silently DROPPED the break from every `( postfix_suffix )*` loop in the
-/// generated parser — an infinite loop the moment the hand tail declined to consume.
-/// Byte-identical today: every rule the old test admitted is still admitted (a bare hand
-/// rule is a rule with a hand alternative), and no other repeated rule has one.
-/// The pieces of the break-BEFORE-accumulate repeat body (see emit_repeat_group's
-/// single-hand arm): a single-hand group qualifies when its one item is a PLAIN
-/// labeled/unlabeled `.Ref` (no marker, rep One, no build/annots on the branch)
-/// whose rule has NO actual @hand alternative — such a rule's only no-progress
-/// exit is the all-speculative decline, which returns `CapVal.Nil`, and Nil must
-/// break the loop BEFORE any coercion reports on it. A hand-reaching rule keeps
-/// the historical order: its delegate returns a real node even on a decline, and
-/// the byte-identical trees depend on that push.
 type SinglePlainRef = { applies: bool, rule: string, acc: string }
 
 fn single_plain_ref_group(g: Grammar, node: GNode, list_labels: List<string>) -> SinglePlainRef {
@@ -1977,7 +1715,6 @@ fn single_plain_ref_group(g: Grammar, node: GNode, list_labels: List<string>) ->
             if it.mode_off != "" || it.mode_on != "" || it.mode_bump != "" || it.mode_on_if != "" || it.bound != "" { return no }
             match it.prim {
                 .Ref(nm) -> {
-                    if rule_has_hand_alt(g, nm) { return no }
                     let acc = if it.label != "" && str_in(list_labels, it.label) {
                         "${it.label}_list.push(${kind_coerce(rule_result_kind(g, nm))}(st, __rep_cv))"
                     } else {
@@ -1991,57 +1728,13 @@ fn single_plain_ref_group(g: Grammar, node: GNode, list_labels: List<string>) ->
     }
 }
 
-/// True iff `name`'s alternation has an ACTUAL `@hand` alternative — the
-/// hand-only half of rule_reaches_hand's disjunction, splitting the two
-/// no-progress shapes single_plain_ref_group must tell apart.
-fn rule_has_hand_alt(g: Grammar, name: string) -> bool {
-    let i = rule_index_of(g, name)
-    if i < 0 { return false }
-    match g.rules[i].body {
-        .Alt(branches) -> {
-            for b in branches {
-                if b.items.length == 1 && prim_is_hand(b.items[0].prim) { return true }
-            }
-            false
-        }
-    }
-}
-
 /// Does this node carry a `@gate`d item? Drives the mandatory no-progress break on
-/// a gated repetition — see emit_repeat_group. Structural and shallow on purpose: a
-/// gate inside a NESTED group is that group's own loop's problem, and its loop gets
-/// the same treatment when it is emitted.
-/// The gated item in this node, if any — the rule REFERENCE name and the message its
-/// own rule would use when its FIRST token is missing.
-///
-/// SOUNDNESS (t-myz7). A generated `parse_X` consumes its leading terminal
-/// UNCONDITIONALLY (`let n = CapVal.Tok(st.advance())`) because emit's convention is
-/// that the CALLER proved FIRST(X). `@gate` deliberately replaces that FIRST with a
-/// cond, so under a gate the convention no longer holds and the callee swallows
-/// whatever token is there: `enum E { 5 }` bound `5` as a variant name and COMPILED
-/// CLEAN, where the hand rejects it. A gated call therefore has to re-establish what
-/// the gate removed — check the rule's FIRST at the call site and report with the
-/// RULE's own `@expect`, not the enclosing sequence's (enum_decl's IDENT expect says
-/// "expected enum name"; the message owed here is variant's "expected variant name").
-/// Re-establish, at a GATED call site, the FIRST check the gate removed.
-///
-/// `parse_X` consumes its leading terminal unconditionally on the promise that its
-/// caller proved FIRST(X). `@gate` replaces that FIRST with a cond, so the promise is
-/// broken and the callee swallows whatever token is present — `enum E { 5 }` bound
-/// `5` as a variant name and compiled CLEAN. Emitting the check here restores the
-/// invariant without giving up what the gate bought (entry on a token the FIRST
-/// rejects, e.g. EOF), and reports with the CALLED rule's own message.
-/// The caller-side half of abort propagation: after a gated element's sub-parse,
-/// unwind if it aborted. Without this the abort stops at the callee and the
-/// enclosing rule carries on consuming — `enum E { A( }` ate the `}` that the hand
-/// leaves behind, losing the hand's second diagnostic. Emitted only where a gate is
-/// present, so every existing grammar is untouched.
 fn gated_abort_unwind(g: Grammar, inner: GNode, ind: string) -> string {
     let gr = gated_ref_of(inner)
     if !gr.found { return "" }
     // t-myz7 `@onfail(close)` unwinds NOWHERE: the abort ends the repetition and the
-    // enclosing rule carries on to its own closer. `select { x }` is the shape — the hand
-    // reports the missing `<-` and still builds `(select ())`, so the `}` must be left for
+    // enclosing rule carries on to its own closer. `select { x }` is the shape — the
+    // missing `<-` is reported and `(select ())` still builds, so the `}` must be left for
     // the rule's `@require "}"` rather than abandoned for the caller to report as a
     // second, spurious F0013. The break itself is emitted at the ELEMENT (emit_one's
     // `.Ref` arm), before its result is captured, because capturing an aborted result is
@@ -2090,10 +1783,9 @@ fn gated_first_check(g: Grammar, inner: GNode, ind: string, annots: List<GAnnot>
     // case where there is genuinely nothing to test.
     // t-myz7 `@onfail(close)`: an element that does not even START is a failing element,
     // and this policy's answer to a failing element is to end the repetition and let the
-    // rule close — SILENTLY, because the rule's own closer is what reports. That is the
-    // hand, exactly: `parse_select_arm_list` answers a non-IDENT head with a bare
-    // `return out`, and `select { 5 }` is then "expected `}` to close select" and nothing
-    // else. Reporting here as well would name the element the hand never mentions.
+    // rule close — SILENTLY, because the rule's own closer is what reports.
+    // `select { 5 }` must be "expected `}` to close select" and nothing
+    // else; reporting here as well would name an element the diagnostic never mentions.
     // `@onfail(skip)` owns this position itself (emit_one's `.Ref` arm renders the
     // FIRST test, the report and the step-over), and it must NOT abort. The gate's
     // only remaining job is the ENTRY decision — `@peek` narrows a branch's FIRST,
@@ -2102,8 +1794,8 @@ fn gated_first_check(g: Grammar, inner: GNode, ind: string, annots: List<GAnnot>
     if gr.onfail == "skip" { return "" }
     // `bail` means THE CALLEE OWNS THE MESSAGE, and a FIRST pre-check is precisely the
     // thing that takes it away: it reports the CALLER's generic wording for a token the
-    // callee would have reported about itself. `return * 3` is the shape — the hand calls
-    // `parse_expression` and lets its F0040 stand, where a pre-check answered F0001
+    // callee would have reported about itself. `return * 3` is the shape — the
+    // callee's F0040 must stand, where a pre-check answered F0001
     // "expected expression" from one level up. The gate's `@peek` cond is the whole
     // dispatch condition here, exactly as it is for a gated element that does start.
     if gr.onfail == "bail" { return "" }
@@ -2129,7 +1821,7 @@ fn gated_first_check(g: Grammar, inner: GNode, ind: string, annots: List<GAnnot>
     }
     let em = rule_first_expect_msg(g, gr.rule)
     let msg = if em == "" { "expected ${gr.rule}" } else { em }
-    // An IDENT-led callee keeps the hand's RESERVED-KEYWORD diagnostic here too (so07.2),
+    // An IDENT-led callee keeps the RESERVED-KEYWORD diagnostic here too (so07.2),
     // exactly as the `halt` arm above and `handle_missing` already do. A gated position is
     // where a binding name is rejected — `fn f(bare: int)` reaches `param`'s gate — and
     // reporting the generic "expected parameter name" for `Tk.KwReserved` loses the one
@@ -2175,14 +1867,13 @@ fn node_has_gate(node: GNode) -> bool {
 /// interpreter needs the SAME scoping answer as the emitter (its `@require`-ref
 /// abort check is the twin of `emit_one`'s), and `executor.av` deliberately does
 /// not import `emit.av`, so a second copy here would be the drift hazard.
-fn rule_reaches_hand(g: Grammar, name: string) -> bool {
+fn rule_reaches_spec(g: Grammar, name: string) -> bool {
     let i = rule_index_of(g, name)
     if i < 0 { return false }
     match g.rules[i].body {
         .Alt(branches) -> {
             for b in branches {
-                if b.items.length == 1 && prim_is_hand(b.items[0].prim) { return true }
-                // A rolled-back `@try` consumes nothing — same hazard as a declining hand.
+                // A rolled-back `@try` consumes nothing.
                 if b.speculative { return true }
             }
             false
@@ -2190,14 +1881,14 @@ fn rule_reaches_hand(g: Grammar, name: string) -> bool {
     }
 }
 
-/// The generated twin of the hand parser's `parse_statement_list_ids`
-/// (parse/mod.av:821): a labeled bare-ref `*`/`+` over a STATEMENT rule — a
+/// The generated twin of `parse_statement_list_ids`
+/// (parse/mod.av): a labeled bare-ref `*`/`+` over a STATEMENT rule — a
 /// block's `stmts:statement*` — parses statements until `}`/EOF, records each
 /// child's SrcPos (entry byte → to_linecol, the add_stmt_at twin), and on a
 /// failed child runs panic-mode resync (`synchronize_stmt`) + a positioned
-/// `Stmt.Error` placeholder, byte-identical to the hand recovery. Unlike the
+/// `Stmt.Error` placeholder, byte-identical to that recovery. Unlike the
 /// interpreter's `exec_repeat` (a span-free FIRST-guard loop with no recovery),
-/// this mirrors the HAND loop directly — the generated static parser owns the
+/// this mirrors that loop directly — the generated static parser owns the
 /// block's statement-list recovery. No other emitted grammar uses this shape
 /// today, so wiring it into emit_repeat_group is additive (emit-gen-check proves
 /// existing grammars are byte-identical). (t-47hc.13 — the control-flow flip.)
@@ -2210,13 +1901,14 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bo
     // error misclassifying the first body statement). `__any_err` accumulates
     // pre-loop | per-child failures and is RESTORED to the flag at loop exit, so a
     // condition/body error stays visible to the caller — the diagnostics themselves
-    // live in `diags` (clear_error touches only the flag), matching the hand
-    // parser's monotonic had_error over parse_statement_list_ids.
+    // live in `diags` (clear_error touches only the flag), matching
+    // parse_statement_list_ids' monotonic had_error.
     "${ind}let __pre_err = st.had_error\n" +
         "${ind}mut __any_err = __pre_err\n" +
         "${ind}while true {\n" +
-        // An `abort` loop does NOT stop at EOF, and that is the hand's shape rather than
-        // an oversight: `parse_comp_block_body` loops `while !check(RightBrace)`, so at
+        // An `abort` loop does NOT stop at EOF, and that is `parse_comp_block_body`'s
+        // shape rather than
+        // an oversight: it loops `while !check(RightBrace)`, so at
         // end-of-input it ATTEMPTS a child, which reports F0040 and propagates. Breaking
         // here instead reported the missing closer — one diagnostic either way, a
         // different code. Safe only because a failed child in this mode returns
@@ -2233,16 +1925,16 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bo
         //   default — ANY reported error. The child gets an `(error)` row, so a block
         //     whose body merely recovered still shows the failure in the tree.
         //   drop    — only an ABORT. A child that reported and then RECOVERED is KEPT,
-        //     because that is what the hand does: `parse_spec_body` returns its partial
+        //     because that is what `parse_spec_body` does: it returns its partial
         //     item list, so an inner failure loses the inner item and nothing more.
         //     Keying `drop` on had_error instead threw away every ANCESTOR too —
         //     `spec "s" { given "g" { then } }` lost the whole `given`, since the body
         //     loop's own `note_had_error` re-raises the flag on the way out.
         // "did anything REPORT" and "did this child FAIL" are different questions, and
-        // the loop needs both (t-47hc.5). The hand asks the second to decide recovery —
-        // `parse_declaration()` returning `.Err`, not merely having reported — so a child
+        // the loop needs both (t-47hc.5). Recovery keys on the second —
+        // the child FAILING, not merely having reported — so a child
         // that reported and still produced a node is KEPT: `let v = o else { 1 }` is a
-        // full desugared binding on the hand plus its F1203, where keying recovery on
+        // full desugared binding plus its F1203, where keying recovery on
         // `had_error` collapsed the whole body to one `(error)`.
         //
         // The first question still has to be asked, separately, or the item comes back
@@ -2254,7 +1946,7 @@ fn emit_stmt_list_loop(name: string, label: string, ind: string, drop_failed: bo
         // t-47hc.5 `@onfail(abort)`: END THE RULE on a failed child, the third disposition
         // a body loop can have. `parse_comp_block_body`'s `parse_declaration()?` returns
         // `.Err`, so the instantiation never reaches its closing `}` and the brace is left
-        // for statement-level recovery — the hand's second diagnostic. Recovering here
+        // for statement-level recovery — the second diagnostic. Recovering here
         // consumed it, and one diagnostic went missing with it. Emitted BEFORE the resync
         // for the same reason `@require` returns before consuming: there is nothing to
         // recover into.
@@ -2391,10 +2083,10 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
             // A `+` needs ≥1 match. The default message never surfaces (a non-speculative Plus is
     // entered only when its FIRST holds; a speculative one discards it on rollback), but a
     // Plus that is REQUIRED mid-sequence — `@pkg::name`'s `( "::" IDENT )+` — does report,
-    // and must match the hand parser's wording. `@expect("+", msg)` overrides it.
+    // and must keep its pinned wording. `@expect("+", msg)` overrides it.
     let req_msg = { let e = expect_for(annots, "+")  if e.found { e.msg } else { "expected at least one repetition" } }
-    // A zero-match `+` FAILS the rule, it does not merely report (t-47hc.5). The hand
-    // propagates with `?`, so `return @foo` — an `@` with no `::` — comes back `(error)`;
+    // A zero-match `+` FAILS the rule, it does not merely report (t-47hc.5):
+    // `return @foo` — an `@` with no `::` — must come back `(error)`;
     // reporting and carrying on built `(return @foo)`, a tree asserting a qualified
     // reference was parsed. It also let the cursor run on, so `@pkg::mod::name` re-entered
     // the DECLARATION dispatch on the `mod` keyword and added "expected module name after
@@ -2425,23 +2117,8 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     let req = match item.rep { .Plus -> "${ind}if ${req_bound_guard}!(${same_line_wrap(item, node_first_guard(g, inner, []))}) {\n${ind}    st.report(\"${req_msg}\")\n${req_abort}${ind}}\n"  _ -> "" }
             // The bound pieces are empty strings when unbounded, so splicing them into
             // this multi-line shape leaves the generated text byte-identical.
-            if group_is_single_hand(g, inner) {
+            if group_can_stall(g, inner) {
                 // Two body orders, split by WHAT a no-progress iteration hands back.
-                //
-                // A rule with an actual @hand alternative returns a REAL node even when
-                // the delegate declines, so the historical accumulate-THEN-break order
-                // is byte-identical and stays.
-                //
-                // A rule whose decline is all-SPECULATIVE (`postfix_suffix` once its
-                // hand tail was retired) hands back a no-progress `CapVal.Nil` — and
-                // coercing THAT before the break made capval_to_* REPORT. On valid
-                // input (`a < b` after a callable base: the generic-call `@try` enters
-                // on `<` and un-decides) the spurious report failed the whole enclosing
-                // item branch, which then rode the interpreter fallback on EVERY such
-                // expression — and when the item's already-parsed header held a split
-                // `>>`, the rollback re-parsed a mutated token stream and real errors
-                // surfaced (t-47hc Phase 4). Parse first, break on no progress, and
-                // only then accumulate — the emit twin of exec_repeat's silent exit.
                 let spr = single_plain_ref_group(g, inner, list_labels)
                 if spr.applies {
                     req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
@@ -2467,8 +2144,8 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                 // also what terminated the loop — so `while lookahead_ok(cond, st)` over
                 // an element that consumes nothing spins forever. Measured: `enum E {`
                 // with a gated variant loop HUNG (exit 124), it did not merely report the
-                // wrong message. The break is the same one group_is_single_hand emits for
-                // the hand-delegate shape, required here for the same reason: the loop
+                // wrong message. The break is the same one group_can_stall emits,
+                // required here for the same reason: the loop
                 // condition no longer implies progress.
                 req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     bnd.guard +
@@ -2535,11 +2212,9 @@ fn emit_node_items(g: Grammar, node: GNode, annots: List<GAnnot>, ind: string, l
 
 fn emit_seq_result(g: Grammar, seq: GSeq) -> string {
     // `lone_item_index`, NOT `items.length == 1`: a leading `@peek`/`@when` is a
-    // ZERO-WIDTH gate, so `@peek(c) @hand(f)` is still a LONE hand primary. Counting
-    // raw items made both checks below miss it, and the sequence fell through to the
-    // build-less `.None` arm — emitting `let _ = run_hand_stmt(…)` and returning
-    // CapVal.Nil, i.e. running the leaf and THROWING ITS RESULT AWAY. (Caught peeling
-    // the match table sub-language off behind `@peek(match_table) @hand(match_table)`.)
+    // ZERO-WIDTH gate, so `@peek(c) X` is still a LONE primary. Counting raw
+    // items made both checks below miss it, and the sequence fell through to the
+    // build-less `.None` arm — running the primary and THROWING ITS RESULT AWAY.
     let lone = lone_item_index(seq)
     // A lone unlabelled terminal with no build is the default literal build
     // (executor coerces the boundary Tok via literal_node).
@@ -2547,11 +2222,6 @@ fn emit_seq_result(g: Grammar, seq: GSeq) -> string {
         seq.items[lone].label == "" && prim_is_terminal(seq.items[lone].prim) &&
         build_is_none(seq.build) {
         return "CapVal.Node(literal_node(st, st.advance()))"
-    }
-    // A lone @hand primary is its own result.
-    if lone >= 0 && rep_is_one(seq.items[lone].rep) &&
-        prim_is_hand(seq.items[lone].prim) && build_is_none(seq.build) {
-        return emit_hand_result(hand_name(seq.items[lone].prim))
     }
     match seq.build {
         .None -> "CapVal.Nil"
@@ -2568,9 +2238,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // ── Expression builds (target: Expr) ──
         "fold_binary" -> "CapVal.Node(fold_binary_expr(st, ${arg3(args)}))"
         // sp_start (the rule fn's entry byte, emitted below by build_uses_sp_start)
-        // threads the hand parser's [production-entry, next-token) span into the
+        // threads the [production-entry, next-token) span into the
         // DSL compound builders — see executor.av. fold_binary→Pratt and
-        // fold_postfix→@hand keep their span-free signatures.
+        // fold_postfix keep their span-free signatures.
         "fold_logical" -> "CapVal.Node(fold_logical_expr(st, sp_start, ${arg3(args)}))"
         "fold_nullish" -> "CapVal.Node(fold_nullish_expr(st, sp_start, ${arg3(args)}))"
         "fold_postfix" -> "CapVal.Node(fold_postfix_expr(st, ${arg2(args)}))"
@@ -2630,9 +2300,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkMatchExpr" -> "mk_match_expr(st, sp_start, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         "MkIfExpr" -> "mk_if_expr(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
         "MkIfLet" -> "mk_if_let(st, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]})"
-        // No `sp_start`: `build_if_let_stmt` uses `add_stmt_leaf` (unstamped), matching
-        // the hand's `parse_if_let_statement`. Stamping here would record a row the
-        // other two paths do not — the SrcPos divergence the While/If note above
+        // No `sp_start`: `build_if_let_stmt` uses `add_stmt_leaf` (unstamped).
+        // Stamping here would record a row the
+        // interpreter does not — the SrcPos divergence the While/If note above
         // describes, which `agree_pos` would then catch.
         "MkIfLetStmt" -> "mk_if_let_stmt(st, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]})"
         "MkWhenStmt" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(${args[0]}_list))))))"
@@ -2658,11 +2328,10 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkDefer" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, ${args[0]}))))"
         "MkErrdefer" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, ${args[0]}))))"
         // A statement-position expression that FAILED (st.had_error set by
-        // parse_expression's report/error_node) recovers as a bare Stmt.Error —
-        // the twin of the hand parser's `parse_expression()?` yielding .Err (the
-        // whole-program loop then synchronises identically via parse_declaration's
+        // parse_expression's report/error_node) recovers as a bare Stmt.Error (the
+        // whole-program loop then synchronises via parse_declaration's
         // .Error arm). Without this the static parser wraps the failed expression
-        // as Stmt.Expr(Expr.Error), diverging from hand's recovery tree (the 5c
+        // as Stmt.Expr(Expr.Error), diverging from the pinned recovery tree (the 5c
         // gap the recovery-TREE oracle characterises). had_error is per-item fresh
         // (run_static_snode_at_shared builds a clean PState), so an absolute check
         // == "THIS expression failed" — no earlier-error false positive.
@@ -2852,19 +2521,6 @@ fn build_fn(name: string) -> string {
     name
 }
 
-// ── @hand → the run_hand* family (executor.exec_primary's Hand dispatch) ──
-
-fn emit_hand_result(hf: string) -> string {
-    if is_hand_stmt_leaf(hf) { return "CapVal.SNode(run_hand_stmt(\"${hf}\", st))" }
-    if is_hand_expr_leaf(hf) { return "CapVal.Node(run_hand_expr(\"${hf}\", st))" }
-    "CapVal.Node(run_hand(\"${hf}\", st))"
-}
-
-// The rule classes come straight from the shared hand-leaf table
-// (hand_leaves.av), the same one the executor dispatches through — so the
-// emitted parser and the interpreter cannot disagree about which class a leaf
-// belongs to. These were hand-maintained copies of executor.av's predicates,
-// kept in sync by a comment; adding a leaf now touches ONE table (rule 8).
 
 // ── FIRST-set guards (branch selection + repetition guards) ──
 //
@@ -2874,20 +2530,6 @@ fn emit_hand_result(hf: string) -> string {
 // so a guard spans them (executor.tok_starts_seq).
 
 // ── ps3t.6.7 perf: Tk-enum terminal dispatch ──
-//
-// A literal terminal (`"+"`, `"|>"`) was matched by string-comparing the token
-// `text` (`st.cur().text == "|>"`) — an avra_streq PER descent level, the #1
-// cost of the generated parser (~+17M Ir vs the hand parser). The real lexer
-// already tags every token with its `Tk` enum kind, and for OPERATOR /
-// PUNCTUATION lexemes that tag is 1:1 with the text (a `|>` is ALWAYS
-// `Tk.PipeGt`, and nothing else is), so `text == "|>"` ⟺ `tk == Tk.PipeGt` —
-// an int compare that is byte-identical in behaviour but drops the streq.
-//
-// KEYWORDS are deliberately EXCLUDED: a keyword lexeme could (contextually) lex
-// as an identifier, so `text == "is"` is NOT guaranteed equivalent to
-// `tk == Tk.KwIs`; those fall back to the string compare (`tk_variant_for`
-// returns "" → the caller emits the `.text` form). This keeps the fast path
-// provably safe while covering the hot operator guards.
 fn tk_variant_for(text: string) -> string {
     // punctuation
     if text == "(" { return "LeftParen" }
@@ -2974,7 +2616,6 @@ fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
     match prim {
         .Lit(t) -> tk_guard(t)
         .Named(tok) -> named_tk_guard(tok)
-        .Hand(hf) -> hand_first_guard(hf)
         .Group(inner) -> node_first_guard(g, inner, visited)
         .Ref(name) -> rule_first_guard(g, name, visited)
         // A zero-width `@when` predicate: its guard is the mode conjunct. Reached
@@ -2992,55 +2633,6 @@ fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
         // tok_starts arm, it is never a branch head in practice.
         .RawBrace(_) -> "true"
     }
-}
-
-/// Mirrors executor.hand_starts as a guard expression.
-fn hand_first_guard(hf: string) -> string {
-    if hf == "ident" { return named_tk_guard("IDENT") }
-    if hf == "number" { return named_tk_guard("NUMBER") }
-    if hf == "component_decl" { return "st.cur().text == \"component\"" }
-    if hf == "let_stmt" { return "st.cur().text == \"let\"" }
-    if hf == "return_stmt" { return "st.cur().text == \"return\"" }
-    if hf == "match_table" { return "st.cur().text == \"match\"" }
-    if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
-    // Keyword-led expression primaries (Phase 3a-11) — byte-side twins of the
-    // executor hand_starts FIRST guards (kept in lockstep).
-    if hf == "match_expr" { return "st.cur().text == \"match\"" }
-    if hf == "if_expr" { return "st.cur().text == \"if\"" }
-    // Clean-FIRST bracket/qualified primaries — byte-side twins (Tk compares, 1:1
-    // with the punctuation text) of the executor hand_starts FIRST guards.
-    if hf == "list_expr" { return tk_guard("[") }
-    if hf == "paren_expr" { return tk_guard("(") }
-    if hf == "ident_primary" { return named_tk_guard("IDENT") }
-    if hf == "ident_expr" { return "${named_tk_guard("IDENT")} || ${tk_guard("@")}" }
-    if hf == "more_primary" { return "${tk_guard(".")} || ${tk_guard("[")}" }
-    // The leaf's FIRST is the shared exported predicate (executor's
-    // tok_starts_expr_leaf) — the emitted static parser calls it directly, so
-    // the FIRST-set has ONE source of truth across both consumers (rule 8).
-    if hf == "hand_unary" { return "tok_starts_expr_leaf(st.cur())" }
-    // The `with`-base leaf shares that same FIRST (parse_unary_leaf); a `with { … }`
-    // postfix step's FIRST is the `with` keyword (a keyword — text compare, like `not`).
-    if hf == "call_leaf" { return "tok_starts_expr_leaf(st.cur())" }
-    // Phase 3a: the primary base shares the leaf FIRST (parse_primary_base); a
-    // postfix suffix's FIRST is the postfix-op set (Tk-dispatched, a SUPERSET of
-    // postfix_step's precise guard — the no-progress break exits when a step
-    // consumes nothing). Mirrors executor.hand_starts("postfix_suffix").
-    if hf == "primary_base" { return "tok_starts_expr_leaf(st.cur())" }
-    if hf == "postfix_suffix" { return "${tk_guard(".")} || ${tk_guard("(")} || ${tk_guard("[")} || ${tk_guard("!")} || ${tk_guard("?")} || ${tk_guard("?.")} || ${tk_guard("<")} || ${tk_guard("catch")}" }
-    // The lambda body's FIRST is the same leaf FIRST (`{` block ∪ FIRST(expression)) —
-    // byte-side twin of executor.hand_starts("lambda_body"). t-47hc paren flip prep,
-    // DORMANT (no live grammar references @hand(lambda_body), so unemitted today).
-    if hf == "lambda_body" { return "tok_starts_expr_leaf(st.cur())" }
-    if hf == "lambda_block_body" { return tk_guard("{") }
-    // ps3t.6.7 Phase 2 — the whole-declaration dispatch FIRST set, mirroring
-    // executor.hand_starts("decl_hand") exactly so the generated static parser
-    // routes to run_hand_stmt on the same tokens the interpreter flip does
-    // (byte-identical dispatch). The `stmt_hand` twin went with its leaf in
-    // t-47hc.37 — no grammar referenced it, and the parser it named is deleted.
-    if hf == "decl_hand" {
-        return "st.cur().kind == \"IDENT\" || st.cur().kind == \"DOC\" || st.cur().kind == \"MODDOC\" || st.cur().text == \"@\" || st.cur().text == \"export\" || st.cur().text == \"fn\" || st.cur().text == \"type\" || st.cur().text == \"enum\" || st.cur().text == \"trait\" || st.cur().text == \"impl\" || st.cur().text == \"use\" || st.cur().text == \"mod\" || st.cur().text == \"const\" || st.cur().text == \"let\" || st.cur().text == \"mut\" || st.cur().text == \"extern\" || st.cur().text == \"shape\" || st.cur().text == \"spec\" || st.cur().text == \"parallel\" || st.cur().text == \"select\" || st.cur().text == \"component\""
-    }
-    "false"
 }
 
 fn node_first_guard(g: Grammar, node: GNode, visited: List<string>) -> string {
@@ -3065,7 +2657,7 @@ fn pred_guard(flag: string) -> string {
     // executor.modes_flag's at_quote_top case. Gates the grammar-owned `~` bitnot.
     if flag == "at_quote_top" { return "st.modes.quote_depth == 0" }
     // The complement — see executor.modes_flag's in_quote_body case. Gates the splice
-    // reading of `~`, which is what the `primary_base` leaf still owns.
+    // reading of `~`.
     if flag == "in_quote_body" { return "st.modes.quote_depth > 0" }
     // A POSTFIX-BASE predicate is not a mode field at all — emit a call to the SAME
     // executor.base_pred the interpreter uses, exactly as peek_guard does for @peek, so
@@ -3130,8 +2722,8 @@ fn seq_first_guard(g: Grammar, seq: GSeq, visited: List<string>) -> string {
                 // t-myz7 GATE: a `@gate`d item's FIRST is NOT part of the dispatch
                 // condition — the preceding `@peek` cond REPLACES it. Returning the
                 // preds alone is what lets a loop enter on a token the element's FIRST
-                // rejects (EOF for `fn f(`), which is the whole point: the hand's
-                // `while !check(CLOSER)` enters there and reports about the ELEMENT.
+                // rejects (EOF for `fn f(`), which is the whole point: a
+                // `while !check(CLOSER)` loop enters there and reports about the ELEMENT.
                 // Checked BEFORE parts.push so the FIRST never joins the guard.
                 if item.gate { return and_join(preds) }
                 // `^` is part of the DISPATCH condition, not just of the item's own
@@ -3207,7 +2799,7 @@ fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
         // The widening is MODE-GUARDED rather than folded into `tok_starts_type`, which
         // takes a bare Token and so cannot see `quote_depth`. Outside a quote the FIRST is
         // byte-identical to before, which is what keeps `~` in type position the same
-        // parse error the hand gives there.
+        // parse error as before.
         if name == "type_expr" { return "(st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))" }
         // `match_table_expr` is DEFINED in the declaration view (beside match_table_stmt, so
         // the `{#cols}` stays in a string fragment) and CALLED from the expression view's
@@ -3398,22 +2990,14 @@ fn prim_is_group(prim: GPrim) -> bool {
     match prim { .Group(_) -> true  _ -> false }
 }
 
-fn prim_is_hand(prim: GPrim) -> bool {
-    match prim { .Hand(_) -> true  _ -> false }
-}
-
-fn hand_name(prim: GPrim) -> string {
-    match prim { .Hand(hf) -> hf  _ -> "" }
-}
-
 /// Does rule `name` SELF-VALIDATE — i.e. when invoked on a token OUTSIDE its FIRST
 /// set, does it set `had_error` (rather than blindly consuming into a bogus node)?
 /// This decides whether the LAST bare-ref branch of a dispatch may be the UNGUARDED
 /// catch-all tail: a self-validating rule can (unary's `| postfix`, statement's
-/// `| expr_stmt` — the delegate recovers), a non-self-validating one must be
+/// `| expr_stmt`), a non-self-validating one must be
 /// FIRST-guarded with the no-match error node instead (type_atom's `| named_type`:
 /// unguarded it would swallow `,`/`?`/`=` into a bogus TypeExpr.Named WITHOUT
-/// had_error, so the caller's hand fallback never fires and recovery diverges from
+/// had_error, so recovery diverges from
 /// the interpreter, which FIRST-guards EVERY branch — the type recovery-oracle catch).
 ///
 /// The cases, mirroring what emit_dispatch itself produces:
@@ -3424,8 +3008,8 @@ fn hand_name(prim: GPrim) -> string {
 ///  - MULTI-BRANCH dispatch: ALWAYS self-validates — emit_dispatch gives it either an
 ///    error-node tail or a self-validating catch-all, so an unmatched token sets
 ///    had_error either way.
-///  - SINGLE sequence: self-validates iff its LEADING primary does — `@hand` (the
-///    delegate reports) or another self-validating rule; a leading TERMINAL does not
+///  - SINGLE sequence: self-validates iff its LEADING primary does — another
+///    self-validating rule; a leading TERMINAL does not
 ///    (linear sequences emit the first terminal UNGUARDED, assuming the caller's
 ///    dispatch guaranteed it — false for an unguarded fallthrough).
 fn rule_self_validates(g: Grammar, name: string, visited: List<string>) -> bool { rule_owns_recovery(g, name, visited) }
@@ -3485,7 +3069,6 @@ fn list_decl_type(g: Grammar, seq: GSeq, label: string) -> string {
         .Named(_) -> "Token"
         .Group(_) -> "Token"
         .Ref(name) -> kind_elem_type(rule_result_kind(g, name))
-        .Hand(hf) -> kind_elem_type(hand_kind(hf))
         // A zero-width `@when`/`@peek` predicate is never captured into a list; these
         // arms exist only for exhaustiveness.
         .Pred(_) -> "Token"

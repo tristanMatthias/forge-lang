@@ -1,5 +1,11 @@
 # t-47hc Roadmap — retiring the hand front end
 
+> **RETIREMENT COMPLETE 2026-08-13.** Zero hand parsers, zero `@hand` leaves, and
+> the `@hand` primitive itself deleted from the DSL (branch
+> claude/47hc-grammar-parser-migration-9hmy4d). What remains of this roadmap is
+> the Phase-5 multiplier work (t-47hc.6: derive the formatter/LSP/highlighter
+> from the grammar) — the slice mechanics below are history.
+
 **Status: 2026-07-27. This is the ONE authoritative plan for t-47hc.** It supersedes the
 planning content in every other doc listed under "Doc consolidation" below. If a claim
 here disagrees with a ticket comment or a `.md`, this wins.

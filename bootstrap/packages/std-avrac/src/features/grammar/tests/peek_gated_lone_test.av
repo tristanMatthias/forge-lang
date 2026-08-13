@@ -1,4 +1,4 @@
-// WHY: a `@peek`-gated lone `@hand` is still a LONE primary.
+// WHY: a `@peek`-gated lone primary is still a LONE primary.
 //
 // Two independent lone-item checks drive how a build-less sequence is emitted:
 // `is_lone_primary_result` decides whether to SKIP the item body, and `emit_seq_result`
@@ -9,10 +9,9 @@
 // The two failure modes are opposite and both silent-ish:
 //   - only emit_seq_result fixed  -> the primary runs TWICE (item body, then result)
 //   - only is_lone_primary_result -> the primary runs and its value is DISCARDED for Nil
-// The first was `let _ = run_hand_stmt(…); return run_hand_stmt(…)`; the second was
-// `let _ = run_hand_stmt(…); return CapVal.Nil` — a statement parsed and thrown away.
+// The first ran the primary TWICE; the second ran it once and returned CapVal.Nil —
+// a value parsed and thrown away.
 //
-// Caught peeling the match table sub-language off behind `@peek(match_table) @hand(...)`.
 // Both now key on `lone_item_index`, which skips zero-width gates.
 use @std.avrac.features.grammar.{parse_grammar, emit_parser_source}
 
@@ -31,24 +30,23 @@ fn count_of(hay: string, needle: string) -> int {
     n
 }
 
-spec "a @peek-gated lone @hand emits exactly once, and its result is returned" {
-    then "the hand call appears exactly ONCE (not duplicated)" {
-        count_of(emitted("r = @peek(match_table) @hand(match_table)"), "run_hand_stmt(\"match_table\"") == 1
+spec "a @peek-gated lone primary emits exactly once, and its result is returned" {
+    then "the primary's build appears exactly ONCE (not duplicated)" {
+        count_of(emitted("r = @peek(match_table) \"+\""), "literal_node(st, st.advance())") == 1
     }
     then "its result is the rule's VALUE, not discarded for CapVal.Nil" {
-        let src = emitted("r = @peek(match_table) @hand(match_table)")
-        src.contains("CapVal.SNode(run_hand_stmt(\"match_table\", st))") &&
+        let src = emitted("r = @peek(match_table) \"+\"")
+        src.contains("CapVal.Node(literal_node(st, st.advance()))") &&
             !src.contains("let _ = ") && !src.contains("CapVal.Nil")
     }
-    then "CONTROL: an UNGATED lone @hand emits identically" {
+    then "CONTROL: an UNGATED lone primary emits identically" {
         // The gate is zero-width, so gating a lone primary must not change the body.
-        emitted("r = @peek(match_table) @hand(match_table)") == emitted("r = @hand(match_table)")
+        emitted("r = @peek(match_table) \"+\"") == emitted("r = \"+\"")
     }
-    then "in a MULTI-branch rule the gated lone @hand returns exactly once" {
-        // The dispatch form — the shape match_stmt actually uses.
-        let src = emitted("r = \"+\" | @peek(match_table) @hand(match_table)")
-        count_of(src, "run_hand_stmt(\"match_table\"") == 1 &&
-            src.contains("return CapVal.SNode(run_hand_stmt(\"match_table\", st))")
+    then "in a MULTI-branch rule the gated lone primary returns exactly once" {
+        let src = emitted("r = \"-\" | @peek(match_table) \"+\"")
+        count_of(src, "literal_node(st, st.advance())") == 2 &&
+            src.contains("return CapVal.Node(literal_node(st, st.advance()))")
     }
     then "a @peek-gated lone TERMINAL is also still lone (the literal-build path)" {
         let src = emitted("r = @peek(match_table) \"+\"")

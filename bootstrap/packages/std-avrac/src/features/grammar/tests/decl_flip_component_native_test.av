@@ -68,12 +68,11 @@ spec "t-47hc slice A: the component definition is emitted as a native rule" {
         let src = decl_src()
         let disp = emitted_rule_body(src, "fn parse_declaration(st: PState) -> CapVal")
         let comp_at = disp.index_of("parse_comp_header(st)")
-        let hand_at = disp.index_of("run_hand_stmt(\"decl_hand\"")
         disp != "" &&
             !disp.contains("s_last = parse_comp_header(st)") &&
             src.contains("fn parse_comp_header(st: PState) -> CapVal") &&
             src.contains("fn parse_comp_paren_decl(st: PState) -> CapVal") &&
-            comp_at >= 0 && hand_at < 0
+            comp_at >= 0
     }
 
     then "the schema accumulators are typed, not the ExprId default" {

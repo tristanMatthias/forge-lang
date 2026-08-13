@@ -61,19 +61,19 @@ spec "t-47hc.33: `^` gates BRANCH SELECTION, not just the item" {
     }
 }
 
-// `suffix` is the shape the postfix flip creates: one native alternative plus a `@hand`
-// tail. The loop over it lives in `r`.
+// `suffix` can decline without consuming (its `@try` branch rolls back to zero
+// width). The loop over it lives in `r`.
 const MIXED_G = "r = b:NUMBER ( p:suffix )* -> Grouping(b)\n" +
-    "suffix = s:STRING -> Grouping(s) | @hand(primary_base)"
+    "suffix = s:STRING -> Grouping(s) | @try NUMBER STRING"
 
 spec "t-47hc.33: the no-progress break survives a rule going PARTLY native" {
-    then "a bare `@hand` rule loops with the break — the established shape" {
-        rule_src("r = b:NUMBER ( p:suffix )* -> Grouping(b)\nsuffix = @hand(primary_base)", "r")
+    then "a purely speculative rule loops with the break — the established shape" {
+        rule_src("r = b:NUMBER ( p:suffix )* -> Grouping(b)\nsuffix = @try NUMBER STRING", "r")
             .contains("__rep_before")
     }
     then "and it is STILL emitted once the rule grows a native alternative" {
-        // The regression: under the old bare-hand test this returned false, and the
-        // emitted `while` had no exit for the case the hand tail consumes nothing.
+        // The regression: the emitted `while` had no exit for the case the
+        // declining rule consumes nothing.
         rule_src(MIXED_G, "r").contains("__rep_before")
     }
     then "the break is a real `break`, not just the saved position" {

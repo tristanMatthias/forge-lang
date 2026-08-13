@@ -71,13 +71,7 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         let let_at = src.index_of("parse_let_decl(st)")
         let mut_at = src.index_of("parse_mut_decl(st)")
         let const_at = src.index_of("parse_const_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
-        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
-        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
-        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
-        // be reached from the dispatcher, or it is dead code with correct output.
-        let_at >= 0 && mut_at >= 0 && const_at >= 0 && hand_at < 0
+        let_at >= 0 && mut_at >= 0 && const_at >= 0
     }
 
     then "each routed branch is SPECULATIVE and its rollback restores the gensym counter" {
@@ -89,8 +83,8 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         // The `@try`/`@cut` pair lives INSIDE each binding rule now (routing `let`
         // moved it there, so the dispatcher references all three bare — the shape
         // `mut`/`const` already had). The property asserted is unchanged: the branch
-        // is speculative, and its rollback restores the store, the cursor, the hand
-        // state AND the hygiene counter (property 2 in the WHY).
+        // is speculative, and its rollback restores the store, the cursor, AND the
+        // hygiene counter (property 2 in the WHY).
         mut ok = true
         for head in ["fn parse_let_decl(st: PState) -> CapVal",
                      "fn parse_mut_decl(st: PState) -> CapVal",
@@ -98,7 +92,6 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
             let body = emitted_rule_body(src, head)
             if !(emitted_rule_speculates(src, head) &&
                  body.contains("if st.diags.length == s_diags && st.had_error == s_err {") &&
-                 body.contains("st.restore_hand_state(s_hand)") &&
                  body.contains("st.set_gensym_seq(s_gensym)")) {
                 println("not speculative / incomplete rollback: ${head}")
                 ok = false
@@ -120,11 +113,10 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
         // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
         // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
-        tail_at >= 0 && hand_at < 0
+        tail_at >= 0
     }
 
     then "the destructure rule is PREDICTIVE and dispatches BEFORE let_decl (no hand gate remains)" {
@@ -142,7 +134,6 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         let src = decl_src()
         let des_at = src.index_of("parse_letdes_decl(st)")
         let let_at = src.index_of("parse_let_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         // The gate is emitted at the DISPATCH SITE, not inside the rule: a leading
         // `@peek` is the branch's FIRST guard, so emit hoists it to the caller and the
         // rule fn body starts at the `let`. Asserted as the exact guarded dispatch, so
@@ -150,7 +141,7 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         // swallows every binding) fails here rather than only in the recovery corpus.
         src.contains("fn parse_letdes_decl(st: PState) -> CapVal") &&
             src.contains("if lookahead_ok(\"let_destructure\", st) && (st.cur().text == \"let\") {\n        return parse_letdes_decl(st)") &&
-            des_at >= 0 && let_at >= 0 && hand_at < 0 &&
+            des_at >= 0 && let_at >= 0 &&
             des_at < let_at
     }
 }

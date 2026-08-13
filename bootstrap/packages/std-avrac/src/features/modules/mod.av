@@ -40,7 +40,6 @@ export fn mod_feature() -> Feature {
     let empty_body: List<StmtId> = []
     feature_new("mod") with {
         stmt_tag: Stmt.Module("", empty_body),
-        decl_keyword: "kw_mod",
         resolve_stmt: mod_resolve,
         eval_stmt: mod_eval,
     }
@@ -52,7 +51,6 @@ export fn mod_feature() -> Feature {
 export fn use_feature() -> Feature {
     feature_new("use") with {
         stmt_tag: Stmt.Use("", []),
-        decl_keyword: "kw_use",
         eval_stmt: use_eval,
     }
 }

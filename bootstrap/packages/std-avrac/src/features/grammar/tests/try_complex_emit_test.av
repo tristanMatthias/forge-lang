@@ -1,25 +1,19 @@
-// WHY: t-47hc GAP-3 — the emitter's @try speculative branch now handles the FULL item
-// vocabulary (list accumulators, `@on`/`@off` mode items, `@hand` leaves, groups/opt/star),
-// not just the flat terminal/ref recognizer the incumbent (list_expr) uses. This guards
-// that a COMPLEX @try branch lowers to correct generated code: `mut <label>_list` declared,
-// `@on` wrapped in set_modes save/restore, `@hand` dispatched via run_hand_expr, the build
-// reading the accumulator, and the snapshot/rollback scaffold. DORMANT: no production
-// grammar uses a complex @try yet (the paren spend will), so gen_*_parser.av regen
-// byte-identical (emit-gen-check GENPASS) — the flat path (spec_branch_is_flat true) is
-// unchanged. The BEHAVIORAL spec the emitter matches is proven by the executor: the same
-// paren_tail grammar renders all 10 paren forms byte-correct via run_grammar_expr.
+// WHY: t-47hc GAP-3 — the emitter's @try speculative branch handles the FULL item
+// vocabulary (list accumulators, `@on`/`@off` mode items, groups/opt/star), not just
+// the flat terminal/ref recognizer. This guards that a COMPLEX @try branch lowers to
+// correct generated code: `mut <label>_list` declared, `@on` wrapped in set_modes
+// save/restore, the build reading the accumulator, and the snapshot/rollback scaffold.
 use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn}
 
-// A complex @try grammar: paren_tail's untyped-lambda + tuple arms exercise every feature
-// the flat @try emitter could not: a `( @on(...) a:expression ( "," a:expression )* )?`
-// optional GROUP with a mode-set + a list ACCUMULATOR, a mandatory `@hand(lambda_body)`,
-// and a build reading the accumulator.
+// A complex @try grammar: paren_tail's untyped-lambda + tuple arms exercise every
+// feature the flat @try emitter could not: an optional GROUP with a mode-set + a
+// list ACCUMULATOR, and a build reading the accumulator.
 fn tail_g() -> string {
     "grammar PT {\n" +
-    "  paren_tail = @try ( @on(allow_dot_postfix) a:expression ( \",\" a:expression )* )? \")\" \"->\" lb:@hand(lambda_body) -> MkLambda(a, lb)\n" +
+    "  paren_tail = @try ( @on(allow_dot_postfix) a:expression ( \",\" a:expression )* )? \")\" \"->\" lb:expression -> MkLambda(a, lb)\n" +
     "             | @try @on(allow_dot_postfix) a:expression ( \",\" a:expression )+ ( \",\" )? \")\" -> MkTuple(a)\n" +
     "             | @on(allow_dot_postfix) e:expression \")\" -> Grouping(e)\n" +
-    "  expression = @hand(ident)\n" +
+    "  expression = IDENT\n" +
     "}"
 }
 
@@ -39,9 +33,8 @@ spec "t-47hc GAP-3: complex @try branches lower to correct generated code" {
         let s = emit_tail()
         s.contains("modes_with_flag_on(st.modes, \"allow_dot_postfix\")") && s.contains("st.set_modes(__modes_")
     }
-    then "the @hand(lambda_body) leaf dispatches via run_hand_expr (NOT the broken `if false`)" {
-        let s = emit_tail()
-        s.contains("run_hand_expr(\"lambda_body\", st)") && !s.contains("if false")
+    then "no dead `if false` scaffolding is emitted" {
+        !emit_tail().contains("if false")
     }
     then "the untyped-lambda build reads the accumulator via CapVal.Nodes(a_list)" {
         emit_tail().contains("mk_lambda(st, sp_start, CapVal.Nodes(a_list)")
@@ -49,30 +42,15 @@ spec "t-47hc GAP-3: complex @try branches lower to correct generated code" {
     then "the tuple arm builds mk_tuple over the same accumulator" {
         emit_tail().contains("mk_tuple(st, sp_start, CapVal.Nodes(a_list))")
     }
-    then "the rollback scaffold includes the DELEGATE snapshot, paired around the branch" {
-        // t-3keo: this used to assert the OPPOSITE — that a native-only alternation
-        // emitted no `save_hand_state`. The snapshot was armed only when some
-        // NON-speculative sibling LED with an `@hand` leaf, which asks about the RETRY
-        // branch; what actually moves the delegate is the SPECULATIVE branch's own body
-        // reaching a hand leaf. `paren_expr` is where those come apart — its native
-        // branches lead with `"("`, so nothing armed, while its `@try` branches parse
-        // `a:expression` and reach `@hand(ident_primary)` on any bare IDENT. The
-        // rollback rewound `st.pos` and left the delegate ahead, so `(v)` failed to
-        // parse where `(1)` / `(true)` / `([1])` succeeded.
-        //
-        // The snapshot is unconditional now: leaving no trace is what `@try` MEANS, and
-        // the delegate is part of the state the branch touched. `save_hand_state`
-        // no-ops when no delegate is threaded, so an alternation that cannot reach one
-        // pays nothing. Order is the load-bearing part — save before the body, restore
-        // after the rollback, or a failed branch still leaks its cursor.
+    then "the rollback scaffold restores store, cursor, and hygiene counter in order" {
+        // Leaving no trace is what `@try` MEANS. Order is the load-bearing part —
+        // snapshot before the body, restore after the rollback.
         let s = emit_tail()
-        let save = s.index_of("let s_hand = st.save_hand_state()")
-        let restore = s.index_of("st.restore_hand_state(s_hand)")
-        s.contains("let s_mark = st.store.mark()") &&
-        s.contains("st.store.truncate_to_mark(s_mark)") &&
-        s.contains("st.restore_to(s_pos, s_diags, s_err)") &&
-        save >= 0 && restore > save &&
-        s.index_of("st.restore_to(s_pos, s_diags, s_err)") < restore
+        let mark = s.index_of("let s_mark = st.store.mark()")
+        let trunc = s.index_of("st.store.truncate_to_mark(s_mark)")
+        let restore = s.index_of("st.restore_to(s_pos, s_diags, s_err)")
+        let gensym = s.index_of("st.set_gensym_seq(s_gensym)")
+        mark >= 0 && trunc > mark && restore > trunc && gensym > restore
     }
     then "the accumulator loop consumes the comma separators" {
         emit_tail().contains("while st.cur().tk == Tk.Comma")

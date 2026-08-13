@@ -33,11 +33,13 @@ use @std.avrac.core.{render_stmt_id}
 
 fn stmt_grammar_src() -> string {
     "grammar Stmt {\n" +
-    "  statement   = let_decl | return_stmt | expr_stmt\n" +
-    // `let` (incl. `let … else` and `let mut … else`) delegated to the hand parser.
-    "  let_decl    = @hand(let_stmt)\n" +
+    "  statement   = let_decl | return_stmt | block_stmt | expr_stmt\n" +
+    // `let` (incl. `let … else` and `let mut … else`) — the native §2 shape.
+    "  let_decl    = @try \"let\" @cut ( m:\"mut\" )? @require n:IDENT ( \":\" @require ty:type_expr )? @require \"=\" @onfail(bail) init:expression ( \"else\" e:statement tmp:@gensym(letelse) )? @expect(\"IDENT\", \"expected variable name\") @expect(\"type_expr\", \"expected type after `:`\") @expect(\"=\", \"expected `=` after variable name\") -> MkLetBinding(m, n, ty, init, e, tmp)\n" +
+    "  type_expr   = tn:IDENT -> MkNamed(tn, targ, topt)\n" +
     // bare `return` OR `return expr` — the operand is optional (FIRST-set gated).
     "  return_stmt = \"return\" ( re:expression )? -> MkReturn(re)\n" +
+    "  block_stmt  = \"{\" ( bs:statement )* \"}\" -> Block(bs)\n" +
     "  expr_stmt   = es:expression -> ExprStmt(es)\n" +
     // ── expression family ──
     "  expression  = equality\n" +
@@ -45,8 +47,10 @@ fn stmt_grammar_src() -> string {
     "  comparison  = l:term ( op:(\"<=\" | \">=\") r:term )* -> fold_binary(l, op, r)\n" +
     "  term        = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
     "  factor      = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
-    "  un          = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
-    "  primary     = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "  un          = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | postfix\n" +
+    "  postfix     = base:primary ( sf:suffix )* -> fold_postfix(base, sf)\n" +
+    "  suffix      = \"(\" ( ca:expression ( \",\" ca:expression )* )? \")\" -> call_suffix(ca)\n" +
+    "  primary     = NUMBER | STRING | \"true\" | \"false\" | IDENT\n" +
     "              | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
     "}"
 }
@@ -80,7 +84,7 @@ spec "grammar-DSL statement family: bare return + let-else == hand-written parse
             dsl_stmt("return 42") == "(return 42)"
         }
     }
-    given "`let … else` (the hygienic build_let_else desugar) via @hand" {
+    given "`let … else` (the hygienic desugar)" {
         then "let-else and let-mut-else agree, incl. the fresh temp name" {
             agree("let v = x else { return }") &&
             agree("let mut v = x else { return }") &&
@@ -89,15 +93,15 @@ spec "grammar-DSL statement family: bare return + let-else == hand-written parse
             dsl_stmt("let v = x else { return }") == hand_stmt("let v = x else { return }")
         }
     }
-    given "plain `let` (no else) still routes through @hand equivalently" {
+    given "plain `let` (no else)" {
         then "a bare let binding agrees" {
             agree("let x = 5") &&
             agree("let name: string = greeting") &&
             dsl_stmt("let x = 5") == "(let x:<unknown> 5)"
         }
     }
-    given "@hand(let_stmt) composes as an alternative with the pure return/expr rules" {
-        then "let → @hand, return → pure MkReturn, bare expr → ExprStmt all route right" {
+    given "let_decl composes as an alternative with the pure return/expr rules" {
+        then "let, return → MkReturn, bare expr → ExprStmt all route right" {
             agree("let a = 1") &&
             agree("return") &&
             agree("x + 1")

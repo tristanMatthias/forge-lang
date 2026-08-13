@@ -1,19 +1,4 @@
 // WHY: ps3t.6.4 — the grammar-DSL *generator*, in its executable form.
-// It lowers a `Grammar` (ast.av, produced by the seed parser) to an
-// error-tolerant recursive-descent parser and RUNS it over a token
-// stream, producing real `Expr` nodes — the GRAMMAR_DSL.md §8 proof
-// ("build the generator … run it, and show it producing real Expr
-// nodes"). Each rule executes exactly the RD algorithm its generated
-// function would (Nystrom's grammar→RD correspondence, GRAMMAR_DSL.md
-// §4): terminal → match/consume, nonterminal → call its rule, `|` →
-// first-match by FIRST-set, `*`/`+` → loop, `?` → optional, `->` →
-// build the node, `@recover` → panic-mode synchronize. emit.av renders
-// the same lowering as parser-fn source (the structural correspondence).
-//
-// The semantic actions (how a `build` constructs a target node) are the
-// one target-specific seam — mirroring the derive engine's pluggable
-// emitters. Here they build `Expr` for the expression slice: literals,
-// `Unary(op, operand)`, and `fold_binary(l, op, r)` (left-assoc chains).
 
 use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list, FORCE_UNWRAP_FN}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
@@ -25,29 +10,26 @@ use features.grammar.{dispatch_has_tail}
 use features.grammar.{rule_first_expect_msg, gated_ref_of, GatedRef}
 use features.grammar.{grammar_has_gate, rule_first_is_ident, rule_first_literal}
 use features.grammar.{rule_result_kind, gprim_ref_name}
-// The field-name acceptance set, shared with the hand parser (t-47hc.33.1).
+// The field-name acceptance set (t-47hc.33.1).
 use core.{tk_is_field_name}
 use core.{tk_keyword_str}
-// The SHARED if-let desugar, also called by the hand's parse_if_let_expression — one
-// definition of the rows, so the native rule and the oracle cannot lower differently.
+// The SHARED if-let desugar, also called by parse_if_let_expression — one
+// definition of the rows, so the two callers cannot lower differently.
 use core.{build_if_let_expr, build_if_let_stmt}
 use core.{build_let_else_init, stmt_ids_diverge}
 use core.{SelectArm}
 use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct, lookup_stmt_parser}
 use features.grammar.{code_at, is_ident_start_code}
-// The RAW-SOURCE lookahead cores (t-47hc.5.1 slice B1), SHARED with the hand
-// parser's Parser.peek_after_ident_is_* wrappers. The component config-pair
+// The RAW-SOURCE lookahead cores (t-47hc.5.1 slice B1), SHARED with
+// Parser's peek_after_ident_is_* wrappers. The component config-pair
 // `@peek` conds below run the IDENTICAL scan over the IDENTICAL bytes rather
 // than re-deriving it at token level, which is not equivalent — see the note
 // at the cores in chars.av for the four divergences that depends on.
 use features.grammar.{word_excluded_as_instance_name, src_next_nonws_is_quote, src_next_nonws_is_digit, src_next_nonws_starts_with, src_next_nonws_is_single_eq, src_next_nonws_is_lbrace, src_next_nonws_is_value_word, src_at_empty_call_block}
-use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
-use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
-use diagnostics.{DiagnosticBag}
+use parse.{parser_new_with_file, parser_new_with_store, Parser, desugar_template_store}
 use list_ops.{lower_bound}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 
-extern fn avra_process_env_get(name: string) -> string
 extern fn avra_gensym() -> int
 
 // ── Capture values + environment ──
@@ -82,9 +64,9 @@ export enum CapVal {
     PNode(id: PatId)
     PNodes(ns: List<PatId>)
     // A built TYPE-EXPRESSION + a parallel list of them (the type-family
-    // target seam, ps3t.6.5.6). The hand parser builds a surface `TypeExpr`
-    // then lowers it to a `ValueType` via `type_expr_to_vtype`; the DSL
-    // mirrors that — builds the SAME `TypeExpr` (carried inline, not arena'd,
+    // target seam, ps3t.6.5.6). A surface `TypeExpr` is built,
+    // then lowered to a `ValueType` via `type_expr_to_vtype` — the SAME
+    // `TypeExpr` on every path (carried inline, not arena'd,
     // since TypeExpr is a boxed recursive enum), and run_grammar_type shares
     // the exact same lowering. `TExprs` collects a comma-list (generic args /
     // fn params / tuple elements).
@@ -100,8 +82,7 @@ export enum CapVal {
     // inline like `Arm` (FieldInit is a small record, not an arena node), so a
     // `*` over the field_init rule accumulates `FInits`, which a `MkWithSuffix`
     // build folds into the `Expr.With` overrides list. This is the seam that lets
-    // the grammar OWN a `{ name: value, … }` init list — the single gap that kept
-    // `with_suffix` (and `brace_expr`'s struct-literal half) behind `@hand`.
+    // the grammar OWN a `{ name: value, … }` init list.
     FInit(f: FieldInit)
     FInits(fs: List<FieldInit>)
     // A subjectless `when` arm + repetition list. Unlike MatchArm, WhenArm
@@ -130,7 +111,7 @@ export enum CapVal {
     CPairs(xs: List<CompConfigPair>)
     // A built PARAMETER ENTRY + a parallel list of them (declaration family,
     // ps3t.6.5.7). A fn parameter is a name + an optional `: type` annotation
-    // (defaulting to Int, the hand parser's parse_param_list default); a `*`
+    // (defaulting to Int, parse_param_list's default); a `*`
     // over the param rule accumulates `PEntries`, folded into Stmt.Function.
     PEntry(p: ParamEntry)
     PEntries(ps: List<ParamEntry>)
@@ -511,26 +492,10 @@ impl CapEnv {
 /// malformed input yields a partial tree + diagnostics, never a bail).
 export type RunResult = { store: NodeStore, root: ExprId, had_error: bool, diags: List<GDiag> }
 
-// `src` is the ORIGINAL source text (when known) — carried so a `@hand`
-// statement rule can delegate a whole declaration to the real hand parser
-// over that source (the token list alone can't reconstruct a raw body /
-// char-level lookahead). Empty on the caller-provided-token path (the
-// eventual swap-in uses a real Parser for @hand, not this interpreter).
-// EXPORTED (ps3t.6.5.11): the generated static parser drives a PState directly.
-//
-// `modes` (ps3t.6.7 Step B) carries the caller parser's context-sensitive modes
-// so an `@hand` expression delegation (run_hand_expr → a fresh hand parser)
-// reproduces the ORIGINAL parse: `allow_struct_lit` (a `{` in an if/while/for
-// header is a block, not a struct literal), `allow_dot_postfix` (match-arm
-// bodies), `allow_it_sugar` (the `it` pronoun), `quote_depth` (a leading `~` is
-// splice, not bit-not), `cell_mode` (a leading `+`/`-` on a table-cell's next
-// line ends the cell). Every non-expr-flip PState defaults these to a fresh hand
-// parser's values, so the already-promoted type/pattern @hand paths are unchanged.
 export type ExprModes = { allow_struct_lit: int, allow_dot_postfix: int, allow_it_sugar: int, quote_depth: int, cell_mode: bool }
 
-/// The modes of a freshly-constructed hand parser (parser_new_with_file) — the
-/// default for every PState that isn't the expression flip, so run_hand_expr's
-/// delegated parser behaves exactly as it does today on those paths.
+/// The modes of a freshly-constructed parser — the default for every PState
+/// that isn't the expression flip.
 export fn default_expr_modes() -> ExprModes {
     ExprModes { allow_struct_lit: true, allow_dot_postfix: true, allow_it_sugar: false, quote_depth: 0, cell_mode: false }
 }
@@ -546,41 +511,35 @@ export fn default_expr_modes() -> ExprModes {
 /// source offset of that token.
 ///
 /// `at` orders the merge: the lexer's own diagnostics are interleaved with the parser's
-/// in the order the HAND emits them (see `boundary_diags`).
+/// in emission order (see `boundary_diags`).
 ///
-/// `byte` positions the diagnostic at the flip seam. Without it the seam reported at the
-/// hand parser's cursor, which is still the ITEM START — so a native rule's diagnostic
-/// rendered at the first token of the declaration rather than where it was raised, and
-/// on a merged module parse `broken.av:2:9` came out `broken.av:1:1`. Invisible while
-/// the routed rules rolled back and let the hand report.
+/// `byte` positions the diagnostic at the token it was raised at — without it the seam
+/// rendered at the ITEM START, so on a merged module parse `broken.av:2:9` came out
+/// `broken.av:1:1`.
 /// `end_byte` is the offending token's END, so the rendered caret UNDERLINES the token
-/// instead of pointing at its first column (t-bw9s). The hand parser has always built
-/// `span_at(current_start, current, …)`; the seam built `span_at(byte, byte, …)` — a
-/// point — so four ratchet entries were message-identical to the hand and still diverged,
-/// visible only in the frame (`┬` vs `─┬─`) and never in the one-line summary.
+/// instead of pointing at its first column (t-bw9s).
 export type GDiag = { code: string, msg: string, at: int, byte: int, end_byte: int }
 
 /// t-myz7 ABORT PROPAGATION (`abort_prop`). A generated `parse_X` that aborts can
 /// only `return` from ITSELF; its CALLER cannot tell an abort from an ordinary
 /// result and carries on. `enum E { A( }` aborted inside parse_variant, then
-/// enum_decl consumed the `}` as its own closing brace — so the stray `}` the hand
-/// leaves for statement-level recovery was eaten and the hand's SECOND diagnostic
+/// enum_decl consumed the `}` as its own closing brace — so the stray `}` left
+/// for statement-level recovery was eaten and the SECOND diagnostic
 /// never appeared. Set at an abort, checked by callers. The emit twin of the
 /// executor's env.abort, which already unwinds the enclosing sequence.
 /// `lex_diags`: the LEXER's own diagnostics for this source, positioned by token index.
 ///
-/// The streaming lexer reports as it scans, and the HAND parser pulls one token at a
-/// time — so a lexer diagnostic lands interleaved with the parser's, at the moment the
-/// bad token becomes current. The native path lexes the whole file up front, so those
-/// reports have to be carried and re-inserted at the matching point; discarded (which
-/// is what `lex_real` did until t-47hc.5 Phase 4) they simply do not exist natively —
-/// `let z = ;` is F0001 `unexpected character `;`` + F0041 on the hand and F0041 alone.
+/// The streaming lexer reports as it scans — a lexer diagnostic lands interleaved with
+/// the parser's, at the moment the bad token becomes current. The native path lexes the
+/// whole file up front, so those reports have to be carried and re-inserted at the
+/// matching point; discarded, they simply do not exist —
+/// `let z = ;` must be F0001 `unexpected character `;`` + F0041, never F0041 alone.
 ///
 /// Carried, not merged eagerly. Seeding them into `diags` at the FRONT would put every
 /// lexer diagnostic before every parser one, and the recovery corpus compares the
 /// ORDERED F-code signature, so order is the assertion. Releasing them mid-parse is
 /// worse — see `seed_lex_diags`. The interleave happens in `boundary_diags`.
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool, lex_diags: List<LexDiag>, first_pos: int }
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, host: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool, lex_diags: List<LexDiag>, first_pos: int }
 
 /// One in-place token-stream mutation (today: only `split_gt`'s `>>` → `>`),
 /// journalled so a rollback can UNDO it. The stream is SHARED — across the
@@ -590,11 +549,6 @@ export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: strin
 /// used to leave a single `>` in the slot, and the re-parse of
 /// `List<MemoEntry<V>>` then failed at the `)` with the first `>` simply gone.
 export type TokEdit = { idx: int, orig: Token }
-
-/// Full procedural-delegate snapshot for a grammar `@try`. `ParserState.bag`
-/// aliases the parser's mutable bag record, so it cannot by itself preserve the
-/// pre-branch diagnostics; keep an explicit value-copy of the bag beside it.
-export type HandTryState = { parser: ParserState, bag: DiagnosticBag, gensym: int }
 
 /// Postfix-chain accumulator snapshot for a grammar `@try` — see save_postfix_state.
 /// Plain ids/offsets, so a value copy IS the snapshot.
@@ -627,7 +581,7 @@ impl PState {
 
     /// Split a `>>` (Tk.Shr) token when a single `>` is expected — the
     /// gnarly-5% nested-generic close (`List<List<T>>`), the executor-side
-    /// analogue of the hand parser's `maybe_split_shr` (ps3t.6.5.10). The lexer
+    /// analogue of Parser.maybe_split_shr (ps3t.6.5.10). The lexer
     /// merges two adjacent `>` into ONE `>>`; here we CONSUME the first half
     /// (return a synthetic `>`) and leave the second `>` in the current slot —
     /// WITHOUT advancing — so the next `>` match takes it. Deeper nesting works
@@ -657,15 +611,14 @@ impl PState {
         self.had_error = true
     }
 
-    /// `report` for a missing IDENT, keeping the hand parser's RESERVED-KEYWORD
+    /// `report` for a missing IDENT, keeping the RESERVED-KEYWORD
     /// diagnostic (so07.2 / 1rzz — parse/mod.av `consume_identifier`).
     ///
     /// A binding position that finds `Tk.KwReserved` has something far more useful
     /// to say than "expected function name": the lexeme itself is the problem and
-    /// the fix is to rename it. The hand parser has always said so, so a native rule
-    /// reporting its generic `@expect` message instead is a diagnostic REGRESSION —
-    /// and one that appears exactly as each keyword is routed. `fn unsafe() {}` and
-    /// a parameter named `move` both lost the message the moment `fn` went native.
+    /// the fix is to rename it. A rule
+    /// reporting its generic `@expect` message instead is a diagnostic REGRESSION
+    /// (`fn unsafe() {}`, a parameter named `move`).
     ///
     /// It lives on PState so BOTH engines produce the same text: the executor calls
     /// it from `handle_missing` (which already knows the expected terminal) and the
@@ -682,8 +635,8 @@ impl PState {
     ///
     /// An IDENT terminal took `report_ident` unconditionally, which drops the code, so a
     /// declared `@expect("IDENT", …, F0040)` rendered its TEXT and lost its CODE: a bare
-    /// `.` came out F0001 where the hand reports F0040 (`parse_leaf_common`'s
-    /// ExpectedExpression — the whole expression is missing, not merely a token). The
+    /// `.` came out F0001 instead of F0040 (ExpectedExpression — the whole
+    /// expression is missing, not merely a token). The
     /// reserved-keyword substitution is preserved, and keeps its own F0001, because that
     /// diagnostic is about the LEXEME rather than the position that asked for it.
     fn report_ident_coded(self, code: string, msg: string) {
@@ -699,28 +652,20 @@ impl PState {
     /// The pre-existing channel was one code WIDE: `PState.diag_code` is a single
     /// string with first-writer-wins, and the DSL boundary surfaces `st.diags[0]`, so
     /// a parse that reported N diagnostics could carry exactly ONE code out and lost
-    /// the rest. That is invisible today — the `@hand(decl_hand)` tail owns reporting
-    /// for anything that fails — but the recovery oracle compares the ORDERED F-code
-    /// signature with duplicates preserved, so it is a hard blocker for retiring the
-    /// leaf: the native path cannot reproduce multi-error recovery through a
-    /// one-diagnostic seam.
+    /// the rest — and the recovery oracle compares the ORDERED F-code signature with
+    /// duplicates preserved, so multi-error recovery needs the code carried per
+    /// diagnostic.
     ///
     /// This widens the CHANNEL only. `diag_code` is still written and the boundary
-    /// still reads `diags[0]`, so behaviour is unchanged (diff-test byte-identical) —
-    /// the per-diagnostic code is now AVAILABLE for the leaf-removal slice to spend,
-    /// which is the same widen-then-spend discipline slice B1 used for the raw-source
-    /// lookahead cores.
+    /// still reads `diags[0]`.
     fn report_coded(self, code: string, msg: string) {
         self.diags.push(GDiag { code, msg, at: self.pos, byte: self.cur().pos, end_byte: self.cur().pos + self.cur().text.length })
         self.had_error = true
     }
 
     /// Mark the DSL run as errored WITHOUT recording a diagnostic (ps3t.6.7
-    /// Slice 5.4). Used to mirror a @hand delegate's error STATE back onto this
-    /// PState when the delegate recovered internally (returned .Ok while its own
-    /// bag holds the diagnostic): the boolean gate makes the flip fall back to the
-    /// authoritative hand parser, which OWNS the reporting — so copying the diag
-    /// here would double-report.
+    /// Slice 5.4) — for the paths where another reporter OWNS the diagnostic and
+    /// copying it here would double-report (see mk_primary_fail).
     fn note_had_error(self) {
         self.had_error = true
     }
@@ -757,9 +702,9 @@ impl PState {
     }
 
     /// Phase 3a base-threading (self-ptr mutators): `seed_postfix` records the
-    /// primary base + the chain's start byte (`@hand(primary_base)` result);
+    /// primary base + the chain's start byte;
     /// `set_postfix_base` updates the accumulator after each `postfix_suffix` step.
-    /// Via self-ptr so both the shared-delegate production path and the fresh-parser
+    /// Via self-ptr so both the production path and the fresh-parser
     /// interpreter path carry the base across the grammar's ( postfix_suffix )* loop.
     fn seed_postfix(self, base: ExprId, sp: int) {
         self.postfix_base = base
@@ -768,7 +713,6 @@ impl PState {
     fn set_postfix_base(self, base: ExprId) {
         self.postfix_base = base
     }
-
     /// Freeze the chain accumulator for ONE `postfix_suffix` step (t-47hc.33).
     ///
     /// A suffix that RECURSES into `expression` — `[i]`, `(args)`, `<T>(args)` — runs a
@@ -798,8 +742,7 @@ impl PState {
     ///
     /// The invariant that makes it sound is CHAIN NEUTRALITY: a chain rule (`unary`, build
     /// `fold_postfix_with`) leaves the freeze exactly as it found it, so an inner chain is
-    /// invisible to the outer step whose build has yet to run — the hand parser gets this
-    /// for free by keeping `rid` as a LOCAL of parse_call. Restored at chain EXIT, after
+    /// invisible to the outer step whose build has yet to run. Restored at chain EXIT, after
     /// the fold, so the rule's own `( postfix_suffix )*` loop still threads normally.
     ///
     /// DELIBERATELY only the freeze. `postfix_base` self-heals — every step's build ends in
@@ -811,8 +754,7 @@ impl PState {
         self.postfix_step_sp = step_sp
     }
     /// The `@off(flag)` mode-SET marker's set half: save the current modes, clear
-    /// the named flag, return the SAVED modes for restore_modes. The executor twin
-    /// of the hand parser's `saved = allow_struct_lit; allow_struct_lit = false`.
+    /// the named flag, return the SAVED modes for restore_modes.
     fn push_mode_off(self, flag: string) -> ExprModes {
         let saved = self.modes
         self.modes = modes_with_flag_off(self.modes, flag)
@@ -836,13 +778,11 @@ impl PState {
     /// saved/restored by the `@off`/`@on`/`@bump` markers; the counter is MONOTONIC
     /// across the COMMITTED parse, because rolling it back there would re-mint a name
     /// a surviving node carries. The one context that rolls it back is SPECULATIVE
-    /// rollback (`@try`, and the flip driver's interpreter fallback): every temp the
+    /// rollback (`@try`): every temp the
     /// abandoned attempt minted dies with the store truncation, so the counter must
-    /// die with it — otherwise the retry mints `$letelse$2` where the pure-hand
-    /// oracle mints `$letelse$1` (the malformed-binding recovery corpus's catch).
-    /// The hand parser's save_state keeps its exclusion ("NOT snapshotted, by
-    /// design") for its OWN internal backtracks; the speculative snapshots carry the
-    /// counter explicitly (HandTryState.gensym / s_gensym).
+    /// die with it — otherwise the retry mints `$letelse$2` where `$letelse$1`
+    /// is pinned (the malformed-binding recovery corpus's catch).
+    /// The speculative snapshots carry the counter explicitly (s_gensym).
     fn fresh(self, tag: string) -> string {
         self.gensym_seq = self.gensym_seq + 1
         gensym_name(tag, self.gensym_seq)
@@ -902,16 +842,6 @@ impl PState {
         // anything aborted since the start rule reset".
         self.abort_prop = false
         // `diag_code` is FIRST-WRITER-WINS (report_coded), so a rolled-back
-        // speculation used to leave its code behind permanently: the branch that
-        // actually reported then rendered under an ABANDONED branch's F-code. Caught
-        // on `let` (t-myz7) — once `letdes_decl` was ordered ahead of `let_decl`, a
-        // plain `let` reported the right message under `letdes`'s F0040 instead of
-        // the hand's F0001, with nothing in either rule to explain it.
-        //
-        // Recomputing from the diagnostics that SURVIVE is only expressible because
-        // #1173 put the code ON each diagnostic; against the old one-code-wide
-        // channel there was nothing to recompute from. This is that widening's first
-        // consumer.
         mut dc = ""
         for d in self.diags {
             if dc == "" && d.code != "" { dc = d.code }
@@ -921,8 +851,8 @@ impl PState {
 
     /// Undo EVERY journalled token edit — called at EVERY shared-runner exit,
     /// success and failure alike. On failure the caller is about to re-parse this
-    /// run's region over the SAME shared token list (the interpreter fallback, the
-    /// hand's decl_lead re-parse, a type-flip retry), so a surviving split would
+    /// run's region over the SAME shared token list (a type-flip
+    /// retry), so a surviving split would
     /// corrupt the re-read. On success the splits lie BEHIND the caller's resync
     /// point and are never re-read forward — but an ENCLOSING speculation (a
     /// `@try`'d wrapper around the whole item) may still roll back across them,
@@ -943,8 +873,7 @@ impl PState {
         }
     }
 
-    /// Snapshot the POSTFIX CHAIN ACCUMULATOR alongside a grammar `@try` — the sibling
-    /// of save_hand_state, for the same reason and against the same failure.
+    /// Snapshot the POSTFIX CHAIN ACCUMULATOR alongside a grammar `@try`.
     ///
     /// `exec_seq` is error-TOLERANT: a speculative branch that mismatches a terminal
     /// reports and keeps going, so its `-> build` STILL RUNS, on whatever the captures
@@ -975,66 +904,26 @@ impl PState {
         self.postfix_step_sp = saved.step_sp
     }
 
-    /// The `@hand` delegate, built ON FIRST USE. Production threads one in at
-    /// construction and this returns it unchanged; the interpreter entries construct with
-    /// `null` and materialise here, which is what lets a REGISTRY-driven `@peek` predicate
-    /// (`ident_lbrace_plain` asking `lookup_expr_parser` whether a feature owns
-    /// `name { … }`) get a truthful answer on the oracle paths instead of the conservative
-    /// one that routed the form to the `@hand` tail and left the native branch it guards
-    /// unmeasured (t-47hc.31).
+    /// The host Parser handle, built ON FIRST USE. Production threads the real
+    /// parser in at construction; the interpreter entries construct with `null`
+    /// and materialise a bare one here, which is what lets a REGISTRY-driven
+    /// `@peek` predicate (`ident_lbrace_plain` asking `lookup_expr_parser`
+    /// whether a feature owns `name { … }`) get a truthful answer on the oracle
+    /// paths instead of the conservative one (t-47hc.31).
     ///
-    /// LAZY, not eager, and that is not a micro-optimisation: `parser_new_with_store`
-    /// builds a full feature Registry (~53 registrations), and `run_grammar_expr` is
-    /// called per ASSERTION across the oracle suite — attaching one at every entry grew
-    /// the grammar suite's peak past 12 GB and tripped the watchdog. Only a parse that
-    /// actually meets an `IDENT {` reaches this, so the rest pay nothing.
-    ///
-    /// The delegate always starts at byte 0, so it is never AHEAD of the grammar cursor
-    /// and `run_hand_expr`'s forward-advance is still monotonic no matter when it is
-    /// built — including inside a `@try` that later rolls back.
-    ///
-    /// A token-only entry has no source for a hand parser to read, so it stays null and
-    /// the registry question keeps its conservative answer.
+    /// LAZY, not eager: `parser_new_with_store` builds a full feature Registry
+    /// (~53 registrations) and `run_grammar_expr` runs per ASSERTION across the
+    /// oracle suite — an eager build at every entry grew the suite's peak past
+    /// 12 GB. A token-only entry has no source, stays null, and the registry
+    /// question keeps its conservative answer.
     fn delegate(self) -> Parser? {
-        if self.hand_delegate != null { return self.hand_delegate }
+        if self.host != null { return self.host }
         if self.src == "" { return null }
         mut d = parser_new_with_store(self.src, self.file, self.store)
         d.records_roots = 0
         d.expr_flip = false
-        self.hand_delegate = d
-        self.hand_delegate
-    }
-
-    /// Snapshot the threaded procedural delegate alongside a grammar `@try`.
-    /// A speculative native branch may call an expression `@hand` leaf, which
-    /// advances this parser independently of `PState.pos`; rolling back only the
-    /// token index would leave the fallback delegate ahead of the retry point.
-    fn save_hand_state(self) -> HandTryState? {
-        if self.hand_delegate == null { return null }
-        let d = self.hand_delegate!
-        let bag = DiagnosticBag {
-            diagnostics: list_take(d.bag.diagnostics, d.bag.diagnostics.length),
-            error_count: d.bag.error_count,
-            warning_count: d.bag.warning_count,
-        }
-        HandTryState { parser: d.save_state(), bag, gensym: d.gensym_seq }
-    }
-
-    /// Restore the procedural half of a failed grammar `@try`: cursor,
-    /// mode/error fields, shared-store mark, and the separately copied bag.
-    fn restore_hand_state(self, saved: HandTryState?) {
-        if saved == null || self.hand_delegate == null { return }
-        mut d = self.hand_delegate!
-        d.restore_state(saved!.parser)
-        d.bag = saved!.bag
-        // The hygiene counter rolls back WITH the store truncation the caller
-        // performs: every temp the abandoned branch minted dies with its rows, so
-        // NOT restoring re-mints later temps one-off from the pure-hand oracle
-        // ($letelse$2 where FLIP=0 mints $letelse$1 — the malformed-binding
-        // recovery corpus is the guard). ParserState itself still excludes the
-        // counter by design; the speculative snapshot is the one context where
-        // the discard makes rolling it back sound.
-        d.gensym_seq = saved!.gensym
+        self.host = d
+        self.host
     }
 
     /// A whole-construct error placeholder (no matching alternative).
@@ -1043,24 +932,24 @@ impl PState {
         self.store.exprs.add_leaf(Expr.Error)
     }
 
-    /// An error node that also records WHICH F-code the hand parser would use for this
+    /// An error node that also records WHICH F-code renders for this
     /// message (t-47hc.5). `report` carries only a string, and the boundary that surfaces
-    /// a DSL diagnostic (`parse/mod.av`, `d.bag.diagnostics.length == 0 && dsl.diag != ""`)
+    /// a DSL diagnostic (`parse/mod.av`)
     /// otherwise has to pick one code for every grammar rule — which is why the
-    /// alternation's no-match surfaced as F0001 where the hand parser reports F0040
-    /// `expected expression`, the single divergence that kept `@hand(primary_base)` alive.
+    /// alternation's no-match once surfaced as F0001 where F0040
+    /// `expected expression` is pinned.
     ///
     /// FIRST writer wins, mirroring `diag = st.diags[0]`: the surfaced message and the
     /// surfaced code must describe the SAME diagnostic, so they have to be taken from the
     /// same one. A plain `error_node` leaves the code empty and the boundary keeps its
     /// existing default, so every untouched call site behaves exactly as before.
-    /// The expression alternation's NO-MATCH tail, with the hand's `;` special case.
+    /// The expression alternation's NO-MATCH tail, with the `;` special case.
     ///
-    /// `parse_primary`'s tail (parse/mod.av:2829) branches: a `;` is F0041 `unexpected
+    /// A `;` is F0041 `unexpected
     /// \`;\`` — carrying the help "Avra doesn't use semicolons — remove the `;`" — and
-    /// anything else is F0040 `expected expression`. The native tail was unconditionally
-    /// F0040, so `let z = ;` lost both the code and the one diagnostic that tells a user
-    /// what to DO. Lives on PState so the executor and the generated parsers cannot drift:
+    /// anything else is F0040 `expected expression`; the `;` branch is the one
+    /// diagnostic that tells a user what to DO.
+    /// Lives on PState so the executor and the generated parsers cannot drift:
     /// emit renders a call to this rather than re-deciding the branch in a string.
     fn error_node_expected_expr(self) -> ExprId {
         if self.cur().text == ";" { return self.error_node_coded("F0041", "unexpected `;`") }
@@ -1094,14 +983,13 @@ impl PState {
         if self.cur().text == tok { let _ = self.advance() }
     }
 
-    /// Statement-boundary synchronize — the PState twin of the hand parser's
-    /// no-arg `Parser.synchronize` (parse/mod.av:3658): advance until a statement
+    /// Statement-boundary synchronize — the PState twin of the no-arg
+    /// `Parser.synchronize` (parse/mod.av): advance until a statement
     /// LEAD keyword or `}`, WITHOUT consuming it. Matches by `Tk` (NOT text) so a
-    /// string/ident token whose text spells a keyword can't wrongly halt the scan —
-    /// byte-identical to the hand boundary set (fn/let/const/mut/type/enum/impl/if/
+    /// string/ident token whose text spells a keyword can't wrongly halt the scan.
+    /// The boundary set is fn/let/const/mut/type/enum/impl/if/
     /// while/for/match/return/extern/trait/defer/spec/given/then/select + RightBrace;
-    /// errdefer and break/continue are deliberately NOT boundaries). Dormant: wired
-    /// in when the generated block statement-list-with-recovery loop lands (t-47hc.13).
+    /// errdefer and break/continue are deliberately NOT boundaries.
     /// Net braces OPENED and not closed across the token span `[lo, hi)` — how deep a
     /// failed child left the scanner. Recovery uses it to step out of a group the child
     /// entered but never closed, instead of mistaking that group's `}` for the block's
@@ -1148,11 +1036,11 @@ fn list_has(xs: List<string>, s: string) -> bool {
 /// this is the same question with the state the newline gate needs in reach.
 /// Match a NAMED terminal against a token. Every terminal but one is a `kind`
 /// string straight out of `tk_to_grammar_kind` (real_lex.av); `FIELDNAME` is the
-/// exception, and it exists because that mapping is too COARSE to spell what the
-/// hand accepts after a `.` — `Tk.KwReserved` folds into `KW` along with every
+/// exception, and it exists because that mapping is too COARSE to spell what is
+/// accepted after a `.` — `Tk.KwReserved` folds into `KW` along with every
 /// other keyword, so `IDENT` is narrower than `consume_field_name` and `KW` is
 /// vastly wider. `FIELDNAME` reads the shared `tk_is_field_name` (core/ast.av)
-/// instead, which is the hand's own predicate (t-47hc.33.1).
+/// instead, `consume_field_name`'s own predicate (t-47hc.33.1).
 ///
 /// LOCKSTEP: emit's `named_tk_guard` must lower `FIELDNAME` to the SAME Tk set.
 /// That pairing is asserted by reserved_kw_field_test — the two engines drifting
@@ -1169,7 +1057,6 @@ fn tok_starts_prim(g: Grammar, prim: GPrim, st: PState, visited: List<string>) -
         .Named(name) -> named_tok_matches(name, tok)
         .Ref(name) -> tok_starts_rule(g, name, st, visited)
         .Group(inner) -> tok_starts_node(g, inner, st, visited)
-        .Hand(hf) -> hand_starts(hf, tok)
         // A `@when` predicate is zero-width — it starts no token. It never
         // reaches here for a LEADING position (tok_starts_seq skips it); this
         // arm covers a non-leading predicate, which contributes no FIRST token.
@@ -1192,7 +1079,7 @@ fn tok_starts_prim(g: Grammar, prim: GPrim, st: PState, visited: List<string>) -
 ///
 /// `@gensym` belongs here even though it BINDS rather than gates. It is skipped for the
 /// same reason and by the same rule — a rule that mints before its keyword (which is
-/// exactly where the hand mints, between consuming `if` and consuming `let`) would
+/// exactly where the if-let desugar mints, between consuming `if` and consuming `let`) would
 /// otherwise compute an empty FIRST and never be dispatched to.
 fn prim_is_pred(prim: GPrim) -> bool {
     match prim { .Pred(_) -> true  .Peek(_) -> true  .Gensym(_) -> true  _ -> false }
@@ -1228,13 +1115,13 @@ fn tok_starts_seq(g: Grammar, seq: GSeq, st: PState, visited: List<string>) -> b
         // is checked separately in branch_pred_ok, ANDed onto the branch.)
         // A LEADING predicate is part of the FIRST, and skipping it is not the same as
         // treating it as zero-width (t-47hc.5). Emit's twin folds `@when`/`@peek` into
-        // `preds` and ANDs them onto the guard it returns, so on the emit side a branch
-        // led by `@peek(cond) @hand(f)` contributes the COND to FIRST rather than the
-        // hand's universal one. Here the conjunct lived only in `branch_pred_ok`, which
+        // `preds` and ANDs them onto the guard it returns, so on the emit side a
+        // leading predicate NARROWS the branch's FIRST. Here the conjunct lived only
+        // in `branch_pred_ok`, which
         // the ALTERNATION path calls and `tok_starts_rule` does not — so `@require`'s
         // FIRST check (and every gate's) read the un-narrowed set and the two engines
         // dispatched differently. `export export fn g() {}` was the caught case: emit
-        // reported the hand's "expected declaration after `export`", the interpreter saw
+        // reported "expected declaration after `export`", the interpreter saw
         // a satisfiable requirement, descended, and found no branch at all.
         //
         // Evaluated INLINE while scanning rather than by calling `branch_pred_ok` here,
@@ -1304,24 +1191,12 @@ fn lookup_rule(g: Grammar, name: string) -> Rule {
 /// the `run_grammar_expr_src` boundary, minus the interpreter.
 export fn new_pstate(src: string) -> PState {
     let store = new_node_store(build_line_index(src))
-    // Attach ONE reusable @hand delegate (sharing the store) so run_hand_expr
-    // forward-advances a SINGLE parser across the whole parse — O(source) — rather
-    // than building a fresh parser (~53 build_registry registrations) AND re-lexing
-    // from byte 0 to the leaf on EVERY @hand leaf, which is O(source^2). That
-    // quadratic fallback made the emit-gen generated parser ~72x slower than the
-    // hand parser (measured, callgrind); the reused delegate closes that gap. Leaf
-    // positions are visited monotonically (predictive LL, no backtracking), so the
-    // delegate advances each token once. Tree-equivalent to the fresh-parser path
-    // (only line/span accounting differs, which dump-based equivalence ignores).
-    //
-    // EAGER here, unlike PState.delegate()'s lazy materialisation: this is the
-    // generated-parser setup, where `@hand` leaves are the common case and
-    // `run_hand_expr` reads `hand_delegate` directly — deferring it would just hand
-    // every leaf the fresh-parser fallback this exists to avoid.
+    // ONE host parser, sharing the store, so registry-driven predicates answer
+    // truthfully and the gensym counter is continuous across the parse.
     mut d = parser_new_with_store(src, "", store)
     d.records_roots = 0
     d.expr_flip = false
-    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -1330,24 +1205,20 @@ export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
 
 /// The caller-provided-store form of `run_grammar_expr` (ps3t.6.5.8): the
 /// token stream and destination `NodeStore` are supplied by the caller, so
-/// the DSL parser builds INTO an existing store (the eventual swap-in point —
-/// the real parser hands its own store + token stream). `run_grammar_expr`
+/// the DSL parser builds INTO an existing store. `run_grammar_expr`
 /// is the thin `(real lexer + fresh store)` wrapper over this. No source is
-/// threaded — a `@hand` EXPRESSION rule that needs it (e.g. `quote`) is
-/// unavailable on this path (the swap-in serves those from a real Parser).
+/// threaded, so source-level predicates are unavailable on this path.
 export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> RunResult {
     run_grammar_expr_src(grammar, toks, store, "")
 }
 
 /// Shared core of the expression entry. `src` is threaded (empty on the
-/// token-only path) so a `@hand` EXPRESSION rule can delegate to the real hand
-/// parser over the original source — the `run_hand_expr` analogue of
-/// `run_grammar_stmt_src`. `quote { … }` is the case: a leading `~` inside a
-/// quote body is `Expr.Splice`, which the hand parser decides on its
-/// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
+/// token-only path) so source-level predicates can read it. `quote { … }` is
+/// the case: a leading `~` inside a quote body is `Expr.Splice`, decided on the
+/// `quote_depth` mode counter (a parser mode the token stream can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -1370,20 +1241,18 @@ export fn run_grammar_stmt(grammar: Grammar, src: string) -> StmtRunResult {
 }
 
 /// Caller-provided-store form of `run_grammar_stmt` (ps3t.6.5.8). See
-/// `run_grammar_expr_toks`. No source is threaded — a `@hand` statement rule
-/// that needs the source (e.g. `component`) is unavailable on this path (the
-/// swap-in serves those from a real Parser, not this interpreter).
+/// `run_grammar_expr_toks`. No source is threaded, so source-level
+/// predicates (e.g. `component`'s) are unavailable on this path.
 export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> StmtRunResult {
     run_grammar_stmt_src(grammar, toks, store, "")
 }
 
 /// Shared core of the statement entry. `src` is threaded (empty on the
-/// token-only path) so a `@hand` statement rule can delegate a whole
-/// declaration to the real hand parser over the original source — the token
+/// token-only path) — the token
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
-/// store + ps3t.6.5.7/6.5.10 @hand delegation.)
+/// store.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -1408,7 +1277,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -1425,7 +1294,7 @@ export type TypeRunResult = { store: NodeStore, root: TypeId, had_error: bool, d
 
 /// Run `grammar` over `src` starting at the first rule, coerce the root to a
 /// surface `TypeExpr`, then lower it to a `ValueType` via the SHARED
-/// `type_expr_to_vtype` (exactly what the hand parser does) and ingest into
+/// `type_expr_to_vtype` and ingest into
 /// the type arena — so equivalence reduces to building the same `TypeExpr`.
 export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
     run_grammar_type_src(grammar, lex_real(src), new_node_store(build_line_index(src)), src)
@@ -1434,7 +1303,7 @@ export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
 
 /// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -1497,23 +1366,6 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     let v = exec_node_at(g, r.body, st, env, false, [], true)
     if chain_rule { st.restore_postfix_chain(c_step_base, c_step_sp) }
     // "A nonterminal binds its NODE" (README): a rule that bottoms out in a
-    // bare terminal yields a `Tok`, so coerce that to a literal Expr node
-    // HERE, at the rule boundary — otherwise a rule reference captured in a
-    // repetition (`r:unary`) routes to the `Toks` list instead of `Nodes`
-    // (bind) and the fold loses its operands. Node and SNode (statement)
-    // results already carry a node id and pass through unchanged. This is
-    // exactly the old boundary coercion, minus the Tok→literal step being
-    // the ONLY coercion (so SNode survives for the statement family).
-    // ...EXCEPT for a rule that DECLARES a token result (t-47hc.5). `name_or_splice`
-    // yields the name slot's text — a `Tok` is its answer, not an unlowered leftover — and
-    // coercing it to a literal Expr here made `capval_tok_text` read "" at the caller, so
-    // every `type` declaration in a file registered under the EMPTY name and the second
-    // one reported `duplicate type declaration ``. Emit performs no such coercion, so this
-    // was also a straight engine divergence: identical grammar, different result kind.
-    // The `rule_result_kind` query is asked ONLY for a token result. It recurses through
-    // rule references and copies a `List<string>` visited set at each level, so hoisting
-    // it above the match put an unbounded walk plus allocations on every rule descent —
-    // and it cannot change the answer for any other CapVal shape.
     match v {
         .Tok(t) -> {
             if rule_result_kind(g, name) == "tok" { return v }
@@ -1533,10 +1385,6 @@ export fn modes_flag(modes: ExprModes, flag: string) -> bool {
     if flag == "allow_dot_postfix" { return modes.allow_dot_postfix != 0 }
     if flag == "allow_it_sugar" { return modes.allow_it_sugar != 0 }
     if flag == "cell_mode" { return modes.cell_mode }
-    // `at_quote_top` = NOT inside a quote body (quote_depth == 0). Gates the
-    // grammar-owned `~` bitnot: at quote_depth > 0 `~` is the quote SPLICE
-    // operator (hand parse_leaf_common), and the production static parser DOES
-    // run inside quote bodies, so a grammar-owned `~` must fire ONLY at depth 0.
     if flag == "at_quote_top" { return modes.quote_depth == 0 }
     // `in_quote_body` = the exact complement, `quote_depth > 0`. Both directions are
     // needed because `~` is TWO different operators either side of the line: bitnot at
@@ -1567,7 +1415,7 @@ export fn is_base_pred(flag: string) -> bool {
 ///                        only when the base is ITSELF an uppercase ident (an enum-type
 ///                        prefix like `Foo.Bar`); otherwise it is the NEXT arm's pattern.
 ///
-/// Reads the store directly rather than importing the hand parser's `is_callable` /
+/// Reads the store directly rather than importing parse/mod.av's `is_callable` /
 /// `expr_is_upper_ident`: `parse_grammar` is reachable from comptime macro expansion, and
 /// a cross-module non-`@comptime` callee there resolves to a type_marker (F4005). The
 /// duplication is deliberate — see the note on seed_parser's `name_in`.
@@ -1595,7 +1443,7 @@ export fn base_pred(flag: string, st: PState) -> bool {
             _ -> false
         }
     }
-    // The `.` arm's ENTIRE entry-guard conjunct from the hand postfix_step:
+    // The `.` arm's ENTIRE entry-guard conjunct of postfix_step:
     //   check(Tk.Dot) && dot_is_postfix(result) && (!cell_mode || same_line)
     // Folded into ONE predicate rather than spelled as `@when(cell_mode)` + `^` + a base
     // read, because `dot_is_postfix` is not a conjunction of those — it is a decision
@@ -1603,7 +1451,7 @@ export fn base_pred(flag: string, st: PState) -> bool {
     // circuits true; otherwise a lowercase field is always a field; only an uppercase
     // field with the flag off consults the base). Expressing that as separate markers
     // would need a negated `@when`, which the DSL does not have and should not grow for
-    // one caller. `peek_next_is_upper` reads the SOURCE char after the `.` in the hand;
+    // one caller. `peek_next_is_upper` reads the SOURCE char after the `.`;
     // on the token stream the next token's first char is the same question.
     if flag == "dot_postfix_ok" {
         if st.cur().tk != Tk.Dot { return false }
@@ -1621,7 +1469,7 @@ export fn base_pred(flag: string, st: PState) -> bool {
         if !next_upper { return true }
         return base_pred("base_upper_ident", st)
     }
-    // `obj.method(...)` vs `f(...)`. The hand sets `allow_it_sugar = is_method || saved_it`
+    // `obj.method(...)` vs `f(...)`. The rule is `allow_it_sugar = is_method || saved_it`
     // where is_method is "the receiver is a FieldAccess". That disjunction is exactly two
     // grammar alternatives: this predicate picks the one that turns the mode ON, and the
     // unguarded sibling leaves it at whatever it already was.
@@ -1637,7 +1485,7 @@ export fn base_pred(flag: string, st: PState) -> bool {
             // The LAST path segment: a qualified type reference (`@std::…::Result`)
             // begins with `@`, so testing the whole string reads every qualified name as
             // lowercase — which stopped the chain at the type and leaked `.Err(c)` into
-            // the next match arm. Mirrors the hand's expr_is_upper_ident.
+            // the next match arm. Mirrors expr_is_upper_ident (parse/mod.av).
             .QualifiedIdent(n) -> grammar_starts_upper(grammar_last_segment(n))
             _ -> false
         }
@@ -1665,7 +1513,7 @@ fn grammar_starts_upper(name: string) -> bool {
 /// Both skips are needed. `mk_qualified` builds `@` + the head name, so a single-segment
 /// reference is `@Result` with no `::` at all; testing that raw would see `@` and report
 /// lowercase, which made `base_upper_ident` answer false for every un-namespaced type and
-/// silently stop a `.Variant` chain. The hand parser's `type_short_name` skips the same
+/// silently stop a `.Variant` chain. `type_short_name` (core/type_registry.av) skips the same
 /// leading segment, which is the behaviour being mirrored.
 export fn grammar_last_segment(path: string) -> string {
     mut start = 0
@@ -1679,18 +1527,7 @@ export fn grammar_last_segment(path: string) -> string {
     path.substring(start, path.length)
 }
 
-/// The `IDENT {` forms a FEATURE owns, which stay `@hand(primary_base)`'s: `table`
-/// (parse_ident_expr checks it before any postfix) and any name a feature registered an
-/// expression parser for (`grammar { … }`, …).
-///
-/// No delegate means no registry to consult, and the answer is CONSERVATIVE — treat the
-/// name as feature-owned, so a native branch can never swallow a construct whose feature
-/// owns the block. `PState.delegate()` materialises one from the source, so that only
-/// happens on the token-only entries, where an `@hand` rule is unavailable by contract
-/// anyway. It used to happen on `run_grammar_expr` too, and that is why the struct-literal
-/// branch was unreachable in every interpreter oracle — `Foo { x: 1 }` fell past it to the
-/// `@hand(primary_base)` tail, so the specs covering struct literals were measuring the
-/// hand parser (t-47hc.31, the t-6u9b vacuous-agreement shape).
+/// The `IDENT {` forms a FEATURE owns: `table`, and any registered `kw { … }` construct.
 fn ident_lbrace_is_feature_form(st: PState) -> bool {
     let name = st.cur().text
     if name == "table" { return true }
@@ -1701,16 +1538,14 @@ fn ident_lbrace_is_feature_form(st: PState) -> bool {
 
 /// Does some OTHER `IDENT {`-led branch own the form at the cursor? The shared half of
 /// the two sibling predicates below, so they cannot disagree about who takes an
-/// identifier followed by `{`: a feature form (above) belongs to the hand, anything else
+/// identifier followed by `{`: a feature form (above) has its own branch, anything else
 /// is a STRUCT LITERAL — and only when `allow_struct_lit` is on, which is the gate
 /// `unary`'s struct-lit branch carries itself.
 ///
 /// The mode read is what `ident_plain` was missing. With `allow_struct_lit` OFF — a
 /// `match` subject, an `if`/`while` condition — NO branch owns `IDENT {`, so the `x` in
-/// `match x { … }` is a plain identifier and nothing else. `ident_plain` declined anyway
-/// (it excluded a following `{` unconditionally) and the `@hand(primary_base)` tail
-/// absorbed every one of them, which is why removing that tail turned every mode-gated
-/// subject into `unexpected token`.
+/// `match x { … }` is a plain identifier and nothing else; a blanket decline on a
+/// following `{` turned every mode-gated subject into `unexpected token`.
 fn ident_lbrace_owned_elsewhere(st: PState) -> bool {
     if st.cur().kind != "IDENT" { return false }
     if st.pos + 1 >= st.toks.length { return false }
@@ -1725,11 +1560,11 @@ fn ident_lbrace_owned_elsewhere(st: PState) -> bool {
 /// token-stream twin of modes_flag. Shared by the executor (branch_pred_ok) AND, via
 /// emit.peek_guard emitting the SAME `lookahead_ok(...)` call, the generated parser, so
 /// the two can never disagree. Kept in lockstep with seed_parser.peek_cond_supported.
-///   ident_colon — the current token is an IDENT and the NEXT token is `:` (PUNCT). The
-///     hand parse_paren_expr's peek_after_ident_is_colon: a typed lambda `(x: …) -> …`
+///   ident_colon — the current token is an IDENT and the NEXT token is `:` (PUNCT).
+///     Parser.peek_after_ident_is_colon's question: a typed lambda `(x: …) -> …`
 ///     vs a grouping/tuple. (The current-is-IDENT half is redundant with the branch's
-///     own IDENT FIRST token, but included so the predicate fully mirrors the hand check
-///     and is correct in any position.)
+///     own IDENT FIRST token, but included so the predicate
+///     is correct in any position.)
 ///   stmt_block — the current token is `{` and the next two tokens are not STRING `:`;
 ///     the statement-position twin of Parser.is_stmt_map_literal.
 ///   for_destructure — current is `for` and next is `(`.
@@ -1783,10 +1618,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // TEMPLATE as well as STRING — an INTERPOLATED key (`{"k${s}": "v"}`) opens a
         // map exactly as a plain one does. `brace_map` five lines below has always
         // tested `STRING || TEMPLATE`; this sibling tested only STRING, so in
-        // STATEMENT position a template-keyed map was claimed as a block, failed, and
-        // fell to `@hand(decl_hand)`. Either half alone was already native — a plain
-        // key in bare position, or a template key in `let` position — which is why it
-        // survived: only the combination reached the gap (t-myz7).
+        // STATEMENT position a template-keyed map was claimed as a block (t-myz7).
         let k = st.toks[st.pos + 1]
         return !((k.kind == "STRING" || k.kind == "TEMPLATE") && st.toks[st.pos + 2].text == ":")
     }
@@ -1804,22 +1636,22 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // `IDENT {` — the token twin of Parser.peek_after_ident_is_lbrace. Distinguishes the
     // `~Name { … }` splice (which splices only the CONSTRUCTOR NAME of a struct literal)
     // from the greedy `~expr` form that would otherwise swallow the whole literal as one
-    // spliced node carrying a hardcoded type name. The hand version scans SOURCE bytes
+    // spliced node carrying a hardcoded type name. Parser's version scans SOURCE bytes
     // past the ident for the first non-space char; on the token stream the whitespace is
     // already gone, so "the next token is `{`" is the same question — the same equivalence
     // ident_colon relies on.
-    // `?.field` WITHOUT a call — the half of the hand's QuestionDot arm that builds
-    // `Expr.OptionalChain`. Three conjuncts, each excluding a case the hand keeps:
+    // `?.field` WITHOUT a call — the half of the QuestionDot reading that builds
+    // `Expr.OptionalChain`. Three conjuncts, each excluding a case that means
+    // something else:
     //   - the field must lex as IDENT, because consume_field_name also accepts a
     //     RESERVED keyword and the grammar's "KW" kind is every keyword, not just those;
     //   - a same-line `(` after it is `?.m(args)` => Expr.OptionalMethodCall, a different
     //     node built from an arg list with `it`-sugar;
-    //   - a CROSS-line `(` is not a call at all (the hand checks prev_line there too), so
+    //   - a CROSS-line `(` is not a call at all (prev_line is checked there too), so
     //     that stays this branch.
-    // Everything excluded falls through to the `@hand` tail, which handles it verbatim.
-    // `.field` that is NOT an enum construction. The hand builds `Expr.EnumCtor` when the
+    // `.field` that is NOT an enum construction: `Expr.EnumCtor` applies when the
     // base is a PascalCase Ident / qualified path with a PascalCase last segment AND a `(`
-    // follows the field name; that form needs an argument list, so it stays hand-owned.
+    // follows the field name (see `dot_enum_ctor`).
     // Everything else with an IDENT field name is a plain FieldAccess.
     // `,` that is followed by ANOTHER element, not by the CLOSER — the trailing-comma
     // guard. `f(a, b,)` is legal (parse_arg_list_ids_inner advances past the comma and
@@ -1833,9 +1665,8 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // comma-separated list needs one; `( "," )?` after the repetition never gets reached.
     //
     // One core, three closers. The `)` form was written first and the `]`/`}` siblings
-    // were missing for months — a `[1, 2,]` or `{ a: 1, }` fell through to
-    // `@hand(decl_hand)` and was silently absorbed, which is exactly the class the leaf
-    // frontier probe (t-myz7) exists to surface.
+    // were missing for months — a `[1, 2,]` or `{ a: 1, }` was silently
+    // mis-handled (t-myz7).
     if cond == "comma_not_rparen" { return comma_not_closer(st, Tk.RightParen) }
     if cond == "not_rparen" { return not_closer(st, Tk.RightParen) }
     if cond == "not_rbrace" { return not_closer(st, Tk.RightBrace) }
@@ -1853,7 +1684,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // The field name is whatever `consume_field_name` accepts — an identifier OR a
         // reserved-but-inactive keyword (`x.ref`, `x.owned`). Reading the shared
         // `tk_is_field_name` rather than the grammar's coarse `kind` is what lets the
-        // native branch cover the hand's full acceptance set (t-47hc.33.1).
+        // native branch cover that full acceptance set (t-47hc.33.1).
         if !tk_is_field_name(st.toks[st.pos + 1].tk) { return false }
         if st.pos + 2 >= st.toks.length { return true }
         if st.toks[st.pos + 2].tk != Tk.LeftParen { return true }
@@ -1882,7 +1713,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     }
     // The EXACT COMPLEMENT of qdot_plain_field: `?.` IDENT with a SAME-LINE `(`.
     // qdot_plain_field returns TRUE (a plain optional chain) when the `(` opens the NEXT
-    // line, because the hand gates the call on `current_line == prev_line` — a `(` on the
+    // line, because the call reading is gated on `current_line == prev_line` — a `(` on the
     // following line is a new statement, not this call's argument list. Both halves read
     // the same two token positions, so keeping them mutually exclusive is a matter of
     // testing the same line relation in opposite directions, which is what this does.
@@ -1900,7 +1731,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return st.toks[st.pos + 1].text == "{"
     }
     // `~Name {` seen FROM the tilde — the quote-body splice-struct lookahead
-    // (parse_leaf_common's `check(Identifier) && peek_after_ident_is_lbrace()`,
+    // (`check(Identifier) && peek_after_ident_is_lbrace()`,
     // evaluated after consuming `~`). BRANCH-LEADING by design: emit renders only
     // leading predicates into a branch guard, so a mid-sequence `@peek` after the
     // `~` was silently dropped from the generated parser — the splice-struct arm
@@ -1914,26 +1745,25 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     }
     // `Ident {` that is a PLAIN STRUCT LITERAL — i.e. `ident_lbrace` MINUS the two
     // IDENT-led forms that share those exact two tokens but mean something else
-    // (t-47hc slice 8). The hand `parse_ident_expr` (parse/mod.av) tests all three
-    // in this order, so a native struct-literal branch must exclude the other two
+    // (t-47hc slice 8). A struct-literal branch must exclude the other two
     // or it silently captures them:
-    //   1. `table { … }` / `table<Row> { … }` — the TABLE literal, checked FIRST by
-    //      the hand precisely because it also starts ident+`{`.
+    //   1. `table { … }` / `table<Row> { … }` — the TABLE literal, checked FIRST
+    //      precisely because it also starts ident+`{`.
     //   2. a REGISTERED `kw { … }` feature construct (`grammar { … }` today) —
     //      dispatched to the feature's own parse_expr, which owns the block.
-    // Both stay with the `@hand` tail; only what is left is a struct literal.
+    // Only what is left is a struct literal.
     //
     // The registered-keyword half is answered by the REGISTRY, not by matching
-    // names: `lookup_expr_parser` is the same table `parse_ident_expr` consults,
+    // names: `lookup_expr_parser` is the same table feature dispatch consults,
     // so a package registering a new `kw { }` construct is excluded automatically
     // and this predicate can never drift from the dispatch it mirrors. (`table` is
-    // not registry-driven — it is built into parse_ident_expr — so it is named
-    // here exactly as the hand names it, which is transcription, not a heuristic.)
+    // not registry-driven, so it is named
+    // here directly — transcription, not a heuristic.)
     //
     // With NO delegate threaded there is no registry to consult, so the answer is
-    // CONSERVATIVE: not plain. Failing toward the hand parser is the safe
-    // direction — a false negative merely leaves a struct literal to the hand
-    // (which parses it correctly, byte-identically), whereas a false positive
+    // CONSERVATIVE: not plain. Failing toward "not plain" is the safe
+    // direction — a false negative merely declines the struct-lit branch,
+    // whereas a false positive
     // would let a native branch swallow a `kw { … }` construct whose feature owns
     // the block. Absence of information must never widen what the grammar claims.
     // `IDENT` immediately followed by a TEMPLATE — a TAGGED TEMPLATE, `` tag`…` ``
@@ -1947,27 +1777,26 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // Load-bearing, not an optimisation: without it the bare-identifier branch is
     // entered on `table {` / `grammar {` too, yields a bare `Ident`, and leaves the
     // `{ … }` unconsumed — so those constructs would silently stop reaching the
-    // `@hand(primary_base)` tail that parses them. Excluding both suffixed shapes here
-    // is what makes the fall-through to the hand parser correct by construction.
+    // branch that parses them. Excluding both suffixed shapes here
+    // is what makes the fall-through correct by construction.
     if cond == "ident_plain" {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return true }
         let nx = st.toks[st.pos + 1]
         // A TYPED table literal `table<Row> { … }` is NOT a bare ident followed by a
-        // comparison — decline so it falls through to `@hand(ident_primary)`, which owns
-        // every IDENT-led disambiguation (parse_ident_expr checks the table form BEFORE
+        // comparison — decline so it falls through to the feature-form branch, which owns
+        // every IDENT-led disambiguation (the table form is checked BEFORE
         // any postfix). The sibling `ident_lbrace_plain` right below already excludes the
         // UNTYPED `table { … }` for exactly this reason; the typed form was missed.
         //
         // Consequence of the miss: `table` was consumed as a plain IDENT and the `<` left
         // to the postfix generic-call speculation, which parses `Row`, finds `>`, expects
         // `(`, sees `{`, and rolls back — leaving `table` as a bare reference, i.e.
-        // `undefined variable table`. Only in STATEMENT position, because a `let`
-        // initializer reaches the hand first, which is what made it look positional
-        // rather than a predicate gap (tests/table_cells_test.av, reachable once #1075
-        // routed fn bodies natively).
+        // `undefined variable table`. Only in STATEMENT position, which made it look
+        // positional rather than a predicate gap (tests/table_cells_test.av, reachable
+        // once #1075 routed fn bodies natively).
         //
-        // Token-level mirror of the hand's `peek_is_table_row_type`: `<` IDENT `>` `{`.
+        // Token-level mirror of `peek_is_table_row_type`: `<` IDENT `>` `{`.
         // emit lowers `@peek` to this same `lookahead_ok`, so both engines get the fix.
         if st.cur().text == "table" && nx.text == "<" && st.pos + 4 < st.toks.length
             && tok_starts_word(st.toks[st.pos + 2])
@@ -1991,19 +1820,11 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return !ident_lbrace_is_feature_form(st)
     }
     // The exact COMPLEMENT of ident_lbrace_plain's exclusion, plus the TYPED table
-    // literal — i.e. the two `parse_ident_expr` forms no native branch claims:
-    // `table { … }` / `table<Row> { … }`, and a REGISTERED `kw { … }` feature
+    // literal: `table { … }` / `table<Row> { … }`, and a REGISTERED `kw { … }` feature
     // construct (grammar / sql / regex, via lookup_expr_parser).
     //
-    // t-myz7. Measured, not assumed: refusing BOTH production leaves across all 249
-    // non-test compiler sources attributes 117 refusals to exactly 10 files, and every
-    // one of those files contains one of these two literals. They are the whole
-    // valid-input residue of `@hand(primary_base)` AND of `@hand(decl_hand)` — the two
-    // leaves are reached at the SAME sites, which is why refusing either one alone
-    // measures zero (the other silently covers).
-    //
     // The typed-table test is the token-level mirror `ident_plain` already carries
-    // (`<` WORD `>` `{`), NOT the hand's raw-byte `peek_is_table_row_type` scan — one
+    // (`<` WORD `>` `{`), NOT `peek_is_table_row_type`'s raw-byte scan — one
     // spelling of the discrimination, reused, so the two cannot drift.
     if cond == "ident_lbrace_feature" {
         if st.cur().kind != "IDENT" { return false }
@@ -2021,13 +1842,11 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "for_destructure" {
         return st.cur().text == "for" && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == "("
     }
-    // `match {` with no subject. The hand parse_match_statement decides it the same way:
-    // `match`, then an immediate `{`.
     if cond == "match_subjectless" {
         return st.cur().text == "match" && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].tk == Tk.LeftBrace
     }
-    // `match <subject> table { … }` — the TABLE sub-language. The hand decides this AFTER
-    // parsing the subject (`check(Tk.Identifier) && current_lexeme == "table"`), which a
+    // `match <subject> table { … }` — the TABLE sub-language. The natural decision
+    // point is AFTER parsing the subject, which a
     // FIRST-set guard cannot see. Equivalent, and decidable from tokens alone: scan to the
     // body `{` and ask whether the token just before it is the identifier `table`. The
     // subject cannot itself contain a `{` because the header parses with allow_struct_lit
@@ -2051,19 +1870,17 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         false
     }
     // `if let v = x { … }` — the BIND-FRESH form, which desugars to a temp + a
-    // none-check + an unwrap-bind prepended to the then-block, and stays the hand's.
-    // The hand decides it the same way, one token later: advance past `if`, then
-    // `check(Tk.KwLet)`. Checked here BEFORE consuming `if`, so the ordinary branch's
+    // none-check + an unwrap-bind prepended to the then-block.
+    // Checked here BEFORE consuming `if`, so the ordinary branch's
     // FIRST stays a plain `if`.
     if cond == "if_let" {
         return st.cur().tk == Tk.KwIf && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].tk == Tk.KwLet
     }
     // t-bwjg: the two quote kinds whose BODY is not a block expression, split so each can
-    // be routed on its own. `type` parses a type_expr into an Expr.TypeLit carrier and is
-    // NATIVE (quote_type_expr); `arm` builds a synthetic single-armed MatchExpr envelope
-    // and is still the hand's. Both are checked BEFORE `quote` is consumed, so the plain
-    // block-bodied branch's FIRST stays a bare `quote`. The hand decides the same thing
-    // one token later, in parse_quote_kind.
+    // be routed on its own. `type` parses a type_expr into an Expr.TypeLit carrier
+    // (quote_type_expr); `arm` builds a synthetic single-armed MatchExpr envelope.
+    // Both are checked BEFORE `quote` is consumed, so the plain
+    // block-bodied branch's FIRST stays a bare `quote`.
     if cond == "quote_arm" {
         if st.cur().text != "quote" { return false }
         if st.pos + 1 >= st.toks.length { return false }
@@ -2077,10 +1894,9 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // t-myz7: the token is not the CLOSING `>` of an angle list — the guard that makes
     // the inner list optional without making the first element silent.
     //
-    // `parse_type_param_entries` opens with `if check(Greater) { return out }` and only
-    // then demands an IDENT, so the hand accepts `enum E<>` AND reports "expected type
-    // parameter name" for `enum E< {`. A plain `( … )?` inner list reproduces the first
-    // and loses the second; this cond splits them exactly where the hand does. `>>` is a
+    // `enum E<>` must be accepted AND `enum E< {` must report "expected type
+    // parameter name". A plain `( … )?` inner list reproduces the first
+    // and loses the second; this cond splits them. `>>` is a
     // split slot for a nested generic close, so it counts as a `>` here for the same
     // reason the terminal emitters widen for it.
     if cond == "not_gt" {
@@ -2091,11 +1907,11 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
     }
     // The component-def `body: TokenStream` marker gate (t-47hc slice A):
-    // the WORD `body` followed by a colon — the hand's `current_lexeme ==
+    // the WORD `body` followed by a colon — `current_lexeme ==
     // "body" && peek_after_ident_is_colon()`. Both halves matter: without
     // the colon check a VALID `body()` call statement in a def body would
-    // enter the marker group, fail `":"`, and roll the whole component back
-    // to the hand on well-formed input.
+    // enter the marker group and fail `":"`
+    // on well-formed input.
     if cond == "body_marker" {
         return st.cur().text == "body" && st.cur().kind == "IDENT" &&
             st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == ":"
@@ -2175,17 +1991,16 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // and, reporting nothing, COMMITTED the @try with the wrong tree.
     //
     // So the native rule declines them: the body loop stops, the rule then
-    // fails to find `}`, reports, and @try rolls back into the hand — which
-    // owns these forms verbatim. Porting the four arms faithfully is slice B2b;
+    // fails to find `}`, and reports. Porting the four arms faithfully is slice B2b;
     // this cond is the seam that keeps the split honest meanwhile.
     // The keyword-prefixed INSTANTIATION shape: `component <name> <inst> {`.
     //
     // `implements` must be excluded explicitly. It lexes as an ordinary IDENT,
     // so without this `component Cmd implements { }` matches the instantiation
     // shape and parses as an instance NAMED `implements` — silently swallowing
-    // the hand's "expected trait name after `implements`" error, because a
-    // clean parse never rolls the @try back. The hand tests for the word
-    // before it ever considers the instance form; so does this.
+    // the "expected trait name after `implements`" error, because a
+    // clean parse never rolls the @try back. The word must be tested
+    // before the instance form is ever considered; so does this.
     // ── The `component` header shapes (t-47hc.5) ──
     //
     // `parse_component_decl` consumes `component`, a NAME, and an optional `implements`
@@ -2276,21 +2091,16 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
             st.toks[st.pos + 1].text == ":" && st.toks[st.pos + 1].pos == st.cur().pos + 1
     }
     // `annot_lead` — the cursor is on an `@` that begins an ANNOTATION, not a QUALIFIED
-    // REFERENCE. The two share a lead token and the hand tells them apart by POSITION,
-    // which is the whole reason this cond exists (t-47hc.4.3, the decl_hand deletion).
-    //
-    // The hand's answer for `@name` depends on where it sits: at EXPRESSION position
-    // (`let x = @foo`) it reports the helpful "a qualified reference is `@pkg::mod::name`";
-    // at DECLARATION position (`@inline` with nothing after it) it reports F0040. Before
-    // the delegate was deleted that split came for free — `annot_decl`'s `@try` rolled a
-    // declaration-position miss back into `@hand(decl_hand)`. With the leaf gone the
-    // rollback lands on `statement` instead, which parses the `@` as a qualified-reference
-    // EXPRESSION and reports the expression-position message at declaration position.
+    // REFERENCE. The two share a lead token and are told apart by POSITION
+    // (t-47hc.4.3): at EXPRESSION position (`let x = @foo`) the report is the helpful
+    // "a qualified reference is `@pkg::mod::name`"; at DECLARATION position (`@inline`
+    // with nothing after it) it is F0040 — a rollback onto `statement` would parse the
+    // `@` as a qualified-reference EXPRESSION and report the wrong position's message.
     //
     // So the rule commits only when the `@` cannot be a qualified reference: a `::` after
     // the package name means the expression path owns it and this rule must DECLINE. A
     // bare `@` (no IDENT at all) is still ours — that is the `annot`'s own `@require` to
-    // report on, and it is what keeps F0040 as the first message the hand also gives.
+    // report on, and it is what keeps F0040 as the first message.
     // `bare_inst_lead` — the IDENT-IDENT-`{` shape, and ONLY that. It is `decl_lead`'s
     // IDENT half without its leading "every non-IDENT lead is mine" clause, which is the
     // difference that matters here: `wrapped_inner` needs a tail for exactly one form and
@@ -2300,7 +2110,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // The form: `/// d` or `@ann` over `Foo bar { … }` where `Foo` is an UNDECLARED
     // component. `bare_comp_inst` declines it (its own peek asks the registry), and at top
     // level `declaration` catches it on the `statement` tail — so the wrappers need the
-    // same escape or they reject source the hand accepts.
+    // same escape or they reject source the top level accepts.
     if cond == "bare_inst_lead" {
         if st.cur().kind != "IDENT" { return false }
         if st.pos + 2 >= st.toks.length { return false }
@@ -2313,8 +2123,8 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // A BARE `@` (no name at all) is NOT ours. Letting it in built an annotation with
         // an EMPTY name wrapping the following declaration, and the two engines rendered
         // that differently (`(@annotated @ …)` vs `(@annotated …)`) — a divergence between
-        // the native paths themselves, which no hand comparison would have caught.
-        // Declining sends it to `primary`, whose F0040 is what the hand reports too.
+        // the native paths themselves.
+        // Declining sends it to `primary`, whose F0040 is the pinned answer.
         if st.pos + 1 >= st.toks.length { return false }
         if st.toks[st.pos + 1].kind != "IDENT" { return false }
         if st.pos + 3 >= st.toks.length { return true }
@@ -2325,31 +2135,6 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return !(c1.text == ":" && c2.text == ":" && c2.pos == c1.pos + 1)
     }
     // Bare "the cursor is on an IDENT" (t-47hc.5). The where-entry list needs exactly
-    // this and nothing narrower: `parse_where_entries` enters on `check(Tk.Identifier)`
-    // alone, so `where T Trait` (no colon) DOES enter and then reports the missing `:`.
-    // Gating on `ident_colon` would skip it silently and lose that diagnostic.
-    // `( … ) -> <body>` — is this parenthesised run actually a LAMBDA? (t-47hc.5)
-    //
-    // Decided by SCANNING to the matching `)` and testing two tokens, never by parsing.
-    // That distinction is the whole point: the branch used to find out by parsing a
-    // lambda body and unwinding, and on nested parenthesised expressions that is
-    // exponential (it took the compiler to a 12GB F4014 parsing its own generated
-    // parser). A scan is linear in the group and cannot report, allocate a node, or
-    // recurse into the expression grammar.
-    //
-    // The body test is `tok_starts_expr_leaf` — the SHARED expression FIRST set, which
-    // already admits `{`, so `lambda_body = block_expr | expression` is covered by the
-    // one predicate rather than a hand-listed set that could drift from it.
-    // `[ … for … ]` — is this bracketed run a COMPREHENSION? (t-47hc.5)
-    //
-    // Same technique as `paren_lambda_ahead`: scan to the matching `]` and look for a
-    // `for` at depth 1. Deciding it predictively is what fixes the cascade — the `@try`
-    // rolls the cursor back to before `[`, so the list-LITERAL branch then failed at its
-    // closer with the cursor sitting ON `for`, and statement-level resync parsed a
-    // for-LOOP out of the leftovers. The hand never gets there: `parse_list_elements`
-    // CONSUMES `for` before aborting, so its resync starts after it. Control that isolates
-    // it: `[a while]` and `[a return]` already agree on both parsers, because only `for`
-    // is a token the hand had already eaten.
     if cond == "list_comp_ahead" {
         if st.cur().tk != Tk.LeftBracket { return false }
         mut depth = 0
@@ -2370,8 +2155,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "paren_lambda_ahead" {
         // The UNTYPED branch's gate: `( … ) ->` AND a token after the `->` that can
         // start a body. The body check is what makes `let a = (1) ->` fall through to
-        // the group branch and yield `(group 1)` with the `->` left for the caller,
-        // which is what the hand's `try_lambda_body()` returning null produces.
+        // the group branch and yield `(group 1)` with the `->` left for the caller.
         let close = paren_arrow_close(st)
         if close < 0 { return false }
         if close + 2 >= st.toks.length { return false }
@@ -2383,7 +2167,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // alternatives. An untyped `(1)` IS a valid group, so a missing body has to send
         // it there. A TYPED `(x: int)` is not a valid expression at all — `->` alone
         // settles it — so requiring a body FIRST sent `(x: int) ->` to the group branch,
-        // which reported "expected `)` after expression" where the hand reports F0040
+        // which reported "expected `)` after expression" instead of F0040
         // for the missing body. Same scan, one fewer question.
         return paren_arrow_close(st) >= 0
     }
@@ -2408,52 +2192,42 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.toks[st.pos + 1].kind != "IDENT" { return false }
         return st.toks[st.pos + 2].text == ":"
     }
-    // t-47hc.24 — "is this token position a DECLARATION lead?", the narrowing that
-    // takes IDENT off `@hand(decl_hand)`'s unconditional FIRST.
+    // t-47hc.24 — "is this token position a DECLARATION lead?"
     //
-    // decl_hand's FIRST claimed a bare IDENT because parse_declaration_hand handles
-    // ONE identifier-led declaration — the component instantiation `Comp inst { … }`
-    // — and falls through to `self.parse_statement()` for everything else. That
-    // fall-through made the hand parser the entry point for EVERY identifier-led
-    // statement (`x = 1`, `f(a)`, `x.m()`): the DSL handed the item to a Parser
-    // delegate purely so the delegate could hand it straight back to the DSL.
+    // For an IDENT lead the only declaration-shaped form is the component
+    // instantiation `Comp inst { … }`; every other identifier-led item
+    // (`x = 1`, `f(a)`, `x.m()`) routes to the `statement` alternative directly.
     //
-    // The gate keeps the component form on the hand path and routes the rest to the
-    // `statement` alternative directly. It is deliberately a token-level SUPERSET of
+    // The gate is deliberately a token-level SUPERSET of
     // Parser.peek_after_ident_is_ident_not_keyword (which additionally excludes a
-    // keyword list, at char level): a false POSITIVE is inert — parse_declaration_hand
-    // re-checks precisely and still falls through to parse_statement, reproducing
-    // today's path exactly — while a false NEGATIVE would silently re-route a real
+    // keyword list, at char level): a false NEGATIVE would silently re-route a real
     // component instantiation. Asymmetric risk, so the gate errs wide.
     if cond == "decl_lead" {
-        // Non-IDENT leads (doc comments, `@`, `export`, the decl keywords) are the
-        // hand's unconditionally — the narrowing is IDENT-only.
+        // Non-IDENT leads (doc comments, `@`, `export`, the decl keywords) pass
+        // unconditionally — the narrowing is IDENT-only.
         if st.cur().kind != "IDENT" { return true }
         if st.pos + 2 >= st.toks.length { return false }
-        // `Comp inst {`: an instance NAME (the hand scans a raw word starting with a
+        // `Comp inst {`: an instance NAME (a raw word starting with a
         // letter or `_`, so keyword-kinded tokens count too) then the block brace.
         if !tok_starts_word(st.toks[st.pos + 1]) { return false }
-        // ...and NOT a keyword that cannot name an instance. This used to be omitted
-        // deliberately — the gate erred wide because a false positive was inert, the
-        // delegate re-checking precisely and falling through. That is only true while
-        // the delegate exists, and it made `t with { … }` (plus `x match {`, `x if {`,
-        // …) reach `@hand(decl_hand)` for no reason but to be handed straight back.
-        // Shares the hand's ONE list, so the gate cannot be narrower than the check it
-        // fronts — which is the false NEGATIVE the original comment rightly feared.
+        // ...and NOT a keyword that cannot name an instance (`t with { … }`,
+        // `x match {`, `x if {`, …).
+        // Shares the ONE `word_excluded_as_instance_name` list, so the gate cannot
+        // be narrower than the check it fronts.
         if word_excluded_as_instance_name(st.toks[st.pos + 1].text) { return false }
         return st.toks[st.pos + 2].tk == Tk.LeftBrace
     }
-    // `return_value` — does a RETURN VALUE follow the `return` keyword? The hand's whole
+    // `return_value` — does a RETURN VALUE follow the `return` keyword? The whole
     // guard, as one cond: `current_kind in [RightBrace, Eof] || current_line != prev_line`,
     // negated (features/return_stmt/parser.av).
     //
     // It has to be a `@gate` cond rather than the optional group's own FIRST, because the
     // two answer different questions. The FIRST asks "can an expression START here", and
     // on `return * 3` it says no — so the group declines, the rule builds a bare
-    // `ReturnEmpty`, and `* 3` becomes a second statement. The hand asks "is there
-    // anything on this line at all", CALLS `parse_expression`, and lets its `?` propagate:
+    // `ReturnEmpty`, and `* 3` becomes a second statement. The gate asks "is there
+    // anything on this line at all" and lets the expression's failure propagate:
     // one `(error)` row covering the whole statement, not `(return)` plus a second row.
-    // Folded into ONE predicate for the same reason `dot_postfix_ok` is — the hand's test
+    // Folded into ONE predicate for the same reason `dot_postfix_ok` is — the test
     // is a decision tree over three conjuncts, not a conjunction the markers can spell.
     if cond == "return_value" {
         if st.at_end() || st.cur().tk == Tk.RightBrace { return false }
@@ -2504,8 +2278,8 @@ fn cfg_pair_after(st: PState) -> int {
 /// and so no raw-body component can have been declared: false is not a guess there,
 /// it is the only reachable answer.
 fn comp_name_is_raw_body(st: PState) -> bool {
-    if st.hand_delegate == null { return false }
-    component_is_raw_body(st.hand_delegate!.features, st.cur().text)
+    if st.host == null { return false }
+    component_is_raw_body(st.host!.features, st.cur().text)
 }
 
 /// Is the current identifier a REGISTERED component name? (t-47hc.5.1 slice C)
@@ -2517,8 +2291,8 @@ fn comp_name_is_raw_body(st: PState) -> bool {
 /// not decidable: `acct_sr a { … }` and `foo bar { … }` are the same token shape
 /// and differ only by whether a `component` declaration registered the name.
 fn comp_name_is_registered(st: PState) -> bool {
-    if st.hand_delegate == null { return false }
-    lookup_stmt_parser(st.hand_delegate!.features, st.cur().text) != null
+    if st.host == null { return false }
+    lookup_stmt_parser(st.host!.features, st.cur().text) != null
 }
 
 /// The shared prefix of both config-pair conds — every reason
@@ -2662,22 +2436,6 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
         .Alt(branches) -> {
             let empty: List<string> = []
             mut tried_spec = false
-            // A rolled-back `@try` restores the delegate UNCONDITIONALLY (t-3keo).
-            //
-            // This used to be armed only when some NON-speculative branch LED with an
-            // `@hand` leaf — a question about the RETRY branch. But the thing that moves
-            // the delegate is the SPECULATIVE branch's own body reaching a hand leaf,
-            // which is unrelated. `paren_expr` is where the two come apart: its native
-            // branches lead with the literal `"("`, so nothing armed, while its `@try`
-            // branches parse `a:expression` and reach `@hand(ident_primary)` on any bare
-            // IDENT. The rollback then rewound `st.pos` and left the delegate ahead, so
-            // `(v)` failed to parse where `(1)` / `(true)` / `("s")` / `([1])` — native
-            // primaries that never touch the delegate — all succeeded.
-            //
-            // Restoring is simply what `@try` means: on failure the branch must leave no
-            // trace, and the delegate is part of the state it touched. `save_hand_state`
-            // already no-ops when no delegate is threaded, so an alternation that cannot
-            // reach one pays nothing.
             for b in branches {
                 if branch_pred_ok(b, st) && tok_starts_seq(g, b, st, empty) {
                     if b.speculative {
@@ -2690,13 +2448,10 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                         let s_mark = st.store.mark()
                         let s_diags = st.diags.length
                         let s_err = st.had_error
-                        let s_hand = st.save_hand_state()
                         let s_postfix = st.save_postfix_state()
-                        // The PState's OWN hygiene counter (native `@gensym` mints)
-                        // rolls back with the store, same argument as the delegate's
-                        // in restore_hand_state: the branch's minted-into rows die
-                        // with s_mark, so keeping the bump would drift every later
-                        // mint off the pure-hand oracle.
+                        // The hygiene counter (native `@gensym` mints) rolls back
+                        // with the store: the branch's minted-into rows die with
+                        // s_mark, so keeping the bump would drift every later mint.
                         let s_gensym = st.gensym_seq
                         // GAP3 @try-with-builds: snapshot the capture env so a
                         // rolled-back speculative branch's label bindings (now
@@ -2727,7 +2482,6 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                         env.set_abort(false)
                         st.store.truncate_to_mark(s_mark)
                         st.restore_to(s_pos, s_diags, s_err)
-                        st.restore_hand_state(s_hand)
                         st.restore_postfix_state(s_postfix)
                         st.set_gensym_seq(s_gensym)
                     } else {
@@ -2736,45 +2490,6 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                 }
             }
             // No branch's FIRST matched. A `@fallback` branch is the UNCONDITIONAL tail:
-            // run it instead of reporting, so the RULE owns its diagnostic. This is the
-            // native twin of the trailing-`@hand` tail role (emit's is_leading_hand
-            // last-branch case), for a rule whose alternatives are all native — without
-            // it such a rule can only ever emit the generic message below, and the two
-            // closing-`]` diagnostics `index_tail` must reproduce are unreachable.
-            // Checked AFTER the loop, so an earlier matching branch still wins.
-            //
-            // …but NOT after a speculation DECLINED (t-lqzu). "No branch's FIRST matched"
-            // and "a branch matched, ran, and rolled back" are different states, and only
-            // the first entitles the fallback to report. A `@fallback` is scoped to its own
-            // led-form family — it owns the message for a token that starts neither of ITS
-            // forms — so handing it an unrelated token makes it report on something it was
-            // never about. With `@hand(postfix_suffix)` as the tail this was invisible: a
-            // declining hand accepts any token and returns the base unchanged. Once the
-            // delegate was deleted the tail became a `.`-requiring branch, so `a < b` —
-            // whose generic-call branch enters on the `<` and un-decides — fell in here,
-            // was told to find a FIELDNAME, reported, and the `@require` abort turned the
-            // whole chain into `error_node_silent()`. The comparison then rendered
-            // `(< <error> b)` with its LHS replaced.
-            //
-            // The `tried_spec` return below is the correct answer for that state: a clean
-            // "no match" the caller decides about. A leading-`@hand` or recovery-owning
-            // bare-ref tail is different and still runs after a rollback — that IS the
-            // `@try`-rolls-back-into-the-hand-gate contract, and the decl routing needs it.
-            // A fallback also only owns tokens its OWN guard admits. `postfix_suffix`'s FIRST
-            // is the whole postfix-op set (`. ( [ ! ? ?. < catch`) — a deliberate SUPERSET of
-            // what any branch can complete — so the `( postfix_suffix )*` loop enters on a
-            // `<` even when nothing can consume it (`1 < 2`: the generic-call branch needs
-            // `base_callable`, and a NUMBER base is not). The `@hand` tail used to absorb
-            // that by declining; a `.`-led `@fallback` must not inherit the job, or every
-            // comparison against a non-callable base reports "expected field name". So run
-            // the fallback only when `branch_pred_ok` says its guard holds (for the `.`
-            // branch that is `dot_postfix_ok`, which tests `st.cur().tk == Tk.Dot`), and
-            // treat a guard-declining fallback as "this rule does not apply" — the same
-            // clean no-match a rolled-back speculation yields, which is what lets the
-            // repetition's no-progress break end the chain instead of reporting.
-            //
-            // An UNGUARDED fallback (index_tail's `]` branch) has no Pred items, so
-            // branch_pred_ok is trivially true and it still runs exactly as before.
             mut fb_declined = false
             if !tried_spec {
                 for fb in branches {
@@ -2797,16 +2512,14 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
             if rule_body && branches.length == 1 && !branches[0].speculative && branch_pred_ok(branches[0], st) {
                 return exec_seq(g, branches[0], st, env, multi, outer_annots)
             }
-            // …and the OTHER two tail forms, which `@fallback` above is one third of
-            // (t-zrn3). A bare ref to a rule that owns its own recovery, or a
-            // leading-`@hand`, is equally the UNGUARDED TAIL: it runs on a token no
-            // branch's FIRST matched, which is how a stray top-level token reaches the
-            // hand parser's recovery. emit_dispatch honoured all three; this arm honoured
+            // …and the OTHER tail form, which `@fallback` above is one half of
+            // (t-zrn3). A bare ref to a rule that owns its own recovery is equally the
+            // UNGUARDED TAIL: it runs on a token no
+            // branch's FIRST matched. emit_dispatch honoured both; this arm honoured
             // only `@fallback`, so `declaration`'s `| statement` tail was reachable in the
-            // generated parser and unreachable here — and since a failed item is re-parsed
-            // with the INTERPRETER, this arm's generic "unexpected token" was what shipped
-            // (`then` / `)` / `,` / `* 5` all reported F0001 where the hand parser and the
-            // generated parser both reported F0040). `dispatch_has_tail` is the SHARED
+            // generated parser and unreachable here
+            // (`then` / `)` / `,` / `* 5` all reported F0001 where the
+            // generated parser reported F0040). `dispatch_has_tail` is the SHARED
             // predicate both engines read, so the two cannot drift again.
             if rule_body && dispatch_has_tail(g, branches) {
                 return exec_seq(g, branches[branches.length - 1], st, env, multi, outer_annots)
@@ -2817,15 +2530,9 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
             // `fb_declined` joins it for the same reason: a guarded fallback that declined is
             // this rule saying "not mine", not a parse error to synthesise (t-lqzu).
             if tried_spec || fb_declined { return CapVal.Nil }
-            // ALIGNED with emit's no-match (t-47hc.5). These two generic arms have always
-            // differed — emit says `expected expression`, this said `unexpected token
-            // \`X\``— and it never showed, because every rule that could reach a no-match
-            // had a tail (an `@hand` leaf) that answered first. Retiring
-            // `@hand(primary_base)` makes both arms reachable, at which point the DEFAULT
-            // path (static -> executor re-parse) reported a different message and code
-            // from the emit path for the same input. Same text, same F0040 as the hand's
-            // `parse_leaf_common`, so all three paths agree. Nothing asserts the old
-            // wording — the five references to it in tests are comments.
+            // ALIGNED with emit's no-match (t-47hc.5): same text, same F0040 on
+            // both engines, so the DEFAULT path and the emit path cannot report
+            // different messages or codes for the same input.
             CapVal.Node(st.error_node_expected_expr())
         }
     }
@@ -2837,9 +2544,7 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_a
     // Phase 3a base-threading (executor twin of the emit seed): a fold_postfix_with
     // seq's item 0 is the postfix-chain BASE; seed st.postfix_base from it AFTER it
     // parses and BEFORE the ( postfix_suffix )* repetition, so each postfix_step wraps
-    // the right base — whether the base is @hand(primary_base) (redundant: run_hand_expr
-    // already seeded the same id + start_byte) or a grammar-BUILT literal (the ONLY path
-    // that otherwise leaves st.postfix_base stale). sp_start = the base's start byte.
+    // the right base. sp_start = the base's start byte.
     let seeds_postfix = seq_seeds_postfix(seq)
     let sp_start = st.cur().pos
     mut last = CapVal.Nil
@@ -2869,9 +2574,7 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_a
         // generated parser gets it right. `sp_start` needs no adjustment — predicates
         // consume no tokens, so the base's start byte is unchanged.
         if prim_is_pred(item.prim) { continue }
-        // Seed ONLY for a grammar-BUILT base (item 0 not @hand): the @hand(primary_base)
-        // base seeds itself inside run_hand_expr, so re-seeding it is dead work.
-        if seeds_postfix && count == 0 && !prim_is_hand(item.prim) {
+        if seeds_postfix && count == 0 {
             st.seed_postfix(capval_to_expr(st, last), sp_start)
         }
         count = count + 1
@@ -3087,7 +2790,7 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     //     the callee's "my caller proved my FIRST" promise is broken and it would
     //     otherwise consume whatever is there. `select { 5 }` entered `select_arm` on
     //     `5`, reported its `@expect` for the binding, then reported the missing `<-`
-    //     too — two diagnostics into a hand that reports none there.
+    //     too — two diagnostics where zero are pinned.
     //   the capture guard — an aborted sub-parse yields a silent error node, and BINDING
     //     it means a `capval_to_*` reports over it at build time ("expected a select
     //     arm"), a second diagnostic for one failure.
@@ -3100,14 +2803,14 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
                 let gseen: List<string> = []
                 if !tok_starts_rule(g, gname, st, gseen) {
                     // `@onfail(close)` ends the repetition SILENTLY — the rule's own
-                    // closer is what reports, which is the hand (`parse_select_arm_list`
-                    // answers a non-IDENT head with a bare `return out`). The `Nil` is
+                    // closer is what reports (a non-IDENT head answers
+                    // with a bare `return out`). The `Nil` is
                     // what stops the loop: `exec_repeat` breaks on no progress, and
                     // nothing is bound.
                     if item.onfail == "close" { return CapVal.Nil }
                     let gm = rule_first_expect_msg(g, gname)
                     let gmsg = if gm != "" { gm } else { "expected ${gname}" }
-                    // An IDENT-led callee keeps the hand's RESERVED-KEYWORD diagnostic
+                    // An IDENT-led callee keeps the RESERVED-KEYWORD diagnostic
                     // (so07.2) — the emit twin in `gated_first_check` says why.
                     if rule_first_literal(g, gname) == "" && rule_first_is_ident(g, gname) {
                         st.report_ident(gmsg)
@@ -3135,23 +2838,13 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
     }
     // t-myz7 `@onfail(bail)`: the CALLEE owns the message, the caller owns the control
     // flow. Deliberately not `@require`'s FIRST check, which reports for the callee and so
-    // replaces its message; here the sub-rule's own diagnostic is the one the hand shows
-    // (`select { x <- }` is the expression view's F0040 and nothing more, because
-    // `parse_select_arm` returns on a failed channel).
+    // replaces its message; here the sub-rule's own diagnostic is the one that stands
+    // (`select { x <- }` is the expression view's F0040 and nothing more).
     //
-    // The signal is EITHER the sub-parse failing (an error node) OR its having REPORTED.
-    // That union is what the hand's `?` actually propagates: `parse_let_statement` does
-    // `parse_expression()?`, and the hand's expression parser reports and returns `Err`
-    // together — `x is Foo` (F0001 "expected `.Variant` after `is`") kills the whole
-    // binding on the hand, not just the `is`.
-    //
-    // The narrower "failed only" signal was this policy's original reading, carved out for
-    // `let a = (1) ->`: the expression view reported about the missing lambda body and
-    // still handed back `(group 1)`, which the hand KEEPS. That carve-out is OBSOLETE —
-    // `paren_expr` now gates its lambda branches on `@peek(paren_lambda_ahead)`, so `(1)`
-    // parses as a clean group and the dangling `->` is the NEXT statement's F0040, exactly
-    // as on the hand. With the one input that separated "reported" from "failed" gone, the
-    // union is the hand's rule, and this policy's own doc (ast.GItem.onfail) always said so.
+    // The signal is EITHER the sub-parse failing (an error node) OR its having REPORTED —
+    // a reported sub-parse kills the whole enclosing statement (`x is Foo`'s F0001
+    // "expected `.Variant` after `is`" ends the binding, not just the `is`), which is
+    // what this policy's own doc (ast.GItem.onfail) pins.
     if item.onfail == "bail" {
         let bbefore = st.diags.length
         let br = exec_item_marked(g, item, st, env, multi, annots)
@@ -3179,8 +2872,8 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
         // A RULE REFERENCE aborts on its FIRST, checked BEFORE the call — not on
         // "did diags grow" (t-47hc.24). The callee reports its OWN errors, so a
         // malformed block BODY is indistinguishable from an ABSENT block under the
-        // diag test, and the hand recovers the former while aborting only the
-        // latter: `if !check(Tk.LeftBrace) { report; return .Err }`. Same signal,
+        // diag test — and the former must RECOVER while only the
+        // latter aborts. Same signal,
         // same order.
         match item.prim {
             .Ref(rname) -> {
@@ -3222,7 +2915,7 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
                 // Reading only the expr shape saw a perfectly good statement there and
                 // built `(export (error))` — which reaches the seam as a NON-Error item
                 // and is adopted verbatim rather than handed back for the caller's
-                // synchronize, losing the hand's second diagnostic on the stray `}`.
+                // synchronize, losing the second diagnostic on the stray `}`.
                 if st.abort_prop || capval_is_error_expr(st, rr) || capval_is_error_stmt(st, rr) {
                     env.set_abort(true)
                     return CapVal.Node(st.error_node_silent())
@@ -3243,7 +2936,7 @@ fn exec_item(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, anno
 fn exec_item_marked(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: bool, annots: List<GAnnot>) -> CapVal {
     // `@off(flag)` mode-SET marker: set the flag OFF for the DURATION of this
     // item's sub-parse (all reps + the .Opt FIRST-check), then restore — the
-    // executor twin of the hand parser's save/set/restore around a control-header
+    // save/set/restore around a control-header
     // condition. Empty mode_off (every item today) is a zero-cost passthrough.
     if item.mode_off != "" {
         let saved = st.push_mode_off(item.mode_off)
@@ -3252,7 +2945,7 @@ fn exec_item_marked(g: Grammar, item: GItem, st: PState, env: CapEnv, multi: boo
         return r
     }
     // `@bump(counter)` counter-SET marker: increment for the item's sub-parse, then
-    // restore — the hand parse_quote's save/bump/restore around a quote body.
+    // restore — the quote body's save/bump/restore (quote_depth).
     if item.mode_bump != "" {
         let saved = st.push_mode_bump(item.mode_bump)
         let r = exec_item_body(g, item, st, env, multi, annots)
@@ -3351,16 +3044,6 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
     // columns did the header declare" — is fixed by the time the bounded loop starts.
     let cap = item_bound_cap(item, env)
     // t-47hc.5: a STATEMENT-LIST repetition recovers instead of bailing out — the
-    // interpreter twin of emit's `emit_stmt_list_loop`. The plain loop below exits the
-    // moment the next token stops starting the item, which after a malformed statement
-    // it never does, so the rest of the block leaked out of its own body (`(expr r)` as
-    // a SIBLING of the fn). Selected by the SAME predicate emit uses — `rule_result_kind
-    // == "stmt"` on a labelled repetition — now shared from ast.av rather than
-    // re-derived, so the two engines cannot drift on which loop a rule gets.
-    //
-    // Byte-identical for VALID input by construction: a well-formed statement list
-    // re-enters on every child and stops at `}`, which is exactly where the FIRST-guard
-    // loop stops too. The behaviour differs only where the old loop gave up.
     let rname = gprim_ref_name(item.prim)
     if item.label != "" && rname != "" && rule_result_kind(g, rname) == "stmt" {
         exec_stmt_list_repeat(g, item, st, env, annots, rname, cap, already)
@@ -3393,8 +3076,8 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
 ///   - loop until `}` or EOF (NOT until the FIRST-guard fails — that is the bug)
 ///   - `had_error` is ONE PState flag reused across children, so capture any pre-loop
 ///     error, clear before each child, and restore the accumulated value at exit
-///   - on a failed child: `synchronize_stmt()` (already byte-identical to the hand's
-///     boundary set), force one token of progress if the cursor did not move, bind a
+///   - on a failed child: `synchronize_stmt()` (the shared statement-boundary
+///     set), force one token of progress if the cursor did not move, bind a
 ///     `Stmt.Error` in the child's place, and CONTINUE rather than ending the block
 /// Did the child come back as an ERROR STATEMENT? The silent-failure shape: a rule that
 /// aborted without reporting still yields a node, and the statement-list loop must treat
@@ -3403,13 +3086,11 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
 /// The `Stmt.Error` row a failed child ALREADY produced, or a fresh one when it produced
 /// something else. The statement-list loops' recovery row (t-47hc.5).
 ///
-/// Allocating unconditionally leaves an ORPHAN: a committed rule's coercion (`@hand`'s
-/// failure through `capval_to_stmt`) has already minted an unstamped `Stmt.Error`, and the
+/// Allocating unconditionally leaves an ORPHAN: a committed rule's coercion (a failure
+/// through `capval_to_stmt`) has already minted an unstamped `Stmt.Error`, and the
 /// loop then minted a second, stamped one beside it. Nothing referenced the first, so the
 /// TREE was right and only a store scan could see it — which is exactly what
-/// `error_recovery_test`'s `total_error_nodes` is. It went unnoticed while every such
-/// item rolled back to the hand and `truncate_to_mark` reclaimed the row with it; once
-/// `fn` committed, the orphan survived.
+/// `error_recovery_test`'s `total_error_nodes` is.
 export fn error_stmt_of(st: PState, v: CapVal) -> StmtId {
     match v {
         .SNode(id) -> {
@@ -3454,8 +3135,7 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
         // the inner `}`. Keying on had_error alone let the third kind through: the loop
         // bound it, saw the inner `}`, and broke — ending the block early so everything
         // after the bad statement landed OUTSIDE the function. That is the `(expr r)`
-        // escape, and it is why the two engines disagreed once `decl_hand` stopped
-        // catching these first.
+        // escape.
         // WHICH children count as failed differs by policy — the emit twin says why in
         // full (emit_stmt_list_loop). `@onfail(drop)` counts only an ABORT, so a child
         // that reported and then RECOVERED is kept, exactly as `parse_spec_body` keeps a
@@ -3489,7 +3169,7 @@ fn exec_stmt_list_repeat(g: Grammar, item: GItem, st: PState, env: CapEnv, annot
             // t-myz7 `@onfail(drop)`: OMIT the failed child rather than standing an
             // `(error)` row in its place — the interpreter twin of emit_stmt_list_loop's
             // `drop_failed`. `parse_spec_body` swallows the child's Err and returns the
-            // partial item list, so `spec "s" { given }` is `(spec "s" )` on the hand.
+            // partial item list, so `spec "s" { given }` is `(spec "s" )`.
             // Only the row differs: the error is still reported and `any_err` still
             // carries it to the caller.
             // The abort is CLEARED on EVERY recovered child, not just a dropped one — the
@@ -3557,31 +3237,6 @@ fn capval_len(v: CapVal) -> int {
 }
 
 /// Execute a primary. Terminals match+consume (or trigger @expect /
-/// @recover when a required terminal is missing); a ref calls its rule;
-/// a group recurses the enclosing env so its captures propagate out.
-/// The gated call's FIRST re-check — the interpreter twin of emit's
-/// `gated_first_check` (t-myz7).
-///
-/// `@gate` REPLACES a group's FIRST with the preceding `@peek` cond, which is the
-/// whole point: it lets the loop enter where the element's own FIRST would refuse
-/// (`}` / EOF), so the hand's "report about the ELEMENT" recovery is reproducible.
-/// The cost is that the callee's standing promise — "my caller proved my FIRST" —
-/// no longer holds, so the gated call must re-check it HERE and report the ELEMENT's
-/// message. emit has done this since the gate landed; the interpreter never did, and
-/// simply fell into the sub-rule.
-///
-/// That gap is why `shape S = { x: int` (unclosed, next line starts `fn`) answered
-/// with three diagnostics where the hand and the generated parser both answer with
-/// one: the loop entered `field` standing on `fn`, `field` reported a missing name,
-/// then a missing `:`, and `shape_decl` then reported a missing `}`. Same shape for
-/// `trait T {`, which reached the EXPRESSION tail and said `expected expression`
-/// where the hand names the missing member.
-///
-/// The message comes from `rule_first_expect_msg` — the SAME function emit renders
-/// from, now shared out of ast.av — so the two engines cannot word this differently.
-/// Aborting through `env` (not `st.abort_prop`) is deliberate and sufficient: a group
-/// shares its enclosing rule's CapEnv, so `env.set_abort(true)` unwinds the rule that
-/// owns the gate, which is exactly the scope emit's `return` has.
 fn gated_first_ok(g: Grammar, inner: GNode, st: PState, env: CapEnv, annots: List<GAnnot>) -> bool {
     let gr = gated_ref_of(inner)
     if !gr.found { return true }
@@ -3590,18 +3245,16 @@ fn gated_first_ok(g: Grammar, inner: GNode, st: PState, env: CapEnv, annots: Lis
     // stand down at the same point or the two engines report different things for the same
     // input. `skip` reports at the ITEM, with the caller's declared message and no abort;
     // reporting here as well produced the generic "expected tparam" AND aborted, which is
-    // how `enum E< { A }` lost the hand's second diagnostic on the default path (the
-    // executor answers invalid input there, so emit-vs-hand was blind to it — t-zrn3).
+    // how `enum E< { A }` lost its second diagnostic on the default path (t-zrn3).
     // The gate's remaining job is the ENTRY decision, which `tok_starts_seq` already made.
     // `@onfail(bail)` stands down for a DIFFERENT reason than those two, and it was the
     // one missing here (t-47hc.4.3): bail means THE CALLEE OWNS THE MESSAGE, so a FIRST
     // pre-check is exactly the thing that takes it away — it reports the caller's generic
     // wording for a token the callee would have reported about itself. `@foo(` followed by
-    // a token that starts no expression is the shape: the hand calls `parse_expression`
-    // and lets its F0040 stand, while this pre-check answered F0001 "expected call_arg"
-    // from one level up. Emit's twin has always returned "" here; the interpreter had not,
-    // so emit matched the hand and the DEFAULT path (which the executor answers on invalid
-    // input) did not — the t-zrn3 blind spot, in the other direction.
+    // a token that starts no expression is the shape: the callee's F0040 must
+    // stand, while this pre-check answered F0001 "expected call_arg"
+    // from one level up. Emit's twin has always returned "" here; the interpreter had
+    // not — the t-zrn3 blind spot, in the other direction.
     if gr.onfail == "skip" || gr.onfail == "close" || gr.onfail == "bail" { return true }
     let seen: List<string> = []
     if tok_starts_rule(g, gr.rule, st, seen) { return true }
@@ -3628,7 +3281,7 @@ fn gated_first_ok(g: Grammar, inner: GNode, st: PState, env: CapEnv, annots: Lis
     }
     let em = rule_first_expect_msg(g, gr.rule)
     let emsg = if em == "" { "expected ${gr.rule}" } else { em }
-    // An IDENT-led callee keeps the hand's RESERVED-KEYWORD diagnostic (so07.2) — the
+    // An IDENT-led callee keeps the RESERVED-KEYWORD diagnostic (so07.2) — the
     // emit twin in `gated_first_check` says why. This is the SECOND gated-FIRST reporter
     // in the interpreter (the other is exec_item's `.Ref` gate arm); they report the same
     // message for the same reason, so they take the same decision here.
@@ -3668,21 +3321,11 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
                 // `@onfail(halt)` abandons THIS group, so the flag is consumed HERE — at
                 // the boundary of the group it governs. Left raised, the ENCLOSING
                 // sequence breaks too and the bracket's closer never runs: `enum E<,T>`
-                // lost the hand's "expected `>` after type parameters" that way. The emit
+                // lost its "expected `>` after type parameters" that way. The emit
                 // twin has this for free, because its `break` leaves one scope.
                 env.set_halt(false)
                 CapVal.Node(st.error_node_silent())
             }
-        }
-        // Statement/declaration hand rules delegate to the real hand parser and
-        // yield a Stmt node; expression hand rules (`ident`/`number`) yield an
-        // Expr node. Dispatch on the rule name so a mixed declaration grammar
-        // (pure rules + a `@hand(component_decl)` alternative) routes each to
-        // the right builder.
-        .Hand(hf) -> {
-            if is_hand_stmt_leaf(hf) { CapVal.SNode(run_hand_stmt(hf, st)) }
-            else if is_hand_expr_leaf(hf) { CapVal.Node(run_hand_expr(hf, st)) }
-            else { CapVal.Node(run_hand(hf, st)) }
         }
         // A `@when` predicate is zero-width — the branch gate already decided
         // this alternative applies (branch_pred_ok in exec_node); executing the
@@ -3740,17 +3383,15 @@ export fn gensym_token(st: PState, tag: string) -> Token {
 /// both engines — emit renders a call to this same function — so the scan, the captured
 /// slice, and the unterminated-EOF diagnostic cannot drift between them.
 ///
-/// The exact mirror of the hand parser's `capture_balanced_brace_body`: the enclosing
+/// The exact mirror of `capture_balanced_brace_body` (parse/mod.av): the enclosing
 /// `{` has ALREADY been consumed (by the rule's `"{"` literal), so the scan starts at
 /// depth 1, counts brace TOKENS (a `{` inside a string/template literal is part of that
 /// one token and never miscounts), and stops AT the balancing `}` without consuming it —
 /// the rule's trailing `"}"` literal owns that token and its diagnostics. The bound
-/// token's text is `src[start .. close_brace_start].trim()`, verbatim otherwise, which
-/// is what makes the desugared `parse_grammar("…")` string byte-identical to the hand's.
+/// token's text is `src[start .. close_brace_start].trim()`, verbatim.
 ///
-/// On EOF the scan reports the hand's per-construct message and yields an empty-text
-/// token; `had_error` is set, so on the production path the item falls back to the hand
-/// parser exactly like any other native diagnostic.
+/// On EOF the scan reports the per-construct message and yields an empty-text
+/// token; `had_error` is set.
 /// The component NAME a `@rawbrace(component)` capture belongs to, or "" when the shape
 /// is not `rn:IDENT ri:IDENT "{"`. Read at scan ENTRY (three tokens back from the cursor,
 /// which sits just past the `{`), because the scan itself advances.
@@ -3771,20 +3412,7 @@ export fn rawbrace_scan(st: PState, tag: string) -> Token {
     mut depth = 1
     while true {
         if st.at_end() {
-            // t-47hc.4.3 — the `component` tag matches the HAND's wording exactly, because
-            // this diagnostic used to BE the hand's: `sql q { SELECT { FROM` reached
-            // `@hand(decl_hand)` through the `@peek(decl_lead)` gate, so
-            // `capture_raw_body_text` reported it. With the leaf deleted the native rule
-            // owns the form, and a generic "unterminated `component { }` block" would be a
-            // silently reworded diagnostic — the kind of drift a routing slice is supposed
-            // to prevent, not introduce.
-            //
-            // The component NAME is read back off the token stream rather than threaded
-            // through: `bare_comp_inst_raw` is `rn:IDENT ri:IDENT "{"` so at this point
-            // exactly three tokens have been consumed since it, and `rn` is the name the
-            // hand interpolates. Bounds-checked, and it falls back to the generic wording
-            // if the shape is not that — no other rule uses this tag today, but a future
-            // one must not read a stray token as a component name.
+            // t-47hc.4.3 — the `component` tag carries its own unterminated-body wording.
             if owner != "" {
                 st.report("unterminated `body: TokenStream` block for `${owner}` — no balancing `}` before end of file")
                 return Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
@@ -3805,122 +3433,6 @@ export fn rawbrace_scan(st: PState, tag: string) -> Token {
     Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
 }
 
-// ── The escape-hatch (@hand) — hand-written rules the grammar calls ──
-//
-// The gnarly 5% (GRAMMAR_DSL.md §5) lives in hand-written code the
-// grammar delegates to by name, not in the DSL notation. In the
-// executor these are a small built-in registry; in the spliced-parser
-// integration (ps3t.6.5) each `@hand(fn)` lowers to a call of a real
-// hand-written Avra parse function (emit.av already renders it that
-// way). Here `ident`/`number` demonstrate the mechanism — a primary the
-// pure expression grammar deliberately omits, added via the hatch.
-
-fn hand_starts(name: string, tok: Token) -> bool {
-    if name == "ident" { return tok.kind == "IDENT" }
-    if name == "number" { return tok.kind == "NUMBER" }
-    // A declaration/statement hand rule's FIRST is its leading keyword.
-    if name == "component_decl" { return tok.text == "component" }
-    if name == "let_stmt" { return tok.text == "let" }
-    if name == "return_stmt" { return tok.text == "return" }
-    // The residual match-statement edge oracle (subjectless/table/bare-return/
-    // quote-splice arms) is intentionally narrower than the generic stmt leaf.
-    if name == "match_table" { return tok.text == "match" }
-    // (Statement blocks are grammar-native — stmt_block's body is `declaration*`,
-    // so an inline module's component parses without a hand fallback.)
-    // An expression hand rule's FIRST is its leading keyword.
-    if name == "quote_expr" { return tok.text == "quote" }
-    // The keyword-led expression primaries (Phase 3a-11): each FIRST is its
-    // leading keyword, routed to the feature's hand parser via run_hand_expr.
-    if name == "match_expr" { return tok.text == "match" }
-    if name == "if_expr" { return tok.text == "if" }
-    // Clean-FIRST bracket/qualified primaries (Phase 3a-10/11): FIRST is the
-    // opening delimiter — `[` list, `@` qualified (`{` brace_expr is above).
-    if name == "list_expr" { return tok.text == "[" }
-    if name == "paren_expr" { return tok.text == "(" }
-    // The identifier-led primary (bare ident / struct-lit / table / feature-kw /
-    // tagged-template) — FIRST is an IDENT.
-    if name == "ident_primary" { return tok.kind == "IDENT" }
-    // (Interpolated strings and brace primaries are grammar-native now — template_lit
-    // t-47hc.19, brace_expr t-47hc.18 — so neither has a hand_starts entry.)
-    // The ident-primary (bare ident / struct literal / qualified @pkg::T /
-    // generic call) starts with IDENT or `@` (ps3t.6.7). parse_primary handles
-    // the struct-lit / qualified / generic-turbofish forms; the DSL postfix then
-    // adds field/index/call suffixes.
-    if name == "ident_expr" { return tok.kind == "IDENT" || tok.text == "@" }
-    // The remaining primaries served by parse_primary: enum constructors
-    // (`.Variant(..)`) and list literals (`[ .. ]`) (ps3t.6.7 Step C).
-    if name == "more_primary" { return tok.text == "." || tok.text == "[" }
-    // The whole procedural leaf (unary/postfix/primary) — its FIRST is the
-    // shared exported predicate, mirrored by emit's hand_first_guard.
-    if name == "hand_unary" { return tok_starts_expr_leaf(tok) }
-    // The `with`-base leaf shares the same leaf FIRST (parse_unary_leaf).
-    if name == "call_leaf" { return tok_starts_expr_leaf(tok) }
-    // The Phase-3a primary base shares the leaf FIRST (parse_primary_base).
-    if name == "primary_base" { return tok_starts_expr_leaf(tok) }
-    // A postfix suffix's FIRST is the postfix-op set (`. ( [ ! ? ?. < catch`) — a
-    // SUPERSET of postfix_step's precise entry guard (which adds sameline/mode/base
-    // checks). The grammar `( )*` loop enters on any of these, postfix_step then
-    // decides precisely, and the no-progress break exits when it consumes nothing
-    // (byte-identical to parse_call's `while` guard being false).
-    if name == "postfix_suffix" { return tok.text == "." || tok.text == "(" || tok.text == "[" || tok.text == "!" || tok.text == "?" || tok.text == "?." || tok.text == "<" || tok.text == "catch" }
-    // A `with { … }` postfix step's FIRST is the `with` keyword.
-    // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
-    // The lambda BODY (t-47hc paren flip prep — DORMANT). parse_lambda_body is a
-    // block `{ … }` OR a bare expression, so its FIRST is `{` ∪ FIRST(expression) —
-    // exactly tok_starts_expr_leaf (which includes `{`). Registered so an Opt/Star/Alt
-    // use of `@hand(lambda_body)` selects correctly; the paren flip's mandatory
-    // `"->" b:@hand(lambda_body)` never consults it, but the registration must be
-    // complete (byte-side twin: emit.av hand_first_guard). DORMANT: no live grammar
-    // references it, so this branch is never queried on the production type_flip path.
-    if name == "lambda_body" { return tok_starts_expr_leaf(tok) }
-    if name == "lambda_block_body" { return tok.text == "{" }
-    // ps3t.6.7 G.4 — the whole-statement dispatch leaf's FIRST: `{` (block OR a
-    // map-literal statement, disambiguated inside parse_statement) plus the
-    // statement KEYWORDS parse_statement routes to feature parsers. `break` /
-    // ps3t.6.7 G.4b — the whole-declaration dispatch leaf's FIRST: exactly the
-    // tokens parse_declaration handles itself (doc-comment wrapping, `@`
-    // annotation OR a qualified `@pkg::T` it forwards, `export`, every decl
-    // keyword, and a bare IDENT — component instantiation OR an expression
-    // statement, disambiguated inside parse_declaration). Every OTHER token (the
-    // stmt keywords, `{`, non-ident expression leaves) is routed to the
-    // `statement` alternative ordered after this one. A reserved keyword matches
-    // neither → the alternation errors → hand fallback rejects it identically.
-    false
-}
-
-// Which names are STATEMENT/DECLARATION hand rules (delegated via
-// `run_hand_stmt`) vs EXPRESSION ones (`run_hand_expr`), and the delegate each
-// one runs, live in the shared hand-leaf table — hand_leaves.av, which also
-// records WHY each form is an escape hatch the pure grammar does not re-express.
-// One seam, read by both this executor and emit.av, instead of a local
-// `name == "…" || …` chain here and a hand-synced copy there.
-
-/// Run a STATEMENT/DECLARATION hand rule by delegating to the real hand
-/// parser (ps3t.6.5.7 component / ps3t.6.5.10 gnarly-5%). A `Parser` is built
-/// over the PState's ORIGINAL source, SHARING the PState's store (so the
-/// returned id is valid in it — the parse_program_source_shared pattern) and
-/// repositioned at the current token's byte offset; after the hand parse the
-/// DSL cursor is resynced past the tokens it consumed. This is the executor's
-/// mini swap-in: proving the generated parser can hand off to `@hand` code
-/// over a shared store (the foundation 6.5.12 generalises).
-/// Is this `@hand` leaf REFUSED for this process? `AVRA_REFUSE_HAND_LEAF` names the
-/// leaf to refuse (`decl_hand`, `primary_base`), or `*` for every one. Unset — the
-/// default, and every production build — refuses nothing, so the emitted parsers and
-/// the IR are untouched.
-///
-/// Deliberately a NAME rather than a boolean: the two remaining leaves are retired by
-/// separate slices, and a per-leaf switch lets each one's frontier be measured without
-/// the other's failures drowning it out.
-/// The trailing-comma guard's shared core: is the cursor on a `,` that is followed by
-/// ANOTHER element rather than by `closer`? Used by `comma_not_rparen` /
-/// `comma_not_rbracket` / `comma_not_rbrace` so the three differ only in their closer
-/// and cannot drift apart.
-/// "the loop is NOT at its closer" — the token twin of the hand's
-/// `while !self.check(CLOSER)` element loops. EOF is deliberately NOT excluded:
-/// the hand enters at EOF too, which is how an unterminated construct reports
-/// about its ELEMENT rather than about the closer. Only useful under `@gate`,
-/// since as a plain `@peek` it would be ANDed with the element's FIRST and could
-/// never widen entry.
 fn not_closer(st: PState, closer: Tk) -> bool {
     st.cur().tk != closer
 }
@@ -3931,147 +3443,8 @@ fn comma_not_closer(st: PState, closer: Tk) -> bool {
     st.toks[st.pos + 1].tk != closer
 }
 
-export fn hand_leaf_refused(name: string) -> bool {
-    let want = avra_process_env_get("AVRA_REFUSE_HAND_LEAF")
-    if want == "" { return false }
-    want == "*" || want == name
-}
-
-export fn run_hand_stmt(name: string, st: PState) -> StmtId {
-    // ONE table lookup answers both "is this a statement leaf?" and "which
-    // parser?" — the class check and the dispatch used to be separate scans over
-    // the same six names.
-    let leaf = hand_stmt_leaf(name)
-    if leaf == null {
-        st.report("no hand statement rule `${name}`")
-        return st.store.stmts.add_leaf(Stmt.Error)
-    }
-    // ── The FRONTIER probe (t-myz7): the delegate, refusable ──────────────────
-    //
-    // `--hand-leaves` counts the leaves that REMAIN; nothing measured what still
-    // DEPENDS on one. Every existing decl_flip spec asserts dispatch ORDER in the
-    // emitted source, which says where a native rule sits — not which inputs fall
-    // past it into the delegate. Those are different questions, and only the second
-    // one tells you what deleting the leaf would break.
-    //
-    // It is unmeasurable by comparison, for the same reason the component-body
-    // routing bug hid for a month: the delegate and the native rules agree on every
-    // input they both accept, so trees, diagnostics, positions and IR are identical
-    // whichever answers. The only way to see the dependency is to REMOVE the
-    // delegate and watch what fails — which is the deletion itself.
-    //
-    // So this is the deletion, behind a flag. With the flag set the leaf reports
-    // instead of delegating, and every form that still needs it surfaces as a real
-    // diagnostic naming the leaf. That makes the retirement corpus writable BEFORE
-    // the retirement: the fail-before/pass-after set is exactly the forms this
-    // rejects today, and the slice is done when the set is empty.
-    //
-    // Read only on the leaf path (once per delegated statement, not per token), and
-    // opt-in — the default path is byte-identical.
-    if hand_leaf_refused(name) {
-        st.report("`@hand(${name})` is refused (AVRA_REFUSE_HAND_LEAF) — this form still depends on the hand leaf")
-        return st.store.stmts.add_leaf(Stmt.Error)
-    }
-    if st.src == "" {
-        // Token-only path: no source to delegate over. (The swap-in serves
-        // @hand from a real Parser instead of this interpreter, so this only
-        // trips a caller that ran a @hand-statement grammar via the *_toks
-        // entry — which the differential oracle never does.)
-        st.report("`@hand(${name})` needs the source, unavailable on the token-only path")
-        return st.store.stmts.add_leaf(Stmt.Error)
-    }
-    let start_byte = st.cur().pos
-    // REUSE the delegate threaded from the outer Parser (st.hand_delegate) when
-    // present — created once per file and SYNCED to the outer parser's cursor +
-    // line before this statement (see parse_statement's flip), so it lexes each
-    // token once (O(source), not O(source²)) AND carries the accumulated line/
-    // column/gensym state the continuous hand parse would have. This is the
-    // statement-family mirror of run_hand_expr's delegate reuse. Fallback to a
-    // fresh parser when no delegate is threaded (the differential oracle + unit
-    // tests): a fresh gensym counter at 0 matches a single-statement oracle
-    // parse, so a `let … else` desugar mints the identical temp name.
-    mut bp = if st.hand_delegate == null {
-        parser_new_with_store(st.src, "", st.store)
-    } else {
-        st.hand_delegate!
-    }
-    bp.records_roots = 0
-    bp.had_error = false
-    bp.error_message = ""
-    // EXPRESSION flips OFF: the procedural expression leaf owns its whole sub-tree,
-    // so a nested expression must not re-enter the expr flip. STATEMENT/DECLARATION
-    // flips are LEFT AS-IS on bp: the production delegate (ensure_hand_delegate) has
-    // them ON so a body loop re-enters the DSL (ps3t.6.7 Slice 5.1 full-program
-    // flip); the differential oracle's delegate (new_pstate) has them OFF so the
-    // oracle stays pure-hand. The `stmt_hand`/`decl_hand` dispatch below calls the
-    // *_hand entry for the CURRENT item, so bp flipping its BODIES never re-parses
-    // the same item (no infinite recursion).
-    bp.expr_flip = false
-    // Reproduce the ORIGINAL parse context (a no-op on the fresh-parser oracle
-    // path, where st.modes are a fresh parser's defaults).
-    bp.allow_struct_lit = st.modes.allow_struct_lit
-    bp.allow_dot_postfix = st.modes.allow_dot_postfix
-    bp.allow_it_sugar = st.modes.allow_it_sugar
-    bp.quote_depth = st.modes.quote_depth
-    bp.cell_mode = st.modes.cell_mode
-    // `advance()`, NOT `advance_token()`: only the former maintains `prev_line`
-    // (`advance` is literally `prev_line = current_line; advance_token()`). The hand's
-    // postfix entry guard is newline-sensitive — `(` / `[` on a NEW line starts a new
-    // statement rather than continuing a chain — so a delegate walked here with
-    // `advance_token` arrives holding a stale `prev_line` and rejects a suffix that is
-    // in fact on the same line. Before the IDENT base went native this was harmless:
-    // the hand consumed the callee ITSELF via `advance()`, which set `prev_line` on the
-    // way past. Now the grammar consumes it off the shared token stream and the
-    // delegate only gets walked to the `(`, so the line state has to be maintained here.
-    // Invisible on line 1, where a stale line still compares equal to the real one.
-    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance() }
-    let bp_diag_before = bp.bag.diagnostics.length
-    // Dispatch to the real hand-parser entry — the leaf's delegate, a free
-    // function taking `bp` as its explicit parse state, so `bp`'s cursor advances
-    // in place for the resync below. Each builds into bp's (== the DSL's) shared
-    // store.
-    let run: fn(Parser) -> Result<StmtId, string> = leaf!.run
-    let result = run(bp)
-    // Resync the DSL token cursor past everything the hand parser consumed (its
-    // cursor now sits on the next token's byte offset) — on BOTH success AND
-    // failure: a failed hand parse still advanced `bp`, so leaving st.pos on the
-    // stale keyword token would make a following grammar item / repetition
-    // reprocess it and cascade.
-    while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
-    // Propagate the delegate's error STATE even when it returned .Ok (ps3t.6.7
-    // Slice 5.4). A @hand delegate that parses a body-bearing form (fn / impl /
-    // block via parse_declaration_hand → parse_statement_list_ids) does
-    // ERROR-TOLERANT recovery internally: a malformed body statement (e.g.
-    // `let await = 1` — a reserved keyword at a binding site) is rejected into the
-    // DELEGATE's bag + had_error, then RECOVERED as a `Stmt.Error` placeholder so
-    // the enclosing form still returns .Ok. Without mirroring that had_error onto
-    // `st`, the outer flip sees had_error=false, keeps the Error-bearing tree, and
-    // codegen ICEs (F9999 "no emitter for statement kind Stmt.Error"). Mirroring it
-    // makes DslStmtResult.had_error true, so the flip falls back to the
-    // authoritative hand parser — which re-parses and re-reports the real
-    // diagnostic into the OUTER parser's own bag (the diag home the flip relies
-    // on), byte-identical to the hand-only path. The diagnostic itself is NOT
-    // copied (st.diags stays the DSL's) — only the boolean gate — because the
-    // fallback owns the reporting; copying would double-report.
-    if bp.had_error {
-        st.note_had_error()
-    }
-    match result {
-        .Ok(id) -> id
-        .Err(m) -> {
-            // The delegate's parser bag already owns a precise diagnostic for
-            // ordinary parse failures (`consume`/`set_error`). Preserve that
-            // F-code/message through the outer bag merge instead of adding a
-            // second generic grammar error. Only synthesize a grammar diagnostic
-            // for a silent `.Err`, where no delegate diagnostic exists.
-            if bp.bag.diagnostics.length == bp_diag_before { st.report(m) }
-            st.store.stmts.add_leaf(Stmt.Error)
-        }
-    }
-}
-
 /// The result of `run_dsl_type_at`: the built type, the byte offset the DSL
-/// stopped at (so a hand-parser caller can resync its token cursor), and the
+/// stopped at (so the caller can resync its token cursor), and the
 /// error channel.
 /// The F-code to render diagnostic `i` under.
 ///
@@ -4089,8 +3462,8 @@ export fn run_hand_stmt(name: string, st: PState) -> StmtId {
 ///                       `error_node_coded` later means the slot describes a LATER
 ///                       diagnostic. Borrowing it renders one diagnostic's MESSAGE
 ///                       under another's CODE — `select { x }` surfaced "expected
-///                       `<-` after select arm binding" under F0040 while the hand
-///                       says F0001. A bare `report()` IS an F0001, so say so
+///                       `<-` after select arm binding" under F0040 where
+///                       F0001 is pinned. A bare `report()` IS an F0001, so say so
 ///                       directly instead of borrowing a stranger's code.
 ///
 /// Stamping F0001 onto `report()` itself was tried first and is WRONG: it is global
@@ -4105,41 +3478,6 @@ fn resolved_diag_code(st: PState, i: int) -> string {
 }
 
 /// EVERY diagnostic the DSL run recorded, each resolved to its own F-code — the
-/// boundary's error channel (t-myz7).
-///
-/// It used to be ONE diagnostic wide (`diag: string` + `diag_code: string`, both read
-/// off `diags[0]`), and that seam is what blocked retiring `@hand(decl_hand)`. A
-/// committed native rule owns its recovery completely, and real recovery reports more
-/// than once: `enum E< { A }` gets "expected type parameter name" AND "expected `>`
-/// after type parameters" from the hand. Both were generated natively — reading the
-/// regenerated `parse_enum_decl` confirmed both `st.report(...)` calls fire — and the
-/// second was dropped on the floor here, so the native path could never reproduce
-/// multi-error recovery no matter what the grammar said. The recovery oracle compares
-/// the ORDERED F-code signature with duplicates preserved, so a dropped error is a
-/// hard divergence. `report_coded` widened the CHANNEL for this (each diagnostic has
-/// carried its own code since #1173); this spends it.
-///
-/// Gated on `had_error` exactly as the single-diagnostic read was: a run that recorded
-/// diagnostics without erroring surfaced nothing before and surfaces nothing now.
-/// Likewise an empty `diags` yields an empty list — the old code produced `diag == ""`
-/// there, which the one consumer skipped — so the `diag_code`-only fallback that case
-/// used to take was already unobservable and is not reproduced.
-/// The diagnostics this run hands back to the flip seam: the rule's own, with the
-/// LEXER's interleaved at the points the hand would have reported them.
-///
-/// The hand pulls one token at a time and its lexer reports mid-pull, so a lexer
-/// diagnostic for token `i` lands BEFORE any rule diagnostic reported while sitting at
-/// `i` or later, and AFTER every one reported earlier. That is a stable merge on the
-/// token index, lexer-first on a tie — which is what this does.
-///
-/// SCOPED to the tokens this run actually covered (`[first_pos, st.pos]`). A per-item
-/// runner re-reads the whole file's token stream, so an unscoped merge would repeat
-/// every lexer diagnostic in the file on every item.
-///
-/// Merging HERE rather than during the parse is the point: `@try`, `@require` and
-/// `@onfail(bail)` all decide by asking whether `diags` grew, so a lexer diagnostic
-/// released mid-parse reads to each of them as "this rule reported" — see
-/// `seed_lex_diags` for the measured consequence.
 fn boundary_diags(st: PState) -> List<GDiag> {
     mut out: List<GDiag> = []
     // The rule's own diagnostics, resolved. Note the `had_error` gate applies only to
@@ -4181,23 +3519,7 @@ fn boundary_diags(st: PState) -> List<GDiag> {
 
 export type DslTypeResult = { te: TypeExpr, stop_byte: int, had_error: bool, diags: List<GDiag> }
 
-/// Inverse type runner (ps3t.6.5.12 slice 1): lets the hand parser delegate a
-/// whole type expression to the DSL. It runs the unified program grammar's `type_expr`
-/// rule over `src` starting at byte `start_byte`, and reports the byte where the
-/// DSL stopped (`stop_byte`) so a caller can resync its own cursor.
-///
-/// It is PURE w.r.t. any live `Parser` (it takes `src` + a byte offset, not a
-/// mutable parser), so ONE function serves both consumers of the swap-in:
-///   * the FLIP — the caller advances its token cursor to `stop_byte`;
-///   * the SHADOW canary — the caller compares `te` to its own parse and
-///     discards `stop_byte`, leaving the authoritative parser untouched.
-/// Byte positions align exactly because `lex_real` drives the SAME shipping
-/// lexer the hand parser streams (so `Token.pos` == `Parser.current_start` at
-/// every boundary), and `PState.cur()` returns the trailing EOF token — whose
-/// `pos` is the end-of-source byte — so `stop_byte` is valid even at EOF.
-///
-/// The PROGRAM grammar is used so this runner exercises the same complete type
-/// family as declarations, including native qualified names.
+/// Inverse type runner (ps3t.6.5.12 slice 1).
 export fn run_dsl_type_at(src: string, start_byte: int) -> DslTypeResult {
     run_dsl_type_at_toks(lex_real(src), start_byte, src)
 }
@@ -4219,20 +3541,9 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 }
 
 /// Fully-shared form (ps3t.6.5.12 Step D) — takes a caller-owned `store` AND
-/// `grammar` in addition to pre-lexed `toks`, so a caller parsing many type
-/// annotations from one source builds NONE of the three per annotation. The
-/// `run_dsl_type_at_toks` layer still re-lexed once but rebuilt a fresh node
-/// store (a fresh ARENA) + the 41-rule grammar + a line index PER call — fresh
-/// arenas never free, so across a selfhost compile's thousands of annotations
-/// they accumulated to ~7.5GB over the hand baseline. Reusing one store + one
-/// grammar per parser bounds it. The store is the DSL's OWN scratch arena
-/// (isolated from the hand parser's, so the real parse's node-id space is
-/// unaffected — byte-identity preserved); accumulation across a file's
-/// annotations is bounded and harmless (each call returns a fresh TypeExpr
-/// value, never a store id).
 export fn run_dsl_type_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     st.seed_lex_diags(lex_diags)
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -4250,11 +3561,11 @@ export fn run_dsl_type_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
 /// type parser (parse/gen_type_parser.av's `parse_type_expr`, passed in as `parse` so
 /// this module needs no import back into `parse`) instead of the Grammar-tree
 /// interpreter (`exec_rule`). Same builders and same PState yield a
-/// byte-identical TypeExpr to both the interpreter flip AND the hand parser, at
+/// byte-identical TypeExpr to the interpreter flip, at
 /// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
 export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let te = capval_to_texpr(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -4271,18 +3582,16 @@ export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: str
 /// the stop byte for cursor resync, and the error channel.
 export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diags: List<GDiag> }
 
-/// INVERSE-@hand PATTERN runner (ps3t.6.5.12) — the pattern-family sibling of
+/// The PATTERN runner (ps3t.6.5.12) — the pattern-family sibling of
 /// `run_dsl_type_at_shared`. Runs `grammar`'s `rule` (`pattern_or` for the
 /// or-pattern top entry, `pattern` for a bare atom entry) over the pre-lexed
 /// `toks` at byte `start_byte`, returning the built PatId + the resync stop
 /// byte. UNLIKE the type runner, patterns are arena-backed, so it allocates into
-/// the caller-owned `store` and returns an id VALID in it (the hand parser reads
-/// the id straight back) — the `run_hand_stmt`/`run_grammar_pat_toks` store-
-/// sharing shape. Reuses the caller's token + grammar caches (lex-once), so a
+/// the caller-owned `store` and returns an id VALID in it. Reuses the caller's token + grammar caches (lex-once), so a
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -4295,15 +3604,15 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 }
 
 /// t-47hc.4.4 Phase 3d (pattern half) — the STATIC pattern-parser boundary. IDENTICAL
-/// PState setup to `run_dsl_pattern_at_shared` (null delegate — the pattern grammar has
-/// NO @hand), but drives the CHECKED-IN generated static parser (parse/gen_pat_parser.av's
+/// PState setup to `run_dsl_pattern_at_shared` (null delegate),
+/// but drives the CHECKED-IN generated static parser (parse/gen_pat_parser.av's
 /// `parse_pattern_or`, passed in as `parse`) instead of the Grammar-tree interpreter
 /// (`exec_rule`). Same builders, same PState ⇒ byte-identical PatId (arena-backed, valid
-/// in the caller's shared `store`) to both the interpreter flip AND the hand parser, at
+/// in the caller's shared `store`) to the interpreter flip, at
 /// straight-line speed.
 export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let pat = capval_to_pat(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -4320,27 +3629,22 @@ export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: stri
 /// patterns), the stop byte for cursor resync, and the error channel.
 export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, diags: List<GDiag> }
 
-/// INVERSE-@hand EXPRESSION runner (ps3t.6.5.12) — the expression-family sibling
+/// The EXPRESSION runner (ps3t.6.5.12) — the expression-family sibling
 /// of `run_dsl_pattern_at_shared`. Runs `grammar`'s `expression` rule over the
 /// pre-lexed `toks` at byte `start_byte`, SHARING the caller-owned `store` (the
-/// returned id is valid in it — the hand parser reads it straight back), and
-/// threads the caller's parser `modes` into the PState so the `@hand(hand_unary)`
-/// leaf reproduces the original mode-sensitive parse (allow_struct_lit in
+/// returned id is valid in it — the caller reads it straight back), and
+/// threads the caller's parser `modes` into the PState so the
+/// mode-sensitive parse is reproduced (allow_struct_lit in
 /// control-flow headers, etc.). Reuses the caller's token + grammar caches
 /// (lex-once), so a file's many expressions cost one lex + one grammar build.
 export fn run_dsl_expr_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
     // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
-    // grammar and the hand share ONE monotonic sequence per parse. Without this, every
-    // `run_*_expr_at_shared` call starts a fresh PState at 0 — and since this runs ONCE
-    // PER EXPRESSION, two desugars in the same function would both mint `$tag$1`, and
-    // none of them would match the names the hand parser produces for the same source.
-    // The delegate is the right home because it is the exact Parser `run_hand_expr`
-    // dispatches into, so a hand-parsed leaf and a native build action advance the same
-    // counter in parse order. Behaviour-neutral until something calls `fresh_name`
-    // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
+    // ONE monotonic gensym sequence per parse: this runs ONCE PER EXPRESSION, so
+    // without host continuity two desugars in the same function would both mint
+    // `$tag$1`. Seeded from the host and written back after the parse.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     st.seed_lex_diags(lex_diags)
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
@@ -4359,23 +3663,18 @@ export fn run_dsl_expr_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
 /// (parse/gen_expr_parser.av's `parse_expression`, passed in as `parse` so this
 /// module needs no import back into `parse` — the generated module imports THIS
 /// one's builders, not the reverse) instead of the Grammar-tree interpreter
-/// (`exec_rule`). Same builders, same PState, same `@hand` leaf ⇒ byte-identical
-/// AST to both the interpreter flip AND the hand parser, at straight-line speed
+/// (`exec_rule`). Same builders, same PState ⇒ byte-identical
+/// AST to the interpreter flip, at straight-line speed
 /// (no per-node Grammar dispatch / capture-env allocation). Proven byte-identical
 /// by the selfhost + corpus differential (it is now the only expression parser).
 export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
     // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
-    // grammar and the hand share ONE monotonic sequence per parse. Without this, every
-    // `run_*_expr_at_shared` call starts a fresh PState at 0 — and since this runs ONCE
-    // PER EXPRESSION, two desugars in the same function would both mint `$tag$1`, and
-    // none of them would match the names the hand parser produces for the same source.
-    // The delegate is the right home because it is the exact Parser `run_hand_expr`
-    // dispatches into, so a hand-parsed leaf and a native build action advance the same
-    // counter in parse order. Behaviour-neutral until something calls `fresh_name`
-    // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
+    // ONE monotonic gensym sequence per parse: this runs ONCE PER EXPRESSION, so
+    // without host continuity two desugars in the same function would both mint
+    // `$tag$1`. Seeded from the host and written back after the parse.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let expr = capval_to_expr(st, parse(st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -4395,14 +3694,14 @@ export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, dia
 
 /// Shared core of the statement- and declaration-family runners: runs `grammar`'s
 /// `rule` over the pre-lexed `toks` at byte `start_byte`, SHARING the caller-owned
-/// `store` (the returned id is valid in it — the hand parser reads it straight
-/// back), and threads the caller's parser `modes` + `@hand` delegate into the
+/// `store` (the returned id is valid in it — the caller reads it straight
+/// back), and threads the caller's parser `modes` + host Parser into the
 /// PState. Both statements and declarations build a `StmtId` (a declaration IS a
 /// Stmt — Function/TypeDecl/Annotated/…), so ONE core serves both entries; they
 /// differ only in the start rule.
 fn run_dsl_snode_at_shared(rule: string, lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     st.seed_lex_diags(lex_diags)
     let stmt = capval_to_stmt(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -4415,30 +3714,20 @@ fn run_dsl_snode_at_shared(rule: string, lex_diags: List<LexDiag>, toks: List<To
     DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
-/// INVERSE-@hand STATEMENT runner (ps3t.6.7 Step G slice 4) — the statement-
+/// The STATEMENT runner (ps3t.6.7 Step G slice 4) — the statement-
 /// family sibling of `run_dsl_expr_at_shared`. Runs `grammar`'s `statement` rule
-/// over the pre-lexed `toks`. The gnarly statement forms (block, `if`/`while`/
-/// `for`/`match`/`defer`/`errdefer`/`return` — the feature parsers, and their
-/// position-recorded nested bodies) delegate wholesale via `@hand(stmt_hand)` →
-/// `parse_statement`; only `break`/`continue` and the fall-through expression-
-/// statement are DSL-native. The expr-stmt's `@hand(hand_unary)` leaf reproduces
-/// the original mode-sensitive parse byte-identically. Reuses the caller's token
+/// over the pre-lexed `toks`. Reuses the caller's token
 /// + grammar caches (lex-once), so a file's many statements cost one lex + one
 /// grammar build.
 export fn run_dsl_stmt_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     run_dsl_snode_at_shared("statement", lex_diags, toks, start_byte, src, file, store, grammar, modes, delegate)
 }
 
-/// INVERSE-@hand DECLARATION runner (ps3t.6.7 Step G slice 4b) — the declaration/
-/// whole-program-family sibling. Runs `grammar`'s `declaration` rule. The gnarly
-/// declaration forms (doc/annotation/export wrapping, the decl keywords fn/type/
-/// enum/…/let/mut/const, and the component-vs-expression IDENT disambiguation —
-/// all stateful lookahead + recursive-wrapping + position-recording the stateless
-/// grammar cannot reproduce) delegate wholesale via `@hand(decl_hand)` →
-/// `parse_declaration`; the fall-through to a non-declaration item routes to the
+/// The DECLARATION runner (ps3t.6.7 Step G slice 4b) — the declaration/
+/// whole-program-family sibling. Runs `grammar`'s `declaration` rule; the
+/// fall-through to a non-declaration item routes to the
 /// same `statement` grammar the statement flip uses (break/continue/stmt-keyword/
-/// block/expr-stmt), so a function body's statements go through the DSL. Byte-
-/// identical: each arm's builder IS the hand parser's, only routed by the grammar.
+/// block/expr-stmt), so a function body's statements go through the DSL.
 export fn run_dsl_decl_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     run_dsl_snode_at_shared("declaration", lex_diags, toks, start_byte, src, file, store, grammar, modes, delegate)
 }
@@ -4448,13 +3737,12 @@ export fn run_dsl_decl_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
 /// CHECKED-IN generated static parser (parse/gen_decl_parser.av's `parse` fn,
 /// passed in so this module needs no import back into `parse`) instead of the
 /// Grammar-tree interpreter (`exec_rule`). Same builders (capval_to_stmt), same
-/// PState, same `@hand` leaves (run_hand_stmt for decl_hand/stmt_hand) ⇒
-/// byte-identical AST to both the interpreter flip AND the hand parser, at
-/// straight-line speed (no per-node Grammar dispatch). The declaration entry
+/// PState ⇒ byte-identical AST to the interpreter flip, at straight-line speed
+/// (no per-node Grammar dispatch). The declaration entry
 /// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
 export fn run_static_snode_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     st.seed_lex_diags(lex_diags)
     let stmt = capval_to_stmt(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -4467,23 +3755,10 @@ export fn run_static_snode_at_shared(lex_diags: List<LexDiag>, toks: List<Token>
     DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
-// Which names build an EXPRESSION via REAL hand delegation (`run_hand_expr` →
-// ExprId over the shared store) — as distinct from the leaf-building `run_hand`
-// (`ident`/`number`) — is the expression half of the shared hand-leaf table in
-// hand_leaves.av, alongside each delegate and the reason it stays hand-parsed.
-
 /// The FIRST-set of a leaf expression — every token that can begin the
-/// procedural unary/postfix/primary layer the DSL delegates wholesale via
-/// `@hand(hand_unary)` (→ `parse_unary`). Kept as ONE exported predicate so the
-/// executor's `hand_starts` AND the emitted static parser's FIRST-guard share a
-/// single source of truth (rule 8). It is the union of `parse_unary`'s prefix
-/// operators (`! - ~ not` + quote-only `~`splice) and `parse_primary`'s FIRST
-/// tokens (parse/mod.av) — literals by kind, keyword/enum/delimiter primaries by
-/// text. WHY delegate the whole leaf rather than express it in the DSL: the hand
-/// postfix loop (`parse_call`) is NEWLINE-SENSITIVE (`.UpperIdent` / `[` / `(` on
-/// a new line = a new statement, `dot_is_postfix`) and mode-stateful
-/// (`allow_struct_lit` / `allow_dot_postfix` / `allow_it_sugar` / `quote_depth`),
-/// which the stateless token-grammar cannot reproduce byte-identically.
+/// unary/postfix/primary layer. ONE exported predicate so the executor and the
+/// emitted static parser's FIRST-guard share a single source of truth (rule 8).
+/// It is the union of the prefix
 /// The FIRST set of the TYPE family's `type_expr`, for the same reason
 /// `tok_starts_expr_leaf` exists: the dispatch-only declaration view leaves `type_expr`
 /// EXTERNAL so the generated declaration parser calls the separately generated type
@@ -4503,146 +3778,6 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
     t == "(" || t == "[" || t == "{" ||
     t == "match" || t == "if" || t == "spawn" || t == "channel" || t == "isolated" || t == "when" || t == "quote" ||
     t == "null" || t == "none"
-}
-
-/// Run an EXPRESSION hand rule by delegating to the real hand parser over the
-/// PState's ORIGINAL source, SHARING the store (so the returned id is valid in
-/// it — the `run_hand_stmt` pattern, for the Expr arena) and resyncing the DSL
-/// cursor past what it consumed. This is the ExprId sibling of `run_hand_stmt`.
-/// `parse_quote` tracks `quote_depth` internally, so
-/// a `~` splice in the quote body is decided identically to the oracle parse.
-///
-/// A leaf that produces a POSTFIX-CHAIN BASE (which the grammar's
-/// `( postfix_suffix )*` loop then wraps) must seed `st.postfix_base` from its
-/// result — emit skips the seed for @hand bases, so the base self-seeds here.
-/// That is the `seeds_postfix` COLUMN of the leaf record, so it can no longer
-/// drift from the delegate beside it.
-
-export fn run_hand_expr(name: string, st: PState) -> ExprId {
-    // Split preconditions so each reports its OWN cause (a bad rule name vs a
-    // missing source), and rely solely on error_node — which reports the
-    // message itself — so each diagnostic is recorded exactly once. ONE table
-    // lookup serves the class check, the dispatch, and the postfix-seed column.
-    let leaf = hand_expr_leaf(name)
-    if leaf == null {
-        return st.error_node("no hand expression rule `${name}`")
-    }
-    if st.src == "" {
-        return st.error_node("`@hand(${name})` needs the source, unavailable here")
-    }
-    // The EXPRESSION half of the frontier probe — see run_hand_stmt's WHY. `primary_base`
-    // is the other remaining production leaf, and it is retired by its own slice, so it
-    // gets the same refusable treatment.
-    if hand_leaf_refused(name) {
-        return st.error_node("`@hand(${name})` is refused (AVRA_REFUSE_HAND_LEAF) — this form still depends on the hand leaf")
-    }
-    let start_byte = st.cur().pos
-    // REUSE the delegate threaded from the outer Parser (st.hand_delegate) — created
-    // once per file and SYNCED to the outer parser's cursor+line before this
-    // expression (see parse_expression). It forward-advances from its CURRENT
-    // position to the leaf (WITHIN this expression), never from byte 0, so it lexes
-    // each token once (O(source) over a file, not O(source²)) AND carries the
-    // accumulated line — including the deliberate is_map_literal nudges — so the
-    // leaf's nodes get the SAME line the hand parser would. Building a fresh parser
-    // per leaf instead would (a) pay build_registry() ~53 registrations per leaf
-    // (the OOM) and (b) re-derive line from offset 0, LOSING the accumulated nudge.
-    // Fallback to a fresh parser when no delegate is threaded (the type/pattern
-    // @hand paths + unit tests, which need no cross-expression line continuity).
-    mut bp = if st.hand_delegate == null {
-        parser_new_with_store(st.src, st.file, st.store)
-    } else {
-        st.hand_delegate!
-    }
-    bp.records_roots = 0
-    bp.had_error = false
-    bp.error_message = ""
-    // ps3t.6.7 Step B — reproduce the ORIGINAL parse context. On the type/pattern
-    // @hand paths PState carries a fresh parser's defaults (no-op); on the
-    // expression flip these are the caller's live modes, so an `@hand(hand_unary)`
-    // in an `if Foo { … }` condition sees allow_struct_lit=false (Foo-then-block,
-    // not a struct literal) — the difference that makes the flip byte-identical.
-    bp.allow_struct_lit = st.modes.allow_struct_lit
-    bp.allow_dot_postfix = st.modes.allow_dot_postfix
-    bp.allow_it_sugar = st.modes.allow_it_sugar
-    bp.quote_depth = st.modes.quote_depth
-    bp.cell_mode = st.modes.cell_mode
-    // The @hand leaf IS the hand parser — it must NOT re-enter the expression
-    // flip/static path for its nested sub-expressions (a `f(arg)` call's args, a
-    // slice index, …), or the runner would recurse into itself per nested expr.
-    // Force ALL delegate toggles off; the top operator ladder stays DSL/static, the
-    // whole leaf-and-below is hand-parsed (byte-identical, since the ladders match).
-    bp.expr_flip = false
-    // `advance()`, NOT `advance_token()`: only the former maintains `prev_line`
-    // (`advance` is literally `prev_line = current_line; advance_token()`). The hand's
-    // postfix entry guard is newline-sensitive — `(` / `[` on a NEW line starts a new
-    // statement rather than continuing a chain — so a delegate walked here with
-    // `advance_token` arrives holding a stale `prev_line` and rejects a suffix that is
-    // in fact on the same line. Before the IDENT base went native this was harmless:
-    // the hand consumed the callee ITSELF via `advance()`, which set `prev_line` on the
-    // way past. Now the grammar consumes it off the shared token stream and the
-    // delegate only gets walked to the `(`, so the line state has to be maintained here.
-    // Invisible on line 1, where a stale line still compares equal to the real one.
-    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance() }
-    // Phase 3a base-threading: seed the delegate's postfix accumulator from PState so
-    // parse_postfix_suffix runs its step on the grammar-threaded base. Harmless for
-    // every other name — only parse_postfix_suffix reads bp.postfix_base.
-    bp.postfix_base = st.postfix_base
-    bp.postfix_sp_start = st.postfix_sp_start
-    // Dispatch to the leaf's delegate — a free function taking `bp` as its
-    // explicit parse state. Which parse each leaf opts out of, and why, is
-    // documented on the delegates in hand_leaves.av.
-    let run: fn(Parser) -> Result<ExprId, string> = leaf!.run
-    let result = run(bp)
-    while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
-    // Phase 3a base-threading (write-back): primary_base seeds the postfix
-    // accumulator on PState (sp_start = the base's start byte, the chain's constant
-    // span `lo`); each postfix_suffix step updated bp.postfix_base, copied back so
-    // the NEXT ( postfix_suffix )* iteration — and the interpreter's fresh-parser
-    // path — sees it. Threaded via PState so both the shared-delegate production
-    // path and the equivalence-test path carry the base across the grammar loop.
-    if leaf!.seeds_postfix {
-        match result {
-            .Ok(id) -> st.seed_postfix(id, start_byte)
-            .Err(_) -> {}
-        }
-    } else if name == "postfix_suffix" {
-        st.set_postfix_base(bp.postfix_base)
-    }
-    // Propagate the delegate's error STATE even on .Ok (ps3t.6.7 Slice 5.4) — the
-    // expression-family mirror of run_hand_stmt's guard. An expression leaf can
-    // hand-parse a nested STATEMENT body (a closure body, an if-expr/match arm),
-    // and parse_statement_list_ids does error-tolerant recovery there: a malformed
-    // body statement is reported into the DELEGATE's bag + had_error, then
-    // recovered as a `Stmt.Error` placeholder so the leaf still returns .Ok.
-    // Mirroring had_error onto `st` makes the expression flip fall back to the
-    // authoritative hand parser (which re-reports into the OUTER bag) instead of
-    // keeping an Error-bearing tree that would ICE in codegen. Only the boolean
-    // gate is copied; the fallback owns the reporting.
-    if bp.had_error {
-        st.note_had_error()
-    }
-    match result {
-        .Ok(id) -> id
-        .Err(m) -> st.error_node(m)
-    }
-}
-
-export fn run_hand(name: string, st: PState) -> ExprId {
-    if name == "ident" {
-        if st.cur().kind == "IDENT" {
-            let t = st.advance()
-            return st.store.exprs.add_leaf(Expr.Ident(t.text))
-        }
-        return st.error_node("expected an identifier")
-    }
-    if name == "number" {
-        if st.cur().kind == "NUMBER" {
-            let t = st.advance()
-            return st.store.exprs.add_leaf(Expr.Number(t.text))
-        }
-        return st.error_node("expected a number")
-    }
-    st.error_node("no hand rule `${name}`")
 }
 
 /// A required terminal was absent: report the matching @expect message
@@ -4753,11 +3888,10 @@ export fn capval_to_expr(st: PState, v: CapVal) -> ExprId {
             // F0040, not the uncoded default (t-47hc.5). This coercion says exactly what
             // the expression alternation's no-match says — "an expression was required
             // here and none was produced" — and that is `ExpectedExpression` everywhere
-            // else: the hand's `parse_leaf_common`, `exec_node`'s no-match arm, and emit's.
-            // Leaving it uncoded made the SAME sentence arrive as F0001 or F0040 depending
-            // on which of the two produced it, which is how a match-table cell (`-1`, no
-            // branch matches, the row loop coerces the Nil) reported F0001 on the default
-            // path and F0040 under `--no-static-fallback`.
+            // else (`exec_node`'s no-match arm, and emit's).
+            // Leaving it uncoded made the SAME sentence arrive as F0001 or F0040
+            // depending on which engine produced it (a match-table cell `-1`, no
+            // branch matches, the row loop coerces the Nil).
             report_coercion_coded(st, "F0040", "expected expression")
             st.store.exprs.add_leaf(Expr.Error)
         }
@@ -4801,25 +3935,6 @@ export fn literal_node(st: PState, t: Token) -> ExprId {
 }
 
 /// Apply a build helper / node constructor, returning a `CapVal` so the
-/// vocabulary spans BOTH target families: expression builds wrap their
-/// `ExprId` in `CapVal.Node`, statement builds their `StmtId` in
-/// `CapVal.SNode`. The fixed expression vocabulary (GRAMMAR_DSL.md §1):
-/// `fold_binary`/`fold_logical`/`fold_postfix` (left-assoc chains) + node
-/// ctors (`Unary`, `Grouping`, `*_suffix`). The statement vocabulary
-/// (ps3t.6.5.2): the simplest Stmt ctors — `Break`, `Continue`,
-/// `ReturnEmpty`, `Return(e)`, `ExprStmt(e)`. Unknown names are a reported
-/// error, not a silent miss.
-/// Re-type a method's leading `self` receiver to the concrete impl target,
-/// mirroring parse_method_param_list — which types `self` as
-/// `vtype_from_name(target)` (the receiver type), not as MkMethod's plain-param
-/// default. A static method (no leading `self`) is returned unchanged. Keeps
-/// the DSL's built AST structurally equal to the hand parser's, not merely
-/// render-equal (render_param_list omits param types).
-/// `st` is needed because retyping `self` must maintain the F1d DUAL: a param in a
-/// type-carrying position owns a real type ROW alongside its vtype, and rewriting the
-/// vtype without re-ingesting leaves `ty_id` pointing at the pre-retype type — or, as
-/// here, at nothing at all. The hand parser stamps both; so must this.
-/// (f1a_container_duals_test's "self's ty_id carries the impl header type".)
 fn retype_self_param(st: PState, params: List<ParamEntry>, target: string) -> List<ParamEntry> {
     if params.length == 0 { return params }
     if params[0].name != "self" { return params }
@@ -4868,8 +3983,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkListLit" if args.length == 1 -> CapVal.Node(mk_list_lit(st, 0 - 1, env.get(args[0])))
         "MkTemplate" if args.length == 1 -> CapVal.Node(mk_template(st, env.get(args[0])))
         "MkQualExpr" if args.length == 4 -> CapVal.Node(mk_qualified(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3])))
-        // t-47hc slice 8 — the two IDENT-led primaries the `ident_primary` flip needs.
-        // Dormant until a grammar references them.
+        // t-47hc slice 8 — the two IDENT-led primaries (grammar block + struct literal).
         "MkGrammarBlock" if args.length == 1 -> CapVal.Node(mk_grammar_block(st, 0 - 1, env.get(args[0])))
         "MkStructLit" if args.length == 2 -> CapVal.Node(mk_struct_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         // ── the `table { … }` literal (t-myz7) ──
@@ -5303,7 +4417,7 @@ export fn ident_pat_bare(st: PState, nm: string) -> PatId {
     // so that is the message a rejected bare identifier gets — `Status_Gen.Ready` (a
     // qualified enum prefix, which is not pattern syntax) is the shape that shows it.
     // The rule reported its own sentence here, which only became visible when `fn` routed
-    // and match arms inside a function body stopped falling back to the hand.
+    // and match arms inside a function body routed natively.
     st.report("expected `.`, `_`, literal, or type pattern to start pattern")
     st.store.pats.add_leaf(Pattern.Wildcard)
 }
@@ -5472,48 +4586,47 @@ export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
 /// walker-opaque body id.
 /// Grammar-native `quote { … }` / `quote stmt|stmts|decl { … }` (t-bwjg).
 ///
-/// Mirrors the hand `Parser.parse_quote` for the BLOCK-BODIED kinds only. The two
+/// The BLOCK-BODIED kinds only. The two
 /// non-block kinds — `quote type { <type> }` (a TypeLit carrier) and `quote arm
 /// { pat -> body }` (a synthetic single-armed MatchExpr envelope) — are declined by
 /// `@peek(quote_type)` and `@peek(quote_arm)`, each routed to its own native rule, so
 /// this build never sees either.
 ///
-/// `kind_cv` is the OPTIONAL kind keyword; absent means the hand's default, `"expr"`
-/// (parse_quote_kind's fallthrough). `Expr.Quote`'s body is an ExprId SCALAR and is
-/// walker-opaque, so this allocs as a LEAF with no child refs — matching the hand's
-/// `alloc_at`, which passes none either. Adding an edge here would give the walker a
-/// child the hand never registered.
+/// `kind_cv` is the OPTIONAL kind keyword; absent means the default, `"expr"`.
+/// `Expr.Quote`'s body is an ExprId SCALAR and is
+/// walker-opaque, so this allocs as a LEAF with no child refs. Adding an edge here
+/// would give the walker a child that was never registered.
 /// Grammar-native `quote type { <type> }` (t-bwjg slice 4b).
 ///
-/// Mirrors hand `parse_quote` + `parse_quote_type_body` EXACTLY, and the two spans are
-/// deliberately different: the inner `Expr.TypeLit` carrier spans from the `{` (the hand
-/// takes `sp_start` at the brace, inside parse_quote_type_body), while the outer
+/// The two spans are
+/// deliberately different: the inner `Expr.TypeLit` carrier spans from the `{`,
+/// while the outer
 /// `Expr.Quote` spans from the `quote` keyword. `lb_cv` is the captured `{` token, which
 /// is the only way the build can recover that inner byte.
 ///
 /// NOTE the deliberate difference from `mk_channel`, the other build that carries a
-/// type: channel INGESTS its element (`ingest_type` + a `NodeRef.TypeRef` edge) because
-/// its hand twin does. `parse_quote_type_body` does NOT — it is a plain `alloc_at` with
-/// no refs — so ingesting here would add a type-table row and a walker edge the hand
-/// never created, and the IR would diverge.
+/// type: channel INGESTS its element (`ingest_type` + a `NodeRef.TypeRef` edge).
+/// `quote type` does NOT — it is a plain alloc with
+/// no refs — so ingesting here would add a type-table row and a walker edge,
+/// and the IR would diverge.
 /// Grammar-native `quote arm { pat (if guard)? -> body ,? }` (t-bwjg slice 4b).
 ///
-/// Mirrors hand `parse_quote_arm_body` exactly. The arm is wrapped in a SYNTHETIC
+/// The arm is wrapped in a SYNTHETIC
 /// single-armed `Expr.MatchExpr` so the `Quote(kind, body)` shape stays uniform across
 /// every kind; the lowering pass picks the arm back out via the `arm` discriminator.
 ///
-/// THREE things here are byte-identity-critical and each has a hand line behind it:
+/// THREE things here are byte-identity-critical:
 ///
-/// 1. The synthetic subject is `intern_expr_leaf`, NOT `add_expr`. The hand uses
-///    `alloc_leaf`, which IS `intern_expr_leaf` — an interned row, so repeated
+/// 1. The synthetic subject is `intern_expr_leaf`, NOT `add_expr` — an interned
+///    row, so repeated
 ///    `quote arm`s share one `Expr.None`. Using add_expr would mint a fresh row each
 ///    time and the arena would diverge.
 /// 2. The edge set is EXACTLY `[PatRef(pat_id)]`. `MatchArm` is a MIXED walker node:
 ///    only the pattern is a walked child, while guard and body ride as walker-opaque
 ///    `ExprId` scalars, and the subject is opaque too. Adding any of them would hand the
-///    walker a child set the hand never built — the same rule mk_match_expr documents.
-/// 3. The inner MatchExpr spans from the `{` (the hand's sp_start is taken inside
-///    parse_quote_arm_body), while the outer Quote spans from the `quote` keyword.
+///    walker a different child set — the same rule mk_match_expr documents.
+/// 3. The inner MatchExpr spans from the `{`,
+///    while the outer Quote spans from the `quote` keyword.
 export fn mk_quote_arm(st: PState, sp_start: int, lb_cv: CapVal, pat_cv: CapVal, guard_cv: CapVal, body_cv: CapVal) -> CapVal {
     let pat_id = capval_to_pat(st, pat_cv)
     let guard = if capval_present(guard_cv) { capval_to_expr(st, guard_cv) } else { null }
@@ -5702,15 +4815,15 @@ export fn mk_comp_field_g(st: PState, name: string, ty_cv: CapVal, init_cv: CapV
 
 /// `component name [implements …] { config? children? body:TokenStream? … }` —
 /// the MkComponentDef build's core (modern form only; slice A). Validates the
-/// `body:` marker (only `TokenStream` is legal — anything else reports, and the
-/// enclosing @try hands the input back to the hand's coded diagnostic), then
+/// `body:` marker (only `TokenStream` is legal — anything else reports and
+/// aborts), then
 /// synthesizes the marker's Let row AHEAD of the body rows, enforces the
 /// children-vs-raw-body exclusion, REGISTERS the name for keyword-free
-/// instantiation exactly as the hand's register_component_def does (raw-body
+/// instantiation exactly as register_component_def does (raw-body
 /// defs route instances to the RAW token capture), and allocs the LEAF
-/// ComponentDef row. Registration reaches the registry through the hand
-/// delegate; a delegate-less PState (pure-executor harness) skips it, which no
-/// current harness exercises — both PRODUCTION paths always carry the delegate.
+/// ComponentDef row. Registration reaches the registry through the host
+/// Parser; a host-less PState (pure-executor harness) skips it, which no
+/// current harness exercises — both PRODUCTION paths always carry the host.
 /// `component NAME ( params ) { config? body }` — the LEGACY paren form (t-47hc.5).
 ///
 /// The hand keeps it for backward compatibility and it differs from the brace form in
@@ -5777,8 +4890,8 @@ fn mk_component_def_with_params(st: PState, name: string, params: List<ParamEntr
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    if st.hand_delegate != null {
-        let p = st.hand_delegate!
+    if st.host != null {
+        let p = st.host!
         if body_declares_token_stream(st.store, all_ids) {
             register_component_name(p.features, name, (q: Parser) -> q.parse_component_block_raw())
             register_raw_body_component(p.features, name)
@@ -6368,30 +5481,6 @@ export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
 }
 
 /// `let` / `mut` / `const` bindings go native (t-47hc Phase 4) — the shared core of
-/// the `MkLetBinding` / `MkMutBinding` builds. A plain binding builds the hand's
-/// `alloc_binding_stmt` row (`binding_stmt_row` below — NOT the edge-free `add_leaf`
-/// the §2 oracle-era `MkLet` uses); the guard form (`let v = x else { … }`) delegates
-/// every desugar row to `build_let_else_init` (core/arena.av), the SAME core the
-/// hand's `build_let_else` calls, so the two engines cannot drift in what they lower
-/// to.
-///
-/// The divergence REPORT carries the full coded `LetElseMustDiverge` diagnostic —
-/// F1203, the hand's message and its help text verbatim (`let_stmt/parser.av`).
-///
-/// It used to be message-only, and that was correct while `let_decl` sat under a
-/// dispatcher-level `@try` with no cut: ANY report rolled the branch back, the hand
-/// re-parsed the item, and the hand owned the code byte-for-byte (the t-47hc.31
-/// no-code-channel discipline). Routing `let` ends that arrangement — `@try "let"
-/// @cut` commits the branch as soon as the keyword is consumed, so there is no
-/// rollback left to hand the diagnostic off to, and a message-only report simply
-/// DELETED F1203 from the output. Whoever commits the parse owns its diagnostics;
-/// the code channel `report_coded` widened is exactly what that costs to spend.
-///
-/// `tmp_cv` is the `@gensym(letelse)` mint, already performed AFTER the
-/// else-statement parse (its position in the rule's sequence), which is exactly where
-/// the hand mints (`build_let_else` parses the else, checks divergence, THEN calls
-/// `fresh`). Reading it here as an ordinary captured token keeps the hygiene
-/// sequences aligned across all engines.
 export fn mk_let_binding_g(st: PState, has_mut: bool, name: string, ty_cv: CapVal, has_ty: bool, init_cv: CapVal, else_cv: CapVal, has_else: bool, tmp_cv: CapVal) -> CapVal {
     mut ty_vt = ValueType.Unknown
     if has_ty { ty_vt = type_expr_to_vtype(capval_to_texpr(st, ty_cv)) }
@@ -6480,8 +5569,8 @@ export fn mk_ann_g(name: string, arg_ids: List<ExprId>) -> CapVal {
 }
 
 /// `( "@" name args? )+ <decl>` — one or more annotations wrapping a declaration
-/// (the `MkAnnotatedArgs` build's core) → Stmt.Annotated(annotations, inner),
-/// exactly parse_declaration_hand's `@`-branch. The inner's own position is
+/// (the `MkAnnotatedArgs` build's core) → Stmt.Annotated(annotations, inner).
+/// The inner's own position is
 /// `mk_stamp_stmt_at`'s job, driven by the inner rule's entry byte, exactly as
 /// `mk_export_decl` splits it.
 export fn mk_annotated_args_g(st: PState, anns: List<Annotation>, inner: CapVal) -> CapVal {
@@ -6490,9 +5579,9 @@ export fn mk_annotated_args_g(st: PState, anns: List<Annotation>, inner: CapVal)
 
 /// `///`-doc lines wrapping a declaration (the `MkDocAnnotated` build's core):
 /// consecutive DOC tokens join with `\n` into ONE `@doc("…")` annotation around the
-/// inner declaration — exactly parse_declaration_hand's DocComment branch. The doc
-/// STRING leaf must intern (`intern_expr_leaf`): the hand builds it with alloc_leaf,
-/// and an add_leaf here would give a repeated doc text a second arena row —
+/// inner declaration. The doc
+/// STRING leaf must intern (`intern_expr_leaf`):
+/// an add_leaf here would give a repeated doc text a second arena row —
 /// byte-divergent ids downstream (the t-9bz3 literal-node lesson).
 export fn mk_doc_annotated(st: PState, docs: List<Token>, inner: CapVal) -> CapVal {
     mut doc_text = ""
@@ -6508,8 +5597,8 @@ export fn mk_doc_annotated(st: PState, docs: List<Token>, inner: CapVal) -> CapV
 
 /// `//!` module-doc lines (the `MkModuleDoc` build's core): joined into ONE
 /// `@module_doc("…")` annotation around a `Stmt.NoOp` — module docs wrap no
-/// declaration (parse_declaration_hand's ModDocComment branch). The hand stamps the
-/// NoOp at its CURRENT token after consuming the doc lines — i.e. whatever follows
+/// declaration. The NoOp is stamped at the CURRENT token after
+/// consuming the doc lines — i.e. whatever follows
 /// them — so the emitted path records `st.cur().pos`; the interpreter passes
 /// `sp_start < 0` and records nothing, the span-free-oracle convention of
 /// `mk_stamp_stmt_at`.
@@ -6654,8 +5743,6 @@ export fn mk_use_pkg(st: PState, pkg: List<Token>, segs: List<Token>, names: Lis
 /// produce the same shape rather than a new node kind, or the lowerer silently treats the
 /// arm as an ordinary one.
 ///
-/// It had no native rule at all until the `@hand(decl_hand)` deletion: a `match` inside a
-/// `quote stmts { … }` rolled the whole item back to the hand, so the gap was invisible.
 export fn mk_splice_arm(st: PState, target_cv: CapVal) -> CapVal {
     let target_id = capval_to_expr(st, target_cv)
     let sentinel_pat = Pattern.TypePattern("__quote_splice_arms__", "")
@@ -6697,7 +5784,7 @@ export fn mk_match_expr(st: PState, sp_start: int, subject_cv: CapVal, arms_cv: 
 }
 
 /// `if c { … } else …` in EXPRESSION position (t-47hc.24) — the ordinary form only;
-/// the bind-fresh `if let` stays behind `@peek(if_let) @hand(if_expr)`.
+/// the bind-fresh `if let` is its own `@peek(if_let)`-routed rule (mk_if_let).
 ///
 /// The whole reason this needs a build rather than a bare 3-capture node ctor is the
 /// ABSENT else. The hand (if_stmt/parser.av:190-202) synthesizes an EMPTY BLOCK — NOT a
@@ -7043,16 +6130,6 @@ fn capval_to_var_list(v: CapVal) -> List<Variant> {
 }
 
 /// Convert captured identifier tokens to a `ParamEntry` binding list — the
-/// simple-binding variant payload `.Ok(x, y)` (ps3t.6.5.5). Only the name is
-/// load-bearing for render/equivalence (render_param_list renders names
-/// only), so the vtype is `Unknown`, exactly as the hand parser's
-/// unannotated binding.
-/// `vt` is the caller's parser-default: the hand parser records `Int` for
-/// unannotated VARIANT-PATTERN bindings (they ride `parse_param_list`, whose
-/// no-annotation default is Int) but `Unknown` for destructure/`use` names
-/// (parse_destructure_names' "no type was written" rows). The differential
-/// oracle compares full ASTs through the faithful render, so the DSL must
-/// reproduce each site's exact default, not a single one.
 export fn param_entries_from_toks(v: CapVal, vt: ValueType) -> List<ParamEntry> {
     mut out: List<ParamEntry> = []
     match v {
@@ -7183,19 +6260,15 @@ export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
 /// [sp_start, next-token) exactly like the hand parse_list_expr alloc_at(Expr.ListLit,
 /// sp_start) (mod.av:2286/2298) — sp_start is the `[` byte (emit) or 0-1 span-free
 /// (interpreter oracle). `Expr.ListLit`'s id-list child is walker-opaque → empty edges.
-/// The primary alternation's `@fallback` tail (t-47hc.5) — retires
-/// `@hand(primary_base)` from the production path.
+/// The primary alternation's `@fallback` tail (t-47hc.5).
 ///
-/// Fails the DSL run WITHOUT recording a diagnostic. That is the whole point: on
-/// `dsl.had_error` the caller (`parse_expression`, parse/mod.av) falls through to
-/// `parse_expression_hand()`, which re-parses and emits the AUTHORITATIVE coded
-/// diagnostic. A tail that reported here would either double-report or, worse, win
-/// with the alternation's generic `F0001 expected expression` where the hand
-/// gives `F0040 expected expression` — measured, that single divergence was the only
-/// thing standing between this leaf and deletion, and it broke 6 recovery assertions.
+/// Fails the DSL run WITHOUT recording a diagnostic: a tail that reported here
+/// would either double-report or win
+/// with the alternation's generic `F0001 expected expression` where
+/// `F0040 expected expression` is pinned.
 ///
-/// `note_had_error` (not `report`) is exactly the existing mechanism for "the delegate
-/// owns the reporting, mirror only the STATE" — the same reason it exists for @hand.
+/// `note_had_error` (not `report`) is the mechanism for "another reporter
+/// owns the diagnostic, mirror only the STATE".
 export fn mk_primary_fail(st: PState) -> ExprId {
     st.note_had_error()
     st.error_node_silent()
@@ -7373,7 +6446,7 @@ export fn mk_splice(st: PState, sp_start: int, tcap: CapVal) -> ExprId {
 }
 
 /// `~Name { fields }` inside a quote body splices the CONSTRUCTOR NAME of a
-/// struct literal, not the whole literal — parse_leaf_common's special case: the
+/// struct literal, not the whole literal: the
 /// `~`-prefixed name flows through name_or_splice in the quote lowering. Without
 /// this arm the greedy `~ t:unary` splice swallows the entire literal as ONE
 /// spliced node (MkSplice(StructLit)) carrying a hardcoded type name, and a
@@ -7415,12 +6488,12 @@ export fn mk_tuple(st: PState, sp_start: int, acap: CapVal) -> ExprId {
     st.store.add_expr(Expr.Tuple(capval_to_node_list(acap)), byte_span(sp_start, st.cur().pos), [])
 }
 
-/// The hand parse_paren_expr's `exprs_to_params` (mod.av:495) — REPLICATED here rather
-/// than imported. It lives in the hand parser `parse/mod.av`, a universally-imported
-/// module; adding a new `export` there risks the diff-test monomorphization-ORDERING
+/// The untyped-lambda param conversion, kept LOCAL rather than exported from a core
+/// module: adding a new `export` to a universally-imported
+/// module risks the diff-test monomorphization-ORDERING
 /// trap (a new exported symbol in a core module reorders monomorphized types in CI's
 /// hermetic build → non-byte-identical, invisible locally). Keeping the copy in this
-/// LEAF module sidesteps that. It MUST stay in lockstep with the hand version: extract
+/// LEAF module sidesteps that. Extract
 /// the bare name from each param expr (Ident/QualifiedIdent → name, else "_"); the
 /// UNTYPED-lambda position carries no type syntax (the typed `(x: int)` path goes
 /// through parse_param_list), so every row is `vtype: Unknown, ty_id: none`.
@@ -7665,8 +6738,7 @@ export fn fold_postfix_with_expr(st: PState, sp_start: int, baseCap: CapVal, pCa
 /// CHAIN's span and re-seed the base so the next `( postfix_suffix )*` iteration folds
 /// onto it.
 ///
-/// Two things every native suffix must get right, both of which the `@hand` delegate
-/// (`parse_postfix_suffix`) did for free:
+/// Two things every native suffix must get right:
 ///
 ///   1. The span is `[postfix_sp_start, next-token)` — the chain's start byte, NOT this
 ///      suffix's. Every suffix in `a.b.c()` shares one `lo`, which is what the hand's
@@ -7721,8 +6793,8 @@ export fn mk_tuple_index(st: PState, tcap: CapVal) -> ExprId {
 
 /// `expr.field` — plain field access (t-47hc.33 form 4). The ENUM-CONSTRUCTOR reading of
 /// the same syntax (`Type.Variant(args)`, when the base is a PascalCase ident and a `(`
-/// follows) builds a different node from an argument list, and stays with the `@hand`
-/// tail; `@peek(dot_plain_field)` keeps the two apart before the branch is entered.
+/// follows) builds a different node from an argument list (mk_enum_ctor_suffix);
+/// `@peek(dot_plain_field)` keeps the two apart before the branch is entered.
 export fn mk_field_access(st: PState, ncap: CapVal) -> ExprId {
     postfix_step_node(st, Expr.FieldAccess(st.postfix_step_base, capval_tok_text(ncap)))
 }
@@ -7827,14 +6899,10 @@ export fn mk_generic_call_suffix(st: PState, targs: List<TypeExpr>, acap: CapVal
 /// the value tag), encoded as `Call(Ident($force_unwrap), [subject])` with a FRESH interned
 /// callee leaf, exactly as the hand builds it.
 ///
-/// The hand runs `!` as a LOOP and then FALLS THROUGH to the `?`/`catch`/`.` dispatch in
-/// the SAME step, without re-testing the entry guard — so `x!?` is one hand step. This
-/// branch is a single step instead, and the chain loop re-enters for whatever follows.
-/// That is equivalent on one line (the re-entry guard measures same-line against the `!`
-/// just consumed, which passes) and `x!!` simply becomes two steps building the same two
-/// nodes. It is NOT equivalent when the follower sits on the next line — `x!` then a bare
-/// `?` — where the hand consumes without re-testing and the re-entry declines. The `@hand`
-/// tail still covers that, which is one of the reasons it cannot be deleted yet.
+/// This branch is a single step, and the chain loop re-enters for whatever follows:
+/// the re-entry guard measures same-line against the `!`
+/// just consumed, so `x!?` continues the chain and `x!!` simply becomes two steps
+/// building the same two nodes.
 export fn mk_force_unwrap(st: PState) -> ExprId {
     let callee = st.store.intern_expr_leaf(Expr.Ident(FORCE_UNWRAP_FN))
     postfix_step_node(st, Expr.Call(callee, [st.postfix_step_base]))

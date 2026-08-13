@@ -395,14 +395,6 @@ export enum GPrim {
     Named(tok: string)
     /// `( … )` — a parenthesised group, itself an alternation.
     Group(inner: GNode)
-    /// `@hand(fn)` — the ESCAPE HATCH. A rule position that delegates to
-    /// a hand-written parse function, for the gnarly 5% a small CFG
-    /// can't cleanly express (`<T>` generic-vs-less-than, the `~`
-    /// context-overload; GRAMMAR_DSL.md §5, ps3t.6.7). Keeps the DSL
-    /// minimal — the hard cases live in code the grammar merely *calls*,
-    /// not in new notation. Whole-rule granularity only (no inline
-    /// semantic actions — the §1 hard line holds).
-    Hand(fn_name: string)
     /// `@when(flag)` — a zero-width SEMANTIC PREDICATE (t-47hc.3). Consumes
     /// no token; it GATES its branch on a parse MODE flag (`allow_struct_lit`,
     /// `allow_dot_postfix`, `allow_it_sugar`, `cell_mode`), read from the live
@@ -554,9 +546,6 @@ export fn grep_is_plus(r: GRep) -> bool { match r { .Plus -> true  _ -> false } 
 /// True for a nonterminal-reference primary.
 export fn gprim_is_ref(p: GPrim) -> bool { match p { .Ref(_) -> true  _ -> false } }
 
-/// True for an `@hand(fn)` escape-hatch primary.
-export fn gprim_is_hand(p: GPrim) -> bool { match p { .Hand(_) -> true  _ -> false } }
-
 /// The referenced rule name of a `.Ref` primary (else "").
 export fn gprim_ref_name(p: GPrim) -> string { match p { .Ref(n) -> n  _ -> "" } }
 
@@ -587,24 +576,6 @@ export fn seq_is_bare_ref(seq: GSeq) -> bool {
         gprim_is_ref(seq.items[i].prim) && gbuild_is_none(seq.build)
 }
 
-/// True for a branch whose FIRST item is a One `@hand` delegate AND whose remaining
-/// items are all NULLABLE (Star/Opt) postfix folds — the catch-all tail shape. A
-/// REQUIRED trailing item (One/Plus) would make the branch a genuine sequence whose
-/// `@hand` must NOT run on tokens outside its FIRST set, so such a branch is not a tail.
-export fn seq_is_leading_hand(seq: GSeq) -> bool {
-    if seq.items.length == 0 || !grep_is_one(seq.items[0].rep) || !gprim_is_hand(seq.items[0].prim) {
-        return false
-    }
-    mut i = 1
-    while i < seq.items.length {
-        if grep_is_one(seq.items[i].rep) || grep_is_plus(seq.items[i].rep) {
-            return false
-        }
-        i = i + 1
-    }
-    true
-}
-
 /// True when rule `name` reports its OWN diagnostics on an unmatched token, so it is
 /// safe as an unguarded tail. External refs (not a rule in THIS grammar) count — the
 /// separately-generated delegate reports for itself. A multi-branch dispatch always
@@ -630,7 +601,6 @@ export fn rule_owns_recovery(g: Grammar, name: string, visited: List<string>) ->
 
 fn prim_owns_recovery(g: Grammar, prim: GPrim, visited: List<string>) -> bool {
     match prim {
-        .Hand(_) -> true
         .Ref(nm) -> rule_owns_recovery(g, nm, visited)
         .Group(inner) -> match inner {
             .Alt(brs) -> {
@@ -652,7 +622,7 @@ export fn dispatch_has_tail(g: Grammar, branches: List<GSeq>) -> bool {
     let b = branches[branches.length - 1]
     if b.speculative { return false }
     if seq_is_bare_ref(b) { return rule_owns_recovery(g, gprim_ref_name(b.items[seq_lone_item_index(b)].prim), []) }
-    b.fallback || seq_is_leading_hand(b)
+    b.fallback
 }
 
 
@@ -750,7 +720,6 @@ export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
                 if it.label == vn && k == "" {
                     match it.prim {
                         .Ref(rn) -> k = rule_kind_v(g, rn, visited)
-                        .Hand(hf) -> k = hand_kind(hf)
                         _ -> {}
                     }
                 }
@@ -774,7 +743,6 @@ export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
             if sig.length == 1 && rep_is_one(sig[0].rep) {
                 match sig[0].prim {
                     .Ref(rn) -> rule_kind_v(g, rn, visited)
-                    .Hand(hf) -> hand_kind(hf)
                     _ -> "expr"
                 }
             } else { "" }
@@ -845,24 +813,6 @@ fn build_is_none(build: GBuild) -> bool { match build { .None -> true  _ -> fals
 // emitter works across Expr / Stmt / Pattern / Type node kinds. Determined
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
-
-/// The CapVal kind an `@hand` leaf yields — derived from the shared hand-leaf
-/// table (hand_leaves.av), the same seam the emitted dispatch and the executor's
-/// dispatch read, so a leaf cannot be a statement to the dispatcher and an
-/// expression to the emitter.
-///
-/// It was the LAST of the six parallel leaf-name tables the seam collapsed
-/// (t-47hc slice 7), left behind because it is not a faithful copy: it omitted
-/// `stmt_hand`, so `hand_kind("stmt_hand")` said "expr" while
-/// `is_hand_stmt_leaf("stmt_hand")` said true. That was dormant — this is
-/// consulted only where a leaf is captured as a LIST element (a `( s:@hand(f) )*`
-/// repetition), and no grammar captures `stmt_hand` that way — but it is exactly
-/// the kind of drift that surfaces later as a StmtId coerced through the
-/// expression element type, far from its cause (t-sjf9).
-export fn hand_kind(hf: string) -> string {
-    if is_hand_stmt_leaf(hf) { return "stmt" }
-    "expr"
-}
 
 export fn str_in(xs: List<string>, s: string) -> bool {
     if s == "" { return false }

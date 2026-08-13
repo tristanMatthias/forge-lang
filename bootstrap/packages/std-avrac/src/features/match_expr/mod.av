@@ -28,7 +28,6 @@ export fn match_feature() -> Feature {
         eval_stmt: match_eval_stmt,
         eval_expr: match_eval_expr,
         stmt_keyword: "kw_match",
-        parse_stmt: (p: Parser) -> p.parse_match_statement(),
     }
 }
 

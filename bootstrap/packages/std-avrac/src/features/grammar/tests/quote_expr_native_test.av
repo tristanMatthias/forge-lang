@@ -77,9 +77,6 @@ spec "t-bwjg: the block-bodied quote kinds are grammar-native" {
             agree(wrap("quote decl { fn g() -> int { 1 } }"))
         }
         then "a quote is still a postfix BASE, not a special case" {
-            // The native branch is `base:quote_expr ( postfix_suffix )* ( with_suffix )*`
-            // exactly like its spawn/isolated/when siblings — so a suffix on a quote must
-            // fold the same way it did through the hand leaf.
             agree(wrap("quote { 1 }.kind"))
         }
     }
@@ -175,11 +172,5 @@ spec "t-bwjg: the emitted dispatch routes quote correctly" {
         let src = emit_parser_source(avra_expr_dispatch_grammar())
         src.contains("fn parse_quote_type_expr(") && src.contains("mk_quote_type(st, sp_start,") &&
         src.contains("fn parse_quote_arm_expr(") && src.contains("mk_quote_arm(st, sp_start,")
-    }
-    then "no quote shape reaches a hand leaf any more" {
-        // The whole point of the slice: `quote` must not appear as an @hand dispatch in the
-        // emitted production parser at all. `--hand-leaves` reports 4 rather than 5 because
-        // of exactly this line.
-        !emit_parser_source(avra_expr_dispatch_grammar()).contains("run_hand_expr(\"quote_expr\"")
     }
 }

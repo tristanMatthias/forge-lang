@@ -128,7 +128,7 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("a && b == c + d * e")
         }
     }
-    given "enum constructors and list literals (@hand(more_primary))" {
+    given "enum constructors and list literals" {
         then "nullary/payload enum ctors, nested, and list literals agree" {
             dsl(".Some(1)") != "<err>" &&
             agree(".None") && agree(".Some(1)") && agree(".Pair(1, 2)") &&
@@ -201,9 +201,6 @@ spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (covered surfac
             agree("a with { x: 1 } with { y: 2 }")
         }
         then "`with` folds OVER the postfix-chain base (call / field), not under it" {
-            // The base is the whole call_leaf (parse_call) result: `f(x)` / `a.b`
-            // parse fully, THEN `with` wraps the completed base. `f(x) with {a:1}` is
-            // `With(Call(f,[x]), {a:1})`, not `Call(f, [x with {a:1}])`.
             agree("f(x) with { a: 1 }") && agree("a.b with { c: 2 }") &&
             agree("f(x) with { a: 1 } with { b: 2 }") && agree("a.b.c with { d: 3 }")
         }
