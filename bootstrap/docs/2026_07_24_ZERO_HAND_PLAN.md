@@ -6,6 +6,10 @@
 > This doc is retained for its ENGINE CO-DESIGN reasoning (why zero-`@hand` is the
 > goal and what each leaf costs); its sequencing and estimates are out of date.
 > Do not plan from this file.
+>
+> **LANDED 2026-08-13.** The goal this doc argued for is complete: zero `@hand`
+> leaves, the `@hand` primitive deleted from the DSL, and every hand parse
+> function gone (branch claude/47hc-grammar-parser-migration-9hmy4d).
 
 **Epic:** t-47hc (Grammar-Defined Front End). **Status of this doc:** the resolved
 engine co-design — the decision the epic was parked at (see t-47hc comments
