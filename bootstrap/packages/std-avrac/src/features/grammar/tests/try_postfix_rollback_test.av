@@ -1,5 +1,5 @@
 // WHY: a rolled-back `@try` must restore the POSTFIX CHAIN ACCUMULATOR too (t-47hc.33
-// form 8) — the exact sibling of the `@hand`-delegate gap in try_hand_rollback_test,
+// form 8) — the exact sibling of the rollback gap in try_rollback_test,
 // found the same way and fixed with the same shape.
 //
 // `exec_seq` is error-TOLERANT by design: a branch that mismatches a terminal REPORTS

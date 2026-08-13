@@ -1,13 +1,7 @@
-// ps3t.6.7 (lexer modes, interpolation half) — an interpolated `"..${e}.."` string
-// lexes to a single Tk.Template token, which has no plain grammar terminal. t-47hc.19
-// made it GRAMMAR-NATIVE: `template_lit = t:TEMPLATE -> MkTemplate(t)`, and the desugar
-// itself was EXTRACTED to the store-based desugar_template_store that BOTH parsers now
-// call — so the `+`-chain of text + string(expr) fragments is byte-identical by
-// construction rather than by convention. @hand(template_expr) and the hand
-// parse_template_primary are both deleted.
-//
-// Still tested through the runtime executor, now against the PRODUCTION grammar rather
-// than a one-rule @hand stub.
+// WHY: `template_lit = t:TEMPLATE -> MkTemplate(t)` — interpolated strings as
+// a two-engine differential (interpreter vs generated parser), covering nested
+// interpolation, adjacent templates, and the plain-string boundary.
+
 use @std.avrac.features.grammar.{run_grammar_expr, avra_expr_grammar}
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_expr_id}
@@ -72,7 +66,7 @@ spec "t-47hc.19: grammar-native template_lit — interpreter == generated parser
         }
     }
     given "a PLAIN (non-interpolated) string still routes through STRING" {
-        then "plain string agrees (matched by the STRING terminal, not @hand)" {
+        then "plain string agrees (matched by the STRING terminal)" {
             agree("\"plain\"")
         }
     }

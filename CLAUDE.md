@@ -20,7 +20,7 @@ Each feature has: parser, codegen, and `tests/*_test.av` spec/given/then files.
 - `bootstrap/src/core/ast.av` — AST definitions, token kinds (`Tk` enum), value types, all list types
 - `bootstrap/src/core/llvm.av` — LLVM C-API extern bindings
 - `bootstrap/src/core/registry.av` — feature dispatch registry (tag-based routing to feature handlers)
-- `bootstrap/src/parse/mod.av` — recursive descent parser + lexer
+- `bootstrap/src/parse/mod.av` — the front-end harness: lex-once token cache, the generated-parser seams (run_static_*), cursor shuttling, diagnostics
 - `bootstrap/src/codegen/` — LLVM IR emission (mod.av + helpers + per-feature codegen)
 - `bootstrap/src/typeck/mod.av` — type checker (currently additive, MUST become gating per spec)
 - `bootstrap/src/resolve/` — name resolver (mod.av = scope, names.av = module/import resolution)
@@ -355,281 +355,78 @@ too — no flag needed.
   proves the source *builds* from the seed; diff-test proves it *behaves*
   identically.
 
-### The grammar EXECUTOR is the production parser — do NOT bolt backtracking onto it (t-47hc)
+### The grammar owns the front end — zero hand parsers, zero escape hatches
 
-A hard-won architectural rule from the abandoned PR #976. The grammar
-**executor** (`packages/std-avrac/src/features/grammar/executor.av`,
-`exec_rule`/`exec_repeat`) is NOT just an interpreter oracle for the
-grammar-DSL tests — it is ALSO the **live production parser** for the type
-family (`type_flip` → `run_dsl_type_at_shared`). So ANY behavioural change
-to `exec_*` — adding compiler-inserted backtracking (`mark`/`restore` per
-repetition), changing capture-env rollback, anything — **changes the IR the
-real compiler emits, and is non-byte-identical BY CONSTRUCTION.** diff-test
-(rightly) rejects it. This is why #976's "add backtracking to the executor"
-approach was a dead end: it could never be byte-identical, because the thing
-it modified is on the production path. **The correct shape** (the t-47hc.10
-greenfield direction): build the new backtracking engine as a **separate
-module** that owns its own parser, validate it standalone against the
-executor oracle from COLD builds, and only swap it onto the production path
-in a deliberate, `intended-ir-change`-labelled step — never by mutating the
-shared executor in place. Before changing anything under
-`features/grammar/executor.av`, check whether `type_flip` still routes
-through it; if it does, your change is a production-parser change, not a
-test-only one.
-
-### ROUTING a rule onto the production path — the discipline (t-47hc slice 10)
-
-Moving a keyword out from under `@hand(decl_hand)` (or any leaf) has a failure
-mode that no green build can show you: **routing is invisible on VALID input by
-construction.** The native rule and the hand parser agree there — that is what
-parity work bought — so diff-test, every parity spec, and the comptime smoke can
-all be green while error RECOVERY has silently regressed. The invalid corpus is
-the only witness, and a keyword absent from it gets routed on no evidence at all.
-`shape` shipped that way (#1054) and had to be un-routed (#1059); `use`/`mod`
-shipped that way too and diverged from the hand on 8 of 18 malformed forms.
-
-The sequence that works, in order:
-
-1. **Add malformed cases to `error_recovery_differential_test` FIRST**, for the
-   exact keyword, in BOTH specs (F-code and recovery-TREE). They must FAIL with the
-   rule routed naively and PASS after. A guard that cannot fail is worth nothing.
-2. **Route it as `@try`, never bare.** `@try` is the abort primitive: the branch
-   snapshots cursor + node store + diagnostics + the `@hand` delegate, commits only
-   if it reported nothing, and otherwise rolls back into the `@hand` gate below —
-   so the native rule owns VALID input and recovery stays the hand parser's,
-   byte-for-byte. A bare branch is error-TOLERANT and builds partial nodes (a
-   nameless `use`, a segment-less `mod`) where the hand ABORTS to `Stmt.Error`.
-3. **Re-read the TAIL.** The alternation's last branch is the unguarded catch-all;
-   adding or removing a branch can change which one that is. `dispatch_has_tail`
-   (ast.av) is the shared predicate — assert the tail structurally in the routing
-   spec, as `decl_flip_use_mod_native_test` does.
-4. **Assert the dispatch on the EMITTED SOURCE**, not by inference: the rule's
-   parse fn must appear BEFORE the `decl_hand` gate, or `decl_lead` swallows the
-   keyword first and the native rule is dead code with correct output and no
-   diagnostic (the #1028 failure mode).
-5. **Check the builds lower to the SHARED cores.** An executor-only build passes
-   every interpreter-driven parity spec and emits nothing usable — found four
-   separate times in this slice.
-6. **A new builder means a header edit.** `gen_decl_file.av`'s import list is
-   fixed; a missing symbol is a hard undefined-symbol error, not a warning. Because
-   the compiler contains the parser it generates, the order is: widen the header →
-   `git checkout HEAD -- parse/gen_decl_parser.av` → rebuild → regen → rebuild.
-
-### TWO engines, one grammar — and THREE dead variables that each looked like a third
-
-There is no hand parser left for any family. What remains is two ENGINES running the
-same grammar, and knowing which one a command exercises is the difference between a real
-measurement and a false one:
+t-47hc's endpoint is LANDED: the DSL has no `@hand` primitive, no hand-leaf
+table, no refusal probe, and no hand parser left in any family. Text→AST is
+one grammar run by two ENGINES:
 
 | env | which engine |
 |---|---|
 | `AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1` | the grammar EXECUTOR (tree interpreter) — still PRODUCTION for the type family |
 | *(none)* | **production**: the EMIT-generated static parser |
 
-**Three variables died the same way, and the pattern is the thing to internalise.** Each
-was deleted from the compiler while its NAME survived in `diagnose.sh` mode strings, test
-prefixes and this table — where setting it looked like selecting an oracle and selected
-nothing:
+- **The executor is a production parser, not a test harness.** The TYPE family
+  routes through `exec_rule` over `avra_program_grammar()` (executor.av
+  `run_dsl_type_at_shared`), so any behavioural change to `exec_*` changes
+  emitted IR. Build new engine behaviour beside it and swap deliberately
+  (`intended-ir-change`), never by mutating the shared executor in place.
+- **When you delete a parser, delete the switch that selected it in the same
+  change.** Four switches died as names that still looked selectable
+  (`AVRA_NO_STATIC_FALLBACK`, `AVRA_PARSER_DECL_FLIP`,
+  `AVRA_PARSER_EXPR_STATIC`, `Parser.pat_static`); each produced a session that
+  "compared" a path against itself and reported parity from a measurement worth
+  nothing. `diagnose.sh --parser-probe` / `--parser-tree` pin every routing
+  field themselves — invoke them with nothing set in your environment.
+- **Run `--parser-tree` as well as `--parser-probe`, always.** They are
+  independent oracles and the TREE is the one that catches routing bugs — a
+  message-only probe calls `(group 1)` vs `(lambda (_) (error))` agreement.
+- `error_recovery_differential_test.av` compares EMIT against EXEC on the
+  malformed corpus; `agree_all` is the third comparison for anything that
+  characterises executor recovery. Check whether an input is `pin`ned before
+  quoting it as evidence of agreement, and when the engines disagree check
+  BOTH directions (shared predicates live in ast.av, reachable from both).
+- `PState.host` (né `hand_delegate`) is the host Parser handle: registry access
+  for `@peek` predicates, component registration, and gensym continuity
+  (seeded from and written back to the host per expression). It is lazy on
+  interpreter entries — an eager build per `run_grammar_expr` once pushed the
+  suite past 12 GB.
 
-- `AVRA_NO_STATIC_FALLBACK` (t-47hc.4.3) — the interpreter re-parse fallback it switched
-  off was deleted.
-- `AVRA_PARSER_DECL_FLIP` (t-bw9s) — died with the `@hand(decl_hand)` leaf; `parse/mod.av`
-  has exactly one decl env read, `AVRA_PARSER_DECL_STATIC`.
-- `AVRA_PARSER_EXPR_STATIC` (t-47hc.4.1) — the hand expression ladder is deleted, so `=0`
-  had no parser left to choose. Removed as a compiler FIELD, not merely pinned ON,
-  precisely so the row could not come back.
+### Grammar DSL authoring — the rules that keep parity
 
-The failure mode is SILENT and CONVINCING: the run succeeds, the output looks like a
-hand-parser row, and it is the generated parser answering. A 2026-08-09 session compared
-"hand vs generated" expression recovery with `AVRA_PARSER_DECL_FLIP=0 bs2 expr`, got AGREE
-on all five malformed inputs, and reported parity — from a comparison that was partly a
-path against itself. The conclusion survived re-derivation via `--parser-tree`, but the
-measurement was worthless and did not look it.
+- **Prefer `@cut` (commit) over a broad-FIRST `@require`** — the emitted
+  FIRST-set gate inside a `@try` branch parses the referenced rule anyway and
+  unwinds after, which nests into exponential backtracking (the F4014-in-parse
+  section below). `@peek(cond)` scans that partition the input are the escape.
+- **`@onfail(bail)` keys on failed OR reported** — the union the hand `?` used
+  to propagate.
+- **Lexer diagnostics merge at the BOUNDARY, never mid-parse** (`lex_real_full`
+  → `PState.lex_diags` → `boundary_diags`): `@try`/`@require`/`@onfail(bail)`
+  all decide by asking whether `diags` GREW, so a mid-parse release reads as
+  "this rule reported".
+- **Whoever COMMITS owns the diagnostics** — a `@cut` branch must carry its
+  coded reports itself (`Parser.report_at_byte` + `GDiag.byte` position them);
+  there is no rollback left to re-parse and re-own them.
+- **Grammar marker order is insignificant** (`@bump(x) @require y` ==
+  `@require @bump(x) y`), and `@require` + a mode-SET marker on one item is
+  legal (`restore_modes_before_aborts` threads the cleanup).
 
-So: **when you delete a parser, delete the switch that selected it in the same change.**
-Leaving the switch is what produced all three.
+Three defect SHAPES recur when a rule diverges from expectation:
 
-- `diagnose.sh --parser-probe` / `--parser-tree` have no `hand` row any more. Their EMIT
-  and PROD rows name the same engine and print identically — kept separate on purpose, so
-  a reintroduced fallback shows up as a divergence rather than hiding behind a collapsed
-  row — and EXEC is the genuinely different one.
-- `error_recovery_differential_test.av` is a LIVE differential again. It compares EMIT
-  against EXEC; the block at its top that used to declare the corpus vacuous is retracted
-  in place. Repointing it surfaced ten divergences on the first run: nine where the
-  executor adds an alternation diagnostic on a malformed DECLARATION (now PINNED — the
-  executor has no decl hand leaf to fall back to), and one real bug (the executor had no
-  `cell_mode` guard on its binary ladder, so a table cell swallowed the next row's leading
-  `-`). Quote the corpus as evidence about emit-vs-exec, and check whether a given input
-  is `pin`ned before quoting it as evidence of agreement.
+1. **A rule that reports but does not FAIL** — a native rule keeps going and
+   reports again; one diagnostic becomes three. Signals: `abort_prop` (same
+   grammar only), the error NODE (crosses views), `@onfail(bail)` for "the
+   callee owns the message".
+2. **"Did it report" used where "did it fail" is meant** — recovery keys on the
+   failure test, `note_had_error` keys on `had_error`; fold them and a
+   recovered item comes back CLEAN and the diagnostic never reaches the seam.
+3. **A form the rule cannot EXPRESS** — fails on VALID input; find them before
+   committing a rule by reading what the old implementation's slots accepted.
 
-**The interpreter re-parse fallback is DELETED (t-47hc.4.3), and with it
-`AVRA_NO_STATIC_FALLBACK`.** Production used to be "static → `had_error` → re-parse the
-item with the EXECUTOR", because the static parser's CapVal fold/optional rules did not
-reproduce the interpreter's error-RECOVERY tree. The parity work closed that gap and the
-recovery corpus measures it on all 117 malformed inputs. Removal was MEASURED first: a
-full suite with the fallback disabled was green (6824/6831, every failure environmental),
-including a targeted re-run of the two shards that had been skipped for disk.
-
-Two consequences to know. **The executor no longer answers invalid DECLARATION input**, so
-`agree_all`'s three paths collapse to two there; the corpus's executor coverage now comes
-from the TYPE family, where `type_flip` still routes through `exec_rule` in production —
-which is also why the t-47hc rule about never bolting behaviour onto `exec_*` still
-stands. And `--parser-probe`'s EMIT and PROD rows now name the same engine and print
-identically; they are kept separate on purpose, so a reintroduced fallback shows up as a
-divergence between them rather than hiding behind a collapsed row.
-
-Don't set these by hand. Three `diagnose.sh` modes drive all four paths and each mode
-pins EVERY routing field itself, so invoke them with nothing set in your environment.
-The reason is the failure they exist to avoid: pin one field by hand and the rest stay
-ambient, and several modes collapse onto the same engine — the probe then compares a
-path against itself and still prints a full, authoritative-looking set of rows.
-
-```bash
-bash scripts/diagnose.sh --parser-probe 'let a = (1) ->'   # the DIAGNOSTICS, all four paths
-bash scripts/diagnose.sh --parser-tree  'let a = (1) ->'   # the RECOVERY TREE + (error) row counts
-bash scripts/diagnose.sh --parser-frontier [keyword]       # per-keyword routing (all `native` since t-47hc; the leaf is gone)
-```
-
-**Run `--parser-tree` as well as `--parser-probe`, always — they are INDEPENDENT
-oracles and the tree is the one that catches routing bugs.** `let a = (1) ->` reports
-the same F0040 on all four paths and still comes back `(group 1)` from the hand and
-`(lambda (_) (error))` from a rule that commits after `->`. A message-only probe calls
-that agreement. `--parser-tree` needs `bs2 program --recover` (t-47hc.5): plain
-`program` runs through `parse_or_fail` and stops at the diagnostics, so for invalid
-input — the only input whose tree is interesting — it printed errors and NO tree, which
-is why recovery trees used to be observable only from inside
-`error_recovery_differential_test`'s in-process `rtree_at`. Guard:
-`parse/tests/program_recover_tree_test.av`.
-
-Both recovery oracles disable the fallback, so between them they measure **emit
-and nothing else** — while on any invalid input the DEFAULT path is answered by
-the EXECUTOR. An executor-only divergence is therefore invisible to them, which is
-how `exec_node`'s missing unguarded tail shipped for months with four affected
-inputs sitting in the corpus (t-zrn3, #1067). `agree_all` in that test is the
-third comparison; use it for anything that characterises executor recovery.
-
-Corollary for emit/executor lockstep: when the two disagree, **check both
-directions.** emit had a tail-role bug fixed alone in #1061; the executor had the
-mirror of the same rule. Shared predicates live in `ast.av` — reachable from
-executor.av (production) where emit.av deliberately is not.
-
-### A `@try` WRAPPER HIDES the rules under it — routing one keyword unmasks dozens of gaps (t-47hc.5)
-
-`@try X` in the dispatcher rolls the WHOLE item back to `@hand(decl_hand)` on any
-diagnostic. That is not just a fallback — it is a **blindfold over everything X
-contains**, and it is why the invalid corpus was much weaker than its size
-suggested. Every corpus fixture wraps its malformed statement in `fn f() -> int {
-… }`; while `fn` was `@try`, ~23 of those specs compared **the hand against
-itself** and passed vacuously (the t-6u9b shape, at scale). Routing `fn` dropped
-the corpus 117 → 94, and not one of the 23 was a bug in `fn`: they were `if {`,
-`while`, unclosed `(` at EOF, map literals, template interpolation, qualified
-struct literals, `let … else`. All pre-existing, all invisible.
-
-So: **expect routing a keyword to cost far more than the keyword.** Budget for the
-constructs it stops hiding, and re-read any spec that "already passed" through it.
-
-`let` was the far end of that scale, and it is now ROUTED — `--parser-frontier` reports
-NO keyword still needing `@hand(decl_hand)`. It is the most common statement in the
-corpus, so committing it uncovered **32** divergences at once, **none of them about
-bindings**: every VALID binding form was already native, so the whole cost was recovery
-parity, and the initializer position is a hole through which every expression-level gap
-shows. The corpus is 117/117 with it routed. What it actually took, all fixed at the rule
-that owned the gap rather than at `let`:
-
-- **`paren_expr` decides the lambda by SCAN.** `let a = (1) ->` led the list — the hand's
-  `try_lambda_body()` returns null and yields `(group 1)` where a `@cut` after `->`
-  commits and yields `(lambda (_) (error))`. The obvious fixes (drop the `@cut`, or gate
-  with `@require lb:lambda_body`) are BOTH the exponential-backtracking trap documented in
-  the F4014 section below. `@peek(paren_lambda_ahead)` walks to the matching `)` and
-  tests that an `->` follows and the token after it can start a body, so a bodiless lambda
-  never ENTERS. `paren_arrow_ahead` is the same scan WITHOUT the body test, for the TYPED
-  branch: an untyped `(1)` is a valid group so a missing body must send it there, but a
-  typed `(x: int)` is not an expression at all and requiring a body sent `(x: int) ->` to
-  the group branch.
-- **`@onfail(bail)` keys on failed **or** REPORTED**, the union the hand's `?` propagates.
-  It was failure-only, carved out for exactly the `(1) ->` case above — and once the peek
-  removed that input, the carve-out was letting `let b = x is Foo` survive as a binding
-  where the hand aborts the statement.
-- **The lexer's diagnostics reach the native parser at all.** `lex_real` built a throwaway
-  `Parser`, drove its streaming lexer and kept only the tokens, so `unexpected character` /
-  unterminated-literal reports existed on the hand path and nowhere else. They are carried
-  now (`lex_real_full` → `PState.lex_diags`), positioned by token index, and interleaved in
-  `boundary_diags`. **Merged at the BOUNDARY, never released mid-parse**: `@try`,
-  `@require` and `@onfail(bail)` all decide by asking whether `diags` GREW, so a lexer
-  diagnostic released mid-parse reads to every one of them as "this rule reported" — the
-  first attempt did that and the initializer's bail swallowed the expression's own F0041.
-- **Whoever COMMITS owns the diagnostics.** F1203 `LetElseMustDiverge` used to reach the
-  user by ROLLBACK: the native builder reported message-only, the `@try` unwound, the hand
-  re-parsed and owned the code. `@cut` leaves no rollback, so the code silently vanished
-  while the message stayed. Same class: the flip seam reported at the hand's cursor (still
-  the ITEM START), so a native diagnostic rendered at the declaration's first token —
-  `broken.av:2:9` came out `broken.av:1:1`. `Parser.report_at_byte` + `GDiag.byte` fix it.
-- **Required terminals with the hand's exact wording** on `quote type` / `quote arm`, and
-  `@onfail(bail)` on `table_lit`'s header and rows (the hand's `return .Err` leaves the
-  table's `}` UNCONSUMED, which is what makes the enclosing fn close on it and produces a
-  SECOND diagnostic).
-- **`letdes_decl` is dispatched FIRST**, predictively on its own `@peek(let_destructure)`.
-  It used to be reached by rollback, which a committed `let_decl` no longer provides.
-
-Two mechanism-level fixes fell out, both worth knowing before touching the grammar DSL:
-
-- **Grammar marker ORDER is no longer significant.** `@bump(x) @require y` and
-  `@require @bump(x) y` annotate the same item, but the straight-line marker chain in
-  `parse_labeled` accepted only its own order and rejected the other with `parse_primary`'s
-  generic "expected a rule reference, terminal, …(at `@`)" — naming neither marker. It
-  loops until a pass consumes nothing now. Making order irrelevant is what surfaced the
-  REAL diagnostic underneath, which had been unreachable.
-- **`@require` + a mode-SET marker on one item is legal.** It was rejected because a failed
-  require returns early and would skip the mode restore; the cleanup is threaded now
-  (`restore_modes_before_aborts`), and the executor never had the hole (its abort is a flag
-  set on the way out). `quote type { <type> }` needed both. Guard:
-  `mode_restore_on_abort_test.av`.
-
-What still reaches `@hand(decl_hand)` is NOT a keyword: it is the bare-IDENT lead
-`@peek(decl_lead)` admits — `Foo bar { … }`, a component instantiation whose component is
-undeclared, which `bare_comp_inst` declines.
-
-**Deleting the leaf was measured, and it is TWO clusters away, not a project.** Removing
-both `@hand(decl_hand)` references: the compiler still self-compiles, `--hand-leaves`
-reports 0, and the whole compiler source plus the entire difftest corpus parse with ZERO
-refusals under `AVRA_REFUSE_HAND_LEAF=decl_hand`. Cost: exactly FIVE corpus divergences,
-both in WRAPPER rules whose `@try` rollback lands on `statement` once the leaf is gone —
-`annot_decl` (`@` / `@inline` with no declaration after it) and `doc_decl` (`/// d` over a
-malformed inner). Neither is about the leaf; both are wrappers that need to OWN their
-inner's failure.
-
-The one genuinely awkward part, worth knowing before starting: the hand's
-`parse_annotations` takes `current_lexeme` as the annotation NAME **without requiring an
-identifier**, so `@` followed by `fn` builds an annotation *named* `fn` and then fails on
-what follows — which is why the hand answers a bare `@` with F0040. `annot = "@" n:IDENT`
-cannot express that, so byte-parity means deciding whether to encode the looseness in the
-grammar or to treat it as a hand bug and move the oracle. That is a design call, not a fix.
-
-Three defect SHAPES recur; check for each when a routed rule diverges:
-
-1. **A rule that reports but does not FAIL.** The hand propagates `Result` (`?`),
-   so a sub-parse that reported is over. A native rule keeps going and reports
-   again — one diagnostic becomes three. Signals available: `abort_prop` (same
-   grammar only), the error NODE (crosses views), and `@onfail(bail)` for "the
-   callee owns the message". `mk_binary` needed the node check: `return * 3` built
-   `(* (error) 3)`, a tree claiming a multiplication happened.
-2. **"Did it report" used where "did it fail" is meant.** The statement-list loops
-   keyed recovery on `had_error`, so `let v = o else { 1 }` — which reports F1203
-   and still builds a full desugared binding — collapsed to one `(error)`. They
-   are separate questions and the loop needs BOTH: the failure test drives
-   recovery, `had_error` drives `note_had_error` (fold them and the item comes
-   back CLEAN and the diagnostic never reaches the seam).
-3. **A form the routed rule cannot EXPRESS.** Not a recovery gap — it fails on
-   VALID input, so it blocks committing at all. `fn`'s `where` clause and
-   `type ~name` inside a quote were both this. Find them before routing: grep the
-   hand parser for what the rule's slots accept.
-
-**And the E2E fixtures can pass on the diagnostic itself.** `out.contains("is_ready")`
-was satisfied by the rendered ERROR, because the snippet quotes the offending source
-line — `println("is_ready")`. That fixture had never compiled on any front end. It
-only came apart when the span moved. **A fixture assertion must include
-`!out.contains("error[")`**, or "the program printed X" and "the compiler quoted the
-line containing X" are the same test.
+**And E2E fixtures can pass on the diagnostic itself**: the rendered error
+quotes the offending source line, so `out.contains("is_ready")` is satisfied
+by the error snippet. A fixture assertion must include
+`!out.contains("error[")`.
 
 ## CRITICAL RULE: Test cycle hygiene
 

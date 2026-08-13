@@ -12,7 +12,7 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar}
 export fn avra_enum_decl_grammar() -> Grammar {
     let gp = grammar {
   // COMMITTED: `@try "enum" @cut`, dispatched bare (`return parse_enum_decl(st)`), with
-  // `enum_grammar_hand_parity_test` asserting both halves.
+  // `enum_grammar_parity_test` asserting both halves.
   //
   // It got here on the failure modes that did not exist when it was first attempted and
   // un-routed. `enum E< { A }` was the blocker: a non-leading rule reference was called

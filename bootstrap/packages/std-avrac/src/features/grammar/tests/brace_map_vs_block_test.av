@@ -1,12 +1,8 @@
-// ps3t.6.7 (parser modes, map-vs-block half) — a leading `{` is a MAP literal vs a
-// BLOCK expression by a one-/two-token lookahead (`{ }` or `{ "key" : … }` is a map,
-// else a block). t-47hc.18 made that decision GRAMMAR-NATIVE: `@peek(brace_map)` is the
-// token twin of the hand is_map_literal, and `map_literal` is a real rule — the
-// @hand(brace_expr) bridge and hand parse_brace_expr are both deleted. This still
-// pins the same contract, now against the PRODUCTION grammar rather than a one-rule
-// @hand stub: the interpreter must build the same map / block the generated parser does.
-//
-// Runtime executor path (parse_grammar + run_grammar_expr) — no comptime/seed dep.
+// WHY: map-vs-block disambiguation at a leading `{` — a two-engine
+// differential (interpreter vs the generated static parser) over map literals,
+// empty braces, and block bodies, so the two engines cannot drift on the one
+// token where an expression and a statement collide.
+
 use @std.avrac.features.grammar.{run_grammar_expr}
 use @std.avrac.features.grammar.{avra_expr_grammar}
 use @std.avrac.parse.{parser_new}

@@ -56,7 +56,7 @@ fn agree(src: string) -> bool {
     dsl_at_type(src) == hand_type(src)
 }
 
-spec "ps3t.6.5.12 slice 1: run_dsl_type_at == hand parser (inverse-@hand type runner)" {
+spec "run_dsl_type_at: the type-family runner builds the same tree as parse_type_expr" {
     given "the full parse_type_expr surface the isolated grammar already covers" {
         then "primitives, names, nullables, generics, list/tuple, unions, fn, dyn all agree" {
             agree("int") && agree("string") && agree("bool") && agree("float") &&

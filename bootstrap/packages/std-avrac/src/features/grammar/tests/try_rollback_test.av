@@ -1,30 +1,12 @@
-// WHY: a rolled-back `@try` must restore the `@hand` DELEGATE too (t-3keo).
+// WHY: a rolled-back `@try` leaves NO trace, and a committed (`@cut`) branch
+// keeps its diagnostics and never reaches the rollback at all.
 //
-// The `@try` rollback rewinds PState — cursor, node-store mark, diags, had_error —
-// but a speculative branch can also run an `@hand` leaf, which advances a SEPARATE
-// procedural Parser threaded on `st.hand_delegate`. That parser is forward-only, so
-// rewinding `st.pos` without it leaves the two halves disagreeing about where the
-// input is, and the retry branch parses from the wrong place.
-//
-// The save/restore pair has existed all along (`save_hand_state` / `restore_hand_state`).
-// What was wrong was its ARMING: both engines asked "does some NON-speculative branch
-// LEAD with an @hand leaf" — a question about the RETRY branch — when the thing that
-// moves the delegate is the SPECULATIVE branch's own body reaching a hand leaf.
-//
-// `paren_expr` is where those come apart, and it is why the bug was invisible for so
-// long. Its native branches lead with the literal `"("`, so nothing armed; its `@try`
-// branches parse `a:expression`, which reaches `@hand(ident_primary)` on a bare IDENT
-// and nothing else. So `(v)` broke while `(1)`, `(true)`, `("s")`, `([1])` — native
-// primaries that never touch the delegate — all worked. That is the shape pinned below:
-// the IDENT case must now agree with its native-primary siblings.
-//
-// The rollback is unconditional now, which raised the question the old gate's comment
-// was really about: a lambda that has already consumed its `->` is no longer a
-// candidate for the grouping branch, and must recover as a lambda rather than rewind.
-// That is what `@cut` is for, and the grammar now says so directly —
-// `")" "->" @cut lb:lambda_body` — so a committed branch keeps its diagnostics and
-// never reaches the rollback at all. Error-recovery parity with the hand oracle
-// (error_recovery_differential_test) is the guard on that half.
+// Pinned on the production paren family: `(v)` must parse identically to its
+// native-primary siblings `(1)` / `(true)` / `([1])` after a failed longer
+// speculation, and a lambda that has consumed its `->` recovers as a lambda
+// (`")" "->" @cut lb:lambda_body`) rather than rewinding to the grouping
+// branch. Error-recovery parity (error_recovery_differential_test) guards the
+// second half.
 
 use @std.avrac.parse.{parse_expression_source}
 use @std.avrac.features.grammar.{run_grammar_expr, avra_expr_grammar}
