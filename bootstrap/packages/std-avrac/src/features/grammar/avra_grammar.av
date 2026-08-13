@@ -3,7 +3,7 @@
 use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_grammars, compose_fragments}
 use features.{avra_pat_grammar, avra_match_arm_grammar, avra_match_table_grammar}
 // t-47hc slice 9 — the DECL-keyword grammar fragments, each owned by the feature
-// that owns the keyword (the same colocation `match_expr` already has for
+// that owns the keyword (the same colocation `match` already has for
 // patterns). Imported here rather than assembled in features/mod.av because this
 // file is where the whole-program grammar is composed; features/mod.av's
 // `feature_grammar_fragments` re-exports the same list, so there is ONE
@@ -293,7 +293,7 @@ fn avra_expr_core() -> Grammar {
   //   2. The TABLE sub-language is GRAMMAR-NATIVE as of t-47hc.29: the row width is a
   //      BOUND, not a computation, and
   //      `x{#cap}` expresses it. `@peek(match_table)` peels the form off to
-  //      `match_table_expr` (features/match_expr/grammar.av).
+  //      `match_table_expr` (features/match.av).
   //      Its statement twin is `match_table_stmt`; both share one builder
   //      helper, so the two forms cannot drift.
   //   3. The ordinary form is PREDICTIVE (table already peeled) and owns both of its
@@ -990,7 +990,7 @@ fn avra_stmt_common_grammar() -> Grammar {
                 // name a capture collected earlier in the same branch (validate_bounds) and
                 // exec_rule mints a fresh CapEnv per rule — so the cells arrive flattened and
                 // MkMatchTable re-chunks them by the header count.
-                // The rule itself lives in the feature's own fragment (match_expr/grammar.av,
+                // The rule itself lives in the feature's own fragment (features/match.av,
                 // t-47hc.8) and is built from a grammar STRING, not a surface `grammar { }`
                 // block: its row width is `( … )*{#cols}`, and `#` is not an Avra token, so a
                 // `{#cols}` written HERE dies in the lexer (F0001 `unexpected character '#'`)
@@ -1004,7 +1004,7 @@ fn avra_stmt_common_grammar() -> Grammar {
                 // through it, which cost every ordinary `match` a snapshot and left the
                 // missing-`{` message with the oracle.
                 | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatch(subj, arms)
-  // match_when_arm + match_arm moved to features/match_expr/grammar.av
+  // match_when_arm + match_arm moved to features/match.av
   // (avra_match_arm_grammar) — the expression `match_expr` needs the SAME rules and
   // each family's emitted parser is generated from its own dispatch grammar, so one
   // shared fragment composed into both is the only home that serves both (t-47hc.25).
@@ -1110,7 +1110,7 @@ export fn avra_decl_dispatch_grammar() -> Grammar {
 }
 
 // The §2 match-pattern family (`avra_pat_grammar`) now lives with its owning
-// feature at features/match_expr/grammar.av (t-47hc.8 modular fragments) — the
+// feature at features/match.av (t-47hc.8 modular fragments) — the
 // `match` feature owns its pattern syntax. It composes cleanly here via
 // `compose_fragments` (compose.av) if ever needed, but patterns are
 // self-contained (they embed no expressions), so no composition is required.

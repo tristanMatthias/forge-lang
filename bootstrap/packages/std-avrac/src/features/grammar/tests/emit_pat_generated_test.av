@@ -8,7 +8,7 @@
 // diagnose.sh --emit-gen-check (which covers patterns too).
 
 use @std.avrac.features.grammar.{emit_parser_source}
-// t-47hc.8: the pattern grammar fragment is owned by the match_expr feature.
+// t-47hc.8: the pattern grammar fragment is owned by the match feature (features/match.av).
 use @std.avrac.features.{avra_pat_grammar}
 
 fn emit_all() -> string {
