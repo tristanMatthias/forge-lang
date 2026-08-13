@@ -46,13 +46,19 @@ fn dsl_pat(src: string) -> string {
     render_pat_id(r.store, r.root)
 }
 
-// The hand-written parser's tree for `src`, rendered the SAME way.
+// The GENERATED parser's tree for `src`, rendered the SAME way.
+//
+// t-bgf8: this was `parse_pattern_or_hand`, deleted with the rest of the pattern
+// hand chain. The comparison half is now the CHECKED-IN generated pattern parser
+// (`pat_static = true` selects run_static_pat), which is a real second
+// implementation of the same grammar — not the interpreter this file's other
+// half drives. Pinned rather than left ambient, or both halves collapse onto one
+// engine and every row below passes by construction.
 fn hand_pat(src: string) -> string {
     mut p = parser_new(src)
-    // parse_pattern_or_hand explicitly: parse_pattern_or is DSL-by-default after
-    // the ps3t.6.5.12 promotion, so the hand baseline must call the hand method.
-    match p.parse_pattern_or_hand() {
-        .Ok(id) -> render_pat_id(p.store, id)
+    p.pat_static = true
+    match p.parse_pattern_or() {
+        .Ok(id) -> if p.had_error { "<parse error>" } else { render_pat_id(p.store, id) }
         .Err(_) -> "<parse error>"
     }
 }

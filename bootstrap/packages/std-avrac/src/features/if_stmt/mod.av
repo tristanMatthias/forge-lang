@@ -26,7 +26,6 @@ export fn if_stmt_feature() -> Feature {
         eval_stmt: if_eval_stmt,
         eval_expr: if_eval_expr,
         stmt_keyword: "kw_if",
-        parse_stmt: (p: Parser) -> p.parse_if_statement(),
     }
 }
 

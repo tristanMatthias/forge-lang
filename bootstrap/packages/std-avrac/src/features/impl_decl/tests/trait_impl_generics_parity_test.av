@@ -98,7 +98,6 @@ fn hand_only_program(src: string) -> string {
     mut p = parser_new(src)
     p.decl_static = false
     p.type_static = false
-    p.pat_flip = false
     p.pat_static = false
     p.expr_flip = false
     let r = p.parse_file_program()
