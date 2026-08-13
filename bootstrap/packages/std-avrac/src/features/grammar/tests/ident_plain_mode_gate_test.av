@@ -70,8 +70,6 @@ spec "t-47hc.31: with allow_struct_lit ON the predicate still declines" {
 }
 
 spec "t-47hc.31: a FEATURE-owned `IDENT {` declines regardless of the mode" {
-    // These stay `@hand(primary_base)`'s in both modes: `parse_ident_expr` owns them and
-    // decides them before any postfix. A mode read must not hand them to a native branch.
     then "`table { … }` is never plain" {
         !parses(G_OFF, "if table { }")
     }

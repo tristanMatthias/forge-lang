@@ -62,8 +62,6 @@ spec "t-3keo: a speculative branch that moved the delegate rolls it back" {
             parses(block_with("(v + v)"))
     }
     then "the `[`-led form recovers too — it is the same rollback, not a paren quirk" {
-        // list_expr's `@try "[" cb:list_comp "]"` speculates the comprehension and hits
-        // the same seam, which is why the fix is in the rollback and not in paren_expr.
         tree_of(block_with("[v]")).contains("(list (v))")
     }
     then "a nested speculation inside the rolled-back one also recovers" {

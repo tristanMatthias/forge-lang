@@ -72,11 +72,6 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         let mut_at = src.index_of("parse_mut_decl(st)")
         let const_at = src.index_of("parse_const_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
-        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
-        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
-        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
-        // be reached from the dispatcher, or it is dead code with correct output.
         let_at >= 0 && mut_at >= 0 && const_at >= 0 && hand_at < 0
     }
 

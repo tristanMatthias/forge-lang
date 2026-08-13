@@ -42,25 +42,6 @@ impl Parser {
     }
 
     // Pattern-family entry, UNCONDITIONAL (t-bgf8): the grammar owns or-patterns.
-    // `pat_static` picks the CHECKED-IN generated parser (run_static_pat) or the
-    // tree INTERPRETER (run_dsl_pattern_at_shared) — two engines driving the
-    // identical pattern-builders, so the DslPatResult is the same either way.
-    // There is no third choice: `parse_pattern_or_hand` and the `pat_flip` field
-    // that used to select it are deleted, making patterns the FOURTH and last
-    // family to retire its hand parser, after expressions (t-47hc.4.1),
-    // statements (t-47hc.37) and types.
-    //
-    // MEASURED BEFORE DELETING, and the measurement corrected the premise. t-bgf8
-    // was filed saying this fallback was "a LIVE production fallback, reached on
-    // invalid input" — read off the `// DSL parse error → fall through` comment
-    // rather than measured. A refusal probe at this entry fired ZERO times over
-    // the whole @std::avrac compile, all 24 difftest corpus files, ten malformed
-    // pattern fixtures, and `bs2 expr` — with the flags forced off. The probe was
-    // NOT blind: refusing it turned 4 of 5 specs in pat_flip_dispatch_test red,
-    // which is the positive control that makes the zeros mean something. The hand
-    // chain was reachable only from tests, exactly like the statement subgraph
-    // #1221 removed, because production parses `match` through the generated
-    // declaration parser and never enters these `impl Parser` methods.
     fn parse_pattern_or(self) -> Result<PatId, string> {
         let dsl = if self.pat_static {
             run_static_pat(self.grammar_tokens(), self.current_start, self.source, self.store)

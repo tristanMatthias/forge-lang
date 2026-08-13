@@ -78,11 +78,6 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
         // Bound to the `decl_hand` POSITION, not merely present — see the sibling
         // assertion in decl_flip_select_parallel_native_test.
         let spec_ret = src.index_of("return parse_spec_decl(st)")
-        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
-        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
-        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
-        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
-        // be reached from the dispatcher, or it is dead code with correct output.
         hand_at < 0 && spec_ret >= 0 && spec_at >= 0
     }
 

@@ -67,9 +67,6 @@ spec "t-47hc.24: every non-IDENT lead reaches decl_hand exactly as before" {
     then "a doc comment leads" { lead("/// doc\nfn f() {}") }
     then "a module doc comment leads" { lead("//! mod doc\nfn f() {}") }
     then "a STATEMENT keyword still passes the gate — decl_hand's own FIRST rejects it" {
-        // Division of labour: the gate narrows IDENT only. `if`/`while`/`{` were never
-        // in decl_hand's FIRST and are still routed to `statement` by that FIRST, not
-        // by this gate. Widening the gate to re-decide them would duplicate the FIRST set.
         lead("if x { }") && lead("while x { }") && lead("{ }") && lead("break")
     }
 }

@@ -77,9 +77,6 @@ spec "t-bwjg: the block-bodied quote kinds are grammar-native" {
             agree(wrap("quote decl { fn g() -> int { 1 } }"))
         }
         then "a quote is still a postfix BASE, not a special case" {
-            // The native branch is `base:quote_expr ( postfix_suffix )* ( with_suffix )*`
-            // exactly like its spawn/isolated/when siblings — so a suffix on a quote must
-            // fold the same way it did through the hand leaf.
             agree(wrap("quote { 1 }.kind"))
         }
     }

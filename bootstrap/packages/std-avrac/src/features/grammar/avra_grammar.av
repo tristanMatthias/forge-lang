@@ -1,20 +1,4 @@
 // WHY: ps3t.6.5.11 — Avra's grammar, DOGFOODED into compiler `src/` as an
-// actual `grammar { … }` surface-syntax block (design §2.5), out of the test
-// strings it used to live in. This is the single source of truth the whole
-// migration consumes: the executor runs it as the differential oracle
-// (parser_equivalence_test), and emit.av RENDERS it as the generated static
-// parser (emit_generated_test, diagnose.sh --emit-gen-check). Centralising it
-// here (rule 8) retires the duplicated grammar strings those consumers carried.
-//
-// SEED-GATED, and the gate is already OPEN: the `grammar { }` surface parser
-// (ps3t.6.5.1) has been in the pinned seed since well before v245, so this
-// block compiles from the seed with no cycle — verified before landing. The
-// block desugars to a runtime `parse_grammar(<body>)` call (features/grammar/
-// parser.av), so it needs no new AST node and emits identical IR.
-//
-// This is the §2 EXPRESSION family — the proof slice. Statements, patterns,
-// types, and declarations join it here as their families migrate (§2.5's
-// family-by-family strategy), building toward the 6.5.12 swap-in.
 
 use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_grammars, compose_fragments}
 use features.match_expr.{avra_pat_grammar, avra_match_arm_grammar, avra_match_table_grammar}
@@ -34,58 +18,6 @@ use features.modules.{avra_modules_grammar}
 use features.generics.{avra_generics_grammar}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
-/// owns the DECLARATIVE operator-precedence ladder (logical → bitwise → shift →
-/// comparison → additive → multiplicative), folding left-associatively via the
-/// build helpers, AND the `!` `-` `not` prefix-unary operators directly, via the
-/// `Unary` build (Phase 3a leaf migration, Option B). `not` is safe to own here
-/// because it has NO context overload — it is logical `Not` at every quote depth.
-/// Phase 3a-4 gives the grammar the POSTFIX CHAIN + the `with` postfix: `unary`'s
-/// non-prefix branch is
-/// `base:@hand(primary_base) ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )*
-///  -> fold_postfix_with(base, p, s)`. The grammar OWNS the postfix loop as
-/// `( postfix_suffix )*`: each `postfix_suffix` (→ `parse_postfix_suffix`) runs ONE
-/// hand `postfix_step` over the base threaded on PState (`postfix_base`), so the 8
-/// interleaving forms (call / `[index]` / `?` / `!` / `?.` / dot / generic-call /
-/// `catch`) share the hand loop body byte-for-byte; a step that consumes nothing ends
-/// the chain (the emitted loop's no-progress break). `fold_postfix_with` takes the
-/// final postfix node then folds the `with` suffixes over it, each rebuilt with the
-/// hand `alloc_at`'s `[base-start, next-token)` span. `primary_base` (→ `parse_primary_
-/// base` = `parse_leaf_common(false)`) is the splice/prefix + `parse_primary` base
-/// WITHOUT the postfix loop. `~` is CONTEXT-OVERLOADED: at `quote_depth == 0` it is the
-/// bitwise-NOT prefix, grammar-owned via a `@when(at_quote_top)` branch (Phase 3a-5) →
-/// `Unary(BitNot, …)`; at `quote_depth > 0` it is the quote SPLICE, and the production
-/// static parser DOES run inside a `quote` body (hand `parse_quote` bumps `quote_depth`
-/// then re-enters `parse_expression`, which stays on the static path), so the `@when`
-/// fails there and `~`/splice falls through to `@hand(primary_base)` (`parse_leaf_common`
-/// reads `quote_depth`). `@when(at_quote_top)` (`modes_flag`/`pred_guard`, executor+emit
-/// lockstep) is the grammar-native mode gate (#954) that makes the split byte-identical.
-/// Phase 3a-7 gives the grammar the single-token LITERAL primaries as the postfix-loop
-/// BASE: `b:NUMBER` / `b:STRING` / `b:BOOL` / `b:("null"|"none")` branches sit BEFORE the
-/// `@hand(primary_base)` tail (each `b:<lit> ( postfix_suffix )* ( with_suffix )* ->
-/// fold_postfix_with(b,p,s)`), so `is_leading_hand` stays true and `@hand` still owns error
-/// recovery. The token base is seeded into the postfix loop via `seed_postfix` (exec_seq /
-/// emit lockstep) and built by `literal_node` (interning, matching hand `alloc_leaf`).
-/// `postfix_suffix` and `with_suffix` are each a single delegate rule around their
-/// stateful hand step; every base references those rules, so the remaining frontier is
-/// represented once instead of duplicated across all 19 FIRST-disjoint primary
-/// alternatives. Both loops stay `( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )*` at every
-/// base, so the shape is unchanged — only the duplication is gone, and nativizing
-/// either step is now a ONE-LINE edit to its delegate rule instead of 19 edits.
-/// `Tk.Float` projects to the `NUMBER` kind (its lexeme keeps the dot), so the `NUMBER`
-/// branch owns floats too; `null`/`none` are keyword tokens (no distinct grammar kind) so
-/// they use a string-alternation terminal and `literal_node` builds `Expr.None` by `tk`.
-/// `parse_unary` / `parse_call` / `parse_primary` are retained as the differential oracle
-/// (Option B — no deletion). That leaf is NOT expressible in the stateless
-/// token-grammar byte-identically: `parse_call`'s
-/// postfix loop is newline-sensitive (`.UpperIdent`/`[`/`(` on a new line = a new
-/// statement) and mode-stateful (`allow_struct_lit`, `allow_dot_postfix`,
-/// `allow_it_sugar`, `quote_depth`), so the @hand escape hatch (GRAMMAR_DSL.md §5)
-/// is the correct — and byte-identity-preserving — home for it (ps3t.6.7 Step C).
-///
-/// avra_expr_core is the RULE SET (the emit view via avra_expr_dispatch_grammar); the
-/// INTERPRETER view (avra_expr_grammar) composes the type family so paren_expr's typed-lambda
-/// `param -> type_expr` resolves in-grammar. (t-47hc.16 paren flip: `paren_expr` replaced the
-/// `@hand(paren_expr)` leaf — the hand parse_paren_expr is deleted.)
 fn avra_expr_core() -> Grammar {
     let gp = grammar {
   expression    = assignment
@@ -533,16 +465,6 @@ fn avra_expr_core() -> Grammar {
                | @peek(ident_template) tagged_template
                | @peek(ident_plain) IDENT
                // The FEATURE forms (t-47hc.5). `ident_plain` and `ident_lbrace_plain` both
-               // consult the registry and DECLINE `table { … }` / `grammar { … }`, so with
-               // no branch for their complement a feature-form cell had no rule at all:
-               // the row loop read `table` as the NEXT row's pattern and reported
-               // "`table` is not a valid pattern". It only surfaced once `fn` routed —
-               // until then the enclosing function rolled the whole item back to the hand.
-               //
-               // Routed to the NATIVE rules `unary` already uses for the same cond, NOT to
-               // `@hand(primary_base)`: that leaf is RETIRED from the expression parser and
-               // emit_generated_test fails the build if it reappears. Same two rules, same
-               // guard, one more caller.
                | @peek(ident_lbrace_feature) grammar_expr
                | @peek(ident_lbrace_feature) table_lit
                | paren_expr | list_expr | match_expr | if_expr
@@ -778,57 +700,6 @@ fn avra_decl_edge_grammar() -> Grammar {
   // `doc_decl`, so this covers the doc-comment form too.
   wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | comp_header | @try use_decl | @try mod_decl | export_decl | doc_decl | annot_decl | letdes_decl | let_decl | mut_decl | const_decl | spec_decl | select_decl | parallel_decl | mdoc_decl | @try bare_comp_inst_raw | @try bare_comp_inst | statement
   // The `let` / `mut` / `const` BINDINGS (t-47hc Phase 4) — the highest-traffic
-  // residue of `@hand(decl_hand)`: every binding statement in every routed body
-  // used to detour through the hand delegate. The rules mirror the hand parsers
-  // shape-for-shape (features/let_stmt/parser.av):
-  //
-  //   * `let ( m:"mut" )?` — `let mut v` binds a reassignable `v` (MkLetBinding
-  //     reads the modifier's presence); a BARE `mut` is its own rule. Both build
-  //     Stmt.Mut through the one shared core.
-  //   * The optional annotation lowers through the shared type family; absent ⇒
-  //     Unknown — exactly the hand's `ty_vt` default.
-  //   * The guard form `… else <stmt>`: `tmp:@gensym(letelse)` sits AFTER the
-  //     else statement because that is where the hand mints (`build_let_else`
-  //     parses the else, checks divergence, THEN calls `fresh`) — the same
-  //     mint-order discipline as if_expr's `@gensym(iflet)`. The divergence
-  //     check itself lives in the BUILD (mk_let_binding_g), which reports the
-  //     CODED F1203 — it has to, now that the rule commits: the diagnostic used
-  //     to reach the user by ROLLBACK (report message-only, let the `@try` unwind,
-  //     let the hand re-parse and own the code), and a `@cut` leaves no rollback
-  //     to hand it off to.
-  //   * `const` has no guard form and no `mut` modifier, matching the hand.
-  //   * The DESTRUCTURE form has its own rule below, dispatched BEFORE this one
-  //     and selected predictively by its own `@peek(let_destructure)`. It used to
-  //     sit after `let_decl` and be reached by ROLLBACK (`n:IDENT` failing on the
-  //     `(`), which a committed rule no longer provides.
-  // t-47hc.5: `let` is ROUTED, and it was the LAST keyword under `@hand(decl_hand)` —
-  // `--parser-frontier` now reports none. The `@try`/`@cut` pair lives INSIDE the rule so
-  // the dispatcher references it bare, exactly as `mut` and `const` already do.
-  //
-  // Committing it measured 32 divergences and NONE of them were about bindings: the
-  // initializer position is a hole through which every expression-level gap shows, and a
-  // dispatcher-level `@try` had been hiding all of them by rolling the whole item back to
-  // the hand. What it took to close them is spread across the rules that actually owned
-  // each gap — `paren_expr`'s predictive lambda gates, `quote type`/`quote arm`'s required
-  // terminals, `table_lit`'s bailing header and rows, `if_expr`'s bailed condition, the
-  // lexer-diagnostic bridge (`lex_real_full` -> `PState.lex_diags` -> `boundary_diags`),
-  // and the flip seam reporting at its own byte. The invalid corpus
-  // (error_recovery_differential_test) is 117/117 with `let` routed, which is the gate
-  // this keyword was held behind.
-  //
-  // `@onfail(bail)` on the initializer is keyed on the sub-parse having FAILED **or**
-  // REPORTED — the union the hand's `?` propagates. It was failure-only, carved out for
-  // `let a = (1) ->`, where the expression view reported the missing lambda body and still
-  // handed back `(group 1)` that the hand KEEPS. `paren_expr`'s `@peek(paren_lambda_ahead)`
-  // removed that input (the group now parses clean and the dangling `->` is the next
-  // statement's F0040), so the carve-out went with it — and without the union
-  // `let b = x is Foo` survived as a binding where the hand aborts the statement.
-  //
-  // The TYPE position is `@require`d and keyed on the rule NAME, exactly as `param`'s is
-  // and for the same reason: `type_expr`'s FIRST is a disjunction with no single token to
-  // name. Unrequired, `let x: = 1` did not abort — the type view reported its own generic
-  // F0040 "expected expression" and the binding survived as `(let x:<unknown> 1)`, where
-  // the hand reports "expected type after `:`" and the whole statement becomes `(error)`.
   let_decl   = @try "let" @cut ( m:"mut" )? @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
                @expect("IDENT", "expected variable name")
                @expect("type_expr", "expected type after `:`")
@@ -1050,18 +921,6 @@ fn avra_decl_edge_grammar() -> Grammar {
   config_pair = @peek(cfg_pair_value) k:IDENT v:expression ","? -> MkCompConfigPair(k, v)
               | @peek(cfg_pair_eq) k:IDENT "=" v:expression ","? -> MkCompConfigPair(k, v)
   // The four arms of the hand's parse_comp_block_body, routed (t-47hc.5.1 B2b).
-  // ORDER IS THE SPEC: raw-body before structured (the same name can only be one,
-  // and the conds are mutually exclusive on the registry, but reading raw-first
-  // matches the hand's "decide after the brace" order), named before bare (`n i {`
-  // is a prefix of neither, but `n {` would otherwise capture `n` and stop), and
-  // `declaration` LAST as the honest unguarded tail. Every arm is routed, so the
-  // tail no longer needs a gate to decline into — which is what makes it honest:
-  // a `@peek` on the last branch is silently dropped (dispatch_has_tail), so the
-  // previous `@peek(comp_body_plain) declaration` was a guard that never ran.
-  // Every position the hand `consume`s with a message is `@require`d, with that message
-  // (t-47hc.5). Per-BRANCH `@expect`s, which is what makes the two IDENT slots in the
-  // named arm expressible: the component name is guaranteed by the branch's own `@peek`,
-  // so the only IDENT that can fail there is the INSTANCE name.
   comp_block_item = @peek(comp_nested_raw_named) rn:IDENT @require ri:IDENT @require "{" rb:@rawbrace(component) @require "}"
                     @expect("IDENT", "expected instance name")
                     @expect("{", "expected `{` after nested block name")
@@ -1168,64 +1027,9 @@ export fn avra_stmt_grammar() -> Grammar {
 }
 
 /// ps3t.6.7 Step G slice 4 — the PRODUCTION statement grammar the statement
-/// flip (`AVRA_PARSER_STMT_FLIP`, parse_statement) runs. Unlike the §2
-/// avra_stmt_grammar above (a family-ISOLATED oracle view whose `return_stmt`
-/// is structural), this is the byte-identical production dispatch:
-///
-///   * `break` / `continue` — trivial DSL-native leaves (a single position-
-///     free Stmt.Break / Stmt.Continue; the outer parse_statement_list_ids
-///     records their SrcPos, exactly as for the hand parser).
-///   * `if_stmt` / `for_stmt` / `while_stmt` — grammar-native control-flow
-///     HEADERS. The `@off(allow_struct_lit)` marker reproduces the hand parsers'
-///     save/clear/restore around the condition (the `while foo {` struct-literal-
-///     vs-body disambiguation); the BODY is the grammar-native `block` rule
-///     (`"{" statement* "}" -> Block`) — a `{`-required block, so a bare-statement
-///     body (`while c break`) is a parse error, exactly as the hand header parsers
-///     reject it (they require `{` before `parse_statement`). The inner `statement*`
-///     dispatches each body statement through this same grammar. A standalone block
-///     is lookahead-gated: string-keyed map literals route into `expr_stmt`, while
-///     `{}` and ordinary statement blocks remain blocks. The if-then uses `block`;
-///     the recursive `else statement` remains unrestricted (accepts `else if …`,
-///     `else { … }`, and a bare `else <stmt>`).
-///
-///     POSITION NOTE: this interpreter grammar compares structure only. Its
-///     dispatch-only emitted twin uses emit_stmt_list_loop + sp_start-aware builders
-///     to reproduce the hand parser's per-child SrcPos side table.
-///   * `for_stmt` — ordinary range/collection loops and tuple-destructure bindings
-///     are native. The binding sub-rule reserves its gensym before parsing the body,
-///     preserving nested-loop temp ordering without allocating AST rows early.
-///   * `match_stmt` — the ordinary subject/pattern/guard/expression-body form is
-///     grammar-native and PREDICTIVE. The table sub-language is peeled off by
-///     `@peek(match_table)` into `@hand(match_table)`
-///     only for the distinct subjectless/table/bare-return/quote-splice paths.
-///   * `return_stmt` — native and newline-sensitive: its optional expression uses
-///     `^` so a value on the next line is not consumed as the return operand.
-///   * `stmt_block` — native standalone blocks, gated by `@peek(stmt_block)` so
-///     string-keyed map literals retain the expression path.
-///   * `expr_stmt` — the fall-through expression statement, over the SAME
-///     shared expression grammar (byte-identical to parse_expression), then
-///     wrapped as Stmt.Expr exactly as the hand parser does.
-///
-/// The alternation order (break/continue, the control-flow headers, return/block,
-/// then expr_stmt) matches parse_statement's dispatch order.
-///
-/// The interpreter and static-emitter views differ only in `for_stmt`: the
-/// static parser needs bounded `@try` plus its malformed-header edge oracle,
-/// while the interpreter can report those errors directly. Keep every other
-/// statement rule in one fragment so their native/hand frontier cannot drift.
 fn avra_stmt_common_grammar() -> Grammar {
     let gp = grammar {
   // `@peek(if_let) iflet_stmt` comes BEFORE `if_stmt` deliberately, and the ORDER is
-  // the load-bearing part: `if_stmt`'s FIRST is a bare `"if"`, so without the gate it
-  // matches first, fails parsing `let v = x` as a condition expression, and drops the
-  // whole statement to `@hand(decl_hand)`. That single shadowing accounted for 73 of
-  // the delegate's remaining dependents (t-myz7).
-  //
-  // `iflet_stmt` is a rule of its OWN rather than a reference to the expression-view
-  // `if_expr`: that rule lives in the expression view and the emitter has no FIRST set
-  // for it across views. It previously routed to `expression` for exactly that reason,
-  // which parsed the form correctly but lowered it to the EXPRESSION shape — see the
-  // WHY on `iflet_stmt` itself for why statement position needs its own lowering.
   statement     = break_stmt | continue_stmt | @peek(if_let) iflet_stmt | if_stmt | for_stmt | while_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | @peek(stmt_block) stmt_block | expr_stmt
   // The CONTROL-FLOW body (`while`/`for`/`if`). `declaration*`, not `statement*`,
   // because that is what the hand does: every one of those parsers ends at
@@ -1387,73 +1191,11 @@ export fn avra_stmt_flip_grammar() -> Grammar {
 }
 
 /// ps3t.6.7 Step G slice 4b — the PRODUCTION declaration / whole-program grammar
-/// `parse_declaration` runs. It runs UNCONDITIONALLY: the `AVRA_PARSER_DECL_FLIP`
-/// switch this comment used to name is a dead variable the compiler never reads
-/// (t-bw9s), removed along with the `@hand(decl_hand)` leaf described below — which
-/// is itself gone from the production dispatch (`--hand-leaves` reports 0). The arm
-/// split is kept here because it still describes how the FIRST-sets are organised.
-/// The declaration dispatch splits cleanly by FIRST-set into two arms:
-///
-///   * the NATIVE declaration rules — one per lead, in FIRST-set order:
-///     `use`/`mod`/`shape`/`enum`/`type`/`extern`/`fn`/`trait`/`impl`/`export`,
-///     the doc-comment and `@`-annotation WRAPPERS (`doc_decl`/`mdoc_decl`/
-///     `annot_decl`, position-recorded on the wrapped inner), the binding leads
-///     (`letdes_decl`/`let_decl`/`mut_decl`/`const_decl`), `select`/`parallel`/
-///     `spec`, and the component forms — `comp_header`, then `bare_comp_inst_raw`
-///     and `@try bare_comp_inst` for the bare-IDENT component-instantiation-vs-
-///     expression-statement case, whose 2-token lookahead a stateless FIRST-set
-///     cannot do and which `@peek`/`@try` express instead.
-///   * `statement` — the fall-through: every non-declaration item (stmt keywords
-///     if/while/for/match/…, `break`/`continue`, `{` blocks, non-ident expression
-///     statements), routed to the SAME proven statement grammar the statement
-///     flip uses. This is where the real structuralization lives — a function
-///     body's statements parse through the DSL.
-///
-/// This paragraph described a single leading `@hand(decl_hand)` arm until t-47hc
-/// routed every keyword natively and deleted the leaf; `hand_starts("decl_hand")`
-/// and its declaration-lead FIRST-set went with it. What still holds is the SHAPE:
-/// the declaration arms come first and `statement` is the unguarded tail, so IDENT
-/// and `@` stay on the declaration path and everything else falls through. Adding
-/// or removing an arm changes which one is the tail — assert it structurally with
-/// `dispatch_has_tail` (ast.av) rather than by eye.
 export fn avra_decl_flip_grammar() -> Grammar {
     compose_grammars(avra_decl_edge_grammar(), avra_stmt_flip_grammar())
 }
 
 /// ps3t.6.7 Phase 2 — the DISPATCH-ONLY statement grammar the STATIC production
-/// parser is emitted from (gen_decl_file.emit_decl_parser_file). It shares
-/// avra_stmt_flip_grammar's dispatch SHAPE (break/continue/expr_stmt leaves, same
-/// alternation order + FIRST-set) but WITHOUT composing the expression grammar, so
-/// `expression` in expr_stmt is an EXTERNAL reference: emitting from this produces
-/// only the statement dispatch fns (parse_statement / parse_break_stmt /
-/// parse_continue_stmt / parse_expr_stmt) and calls the already-generated
-/// `parse_expression` (gen_expr_parser.av, same `parse` module) — so the expr ladder
-/// is NOT re-emitted (which would collide fn-for-fn in the flat `parse` module). The
-/// INTERPRETER path keeps using the COMPOSED avra_stmt_flip_grammar (exec_rule must
-/// walk `expression` in-grammar); both drive the identical builders, and
-/// gen_expr_parser's parse_expression is itself proven byte-identical to the
-/// interpreter's expr walk.
-///
-/// PRODUCTION CONTROL-FLOW FLIP (t-47hc.13 STEP 4): mirrors avra_stmt_flip_grammar's
-/// grammar-native `if`/`for`/`while` + native `block` — the STATIC production parser
-/// now parses control-flow ITSELF instead of delegating to `@hand(stmt_hand)`. The
-/// block's inner `statement*` emits the statement-list-with-recovery loop
-/// (emit_stmt_list_loop, #984): loop-until-`}`/EOF, per-child SrcPos via to_linecol,
-/// panic-mode `synchronize_stmt` + a positioned `Stmt.Error` on a failed child — the
-/// generated twin of parse_statement_list_ids, so the per-child positions the
-/// position-SENSITIVE static path needs are recorded byte-identically. The
-/// `@off(allow_struct_lit)` headers reproduce the hand parsers' struct-literal
-/// disambiguation (emit twin: modes save / clear via modes_with_flag_off / restore).
-/// A top-level `{` is lookahead-routed to a native block or to the expression path
-/// for a string-keyed map literal; defer/errdefer/return are native. Match's
-/// ordinary form is native with a narrow edge oracle, and if-ELSE recursively
-/// enters the native statement rule. Both `for` families are native outright —
-/// `@require` owns the malformed-header abort and the flip surfaces the grammar's own
-/// diagnostic, so no edge oracle remains.
-/// This is an `intended-ir-change`: the generated
-/// parser SOURCE changes, but its OUTPUT AST + SrcPos are byte-identical to the hand
-/// parser — gated on `--emit-gen-check` (generated == hand over the selfhost) + the
-/// recovery-tree oracle (invalid programs) + run-equiv cold diff-test.
 export fn avra_stmt_dispatch_grammar() -> Grammar {
     // The match ARM fragment is composed in rather than defined inline: the
     // expression family needs the identical rules and is emitted from its OWN
@@ -1578,17 +1320,6 @@ export fn feature_decl_grammar_fragments() -> List<Grammar> {
 }
 
 /// The UNIFIED whole-program Avra grammar (ps3t.6.5.7 / the 6.5.11 composed
-/// slice): declarations on top, folding into a `program`, with one canonical
-/// version of each shared rule (declarations + their sub-structure, the
-/// statement forms incl. control-flow, the type atoms, and the expression
-/// precedence chain). The gnarly-5% forms delegate via @hand — `return`
-/// (newline-sensitive), `let` (let-else desugar), `@pkg::T` (qualified type),
-/// `~`/quote (splice-vs-bitnot), and `ident`. This is the whole-program grammar
-/// dogfooded into src/ (distinct from the per-family avra_*_grammar() blocks,
-/// which are the family-ISOLATED views the equivalence tests use); the 6.5.12
-/// swap-in consolidates onto one. NOTE the rule bodies carry literal `"{"` /
-/// `"}"` block delimiters — balanced, so the `grammar { }` surface capture
-/// finds the block's real closing brace correctly.
 export fn avra_program_grammar() -> Grammar {
     let gp = grammar {
   program     = ( d:declaration )* -> Block(d)

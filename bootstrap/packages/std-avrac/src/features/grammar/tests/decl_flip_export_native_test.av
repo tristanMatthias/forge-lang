@@ -59,11 +59,6 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
         let src = decl_src()
         let exp_at = src.index_of("parse_export_decl(st)")
         let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        // t-47hc.4.3 — the leaf is DELETED, so this no longer asserts "dispatches before
-        // the `decl_hand` gate"; it asserts there is no gate to dispatch before. That is
-        // strictly stronger: an ordering claim is satisfiable by a gate that still exists,
-        // `hand_at < 0` only by its absence. The positive half stays — the rule must still
-        // be reached from the dispatcher, or it is dead code with correct output.
         exp_at >= 0 && hand_at < 0
     }
 

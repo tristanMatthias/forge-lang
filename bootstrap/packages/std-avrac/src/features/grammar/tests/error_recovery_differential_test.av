@@ -367,12 +367,6 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == exec oracle (invalid co
         agree("mod 5\nfn f() -> int { 1 }") &&
         agree("mod {\nfn f() -> int { 1 }")
     }
-    // The BINDING keywords join the routed set (t-47hc Phase 4: `let` / `mut` /
-    // `const`, the highest-traffic residue of `@hand(decl_hand)` — every binding in
-    // every body). Added BEFORE the routing per the discipline. Top-level and
-    // in-body forms both, because the two dispatch through different loops; the
-    // guard form's non-diverging else is the one coded diagnostic
-    // (LetElseMustDiverge) the native builder must hand back rather than own.
     then "malformed bindings (the routed keywords), on all three paths" {
         agree_all("let\nfn f() -> int { 1 }") &&
         agree_all("let x\nfn f() -> int { 1 }") &&
@@ -1594,10 +1588,6 @@ spec "t-47hc.17: grammar-native with_suffix recovers == exec oracle" {
     }
 }
 
-// t-47hc.16: `paren_expr` now replaces the former @hand leaf in the generated
-// expression parser. Unlike valid-input differential tests, this oracle makes
-// a failed @try/tuple/lambda parse observable: the generated parser must fall
-// through to the same hand recovery tree and diagnostics as Parser A.
 spec "t-47hc.16: grammar-native paren_expr recovers == exec oracle" {
     then "unclosed grouping REPORTS exactly like hand" {
         agree_error("fn f() -> int {\n let a = (1 + 2\n return a\n}")
@@ -1611,11 +1601,6 @@ spec "t-47hc.16: grammar-native paren_expr recovers == exec oracle" {
         agree_error("fn f() -> int {\n let id = (x: ) -> x\n return 0\n}") &&
         agree_error("fn f() -> int {\n let id = (x: int) ->\n return 0\n}")
     }
-    // t-oejs — NON-IDENT bases, deliberately. The ident and literal primaries take
-    // DIFFERENT paths into `paren_expr`, and an ident-only corpus let a real divergence
-    // hide: `(x) ->` agreed only because both sides were wrong the same way, while
-    // `(1) ->` (a native token base) diverged unnoticed. Every malformed paren form is
-    // now probed with a literal base as well as an ident one.
     then "a missing lambda body keeps the binding rather than erasing it" {
         agree_bad("let a = (1) ->") &&
         agree_bad("let a = (x) ->") &&

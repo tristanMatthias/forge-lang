@@ -77,10 +77,6 @@ fn hand_let_stmt(p: Parser) -> Result<StmtId, string> { p.parse_let_statement() 
 /// return). The `_hand` entry, so the delegate does not re-flip THIS statement —
 /// only its nested bodies flip, via the delegate's own delegate.
 
-/// The whole DECLARATION dispatch (doc/annotation/export wrapping + the decl
-/// keywords + the component-vs-expression IDENT disambiguation + the statement
-/// fall-through). The `_hand` entry, same recursion guard as `stmt_hand`.
-
 /// `quote { … }` — bumps `quote_depth`, which is what makes a leading `~`
 /// inside the body parse as `Expr.Splice` instead of bitwise-NOT.
 fn hand_quote_expr(p: Parser) -> Result<ExprId, string> { p.parse_quote() }
