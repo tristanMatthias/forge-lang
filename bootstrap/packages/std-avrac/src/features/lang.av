@@ -12,8 +12,13 @@ use features.grammar.{grammar_literals, grammar_checked, compose_fragments, Gram
 use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
-/// adapter onto the core Feature record while both forms coexist.
+/// adapter onto the core Feature record while both forms coexist. Also the
+/// point where EVERY definition's grammar is validated: a malformed
+/// `grammar { }` block hard-fails here at startup (F9999), spine-duplicated
+/// and composing grams alike — composition filters must never be the only
+/// path to the check, or a broken grammar silently vanishes instead.
 export fn register_lang(reg: Registry, f: LanguageFeature) {
+    let _validated = feature_gram(f)
     register(reg, feature_new(f.name) with {
         expr_tag: f.expr_tag,
         stmt_tag: f.stmt_tag,

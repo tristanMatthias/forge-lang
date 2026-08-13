@@ -165,7 +165,14 @@ export fn language_features() -> List<LanguageFeature> {
 /// the whole-program grammar composes from, so the two views cannot drift).
 /// Rule-disjointness is guarded by `fragment_rule_conflicts` in the specs.
 export fn feature_grammar_fragments() -> List<Grammar> {
-    mut all = [feature_gram(f) for f in language_features() if !f.gram_in_spine && f.gram.grammar.rules.length > 0]
+    mut all: List<Grammar> = []
+    for f in language_features() {
+        if f.gram_in_spine { continue }
+        // Validate FIRST — a malformed gram must F9999 here, never be
+        // silently dropped by the empty-rules filter below.
+        let g = feature_gram(f)
+        if g.rules.length > 0 { all.push(g) }
+    }
     for g in feature_decl_grammar_fragments() {
         all.push(g)
     }
