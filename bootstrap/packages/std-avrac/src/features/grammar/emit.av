@@ -3,11 +3,10 @@
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
 // t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
 // The local wrappers below delegate to it so the two engines cannot drift.
-use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, seq_is_leading_hand, rule_owns_recovery}
+use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, rule_owns_recovery}
 use features.grammar.{ExpectHit, expect_for, rule_own_expect_msg, rule_first_expect_msg, rule_first_expect_msg_leaf, gated_ref_of, node_has_onfail}
 use features.grammar.{grammar_has_gate, rule_body_has_gate, rule_first_is_ident}
-use features.grammar.{is_hand_stmt_leaf, is_hand_expr_leaf}
-use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule, hand_kind}
+use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule}
 
 // ── Pratt collapse of the uniform binary-operator ladder (ps3t.6.7 Step G, slice 1) ──
 type ChainRule = { name: string, operand: string, ops: List<string>, lbp: int }
@@ -136,33 +135,8 @@ fn chain_lbp_of(chain: List<ChainRule>, name: string) -> int {
     -1
 }
 
-/// The ExprId-returning call for the ladder's leaf (ps3t.6.7 Step G slice 2). When
-/// the leaf rule is a bare `@hand` expression delegation (`unary = @hand(hand_unary)`),
-/// call `run_hand_expr` DIRECTLY — it already yields an `ExprId`, so the Pratt loop
-/// skips the `CapVal.Node` box + `capval_to_expr` unbox round-trip per leaf. Any
-/// other leaf shape falls back to the boxed `capval_to_expr(parse_<leaf>)`.
+/// The ExprId-returning call for the ladder's leaf.
 fn leaf_exprid_call(g: Grammar, leaf: string) -> string {
-    for r in g.rules {
-        if r.name == leaf {
-            match r.body {
-                .Alt(branches) -> {
-                    // Only a STRICT bare delegation gets the inline: one branch, one
-                    // item, `One` repetition (not `*`/`+`), and NO build. Otherwise a
-                    // repetition or a `-> build` on the leaf would be silently dropped
-                    // by inlining run_hand_expr — fall back to the boxed parse_<leaf>.
-                    if branches.length == 1 && branches[0].items.length == 1 &&
-                        rep_is_one(branches[0].items[0].rep) && build_is_none(branches[0].build) {
-                        match branches[0].items[0].prim {
-                            .Hand(hf) -> {
-                                if is_hand_expr_leaf(hf) { return "run_hand_expr(\"${hf}\", st)" }
-                            }
-                            _ -> {}
-                        }
-                    }
-                }
-            }
-        }
-    }
     "capval_to_expr(st, parse_${leaf}(st))"
 }
 
@@ -665,9 +639,9 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
         if b.speculative {
             out = out + emit_speculative_branch(g, b, track_spec)
         } else if is_bare_ref(b) && i == last && rule_self_validates(g, prim_ref_name(b.items[lone_item_index(b)].prim), []) {
-            // UNGUARDED catch-all tail — ONLY when the referenced rule reaches an
-            // `@hand` delegate that owns recovery (unary's `| postfix`, statement's
-            // `| expr_stmt`). A pure-native last ref (`type_atom … | named_type`) falls
+            // UNGUARDED catch-all tail — ONLY when the referenced rule owns its
+            // recovery (unary's `| postfix`, statement's `| expr_stmt`). A pure-native
+            // last ref (`type_atom … | named_type`) falls
             // to the FIRST-guarded branch below + the no-match error tail, so a
             // non-FIRST token sets had_error (⇒ the caller's hand fallback fires)
             // instead of being swallowed into a bogus node — matching the interpreter,
@@ -688,25 +662,6 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             // the alternation's generic "expected expression".
             let fb_pre = if seq_build_uses_sp_start(b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
             tail = fb_pre + emit_seq_stmts_from(g, b, "    ", 1) + "    ${emit_seq_result(g, b)}\n"
-        } else if is_leading_hand(b) && i == last {
-            // A LEADING-`@hand` LAST branch is the UNGUARDED tail — the delegate owns
-            // every case earlier branches didn't match, INCLUDING error recovery
-            // (its own diagnostics), exactly like the single-branch `x = @hand(f)`
-            // form. Guarding it with the delegate's FIRST + a grammar error_node
-            // tail would divert a stray token (e.g. `* 5`) to a DSL error instead of
-            // the hand parser's recovery — the recovery-tree oracle's exact catch.
-            // Covers both a BARE `@hand` tail (`| @hand(hand_unary)`) and a `@hand`-
-            // BASE tail with trailing postfix folds (`base:@hand(call_leaf) ( … )* ->
-            // fold_with`): the trailing items only post-process the base, and never
-            // consume the stray token, so recovery still flows through the leading
-            // @hand. The sp_start prelude + item statements emit exactly as the
-            // guarded general branch below, minus the `if`-guard and error tail.
-            let sp_pre = if seq_build_uses_sp_start(b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
-            tail = sp_pre + emit_seq_stmts(g, b, "    ") + "    ${emit_seq_result(g, b)}\n"
-        } else if is_bare_hand(b) {
-            out = out + "    if ${seq_first_guard(g, b, [])} {\n"
-            out = out + "        return ${emit_seq_result(g, b)}\n"
-            out = out + "    }\n"
         } else {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
             // A span-stamping build (e.g. fold_with) captures the rule-entry byte
@@ -1003,36 +958,12 @@ fn lone_item_index(seq: GSeq) -> int { seq_lone_item_index(seq) }
 
 fn is_bare_ref(seq: GSeq) -> bool { seq_is_bare_ref(seq) }
 
-/// True for `| @hand(fn)` — a lone One @hand-delegation branch (no build). As the
-/// LAST branch it is the unguarded tail (the delegate owns every unmatched case +
-/// its own error recovery), matching the single-branch `x = @hand(f)` lowering.
-fn is_bare_hand(seq: GSeq) -> bool {
-    seq.items.length == 1 && rep_is_one(seq.items[0].rep) &&
-        prim_is_hand(seq.items[0].prim) && build_is_none(seq.build)
-}
-
-/// True for a branch whose FIRST item is a One `@hand` delegate AND whose remaining
-/// items are all NULLABLE (Star/Opt) postfix folds — the catch-all tail shape, a
-/// SUPERSET of is_bare_hand: the bare form (`| @hand(f)`) AND a `@hand`-BASE with
-/// trailing NULLABLE postfix folds (`base:@hand(call_leaf) ( s:@hand(with_suffix)
-/// )* -> fold_with`). As the LAST dispatch branch it emits UNGUARDED (emit_dispatch):
-/// the leading @hand owns error recovery, and the nullable trailing items only
-/// post-process its result — so a stray token still reaches the hand parser's
-/// recovery, not a DSL error node (the recovery-tree oracle's invariant).
-///
-/// A REQUIRED trailing item (One/Plus) after the leading @hand would make the branch
-/// a genuine sequence whose @hand must NOT run on tokens outside its FIRST set (that
-/// would bypass dispatch and diverge from executor.exec_node) — so such a branch is
-/// NOT a leading-hand tail; it must be FIRST-guarded like any other. Only nullable
-/// (Star/Opt) trailing items qualify.
-fn is_leading_hand(seq: GSeq) -> bool { seq_is_leading_hand(seq) }
-
 // ── Sequence statements (a dispatch branch's / general seq's body) ──
 
 /// The statement lines for a sequence: list accumulators declared once at the
 /// top (for every label captured under a repetition anywhere in the branch),
 /// then one emission per item in order. A lone primary with no build is
-/// consumed BY its result (literal_node / run_hand), so it emits no statements.
+/// consumed BY its result (literal_node), so it emits no statements.
 fn emit_seq_stmts(g: Grammar, seq: GSeq, ind: string) -> string {
     emit_seq_stmts_from(g, seq, ind, 0)
 }
@@ -1061,7 +992,7 @@ fn emit_seq_stmts_from(g: Grammar, seq: GSeq, ind: string, idx_base: int) -> str
 
 /// A sequence whose result consumes its sole primary itself: a lone unlabelled
 /// terminal (the default literal build) or a lone @hand primary. These emit no
-/// pre-consume — emit_seq_result's `st.advance()` / run_hand does it.
+/// pre-consume — emit_seq_result's `st.advance()` does it.
 ///
 /// Keyed on `lone_item_index`, so a leading zero-width `@peek`/`@when` gate does not
 /// hide the lone primary. It MUST agree with emit_seq_result's own lone check: if this
@@ -1075,7 +1006,7 @@ fn is_lone_primary_result(seq: GSeq) -> bool {
         return false
     }
     let p = seq.items[lone].prim
-    (prim_is_terminal(p) && seq.items[lone].label == "") || prim_is_hand(p)
+    prim_is_terminal(p) && seq.items[lone].label == ""
 }
 
 /// The per-item lines (no list declarations — those are hoisted by the
@@ -1138,11 +1069,9 @@ fn emit_seq_items_from(g: Grammar, seq: GSeq, outer_annots: List<GAnnot>, ind: s
         // sequence is never speculative — so it is exactly the "safe to `break`" test the
         // cut abort needs (t-x2fb).
         out = out + emit_item(g, item, idx, annots_or(seq.annots, outer_annots), ind, list_labels, opts, abortable, ctx, seq.speculative)
-        // Phase 3a base-threading (twin of exec_seq's hook): after a grammar-BUILT base
-        // (fold_postfix_with item 0 that is NOT @hand — a literal terminal), seed
-        // st.postfix_base so the ( postfix_suffix )* loop wraps it. The @hand base seeds
-        // itself inside run_hand_expr, so it is skipped (no redundant seed on the hot path).
-        if seeds_postfix && idx == idx_base && !prim_is_hand(item.prim) {
+        // Phase 3a base-threading (twin of exec_seq's hook): after the base parses,
+        // seed st.postfix_base so the ( postfix_suffix )* loop wraps it.
+        if seeds_postfix && idx == idx_base {
             out = out + "${ind}st.seed_postfix(capval_to_expr(st, ${item.label}), sp_start)\n"
         }
         idx = idx + 1
@@ -1510,18 +1439,6 @@ fn emit_one(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, ind: string
             }
             req + emit_ref_capture(g, item, name, ind, list_labels, opts)
         }
-        .Hand(hf) -> {
-            // A `@hand` primary captured under a repetition (`( s:@hand(f) )*`)
-            // accumulates into the branch's list (the emit twin of the .Ref list
-            // case, and of the executor's bind→append_node). run_hand_* yields a
-            // raw id boxed by emit_hand_result; coerce it back to the list element.
-            if str_in(list_labels, item.label) {
-                return "${ind}${item.label}_list.push(${kind_coerce(hand_kind(hf))}(st, ${emit_hand_result(hf)}))\n"
-            }
-            if str_in(opts, item.label) { return "${ind}${item.label} = ${emit_hand_result(hf)}\n" }
-            if item.label == "" { return "${ind}let _ = ${emit_hand_result(hf)}\n" }
-            "${ind}let ${item.label} = ${emit_hand_result(hf)}\n"
-        }
         // `@gensym` mints in PARSE ORDER, which is the whole reason it is a positional
         // primary rather than a build helper — see GPrim.Gensym. It emits a plain `let`
         // of the shared `gensym_token`, so the generated parser and the interpreter mint
@@ -1773,33 +1690,18 @@ fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_lab
     }
 }
 
-/// A starred/plus group `( … )*` → a while guarded by the group's FIRST.
-/// True iff a repeat group's body is a SINGLE @hand item (one branch, one item,
-/// a `.Hand`). Such a body can consume NOTHING (a @hand delegate whose entry guard
-/// is a superset of its own precise predicate — the Phase-3a postfix chain), so its
-/// emitted `while` needs a no-progress break to mirror the interpreter's exec_repeat
-/// (which already breaks on no progress). Always-progressing single-@hand loops
-/// (with_suffix) get a dead-but-harmless break.
-/// True iff the group is a single `@hand` delegate — INCLUDING one reached through a
-/// one-line delegate rule (`postfix_suffix = @hand(postfix_suffix)`).
-///
-/// This gates the no-progress break emitted below, which is LOAD-BEARING: a hand step
-/// that consumes nothing must END the chain, because the loop's FIRST guard can stay
-/// true while the step declines to consume (the postfix chain guards on `Tk.Less`, so
-/// `a < b` re-enters forever once the generic-call step decides it is a comparison).
-///
-/// Sharing one delegate behind a named rule — so 19 FIRST-disjoint bases reference it
-/// once instead of duplicating it — is a SPELLING change, not a semantic one, so the
-/// guard must survive it. Resolving one level of bare-ref indirection here keeps the
-/// emitted loop identical whether the delegate is written inline or named.
-fn group_is_single_hand(g: Grammar, node: GNode) -> bool {
+/// True iff a repeat group's body is a single ref to a rule that can decline
+/// WITHOUT consuming (a speculative alternative rolls back to zero width). Such
+/// a body's emitted `while` needs a no-progress break: the loop's FIRST guard
+/// can stay true while the step declines to consume (the postfix chain guards
+/// on `Tk.Less`, so `a < b` re-enters forever once the generic-call step
+/// decides it is a comparison).
+fn group_can_stall(g: Grammar, node: GNode) -> bool {
     match node {
         .Alt(branches) -> {
             if branches.length != 1 || branches[0].items.length != 1 { return false }
-            let p = branches[0].items[0].prim
-            if prim_is_hand(p) { return true }
-            match p {
-                .Ref(nm) -> rule_reaches_hand(g, nm)
+            match branches[0].items[0].prim {
+                .Ref(nm) -> rule_reaches_spec(g, nm)
                 _ -> false
             }
         }
@@ -1821,7 +1723,6 @@ fn single_plain_ref_group(g: Grammar, node: GNode, list_labels: List<string>) ->
             if it.mode_off != "" || it.mode_on != "" || it.mode_bump != "" || it.mode_on_if != "" || it.bound != "" { return no }
             match it.prim {
                 .Ref(nm) -> {
-                    if rule_has_hand_alt(g, nm) { return no }
                     let acc = if it.label != "" && str_in(list_labels, it.label) {
                         "${it.label}_list.push(${kind_coerce(rule_result_kind(g, nm))}(st, __rep_cv))"
                     } else {
@@ -1831,22 +1732,6 @@ fn single_plain_ref_group(g: Grammar, node: GNode, list_labels: List<string>) ->
                 }
                 _ -> no
             }
-        }
-    }
-}
-
-/// True iff `name`'s alternation has an ACTUAL `@hand` alternative — the
-/// hand-only half of rule_reaches_hand's disjunction, splitting the two
-/// no-progress shapes single_plain_ref_group must tell apart.
-fn rule_has_hand_alt(g: Grammar, name: string) -> bool {
-    let i = rule_index_of(g, name)
-    if i < 0 { return false }
-    match g.rules[i].body {
-        .Alt(branches) -> {
-            for b in branches {
-                if b.items.length == 1 && prim_is_hand(b.items[0].prim) { return true }
-            }
-            false
         }
     }
 }
@@ -1991,14 +1876,13 @@ fn node_has_gate(node: GNode) -> bool {
 /// interpreter needs the SAME scoping answer as the emitter (its `@require`-ref
 /// abort check is the twin of `emit_one`'s), and `executor.av` deliberately does
 /// not import `emit.av`, so a second copy here would be the drift hazard.
-fn rule_reaches_hand(g: Grammar, name: string) -> bool {
+fn rule_reaches_spec(g: Grammar, name: string) -> bool {
     let i = rule_index_of(g, name)
     if i < 0 { return false }
     match g.rules[i].body {
         .Alt(branches) -> {
             for b in branches {
-                if b.items.length == 1 && prim_is_hand(b.items[0].prim) { return true }
-                // A rolled-back `@try` consumes nothing — same hazard as a declining hand.
+                // A rolled-back `@try` consumes nothing.
                 if b.speculative { return true }
             }
             false
@@ -2241,7 +2125,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     let req = match item.rep { .Plus -> "${ind}if ${req_bound_guard}!(${same_line_wrap(item, node_first_guard(g, inner, []))}) {\n${ind}    st.report(\"${req_msg}\")\n${req_abort}${ind}}\n"  _ -> "" }
             // The bound pieces are empty strings when unbounded, so splicing them into
             // this multi-line shape leaves the generated text byte-identical.
-            if group_is_single_hand(g, inner) {
+            if group_can_stall(g, inner) {
                 // Two body orders, split by WHAT a no-progress iteration hands back.
                 let spr = single_plain_ref_group(g, inner, list_labels)
                 if spr.applies {
@@ -2268,8 +2152,8 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                 // also what terminated the loop — so `while lookahead_ok(cond, st)` over
                 // an element that consumes nothing spins forever. Measured: `enum E {`
                 // with a gated variant loop HUNG (exit 124), it did not merely report the
-                // wrong message. The break is the same one group_is_single_hand emits for
-                // the hand-delegate shape, required here for the same reason: the loop
+                // wrong message. The break is the same one group_can_stall emits,
+                // required here for the same reason: the loop
                 // condition no longer implies progress.
                 req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     bnd.guard +
@@ -2336,11 +2220,9 @@ fn emit_node_items(g: Grammar, node: GNode, annots: List<GAnnot>, ind: string, l
 
 fn emit_seq_result(g: Grammar, seq: GSeq) -> string {
     // `lone_item_index`, NOT `items.length == 1`: a leading `@peek`/`@when` is a
-    // ZERO-WIDTH gate, so `@peek(c) @hand(f)` is still a LONE hand primary. Counting
-    // raw items made both checks below miss it, and the sequence fell through to the
-    // build-less `.None` arm — emitting `let _ = run_hand_stmt(…)` and returning
-    // CapVal.Nil, i.e. running the leaf and THROWING ITS RESULT AWAY. (Caught peeling
-    // the match table sub-language off behind `@peek(match_table) @hand(match_table)`.)
+    // ZERO-WIDTH gate, so `@peek(c) X` is still a LONE primary. Counting raw
+    // items made both checks below miss it, and the sequence fell through to the
+    // build-less `.None` arm — running the primary and THROWING ITS RESULT AWAY.
     let lone = lone_item_index(seq)
     // A lone unlabelled terminal with no build is the default literal build
     // (executor coerces the boundary Tok via literal_node).
@@ -2348,11 +2230,6 @@ fn emit_seq_result(g: Grammar, seq: GSeq) -> string {
         seq.items[lone].label == "" && prim_is_terminal(seq.items[lone].prim) &&
         build_is_none(seq.build) {
         return "CapVal.Node(literal_node(st, st.advance()))"
-    }
-    // A lone @hand primary is its own result.
-    if lone >= 0 && rep_is_one(seq.items[lone].rep) &&
-        prim_is_hand(seq.items[lone].prim) && build_is_none(seq.build) {
-        return emit_hand_result(hand_name(seq.items[lone].prim))
     }
     match seq.build {
         .None -> "CapVal.Nil"
@@ -2653,19 +2530,6 @@ fn build_fn(name: string) -> string {
     name
 }
 
-// ── @hand → the run_hand* family (executor.exec_primary's Hand dispatch) ──
-
-fn emit_hand_result(hf: string) -> string {
-    if is_hand_stmt_leaf(hf) { return "CapVal.SNode(run_hand_stmt(\"${hf}\", st))" }
-    if is_hand_expr_leaf(hf) { return "CapVal.Node(run_hand_expr(\"${hf}\", st))" }
-    "CapVal.Node(run_hand(\"${hf}\", st))"
-}
-
-// The rule classes come straight from the shared hand-leaf table
-// (hand_leaves.av), the same one the executor dispatches through — so the
-// emitted parser and the interpreter cannot disagree about which class a leaf
-// belongs to. These were hand-maintained copies of executor.av's predicates,
-// kept in sync by a comment; adding a leaf now touches ONE table (rule 8).
 
 // ── FIRST-set guards (branch selection + repetition guards) ──
 //
@@ -2761,7 +2625,6 @@ fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
     match prim {
         .Lit(t) -> tk_guard(t)
         .Named(tok) -> named_tk_guard(tok)
-        .Hand(hf) -> hand_first_guard(hf)
         .Group(inner) -> node_first_guard(g, inner, visited)
         .Ref(name) -> rule_first_guard(g, name, visited)
         // A zero-width `@when` predicate: its guard is the mode conjunct. Reached
@@ -2779,55 +2642,6 @@ fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {
         // tok_starts arm, it is never a branch head in practice.
         .RawBrace(_) -> "true"
     }
-}
-
-/// Mirrors executor.hand_starts as a guard expression.
-fn hand_first_guard(hf: string) -> string {
-    if hf == "ident" { return named_tk_guard("IDENT") }
-    if hf == "number" { return named_tk_guard("NUMBER") }
-    if hf == "component_decl" { return "st.cur().text == \"component\"" }
-    if hf == "let_stmt" { return "st.cur().text == \"let\"" }
-    if hf == "return_stmt" { return "st.cur().text == \"return\"" }
-    if hf == "match_table" { return "st.cur().text == \"match\"" }
-    if hf == "quote_expr" { return "st.cur().text == \"quote\"" }
-    // Keyword-led expression primaries (Phase 3a-11) — byte-side twins of the
-    // executor hand_starts FIRST guards (kept in lockstep).
-    if hf == "match_expr" { return "st.cur().text == \"match\"" }
-    if hf == "if_expr" { return "st.cur().text == \"if\"" }
-    // Clean-FIRST bracket/qualified primaries — byte-side twins (Tk compares, 1:1
-    // with the punctuation text) of the executor hand_starts FIRST guards.
-    if hf == "list_expr" { return tk_guard("[") }
-    if hf == "paren_expr" { return tk_guard("(") }
-    if hf == "ident_primary" { return named_tk_guard("IDENT") }
-    if hf == "ident_expr" { return "${named_tk_guard("IDENT")} || ${tk_guard("@")}" }
-    if hf == "more_primary" { return "${tk_guard(".")} || ${tk_guard("[")}" }
-    // The leaf's FIRST is the shared exported predicate (executor's
-    // tok_starts_expr_leaf) — the emitted static parser calls it directly, so
-    // the FIRST-set has ONE source of truth across both consumers (rule 8).
-    if hf == "hand_unary" { return "tok_starts_expr_leaf(st.cur())" }
-    // The `with`-base leaf shares that same FIRST (parse_unary_leaf); a `with { … }`
-    // postfix step's FIRST is the `with` keyword (a keyword — text compare, like `not`).
-    if hf == "call_leaf" { return "tok_starts_expr_leaf(st.cur())" }
-    // Phase 3a: the primary base shares the leaf FIRST (parse_primary_base); a
-    // postfix suffix's FIRST is the postfix-op set (Tk-dispatched, a SUPERSET of
-    // postfix_step's precise guard — the no-progress break exits when a step
-    // consumes nothing). Mirrors executor.hand_starts("postfix_suffix").
-    if hf == "primary_base" { return "tok_starts_expr_leaf(st.cur())" }
-    if hf == "postfix_suffix" { return "${tk_guard(".")} || ${tk_guard("(")} || ${tk_guard("[")} || ${tk_guard("!")} || ${tk_guard("?")} || ${tk_guard("?.")} || ${tk_guard("<")} || ${tk_guard("catch")}" }
-    // The lambda body's FIRST is the same leaf FIRST (`{` block ∪ FIRST(expression)) —
-    // byte-side twin of executor.hand_starts("lambda_body"). t-47hc paren flip prep,
-    // DORMANT (no live grammar references @hand(lambda_body), so unemitted today).
-    if hf == "lambda_body" { return "tok_starts_expr_leaf(st.cur())" }
-    if hf == "lambda_block_body" { return tk_guard("{") }
-    // ps3t.6.7 Phase 2 — the whole-declaration dispatch FIRST set, mirroring
-    // executor.hand_starts("decl_hand") exactly so the generated static parser
-    // routes to run_hand_stmt on the same tokens the interpreter flip does
-    // (byte-identical dispatch). The `stmt_hand` twin went with its leaf in
-    // t-47hc.37 — no grammar referenced it, and the parser it named is deleted.
-    if hf == "decl_hand" {
-        return "st.cur().kind == \"IDENT\" || st.cur().kind == \"DOC\" || st.cur().kind == \"MODDOC\" || st.cur().text == \"@\" || st.cur().text == \"export\" || st.cur().text == \"fn\" || st.cur().text == \"type\" || st.cur().text == \"enum\" || st.cur().text == \"trait\" || st.cur().text == \"impl\" || st.cur().text == \"use\" || st.cur().text == \"mod\" || st.cur().text == \"const\" || st.cur().text == \"let\" || st.cur().text == \"mut\" || st.cur().text == \"extern\" || st.cur().text == \"shape\" || st.cur().text == \"spec\" || st.cur().text == \"parallel\" || st.cur().text == \"select\" || st.cur().text == \"component\""
-    }
-    "false"
 }
 
 fn node_first_guard(g: Grammar, node: GNode, visited: List<string>) -> string {
@@ -3185,14 +2999,6 @@ fn prim_is_group(prim: GPrim) -> bool {
     match prim { .Group(_) -> true  _ -> false }
 }
 
-fn prim_is_hand(prim: GPrim) -> bool {
-    match prim { .Hand(_) -> true  _ -> false }
-}
-
-fn hand_name(prim: GPrim) -> string {
-    match prim { .Hand(hf) -> hf  _ -> "" }
-}
-
 /// Does rule `name` SELF-VALIDATE — i.e. when invoked on a token OUTSIDE its FIRST
 /// set, does it set `had_error` (rather than blindly consuming into a bogus node)?
 /// This decides whether the LAST bare-ref branch of a dispatch may be the UNGUARDED
@@ -3272,7 +3078,6 @@ fn list_decl_type(g: Grammar, seq: GSeq, label: string) -> string {
         .Named(_) -> "Token"
         .Group(_) -> "Token"
         .Ref(name) -> kind_elem_type(rule_result_kind(g, name))
-        .Hand(hf) -> kind_elem_type(hand_kind(hf))
         // A zero-width `@when`/`@peek` predicate is never captured into a list; these
         // arms exist only for exhaustiveness.
         .Pred(_) -> "Token"

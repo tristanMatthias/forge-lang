@@ -23,7 +23,7 @@ use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id}
 
 // A control-flow statement grammar: blocks + while/if/for layered on the
-// proven precedence-only expression grammar (plus @hand(ident) so a
+// proven precedence-only expression grammar (plus IDENT so a
 // collection `for x in coll { … }` and identifier operands parse). The
 // for rule's optional `.. hi` picks range vs collection post-expression,
 // exactly as the hand parser's `..`-lookahead does.
@@ -45,7 +45,7 @@ fn cf_grammar_src() -> string {
     "  term          = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
     "  factor        = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
     "  unary         = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
-    "  primary       = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "  primary       = NUMBER | STRING | \"true\" | \"false\" | IDENT\n" +
     "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
     "}"
 }

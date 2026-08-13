@@ -6,7 +6,5 @@ use core.{feature_new, Feature}
 /// expand into struct + factory + method fns — see `expand.av`;
 /// @expand-annotated defs route through the comptime macro pipeline.
 export fn component_decl_feature() -> Feature {
-    feature_new("component_decl") with {
-        decl_keyword: "kw_component",
-    }
+    feature_new("component_decl")
 }

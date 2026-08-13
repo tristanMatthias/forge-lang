@@ -44,7 +44,6 @@ export fn parallel_feature() -> Feature {
     let empty_body: List<StmtId> = []
     feature_new("parallel") with {
         stmt_tag: Stmt.Parallel(empty_body),
-        decl_keyword: "kw_parallel",
         emit_stmt: parallel_emit_stmt,
         resolve_stmt: parallel_resolve,
         check_stmt: parallel_check,

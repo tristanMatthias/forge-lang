@@ -124,7 +124,7 @@ spec "grammar-DSL parser == hand-written parser (expression family, ps3t.6.5)" {
             agree("(1 + 2) * 3 & 4 | 5 && 6 == 7")
         }
     }
-    given "identifiers via the @hand(ident) escape-hatch" {
+    given "identifiers via the IDENT escape-hatch" {
         then "bare identifiers parse equivalently to the real parser" {
             agree("x") &&
             agree("foo + bar") &&

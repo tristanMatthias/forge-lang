@@ -39,17 +39,17 @@ fn perr(gsrc: string) -> string { parse_grammar(gsrc).error }
 // lookahead holds → branch 1 fires (consumes `foo : bar`, wraps foo in Grouping); on a
 // bare `foo` it fails → branch 1 is skipped and branch 2 (bare ident) fires. The distinct
 // results (`(group foo)` vs `foo`) prove @peek gates branch selection, not just FIRST.
-fn peek_g() -> string { "r = @peek(ident_colon) x:@hand(ident) \":\" @hand(ident) -> Grouping(x)\n  | x:@hand(ident) -> x" }
+fn peek_g() -> string { "r = @peek(ident_colon) x:IDENT \":\" IDENT -> Grouping(x)\n  | x:IDENT -> x" }
 
 spec "t-47hc: @peek(ident_colon) — parse-time acceptance + validation" {
     then "a valid @peek is accepted" {
         perr(peek_g()) == ""
     }
     then "an unknown cond is a HARD error (not a silent dead guard)" {
-        perr("r = @peek(nonsense) x:@hand(ident) -> x") != ""
+        perr("r = @peek(nonsense) x:IDENT -> x") != ""
     }
     then "the parentheses are required — `@peek cond` without `(` fails" {
-        perr("r = @peek ident_colon x:@hand(ident) -> x") != ""
+        perr("r = @peek ident_colon x:IDENT -> x") != ""
     }
     then "peek_cond_supported accepts the known conditions, rejects a typo and empty" {
         peek_cond_supported("ident_colon") && peek_cond_supported("stmt_block") &&
@@ -121,7 +121,7 @@ spec "t-47hc: @peek(ident_colon) — emit folds the lookahead guard" {
         emit_rule(peek_g(), "r").contains("lookahead_ok(\"ident_colon\", st)")
     }
     then "WITHOUT @peek, no lookahead_ok is emitted — byte-identical for grammars not using it" {
-        !emit_rule("r = x:@hand(ident) -> x", "r").contains("lookahead_ok(")
+        !emit_rule("r = x:IDENT -> x", "r").contains("lookahead_ok(")
     }
 }
 

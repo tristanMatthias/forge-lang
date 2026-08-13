@@ -63,8 +63,7 @@ spec "t-47hc Phase 4: the doc / module-doc / annotation wrappers are emitted as 
         let doc_at = src.index_of("parse_doc_decl(st)")
         let mdoc_at = src.index_of("parse_mdoc_decl(st)")
         let ann_at = src.index_of("parse_annot_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
-        doc_at >= 0 && mdoc_at >= 0 && ann_at >= 0 && hand_at < 0
+        doc_at >= 0 && mdoc_at >= 0 && ann_at >= 0
     }
 
     then "ALL THREE wrappers are COMMITTED — they own the lone-prefix frontier (t-47hc.4.3)" {
@@ -138,11 +137,10 @@ spec "t-47hc Phase 4: the doc / module-doc / annotation wrappers are emitted as 
         // unguarded error-recovery role. Nothing was removed here and the tail must
         // stay `parse_statement(st)`.
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
         // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
         // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
-        tail_at >= 0 && hand_at < 0
+        tail_at >= 0
     }
 }
 

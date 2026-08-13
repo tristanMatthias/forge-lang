@@ -26,13 +26,10 @@ use features.grammar.{code_at, is_ident_start_code}
 // than re-deriving it at token level, which is not equivalent — see the note
 // at the cores in chars.av for the four divergences that depends on.
 use features.grammar.{word_excluded_as_instance_name, src_next_nonws_is_quote, src_next_nonws_is_digit, src_next_nonws_starts_with, src_next_nonws_is_single_eq, src_next_nonws_is_lbrace, src_next_nonws_is_value_word, src_at_empty_call_block}
-use features.grammar.{hand_stmt_leaf, hand_expr_leaf, is_hand_stmt_leaf, is_hand_expr_leaf}
-use parse.{parser_new_with_file, parser_new_with_store, Parser, ParserState, desugar_template_store}
-use diagnostics.{DiagnosticBag}
+use parse.{parser_new_with_file, parser_new_with_store, Parser, desugar_template_store}
 use list_ops.{lower_bound}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 
-extern fn avra_process_env_get(name: string) -> string
 extern fn avra_gensym() -> int
 
 // ── Capture values + environment ──
@@ -499,9 +496,8 @@ export type RunResult = { store: NodeStore, root: ExprId, had_error: bool, diags
 // `src` is the ORIGINAL source text (when known) — carried so a `@hand`
 export type ExprModes = { allow_struct_lit: int, allow_dot_postfix: int, allow_it_sugar: int, quote_depth: int, cell_mode: bool }
 
-/// The modes of a freshly-constructed hand parser (parser_new_with_file) — the
-/// default for every PState that isn't the expression flip, so run_hand_expr's
-/// delegated parser behaves exactly as it does today on those paths.
+/// The modes of a freshly-constructed parser — the default for every PState
+/// that isn't the expression flip.
 export fn default_expr_modes() -> ExprModes {
     ExprModes { allow_struct_lit: true, allow_dot_postfix: true, allow_it_sugar: false, quote_depth: 0, cell_mode: false }
 }
@@ -551,7 +547,7 @@ export type GDiag = { code: string, msg: string, at: int, byte: int, end_byte: i
 /// lexer diagnostic before every parser one, and the recovery corpus compares the
 /// ORDERED F-code signature, so order is the assertion. Releasing them mid-parse is
 /// worse — see `seed_lex_diags`. The interleave happens in `boundary_diags`.
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, hand_delegate: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool, lex_diags: List<LexDiag>, first_pos: int }
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, host: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool, lex_diags: List<LexDiag>, first_pos: int }
 
 /// One in-place token-stream mutation (today: only `split_gt`'s `>>` → `>`),
 /// journalled so a rollback can UNDO it. The stream is SHARED — across the
@@ -561,11 +557,6 @@ export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: strin
 /// used to leave a single `>` in the slot, and the re-parse of
 /// `List<MemoEntry<V>>` then failed at the `)` with the first `>` simply gone.
 export type TokEdit = { idx: int, orig: Token }
-
-/// Full procedural-delegate snapshot for a grammar `@try`. `ParserState.bag`
-/// aliases the parser's mutable bag record, so it cannot by itself preserve the
-/// pre-branch diagnostics; keep an explicit value-copy of the bag beside it.
-export type HandTryState = { parser: ParserState, bag: DiagnosticBag, gensym: int }
 
 /// Postfix-chain accumulator snapshot for a grammar `@try` — see save_postfix_state.
 /// Plain ids/offsets, so a value copy IS the snapshot.
@@ -739,7 +730,6 @@ impl PState {
     fn set_postfix_base(self, base: ExprId) {
         self.postfix_base = base
     }
-
     /// Freeze the chain accumulator for ONE `postfix_suffix` step (t-47hc.33).
     ///
     /// A suffix that RECURSES into `expression` — `[i]`, `(args)`, `<T>(args)` — runs a
@@ -811,9 +801,7 @@ impl PState {
     /// abandoned attempt minted dies with the store truncation, so the counter must
     /// die with it — otherwise the retry mints `$letelse$2` where the pure-hand
     /// oracle mints `$letelse$1` (the malformed-binding recovery corpus's catch).
-    /// The hand parser's save_state keeps its exclusion ("NOT snapshotted, by
-    /// design") for its OWN internal backtracks; the speculative snapshots carry the
-    /// counter explicitly (HandTryState.gensym / s_gensym).
+    /// The speculative snapshots carry the counter explicitly (s_gensym).
     fn fresh(self, tag: string) -> string {
         self.gensym_seq = self.gensym_seq + 1
         gensym_name(tag, self.gensym_seq)
@@ -904,8 +892,7 @@ impl PState {
         }
     }
 
-    /// Snapshot the POSTFIX CHAIN ACCUMULATOR alongside a grammar `@try` — the sibling
-    /// of save_hand_state, for the same reason and against the same failure.
+    /// Snapshot the POSTFIX CHAIN ACCUMULATOR alongside a grammar `@try`.
     ///
     /// `exec_seq` is error-TOLERANT: a speculative branch that mismatches a terminal
     /// reports and keeps going, so its `-> build` STILL RUNS, on whatever the captures
@@ -936,66 +923,26 @@ impl PState {
         self.postfix_step_sp = saved.step_sp
     }
 
-    /// The `@hand` delegate, built ON FIRST USE. Production threads one in at
-    /// construction and this returns it unchanged; the interpreter entries construct with
-    /// `null` and materialise here, which is what lets a REGISTRY-driven `@peek` predicate
-    /// (`ident_lbrace_plain` asking `lookup_expr_parser` whether a feature owns
-    /// `name { … }`) get a truthful answer on the oracle paths instead of the conservative
-    /// one that routed the form to the `@hand` tail and left the native branch it guards
-    /// unmeasured (t-47hc.31).
+    /// The host Parser handle, built ON FIRST USE. Production threads the real
+    /// parser in at construction; the interpreter entries construct with `null`
+    /// and materialise a bare one here, which is what lets a REGISTRY-driven
+    /// `@peek` predicate (`ident_lbrace_plain` asking `lookup_expr_parser`
+    /// whether a feature owns `name { … }`) get a truthful answer on the oracle
+    /// paths instead of the conservative one (t-47hc.31).
     ///
-    /// LAZY, not eager, and that is not a micro-optimisation: `parser_new_with_store`
-    /// builds a full feature Registry (~53 registrations), and `run_grammar_expr` is
-    /// called per ASSERTION across the oracle suite — attaching one at every entry grew
-    /// the grammar suite's peak past 12 GB and tripped the watchdog. Only a parse that
-    /// actually meets an `IDENT {` reaches this, so the rest pay nothing.
-    ///
-    /// The delegate always starts at byte 0, so it is never AHEAD of the grammar cursor
-    /// and `run_hand_expr`'s forward-advance is still monotonic no matter when it is
-    /// built — including inside a `@try` that later rolls back.
-    ///
-    /// A token-only entry has no source for a hand parser to read, so it stays null and
-    /// the registry question keeps its conservative answer.
+    /// LAZY, not eager: `parser_new_with_store` builds a full feature Registry
+    /// (~53 registrations) and `run_grammar_expr` runs per ASSERTION across the
+    /// oracle suite — an eager build at every entry grew the suite's peak past
+    /// 12 GB. A token-only entry has no source, stays null, and the registry
+    /// question keeps its conservative answer.
     fn delegate(self) -> Parser? {
-        if self.hand_delegate != null { return self.hand_delegate }
+        if self.host != null { return self.host }
         if self.src == "" { return null }
         mut d = parser_new_with_store(self.src, self.file, self.store)
         d.records_roots = 0
         d.expr_flip = false
-        self.hand_delegate = d
-        self.hand_delegate
-    }
-
-    /// Snapshot the threaded procedural delegate alongside a grammar `@try`.
-    /// A speculative native branch may call an expression `@hand` leaf, which
-    /// advances this parser independently of `PState.pos`; rolling back only the
-    /// token index would leave the fallback delegate ahead of the retry point.
-    fn save_hand_state(self) -> HandTryState? {
-        if self.hand_delegate == null { return null }
-        let d = self.hand_delegate!
-        let bag = DiagnosticBag {
-            diagnostics: list_take(d.bag.diagnostics, d.bag.diagnostics.length),
-            error_count: d.bag.error_count,
-            warning_count: d.bag.warning_count,
-        }
-        HandTryState { parser: d.save_state(), bag, gensym: d.gensym_seq }
-    }
-
-    /// Restore the procedural half of a failed grammar `@try`: cursor,
-    /// mode/error fields, shared-store mark, and the separately copied bag.
-    fn restore_hand_state(self, saved: HandTryState?) {
-        if saved == null || self.hand_delegate == null { return }
-        mut d = self.hand_delegate!
-        d.restore_state(saved!.parser)
-        d.bag = saved!.bag
-        // The hygiene counter rolls back WITH the store truncation the caller
-        // performs: every temp the abandoned branch minted dies with its rows, so
-        // NOT restoring re-mints later temps one-off from the pure-hand oracle
-        // ($letelse$2 where FLIP=0 mints $letelse$1 — the malformed-binding
-        // recovery corpus is the guard). ParserState itself still excludes the
-        // counter by design; the speculative snapshot is the one context where
-        // the discard makes rolling it back sound.
-        d.gensym_seq = saved!.gensym
+        self.host = d
+        self.host
     }
 
     /// A whole-construct error placeholder (no matching alternative).
@@ -1130,7 +1077,6 @@ fn tok_starts_prim(g: Grammar, prim: GPrim, st: PState, visited: List<string>) -
         .Named(name) -> named_tok_matches(name, tok)
         .Ref(name) -> tok_starts_rule(g, name, st, visited)
         .Group(inner) -> tok_starts_node(g, inner, st, visited)
-        .Hand(hf) -> hand_starts(hf, tok)
         // A `@when` predicate is zero-width — it starts no token. It never
         // reaches here for a LEADING position (tok_starts_seq skips it); this
         // arm covers a non-leading predicate, which contributes no FIRST token.
@@ -1265,24 +1211,12 @@ fn lookup_rule(g: Grammar, name: string) -> Rule {
 /// the `run_grammar_expr_src` boundary, minus the interpreter.
 export fn new_pstate(src: string) -> PState {
     let store = new_node_store(build_line_index(src))
-    // Attach ONE reusable @hand delegate (sharing the store) so run_hand_expr
-    // forward-advances a SINGLE parser across the whole parse — O(source) — rather
-    // than building a fresh parser (~53 build_registry registrations) AND re-lexing
-    // from byte 0 to the leaf on EVERY @hand leaf, which is O(source^2). That
-    // quadratic fallback made the emit-gen generated parser ~72x slower than the
-    // hand parser (measured, callgrind); the reused delegate closes that gap. Leaf
-    // positions are visited monotonically (predictive LL, no backtracking), so the
-    // delegate advances each token once. Tree-equivalent to the fresh-parser path
-    // (only line/span accounting differs, which dump-based equivalence ignores).
-    //
-    // EAGER here, unlike PState.delegate()'s lazy materialisation: this is the
-    // generated-parser setup, where `@hand` leaves are the common case and
-    // `run_hand_expr` reads `hand_delegate` directly — deferring it would just hand
-    // every leaf the fresh-parser fallback this exists to avoid.
+    // ONE host parser, sharing the store, so registry-driven predicates answer
+    // truthfully and the gensym counter is continuous across the parse.
     mut d = parser_new_with_store(src, "", store)
     d.records_roots = 0
     d.expr_flip = false
-    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -1301,14 +1235,12 @@ export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: Node
 }
 
 /// Shared core of the expression entry. `src` is threaded (empty on the
-/// token-only path) so a `@hand` EXPRESSION rule can delegate to the real hand
-/// parser over the original source — the `run_hand_expr` analogue of
-/// `run_grammar_stmt_src`. `quote { … }` is the case: a leading `~` inside a
-/// quote body is `Expr.Splice`, which the hand parser decides on its
-/// `quote_depth` mode counter (a parser mode the token-grammar can't carry;
+/// token-only path) so source-level predicates can read it. `quote { … }` is
+/// the case: a leading `~` inside a quote body is `Expr.Splice`, decided on the
+/// `quote_depth` mode counter (a parser mode the token stream can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -1344,7 +1276,7 @@ export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
 /// store + ps3t.6.5.7/6.5.10 @hand delegation.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -1369,7 +1301,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -1395,7 +1327,7 @@ export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
 
 /// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -2406,8 +2338,8 @@ fn cfg_pair_after(st: PState) -> int {
 /// and so no raw-body component can have been declared: false is not a guess there,
 /// it is the only reachable answer.
 fn comp_name_is_raw_body(st: PState) -> bool {
-    if st.hand_delegate == null { return false }
-    component_is_raw_body(st.hand_delegate!.features, st.cur().text)
+    if st.host == null { return false }
+    component_is_raw_body(st.host!.features, st.cur().text)
 }
 
 /// Is the current identifier a REGISTERED component name? (t-47hc.5.1 slice C)
@@ -2419,8 +2351,8 @@ fn comp_name_is_raw_body(st: PState) -> bool {
 /// not decidable: `acct_sr a { … }` and `foo bar { … }` are the same token shape
 /// and differ only by whether a `component` declaration registered the name.
 fn comp_name_is_registered(st: PState) -> bool {
-    if st.hand_delegate == null { return false }
-    lookup_stmt_parser(st.hand_delegate!.features, st.cur().text) != null
+    if st.host == null { return false }
+    lookup_stmt_parser(st.host!.features, st.cur().text) != null
 }
 
 /// The shared prefix of both config-pair conds — every reason
@@ -2564,7 +2496,6 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
         .Alt(branches) -> {
             let empty: List<string> = []
             mut tried_spec = false
-            // A rolled-back `@try` restores the delegate UNCONDITIONALLY (t-3keo).
             for b in branches {
                 if branch_pred_ok(b, st) && tok_starts_seq(g, b, st, empty) {
                     if b.speculative {
@@ -2577,13 +2508,10 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                         let s_mark = st.store.mark()
                         let s_diags = st.diags.length
                         let s_err = st.had_error
-                        let s_hand = st.save_hand_state()
                         let s_postfix = st.save_postfix_state()
-                        // The PState's OWN hygiene counter (native `@gensym` mints)
-                        // rolls back with the store, same argument as the delegate's
-                        // in restore_hand_state: the branch's minted-into rows die
-                        // with s_mark, so keeping the bump would drift every later
-                        // mint off the pure-hand oracle.
+                        // The hygiene counter (native `@gensym` mints) rolls back
+                        // with the store: the branch's minted-into rows die with
+                        // s_mark, so keeping the bump would drift every later mint.
                         let s_gensym = st.gensym_seq
                         // GAP3 @try-with-builds: snapshot the capture env so a
                         // rolled-back speculative branch's label bindings (now
@@ -2614,7 +2542,6 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                         env.set_abort(false)
                         st.store.truncate_to_mark(s_mark)
                         st.restore_to(s_pos, s_diags, s_err)
-                        st.restore_hand_state(s_hand)
                         st.restore_postfix_state(s_postfix)
                         st.set_gensym_seq(s_gensym)
                     } else {
@@ -2685,9 +2612,7 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_a
     // Phase 3a base-threading (executor twin of the emit seed): a fold_postfix_with
     // seq's item 0 is the postfix-chain BASE; seed st.postfix_base from it AFTER it
     // parses and BEFORE the ( postfix_suffix )* repetition, so each postfix_step wraps
-    // the right base — whether the base is @hand(primary_base) (redundant: run_hand_expr
-    // already seeded the same id + start_byte) or a grammar-BUILT literal (the ONLY path
-    // that otherwise leaves st.postfix_base stale). sp_start = the base's start byte.
+    // the right base. sp_start = the base's start byte.
     let seeds_postfix = seq_seeds_postfix(seq)
     let sp_start = st.cur().pos
     mut last = CapVal.Nil
@@ -2717,9 +2642,7 @@ fn exec_seq(g: Grammar, seq: GSeq, st: PState, env: CapEnv, multi: bool, outer_a
         // generated parser gets it right. `sp_start` needs no adjustment — predicates
         // consume no tokens, so the base's start byte is unchanged.
         if prim_is_pred(item.prim) { continue }
-        // Seed ONLY for a grammar-BUILT base (item 0 not @hand): the @hand(primary_base)
-        // base seeds itself inside run_hand_expr, so re-seeding it is dead work.
-        if seeds_postfix && count == 0 && !prim_is_hand(item.prim) {
+        if seeds_postfix && count == 0 {
             st.seed_postfix(capval_to_expr(st, last), sp_start)
         }
         count = count + 1
@@ -3487,16 +3410,6 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
                 CapVal.Node(st.error_node_silent())
             }
         }
-        // Statement/declaration hand rules delegate to the real hand parser and
-        // yield a Stmt node; expression hand rules (`ident`/`number`) yield an
-        // Expr node. Dispatch on the rule name so a mixed declaration grammar
-        // (pure rules + a `@hand(component_decl)` alternative) routes each to
-        // the right builder.
-        .Hand(hf) -> {
-            if is_hand_stmt_leaf(hf) { CapVal.SNode(run_hand_stmt(hf, st)) }
-            else if is_hand_expr_leaf(hf) { CapVal.Node(run_hand_expr(hf, st)) }
-            else { CapVal.Node(run_hand(hf, st)) }
-        }
         // A `@when` predicate is zero-width — the branch gate already decided
         // this alternative applies (branch_pred_ok in exec_node); executing the
         // predicate itself consumes no token and yields no value.
@@ -3605,86 +3518,6 @@ export fn rawbrace_scan(st: PState, tag: string) -> Token {
     Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
 }
 
-// ── The escape-hatch (@hand) — hand-written rules the grammar calls ──
-//
-// The gnarly 5% (GRAMMAR_DSL.md §5) lives in hand-written code the
-// grammar delegates to by name, not in the DSL notation. In the
-// executor these are a small built-in registry; in the spliced-parser
-// integration (ps3t.6.5) each `@hand(fn)` lowers to a call of a real
-// hand-written Avra parse function (emit.av already renders it that
-// way). Here `ident`/`number` demonstrate the mechanism — a primary the
-// pure expression grammar deliberately omits, added via the hatch.
-
-fn hand_starts(name: string, tok: Token) -> bool {
-    if name == "ident" { return tok.kind == "IDENT" }
-    if name == "number" { return tok.kind == "NUMBER" }
-    // A declaration/statement hand rule's FIRST is its leading keyword.
-    if name == "component_decl" { return tok.text == "component" }
-    if name == "let_stmt" { return tok.text == "let" }
-    if name == "return_stmt" { return tok.text == "return" }
-    // The residual match-statement edge oracle (subjectless/table/bare-return/
-    // quote-splice arms) is intentionally narrower than the generic stmt leaf.
-    if name == "match_table" { return tok.text == "match" }
-    // (Statement blocks are grammar-native — stmt_block's body is `declaration*`,
-    // so an inline module's component parses without a hand fallback.)
-    // An expression hand rule's FIRST is its leading keyword.
-    if name == "quote_expr" { return tok.text == "quote" }
-    // The keyword-led expression primaries (Phase 3a-11): each FIRST is its
-    // leading keyword, routed to the feature's hand parser via run_hand_expr.
-    if name == "match_expr" { return tok.text == "match" }
-    if name == "if_expr" { return tok.text == "if" }
-    // Clean-FIRST bracket/qualified primaries (Phase 3a-10/11): FIRST is the
-    // opening delimiter — `[` list, `@` qualified (`{` brace_expr is above).
-    if name == "list_expr" { return tok.text == "[" }
-    if name == "paren_expr" { return tok.text == "(" }
-    // The identifier-led primary (bare ident / struct-lit / table / feature-kw /
-    // tagged-template) — FIRST is an IDENT.
-    if name == "ident_primary" { return tok.kind == "IDENT" }
-    // (Interpolated strings and brace primaries are grammar-native now — template_lit
-    // t-47hc.19, brace_expr t-47hc.18 — so neither has a hand_starts entry.)
-    // The ident-primary (bare ident / struct literal / qualified @pkg::T /
-    // generic call) starts with IDENT or `@` (ps3t.6.7). parse_primary handles
-    // the struct-lit / qualified / generic-turbofish forms; the DSL postfix then
-    // adds field/index/call suffixes.
-    if name == "ident_expr" { return tok.kind == "IDENT" || tok.text == "@" }
-    // The remaining primaries served by parse_primary: enum constructors
-    // (`.Variant(..)`) and list literals (`[ .. ]`) (ps3t.6.7 Step C).
-    if name == "more_primary" { return tok.text == "." || tok.text == "[" }
-    // The whole procedural leaf (unary/postfix/primary) — its FIRST is the
-    // shared exported predicate, mirrored by emit's hand_first_guard.
-    if name == "hand_unary" { return tok_starts_expr_leaf(tok) }
-    // The `with`-base leaf shares the same leaf FIRST (parse_unary_leaf).
-    if name == "call_leaf" { return tok_starts_expr_leaf(tok) }
-    if name == "primary_base" { return tok_starts_expr_leaf(tok) }
-    // A postfix suffix's FIRST is the postfix-op set (`. ( [ ! ? ?. < catch`) — a
-    // SUPERSET of postfix_step's precise entry guard (which adds sameline/mode/base
-    // checks). The grammar `( )*` loop enters on any of these, postfix_step then
-    // decides precisely, and the no-progress break exits when it consumes nothing
-    // (byte-identical to parse_call's `while` guard being false).
-    if name == "postfix_suffix" { return tok.text == "." || tok.text == "(" || tok.text == "[" || tok.text == "!" || tok.text == "?" || tok.text == "?." || tok.text == "<" || tok.text == "catch" }
-    // A `with { … }` postfix step's FIRST is the `with` keyword.
-    // A pipe RHS bottoms out in the same leaf FIRST (parse_or -> … -> unary).
-    // The lambda BODY (t-47hc paren flip prep — DORMANT). parse_lambda_body is a
-    // block `{ … }` OR a bare expression, so its FIRST is `{` ∪ FIRST(expression) —
-    // exactly tok_starts_expr_leaf (which includes `{`). Registered so an Opt/Star/Alt
-    // use of `@hand(lambda_body)` selects correctly; the paren flip's mandatory
-    // `"->" b:@hand(lambda_body)` never consults it, but the registration must be
-    // complete (byte-side twin: emit.av hand_first_guard). DORMANT: no live grammar
-    // references it, so this branch is never queried on the production type_flip path.
-    if name == "lambda_body" { return tok_starts_expr_leaf(tok) }
-    if name == "lambda_block_body" { return tok.text == "{" }
-    // ps3t.6.7 G.4 — the whole-statement dispatch leaf's FIRST: `{` (block OR a
-    false
-}
-
-// Which names are STATEMENT/DECLARATION hand rules (delegated via
-// `run_hand_stmt`) vs EXPRESSION ones (`run_hand_expr`), and the delegate each
-// one runs, live in the shared hand-leaf table — hand_leaves.av, which also
-// records WHY each form is an escape hatch the pure grammar does not re-express.
-// One seam, read by both this executor and emit.av, instead of a local
-// `name == "…" || …` chain here and a hand-synced copy there.
-
-/// Run a STATEMENT/DECLARATION hand rule by delegating to the real hand
 fn not_closer(st: PState, closer: Tk) -> bool {
     st.cur().tk != closer
 }
@@ -3693,131 +3526,6 @@ fn comma_not_closer(st: PState, closer: Tk) -> bool {
     if st.cur().tk != Tk.Comma { return false }
     if st.pos + 1 >= st.toks.length { return false }
     st.toks[st.pos + 1].tk != closer
-}
-
-export fn hand_leaf_refused(name: string) -> bool {
-    let want = avra_process_env_get("AVRA_REFUSE_HAND_LEAF")
-    if want == "" { return false }
-    want == "*" || want == name
-}
-
-export fn run_hand_stmt(name: string, st: PState) -> StmtId {
-    // ONE table lookup answers both "is this a statement leaf?" and "which
-    // parser?" — the class check and the dispatch used to be separate scans over
-    // the same six names.
-    let leaf = hand_stmt_leaf(name)
-    if leaf == null {
-        st.report("no hand statement rule `${name}`")
-        return st.store.stmts.add_leaf(Stmt.Error)
-    }
-    // ── The FRONTIER probe (t-myz7): the delegate, refusable ──────────────────
-    //
-    // `--hand-leaves` counts the leaves that REMAIN; nothing measured what still
-    // DEPENDS on one. Every existing decl_flip spec asserts dispatch ORDER in the
-    // emitted source, which says where a native rule sits — not which inputs fall
-    // past it into the delegate. Those are different questions, and only the second
-    // one tells you what deleting the leaf would break.
-    //
-    // It is unmeasurable by comparison, for the same reason the component-body
-    // routing bug hid for a month: the delegate and the native rules agree on every
-    // input they both accept, so trees, diagnostics, positions and IR are identical
-    // whichever answers. The only way to see the dependency is to REMOVE the
-    // delegate and watch what fails — which is the deletion itself.
-    //
-    // So this is the deletion, behind a flag. With the flag set the leaf reports
-    // instead of delegating, and every form that still needs it surfaces as a real
-    // diagnostic naming the leaf. That makes the retirement corpus writable BEFORE
-    // the retirement: the fail-before/pass-after set is exactly the forms this
-    // rejects today, and the slice is done when the set is empty.
-    //
-    // Read only on the leaf path (once per delegated statement, not per token), and
-    // opt-in — the default path is byte-identical.
-    if hand_leaf_refused(name) {
-        st.report("`@hand(${name})` is refused (AVRA_REFUSE_HAND_LEAF) — this form still depends on the hand leaf")
-        return st.store.stmts.add_leaf(Stmt.Error)
-    }
-    if st.src == "" {
-        // Token-only path: no source to delegate over. (The swap-in serves
-        // @hand from a real Parser instead of this interpreter, so this only
-        // trips a caller that ran a @hand-statement grammar via the *_toks
-        // entry — which the differential oracle never does.)
-        st.report("`@hand(${name})` needs the source, unavailable on the token-only path")
-        return st.store.stmts.add_leaf(Stmt.Error)
-    }
-    let start_byte = st.cur().pos
-    // REUSE the delegate threaded from the outer Parser (st.hand_delegate) when
-    // present — created once per file and SYNCED to the outer parser's cursor +
-    // line before this statement (see parse_statement's flip), so it lexes each
-    // token once (O(source), not O(source²)) AND carries the accumulated line/
-    // column/gensym state the continuous hand parse would have. This is the
-    // statement-family mirror of run_hand_expr's delegate reuse. Fallback to a
-    // fresh parser when no delegate is threaded (the differential oracle + unit
-    // tests): a fresh gensym counter at 0 matches a single-statement oracle
-    // parse, so a `let … else` desugar mints the identical temp name.
-    mut bp = if st.hand_delegate == null {
-        parser_new_with_store(st.src, "", st.store)
-    } else {
-        st.hand_delegate!
-    }
-    bp.records_roots = 0
-    bp.had_error = false
-    bp.error_message = ""
-    // EXPRESSION flips OFF: the procedural expression leaf owns its whole sub-tree,
-    // so a nested expression must not re-enter the expr flip. STATEMENT/DECLARATION
-    // flips are LEFT AS-IS on bp: the production delegate (ensure_hand_delegate) has
-    // them ON so a body loop re-enters the DSL (ps3t.6.7 Slice 5.1 full-program
-    // flip); the differential oracle's delegate (new_pstate) has them OFF so the
-    // oracle stays pure-hand. The `stmt_hand`/`decl_hand` dispatch below calls the
-    // *_hand entry for the CURRENT item, so bp flipping its BODIES never re-parses
-    // the same item (no infinite recursion).
-    bp.expr_flip = false
-    // Reproduce the ORIGINAL parse context (a no-op on the fresh-parser oracle
-    // path, where st.modes are a fresh parser's defaults).
-    bp.allow_struct_lit = st.modes.allow_struct_lit
-    bp.allow_dot_postfix = st.modes.allow_dot_postfix
-    bp.allow_it_sugar = st.modes.allow_it_sugar
-    bp.quote_depth = st.modes.quote_depth
-    bp.cell_mode = st.modes.cell_mode
-    // `advance()`, NOT `advance_token()`: only the former maintains `prev_line`
-    // (`advance` is literally `prev_line = current_line; advance_token()`). The hand's
-    // postfix entry guard is newline-sensitive — `(` / `[` on a NEW line starts a new
-    // statement rather than continuing a chain — so a delegate walked here with
-    // `advance_token` arrives holding a stale `prev_line` and rejects a suffix that is
-    // in fact on the same line. Before the IDENT base went native this was harmless:
-    // the hand consumed the callee ITSELF via `advance()`, which set `prev_line` on the
-    // way past. Now the grammar consumes it off the shared token stream and the
-    // delegate only gets walked to the `(`, so the line state has to be maintained here.
-    // Invisible on line 1, where a stale line still compares equal to the real one.
-    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance() }
-    let bp_diag_before = bp.bag.diagnostics.length
-    // Dispatch to the real hand-parser entry — the leaf's delegate, a free
-    // function taking `bp` as its explicit parse state, so `bp`'s cursor advances
-    // in place for the resync below. Each builds into bp's (== the DSL's) shared
-    // store.
-    let run: fn(Parser) -> Result<StmtId, string> = leaf!.run
-    let result = run(bp)
-    // Resync the DSL token cursor past everything the hand parser consumed (its
-    // cursor now sits on the next token's byte offset) — on BOTH success AND
-    // failure: a failed hand parse still advanced `bp`, so leaving st.pos on the
-    // stale keyword token would make a following grammar item / repetition
-    // reprocess it and cascade.
-    while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
-    // Propagate the delegate's error STATE even when it returned .Ok (ps3t.6.7
-    if bp.had_error {
-        st.note_had_error()
-    }
-    match result {
-        .Ok(id) -> id
-        .Err(m) -> {
-            // The delegate's parser bag already owns a precise diagnostic for
-            // ordinary parse failures (`consume`/`set_error`). Preserve that
-            // F-code/message through the outer bag merge instead of adding a
-            // second generic grammar error. Only synthesize a grammar diagnostic
-            // for a silent `.Err`, where no delegate diagnostic exists.
-            if bp.bag.diagnostics.length == bp_diag_before { st.report(m) }
-            st.store.stmts.add_leaf(Stmt.Error)
-        }
-    }
 }
 
 /// The result of `run_dsl_type_at`: the built type, the byte offset the DSL
@@ -3920,7 +3628,7 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 /// Fully-shared form (ps3t.6.5.12 Step D) — takes a caller-owned `store` AND
 export fn run_dsl_type_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     st.seed_lex_diags(lex_diags)
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -3942,7 +3650,7 @@ export fn run_dsl_type_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
 /// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
 export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let te = capval_to_texpr(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3964,13 +3672,11 @@ export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diags:
 /// or-pattern top entry, `pattern` for a bare atom entry) over the pre-lexed
 /// `toks` at byte `start_byte`, returning the built PatId + the resync stop
 /// byte. UNLIKE the type runner, patterns are arena-backed, so it allocates into
-/// the caller-owned `store` and returns an id VALID in it (the hand parser reads
-/// the id straight back) — the `run_hand_stmt`/`run_grammar_pat_toks` store-
-/// sharing shape. Reuses the caller's token + grammar caches (lex-once), so a
+/// the caller-owned `store` and returns an id VALID in it. Reuses the caller's token + grammar caches (lex-once), so a
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3991,7 +3697,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// straight-line speed.
 export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let pat = capval_to_pat(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -4019,16 +3725,11 @@ export type DslExprResult = { expr: ExprId, stop_byte: int, had_error: bool, dia
 export fn run_dsl_expr_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
     // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
-    // grammar and the hand share ONE monotonic sequence per parse. Without this, every
-    // `run_*_expr_at_shared` call starts a fresh PState at 0 — and since this runs ONCE
-    // PER EXPRESSION, two desugars in the same function would both mint `$tag$1`, and
-    // none of them would match the names the hand parser produces for the same source.
-    // The delegate is the right home because it is the exact Parser `run_hand_expr`
-    // dispatches into, so a hand-parsed leaf and a native build action advance the same
-    // counter in parse order. Behaviour-neutral until something calls `fresh_name`
-    // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
+    // ONE monotonic gensym sequence per parse: this runs ONCE PER EXPRESSION, so
+    // without host continuity two desugars in the same function would both mint
+    // `$tag$1`. Seeded from the host and written back after the parse.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     st.seed_lex_diags(lex_diags)
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
@@ -4054,16 +3755,11 @@ export fn run_dsl_expr_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
 export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslExprResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
     // t-bwjg: the hygiene counter is SEEDED FROM and WRITTEN BACK TO the delegate, so the
-    // grammar and the hand share ONE monotonic sequence per parse. Without this, every
-    // `run_*_expr_at_shared` call starts a fresh PState at 0 — and since this runs ONCE
-    // PER EXPRESSION, two desugars in the same function would both mint `$tag$1`, and
-    // none of them would match the names the hand parser produces for the same source.
-    // The delegate is the right home because it is the exact Parser `run_hand_expr`
-    // dispatches into, so a hand-parsed leaf and a native build action advance the same
-    // counter in parse order. Behaviour-neutral until something calls `fresh_name`
-    // (nothing does yet — the capability is dormant), which is why this lands byte-identical.
+    // ONE monotonic gensym sequence per parse: this runs ONCE PER EXPRESSION, so
+    // without host continuity two desugars in the same function would both mint
+    // `$tag$1`. Seeded from the host and written back after the parse.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     let expr = capval_to_expr(st, parse(st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -4090,7 +3786,7 @@ export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, dia
 /// differ only in the start rule.
 fn run_dsl_snode_at_shared(rule: string, lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     st.seed_lex_diags(lex_diags)
     let stmt = capval_to_stmt(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -4136,13 +3832,12 @@ export fn run_dsl_decl_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
 /// CHECKED-IN generated static parser (parse/gen_decl_parser.av's `parse` fn,
 /// passed in so this module needs no import back into `parse`) instead of the
 /// Grammar-tree interpreter (`exec_rule`). Same builders (capval_to_stmt), same
-/// PState, same `@hand` leaves (run_hand_stmt for decl_hand/stmt_hand) ⇒
-/// byte-identical AST to both the interpreter flip AND the hand parser, at
-/// straight-line speed (no per-node Grammar dispatch). The declaration entry
+/// PState ⇒ byte-identical AST to the interpreter flip, at straight-line speed
+/// (no per-node Grammar dispatch). The declaration entry
 /// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
 export fn run_static_snode_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, hand_delegate: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
     st.seed_lex_diags(lex_diags)
     let stmt = capval_to_stmt(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -4155,23 +3850,10 @@ export fn run_static_snode_at_shared(lex_diags: List<LexDiag>, toks: List<Token>
     DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
 }
 
-// Which names build an EXPRESSION via REAL hand delegation (`run_hand_expr` →
-// ExprId over the shared store) — as distinct from the leaf-building `run_hand`
-// (`ident`/`number`) — is the expression half of the shared hand-leaf table in
-// hand_leaves.av, alongside each delegate and the reason it stays hand-parsed.
-
 /// The FIRST-set of a leaf expression — every token that can begin the
-/// procedural unary/postfix/primary layer the DSL delegates wholesale via
-/// `@hand(hand_unary)` (→ `parse_unary`). Kept as ONE exported predicate so the
-/// executor's `hand_starts` AND the emitted static parser's FIRST-guard share a
-/// single source of truth (rule 8). It is the union of `parse_unary`'s prefix
-/// operators (`! - ~ not` + quote-only `~`splice) and `parse_primary`'s FIRST
-/// tokens (parse/mod.av) — literals by kind, keyword/enum/delimiter primaries by
-/// text. WHY delegate the whole leaf rather than express it in the DSL: the hand
-/// postfix loop (`parse_call`) is NEWLINE-SENSITIVE (`.UpperIdent` / `[` / `(` on
-/// a new line = a new statement, `dot_is_postfix`) and mode-stateful
-/// (`allow_struct_lit` / `allow_dot_postfix` / `allow_it_sugar` / `quote_depth`),
-/// which the stateless token-grammar cannot reproduce byte-identically.
+/// unary/postfix/primary layer. ONE exported predicate so the executor and the
+/// emitted static parser's FIRST-guard share a single source of truth (rule 8).
+/// It is the union of the prefix
 /// The FIRST set of the TYPE family's `type_expr`, for the same reason
 /// `tok_starts_expr_leaf` exists: the dispatch-only declaration view leaves `type_expr`
 /// EXTERNAL so the generated declaration parser calls the separately generated type
@@ -4191,125 +3873,6 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
     t == "(" || t == "[" || t == "{" ||
     t == "match" || t == "if" || t == "spawn" || t == "channel" || t == "isolated" || t == "when" || t == "quote" ||
     t == "null" || t == "none"
-}
-
-/// Run an EXPRESSION hand rule by delegating to the real hand parser over the
-
-export fn run_hand_expr(name: string, st: PState) -> ExprId {
-    // Split preconditions so each reports its OWN cause (a bad rule name vs a
-    // missing source), and rely solely on error_node — which reports the
-    // message itself — so each diagnostic is recorded exactly once. ONE table
-    // lookup serves the class check, the dispatch, and the postfix-seed column.
-    let leaf = hand_expr_leaf(name)
-    if leaf == null {
-        return st.error_node("no hand expression rule `${name}`")
-    }
-    if st.src == "" {
-        return st.error_node("`@hand(${name})` needs the source, unavailable here")
-    }
-    // The EXPRESSION half of the frontier probe — see run_hand_stmt's WHY. `primary_base`
-    // is the other remaining production leaf, and it is retired by its own slice, so it
-    // gets the same refusable treatment.
-    if hand_leaf_refused(name) {
-        return st.error_node("`@hand(${name})` is refused (AVRA_REFUSE_HAND_LEAF) — this form still depends on the hand leaf")
-    }
-    let start_byte = st.cur().pos
-    // REUSE the delegate threaded from the outer Parser (st.hand_delegate) — created
-    mut bp = if st.hand_delegate == null {
-        parser_new_with_store(st.src, st.file, st.store)
-    } else {
-        st.hand_delegate!
-    }
-    bp.records_roots = 0
-    bp.had_error = false
-    bp.error_message = ""
-    // ps3t.6.7 Step B — reproduce the ORIGINAL parse context. On the type/pattern
-    // @hand paths PState carries a fresh parser's defaults (no-op); on the
-    // expression flip these are the caller's live modes, so an `@hand(hand_unary)`
-    // in an `if Foo { … }` condition sees allow_struct_lit=false (Foo-then-block,
-    // not a struct literal) — the difference that makes the flip byte-identical.
-    bp.allow_struct_lit = st.modes.allow_struct_lit
-    bp.allow_dot_postfix = st.modes.allow_dot_postfix
-    bp.allow_it_sugar = st.modes.allow_it_sugar
-    bp.quote_depth = st.modes.quote_depth
-    bp.cell_mode = st.modes.cell_mode
-    // The @hand leaf IS the hand parser — it must NOT re-enter the expression
-    // flip/static path for its nested sub-expressions (a `f(arg)` call's args, a
-    // slice index, …), or the runner would recurse into itself per nested expr.
-    // Force ALL delegate toggles off; the top operator ladder stays DSL/static, the
-    // whole leaf-and-below is hand-parsed (byte-identical, since the ladders match).
-    bp.expr_flip = false
-    // `advance()`, NOT `advance_token()`: only the former maintains `prev_line`
-    // (`advance` is literally `prev_line = current_line; advance_token()`). The hand's
-    // postfix entry guard is newline-sensitive — `(` / `[` on a NEW line starts a new
-    // statement rather than continuing a chain — so a delegate walked here with
-    // `advance_token` arrives holding a stale `prev_line` and rejects a suffix that is
-    // in fact on the same line. Before the IDENT base went native this was harmless:
-    // the hand consumed the callee ITSELF via `advance()`, which set `prev_line` on the
-    // way past. Now the grammar consumes it off the shared token stream and the
-    // delegate only gets walked to the `(`, so the line state has to be maintained here.
-    // Invisible on line 1, where a stale line still compares equal to the real one.
-    while bp.current_start < start_byte && !bp.is_at_end() { bp.advance() }
-    // Phase 3a base-threading: seed the delegate's postfix accumulator from PState so
-    // parse_postfix_suffix runs its step on the grammar-threaded base. Harmless for
-    // every other name — only parse_postfix_suffix reads bp.postfix_base.
-    bp.postfix_base = st.postfix_base
-    bp.postfix_sp_start = st.postfix_sp_start
-    // Dispatch to the leaf's delegate — a free function taking `bp` as its
-    // explicit parse state. Which parse each leaf opts out of, and why, is
-    // documented on the delegates in hand_leaves.av.
-    let run: fn(Parser) -> Result<ExprId, string> = leaf!.run
-    let result = run(bp)
-    while !st.at_end() && st.cur().pos < bp.current_start { let _ = st.advance() }
-    // Phase 3a base-threading (write-back): primary_base seeds the postfix
-    // accumulator on PState (sp_start = the base's start byte, the chain's constant
-    // span `lo`); each postfix_suffix step updated bp.postfix_base, copied back so
-    // the NEXT ( postfix_suffix )* iteration — and the interpreter's fresh-parser
-    // path — sees it. Threaded via PState so both the shared-delegate production
-    // path and the equivalence-test path carry the base across the grammar loop.
-    if leaf!.seeds_postfix {
-        match result {
-            .Ok(id) -> st.seed_postfix(id, start_byte)
-            .Err(_) -> {}
-        }
-    } else if name == "postfix_suffix" {
-        st.set_postfix_base(bp.postfix_base)
-    }
-    // Propagate the delegate's error STATE even on .Ok (ps3t.6.7 Slice 5.4) — the
-    // expression-family mirror of run_hand_stmt's guard. An expression leaf can
-    // hand-parse a nested STATEMENT body (a closure body, an if-expr/match arm),
-    // and parse_statement_list_ids does error-tolerant recovery there: a malformed
-    // body statement is reported into the DELEGATE's bag + had_error, then
-    // recovered as a `Stmt.Error` placeholder so the leaf still returns .Ok.
-    // Mirroring had_error onto `st` makes the expression flip fall back to the
-    // authoritative hand parser (which re-reports into the OUTER bag) instead of
-    // keeping an Error-bearing tree that would ICE in codegen. Only the boolean
-    // gate is copied; the fallback owns the reporting.
-    if bp.had_error {
-        st.note_had_error()
-    }
-    match result {
-        .Ok(id) -> id
-        .Err(m) -> st.error_node(m)
-    }
-}
-
-export fn run_hand(name: string, st: PState) -> ExprId {
-    if name == "ident" {
-        if st.cur().kind == "IDENT" {
-            let t = st.advance()
-            return st.store.exprs.add_leaf(Expr.Ident(t.text))
-        }
-        return st.error_node("expected an identifier")
-    }
-    if name == "number" {
-        if st.cur().kind == "NUMBER" {
-            let t = st.advance()
-            return st.store.exprs.add_leaf(Expr.Number(t.text))
-        }
-        return st.error_node("expected a number")
-    }
-    st.error_node("no hand rule `${name}`")
 }
 
 /// A required terminal was absent: report the matching @expect message
@@ -5425,8 +4988,8 @@ fn mk_component_def_with_params(st: PState, name: string, params: List<ParamEntr
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    if st.hand_delegate != null {
-        let p = st.hand_delegate!
+    if st.host != null {
+        let p = st.host!
         if body_declares_token_stream(st.store, all_ids) {
             register_component_name(p.features, name, (q: Parser) -> q.parse_component_block_raw())
             register_raw_body_component(p.features, name)

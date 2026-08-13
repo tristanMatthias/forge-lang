@@ -121,23 +121,3 @@ spec "t-47hc.5: `fn` accepts a where clause on both parser engines" {
     }
 }
 
-spec "t-47hc.5: the where clause is parsed NATIVELY, not by the hand delegate" {
-    then "a valid where clause never reaches `@hand(decl_hand)`" {
-        // The assertion that makes the rest of this file mean something. Without it
-        // every case above would pass on a rule that silently rolled back to the hand
-        // — the t-6u9b vacuous-agreement shape.
-        let fixture = "build/_fn_where_refuse.av"
-        let log = "build/_fn_where_refuse.log"
-        let _ = avra_selfhost_write_file(fixture, prelude() +
-            "fn dump<T, U>(x: T, y: U) -> string where T: Show, U: Tag { y.tag() }\n" +
-            "fn main() { println(dump(Boxy { v: 1 }, Boxy { v: 2 })) }\n")
-        let rc = avra_shell_exec_status("AVRA_REFUSE_HAND_LEAF=decl_hand ./build/bs2 check '${fixture}' > '${log}' 2>&1")
-        let out = avra_selfhost_read_file(log)
-        // ATTRIBUTED: a bare `!out.contains("is refused")` counts a refusal raised
-        // anywhere in the compile, including inside an imported module — the trap
-        // decl_flip_dispatch_test records as having been believed twice. This fixture
-        // has no `use` today, so the bare form is correct only by accident; keying on
-        // the fixture path makes it correct by construction.
-        rc == 0 && !refusal_in_file(out, fixture)
-    }
-}

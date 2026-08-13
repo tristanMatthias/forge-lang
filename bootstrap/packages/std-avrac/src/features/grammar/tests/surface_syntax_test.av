@@ -47,14 +47,14 @@ fn rich_sugar() -> string {
         expression = logic_or
         logic_or   = l:term ( op:("||") r:term )* -> fold_logical(l, op, r)
         term       = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
-        factor     = NUMBER | @hand(ident)
+        factor     = NUMBER | IDENT
                    | "(" e:expression ")" @expect(")", "expected ')'") @recover(sync_to: ")") -> Grouping(e)
     }
     render_grammar(gp.grammar)
 }
 
 fn rich_string() -> string {
-    let gp = parse_grammar("expression = logic_or\nlogic_or = l:term ( op:(\"||\") r:term )* -> fold_logical(l, op, r)\nterm = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\nfactor = NUMBER | @hand(ident)\n  | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)")
+    let gp = parse_grammar("expression = logic_or\nlogic_or = l:term ( op:(\"||\") r:term )* -> fold_logical(l, op, r)\nterm = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\nfactor = NUMBER | IDENT\n  | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)")
     render_grammar(gp.grammar)
 }
 

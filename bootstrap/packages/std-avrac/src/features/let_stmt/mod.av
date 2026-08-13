@@ -23,44 +23,13 @@ export fn let_destructure_feature() -> Feature {
 }
 
 /// Register the `let` keyword feature — immutable bindings.
-/// Routes to the parser's `parse_let_statement`.
-export fn let_keyword_feature() -> Feature {
-    feature_new("let") with {
-        decl_keyword: "kw_let",
-    }
-}
+export fn let_keyword_feature() -> Feature { feature_new("let") }
 
-/// Register the `const` keyword feature — compile-time constant
-/// bindings. Routes to the parser's `parse_const_statement`.
-export fn const_keyword_feature() -> Feature {
-    feature_new("const") with {
-        decl_keyword: "kw_const",
-    }
-}
+/// Register the `const` keyword feature — compile-time constant bindings.
+export fn const_keyword_feature() -> Feature { feature_new("const") }
 
-/// Register the `mut` keyword feature — mutable bindings. Routes
-/// to the parser's `parse_mut_statement`.
-export fn mut_keyword_feature() -> Feature {
-    feature_new("mut") with {
-        decl_keyword: "kw_mut",
-    }
-}
-
-/// Parser dispatch hook for the `let` keyword. Forwards to the
-/// recursive-descent parser's let-statement entry.
-fn kw_parse_let(p: Parser) -> Result<StmtId, string> {
-    p.parse_let_statement()
-}
-
-/// Parser dispatch hook for the `const` keyword.
-fn kw_parse_const(p: Parser) -> Result<StmtId, string> {
-    p.parse_const_statement()
-}
-
-/// Parser dispatch hook for the `mut` keyword.
-fn kw_parse_mut(p: Parser) -> Result<StmtId, string> {
-    p.parse_mut_statement()
-}
+/// Register the `mut` keyword feature — mutable bindings.
+export fn mut_keyword_feature() -> Feature { feature_new("mut") }
 
 /// Resolver hook for `let (a, b, c) = ...`. Resolves the
 /// initializer first, then defines each tuple-position name in

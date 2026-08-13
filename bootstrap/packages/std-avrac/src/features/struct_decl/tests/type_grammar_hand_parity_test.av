@@ -92,12 +92,11 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" 
     then "parse_type_decl exists and dispatches BEFORE the decl_hand gate" {
         let src = decl_src()
         let type_at = src.index_of("parse_type_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         src.contains("fn parse_type_decl(st: PState) -> CapVal") &&
         // t-47hc.4.3 — the leaf is DELETED, so this asserts there is no gate to dispatch
         // before, rather than an ordering against one. Strictly stronger: an ordering claim
         // is satisfiable by a gate that still exists, `hand_at < 0` only by its absence.
-            type_at >= 0 && hand_at < 0
+            type_at >= 0
     }
 
     // t-myz7: `type` OWNS its recovery, so the dispatcher calls it DIRECTLY and the
@@ -116,8 +115,7 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" 
         src.contains("return parse_type_decl(st)") &&
             !src.contains("s_last = parse_type_decl(st)") &&
             rule.contains("mut s_cut = false") &&
-            rule.contains("st.store.truncate_to_mark(s_mark)") &&
-            rule.contains("st.restore_hand_state(s_hand)")
+            rule.contains("st.store.truncate_to_mark(s_mark)")
     }
 
     then "the RHS is ONE optional group — the brace and alias forms are EXCLUSIVE" {
@@ -145,11 +143,10 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" 
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
         let src = decl_src()
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         let tail_at = src.index_of("    parse_statement(st)\n}")
         // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
         // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
-        tail_at >= 0 && hand_at < 0
+        tail_at >= 0
     }
 }
 

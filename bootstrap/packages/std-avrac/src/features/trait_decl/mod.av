@@ -9,7 +9,5 @@ use core.{feature_new, Feature}
 /// for `impl Trait for Type` and dyn dispatch live in `typeck.av`
 /// and `codegen.av`.
 export fn trait_decl_feature() -> Feature {
-    feature_new("trait_decl") with {
-        decl_keyword: "kw_trait",
-    }
+    feature_new("trait_decl")
 }

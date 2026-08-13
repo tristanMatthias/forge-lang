@@ -67,7 +67,6 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
     then "spec_decl is dispatched, and NO decl_hand gate survives (t-47hc.4.3)" {
         let src = decl_src()
         let spec_at = src.index_of("parse_spec_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         // The dispatcher reaches `spec_decl` by a DIRECT predictive call now, not the
         // speculative `s_last = …` bookkeeping it used to emit: `spec_decl`'s `@try`
         // moved INSIDE the rule, because a `@cut`'s commit flag is per-rule-invocation
@@ -78,7 +77,7 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
         // Bound to the `decl_hand` POSITION, not merely present — see the sibling
         // assertion in decl_flip_select_parallel_native_test.
         let spec_ret = src.index_of("return parse_spec_decl(st)")
-        hand_at < 0 && spec_ret >= 0 && spec_at >= 0
+        spec_ret >= 0 && spec_at >= 0
     }
 
     then "`spec` is routed as `@try`, never bare — the rule owns the rollback" {

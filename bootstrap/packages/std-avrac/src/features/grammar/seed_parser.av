@@ -473,7 +473,7 @@ fn seq_can_continue(p: GP) -> bool {
     // `@hand(...)` / `@when(...)` are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
-    if p.is_punct("@") { return at_hand_primary(p) || at_when_primary(p) || at_peek_primary(p) || at_gensym_primary(p) || at_rawbrace_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) || at_gate_marker(p) || at_onfail_marker(p) }
+    if p.is_punct("@") { return at_when_primary(p) || at_peek_primary(p) || at_gensym_primary(p) || at_rawbrace_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) || at_gate_marker(p) || at_onfail_marker(p) }
     if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
         if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
@@ -481,17 +481,8 @@ fn seq_can_continue(p: GP) -> bool {
     true
 }
 
-/// True when the cursor is `@hand` — the escape-hatch primary, distinct
-/// from the `@expect`/`@recover` sequence annotations.
-fn at_hand_primary(p: GP) -> bool {
-    if !p.is_punct("@") { return false }
-    if p.pos + 1 >= p.toks.length { return false }
-    let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "hand"
-}
-
 /// True when the cursor is `@when` — the zero-width mode-predicate primary
-/// (t-47hc.3), distinct from `@hand` and the `@expect`/`@recover` annotations.
+/// (t-47hc.3), distinct from the `@expect`/`@recover` sequence annotations.
 fn at_when_primary(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
@@ -767,8 +758,8 @@ fn validate_mode_markers(g: Grammar) -> string {
 ///   (1) an EXPR-FOLD branch (fold_binary/…): emit_fold bypasses emit_item entirely, so a
 ///       mode marker anywhere inside it would be silently DROPPED from the generated parser
 ///       (a divergence the span-blind gates wouldn't catch) — reject it.
-///   (2) a marker wrapping a `@hand`/`@when`/`@peek` primary: @hand manages its own parser
-///       modes and @when/@peek are zero-width — a mode-set around them is meaningless.
+///   (2) a marker wrapping a `@when`/`@peek`/`@gensym`/`@rawbrace` primary: they are
+///       zero-width — a mode-set around them is meaningless.
 fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
     match node {
         .Alt(branches) -> {
@@ -791,8 +782,8 @@ fn check_mode_node(node: GNode, rule: string, in_fold: bool) -> string {
                         if this_fold {
                             return "`${mk}(${fl})` cannot appear on (or inside a group of) an expr-fold branch (rule `${rule}`) — the fold emit path bypasses emit_item and would drop the mode set"
                         }
-                        if prim_is_hand_or_pred(item.prim) {
-                            return "`${mk}(${fl})` cannot wrap a `@hand`/`@when`/`@peek`/`@gensym`/`@rawbrace` primary (rule `${rule}`)"
+                        if prim_rejects_mode_wrap(item.prim) {
+                            return "`${mk}(${fl})` cannot wrap a `@when`/`@peek`/`@gensym`/`@rawbrace` primary (rule `${rule}`)"
                         }
                         // A mode marker on a `@require` item USED to be rejected here: the
                         // emitted wrapper is `save; set; <item>; restore`, a failed
@@ -1458,9 +1449,8 @@ fn rep_is_one_sp(r: GRep) -> bool {
     match r { .One -> true  _ -> false }
 }
 
-/// The zero-width predicates the emitters skip (`@when`/`@peek`). Named apart from
-/// prim_is_hand_or_pred, which also counts `@hand` — a cut BEFORE a `@hand` leaf is
-/// legitimate (the leaf goes through emit_item, so the commit is emitted).
+/// The zero-width predicates the emitters skip (`@when`/`@peek`). Narrower than
+/// prim_is_zero_width: `@gensym`/`@rawbrace` go through emit_item.
 fn prim_is_pred_e_sp(prim: GPrim) -> bool {
     match prim {
         .Pred(_) -> true
@@ -1491,12 +1481,10 @@ fn branch_is_expr_fold(b: GSeq) -> bool {
     }
 }
 
-/// True for the primaries a @off marker must not wrap: a `@hand` delegate (manages
-/// its own parser modes), and the zero-width ones that consume nothing — `@when`,
-/// `@peek`, and `@gensym`.
-fn prim_is_hand_or_pred(prim: GPrim) -> bool {
+/// True for the primaries a mode marker must not wrap: the zero-width ones that
+/// consume nothing — `@when`, `@peek`, `@gensym`, and `@rawbrace`.
+fn prim_rejects_mode_wrap(prim: GPrim) -> bool {
     match prim {
-        .Hand(_) -> true
         .Pred(_) -> true
         .Peek(_) -> true
         // Zero-width too: there is no sub-parse for a mode to be set around.
@@ -1905,16 +1893,6 @@ fn parse_primary(p: GP) -> GPrim {
         p.expect_punct(")", "expected `)` to close a group")
         return GPrim.Group(inner)
     }
-    // Escape-hatch primary: `@hand(fn)` delegates to a hand-written rule.
-    if at_hand_primary(p) {
-        let _ = p.advance()   // "@"
-        let _ = p.advance()   // "hand"
-        p.expect_punct("(", "expected `(` after `@hand`")
-        mut hf = ""
-        if p.peek().kind == "NAME" { hf = p.advance().text }
-        p.expect_punct(")", "expected `)` to close `@hand`")
-        return GPrim.Hand(hf)
-    }
     // Zero-width GENERATOR: `@gensym(tag)` mints a fresh name at THIS position.
     //
     // The tag is a bare NAME, not a string literal, for the same reason every other
@@ -1988,7 +1966,7 @@ fn parse_primary(p: GP) -> GPrim {
         p.expect_punct(")", "expected `)` to close `@peek`")
         return GPrim.Peek(cond)
     }
-    p.fail("expected a rule reference, terminal, `(`, `@hand(fn)`, `@when(flag)`, or `@peek(cond)`")
+    p.fail("expected a rule reference, terminal, `(`, `@when(flag)`, or `@peek(cond)`")
     let _ = p.advance()
     GPrim.Lit("")
 }

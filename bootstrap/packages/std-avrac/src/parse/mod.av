@@ -256,8 +256,6 @@ export type Parser = {
     // allocates into it, so the hand parse's node-id space is untouched).
     mut dsl_grammar: Grammar?,
     // ps3t.6.5.12 pattern-family swap-in: when true, parse_pattern_or delegates
-    mut pat_static: bool,
-    mut dsl_pat_grammar: Grammar?,
     // ps3t.6.7 expression-family swap-in: when true, parse_expression delegates
     mut expr_flip: bool,
     mut dsl_expr_grammar: Grammar?,
@@ -273,7 +271,7 @@ export type Parser = {
     // dsl_decl_grammar caches avra_decl_flip_grammar() lazily, once.
     mut dsl_decl_grammar: Grammar?,
     // (The `AVRA_NO_STATIC_FALLBACK` diagnostic hook that was documented here is gone:
-    mut hand_delegate: Parser?,
+    mut host: Parser?,
 }
 
 /// Parse a single expression. Used by `bs2 expr` for AST inspection
@@ -697,8 +695,6 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         grammar_toks: [],
         grammar_lex_diags: [],
         dsl_grammar: null,
-        pat_static: avra_process_env_get("AVRA_PARSER_PAT_STATIC") != "0",
-        dsl_pat_grammar: null,
         // Which GRAMMAR ENGINE runs the expression grammar: the tree interpreter
         // (opt-in, AVRA_PARSER_EXPR_FLIP=1) or the checked-in generated static parser
         // (default). Not a grammar-vs-hand switch — there is no hand ladder left to
@@ -718,14 +714,14 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // TOP-LEVEL dispatch (declaration vs statement vs expr-stmt), and does so
         // UNCONDITIONALLY: there is no decl flip flag, and no `AVRA_PARSER_DECL_FLIP`
         // escape hatch back to a hand RD driver. Both went with the `@hand(decl_hand)`
-        // leaf. The shared hand-delegate (ensure_hand_delegate) still exists for the
+        // leaf. The shared hand-delegate (ensure_host) still exists for the
         // leaves that remain in family-isolated grammar views, and is still a
         // SINGLE-LEVEL parser (its own `*_static` toggles are OFF) so bodies
         // do not re-enter the DSL through it. Proven byte-identical over the full
         // selfhost + corpus.
         dsl_decl_grammar: null,
         // ps3t.6.7 slice 5a diagnostic hook — default OFF (byte-identical production).
-        hand_delegate: null,
+        host: null,
     }
     parser.advance_token()
     parser
@@ -887,7 +883,7 @@ impl Parser {
         // path below (a zero-width errored parse must be handed back as .Err so the
         // caller advances, else the list loop re-parses the same token forever).
         let item_start = self.current_start
-        mut d = self.ensure_hand_delegate()
+        mut d = self.ensure_host()
         // The counter value the interpreter fallback restores to (see below).
         let seq0 = d.gensym_seq
         d.copy_cursor_from(self)
@@ -1022,7 +1018,7 @@ impl Parser {
     /// Clear the shared `@hand` delegate's PER-ITEM state before a seam parses
     /// through it.
     ///
-    /// `ensure_hand_delegate` hands out ONE delegate per file, so everything it
+    /// `ensure_host` hands out ONE delegate per file, so everything it
     /// accumulates outlives the item that produced it. `bag` was reset at the
     /// seams; `had_error` and `error_message` — documented above as a STICKY
     /// flag and "first error's message" — were not, and both are read by every
@@ -1046,8 +1042,8 @@ impl Parser {
         self.error_message = ""
     }
 
-    fn ensure_hand_delegate(self) -> Parser {
-        if self.hand_delegate == null {
+    fn ensure_host(self) -> Parser {
+        if self.host == null {
             mut d = parser_new_with_store(self.source, self.file, self.store)
             d.records_roots = 0
             // Share the outer parser's REGISTRY and TOKEN STREAM with the delegate
@@ -1065,7 +1061,6 @@ impl Parser {
             d.expr_flip = false
             d.decl_static = false
             d.type_static = false
-            d.pat_static = false
             // There is no `type_flip` to clear any more, and that is this slice.
             // Review on #1221 asked for `d.type_flip = false` here beside
             // `d.type_static = false`; it was declined because clearing `*_static`
@@ -1082,9 +1077,9 @@ impl Parser {
             // toggle, which picks the INTERPRETER over the generated parser for the
             // same grammar. Not one of them selects a hand parser, because there is
             // no hand parser in any family left to select.
-            self.hand_delegate = d
+            self.host = d
         }
-        self.hand_delegate!
+        self.host!
     }
 
     fn parse_statement(self) -> Result<StmtId, string> {
@@ -1095,10 +1090,10 @@ impl Parser {
         // resyncing to the stop byte. There is no `if` around this any more and no
         // fall-through below it — `parse_statement_hand` is deleted.
         let modes = self.current_modes()
-        // One reusable @hand delegate per file (see ensure_hand_delegate),
+        // One reusable @hand delegate per file (see ensure_host),
         // SYNCED to this parser's cursor+line before the parse, its end state
         // adopted after.
-        mut d = self.ensure_hand_delegate()
+        mut d = self.ensure_host()
         d.copy_cursor_from(self)
         // The statement seam reached the delegate with NO reset at all until
         // review on #1221 — it merges the bag and adopts had_error /
@@ -1154,18 +1149,18 @@ impl Parser {
         // fall-through below it — the hand ladder it used to guard is deleted, so the
         // grammar owns valid input AND recovery.
         let modes = self.current_modes()
-        // One reusable @hand delegate per file (see ensure_hand_delegate).
+        // One reusable @hand delegate per file (see ensure_host).
         // SYNC it to THIS parser's exact cursor + line state so it parses the
         // expression's leaves carrying the accumulated line (incl. the
         // is_map_literal nudges the hand parser leaves) — then ADOPT its end
         // state so this parser continues from the expression's end with the
         // same line the hand parser would have. This reproduces the hand
         // parser's line accounting byte-for-byte across the split parse.
-        mut d = self.ensure_hand_delegate()
+        mut d = self.ensure_host()
         d.copy_cursor_from(self)
         // Fresh per-parse scratch on the SHARED delegate, the same discipline
         // parse_declaration documents: `bag_merge` APPENDS, and
-        // `ensure_hand_delegate` hands out ONE delegate per file, so merging without
+        // `ensure_host` hands out ONE delegate per file, so merging without
         // resetting re-copies every diagnostic the delegate reported for earlier items.
         // Raised in review on PR #1221 — parse_declaration was the only site that had it.
         d.begin_delegate_item()
@@ -1747,27 +1742,6 @@ impl Parser {
         .Ok(self.alloc_at(Expr.ListLit(elements.ids), sp_start))
     }
 
-    // The `(…)` grouping / tuple / lambda primary (Phase 3a-9): extracted from
-    fn try_lambda_body(self) -> ExprId? {
-        let s_state = self.save_state()
-        mut s_diags: List<Diagnostic> = []
-        for dg in self.bag.diagnostics { s_diags.push(dg) }
-        let s_bag = DiagnosticBag {
-            diagnostics: s_diags,
-            error_count: self.bag.error_count,
-            warning_count: self.bag.warning_count,
-        }
-        self.advance()
-        match self.parse_lambda_body() {
-            .Ok(body) -> body
-            .Err(_) -> {
-                self.restore_state(s_state)
-                self.bag = s_bag
-                null
-            }
-        }
-    }
-
     fn desugar_template(self, raw: string) -> Result<ExprId, string> {
         match desugar_template_store(self.store, raw) {
             .Ok(id) -> .Ok(id)
@@ -2043,31 +2017,6 @@ impl Parser {
         self.consume_identifier(message)
     }
 
-    /// Parse a comma-separated destructure binding list `a, b, c`
-    /// (caller has already consumed the opening `(` and consumes the
-    /// closing `)`). Shared by `let (a, b) = …` and the for-in tuple
-    /// binding `for (a, b) in …`. A trailing comma is tolerated.
-    /// Each entry's type is left Unknown — inferred from the tuple
-    /// element types at type-check time.
-    fn parse_destructure_names(self) -> Result<List<ParamEntry>, string> {
-        mut out: List<ParamEntry> = []
-        if self.check(Tk.RightParen) { return .Ok(out) }
-        mut keep_going = true
-        while keep_going {
-            let name = self.consume_identifier("expected variable name in destructure")?
-            // Destructure bindings can't carry a type annotation — no type was
-            // written, so no row backs the inferred-later Unknown.
-            out.push(ParamEntry { name: name, vtype: ValueType.Unknown, ty_id: none })
-            if self.check(Tk.Comma) {
-                self.advance()
-                if self.check(Tk.RightParen) { keep_going = false }
-            } else {
-                keep_going = false
-            }
-        }
-        .Ok(out)
-    }
-
     /// Lenient variant for field / method access positions
     /// (`task.await`, `expr?.field`): accepts reserved keywords
     /// because the dot disambiguates. Use only for `expr.<name>` /
@@ -2327,96 +2276,6 @@ impl Parser {
         .Ok(args)
     }
 
-    fn parse_quote(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        self.advance()  // consume `quote`
-        // Optional kind keyword: `stmt` / `stmts` / `type` / `decl` /
-        // `arm` selects the result-type of the captured AST. Default
-        // is `expr` — the captured body produces an Expr value at
-        // runtime.
-        let kind = self.parse_quote_kind()
-        // Track quote nesting so parse_unary recognizes splice `~`.
-        self.quote_depth = self.quote_depth + 1
-        if kind == "arm" {
-            let body_id = self.parse_quote_arm_body()?
-            self.quote_depth = self.quote_depth - 1
-            // Flipped Quote.body is an ExprId scalar (walker-opaque) — leaf row.
-            return .Ok(self.alloc_at(Expr.Quote(kind, body_id), sp_start))
-        }
-        if kind == "type" {
-            // `quote type { <type_expr> }` — parse the body as a TYPE
-            // (not a block expression), so compound types (List<T>,
-            // fn(int) -> int, Result<T,E>, T?, A | B, tuples, …) are
-            // captured structurally instead of collapsing to Unknown.
-            // The parsed type rides as an Expr.TypeLit carrier that
-            // lower_quotes turns into the ValueType construction.
-            let body_id = self.parse_quote_type_body()?
-            self.quote_depth = self.quote_depth - 1
-            return .Ok(self.alloc_at(Expr.Quote(kind, body_id), sp_start))
-        }
-        let body_id = self.parse_block_expression()?
-        self.quote_depth = self.quote_depth - 1
-        .Ok(self.alloc_at(Expr.Quote(kind, body_id), sp_start))
-    }
-
-    /// Parse `{ <type_expr> }` for `quote type { ... }`, converting the
-    /// type to a ValueType and wrapping it in an Expr.TypeLit carrier.
-    fn parse_quote_type_body(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        if !self.consume(Tk.LeftBrace, "expected `{` after `quote type`") { return .Err("parse error") }
-        let te = self.parse_type_expr("expected a type inside `quote type { ... }`")?
-        if !self.consume(Tk.RightBrace, "expected `}` after the type in `quote type`") { return .Err("parse error") }
-        .Ok(self.alloc_at(Expr.TypeLit(type_expr_to_vtype(te)), sp_start))
-    }
-
-    fn parse_quote_kind(self) -> string {
-        if self.check(Tk.KwType) {
-            self.advance()
-            return "type"
-        }
-        if self.check(Tk.Identifier) {
-            let lex = self.current_lexeme
-            if lex == "stmt" || lex == "stmts" || lex == "decl" || lex == "arm" {
-                self.advance()
-                return lex
-            }
-        }
-        "expr"
-    }
-
-    /// Parse `{ pattern -> body }` for `quote arm { ... }`. Wraps the
-    /// resulting arm in a single-armed `Expr.MatchExpr(<None-leaf id>, [arm])`
-    /// so the existing Quote(kind, body) shape stays — the lowering
-    /// pass picks the arm back out via its `arm` kind discriminator.
-    fn parse_quote_arm_body(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        if !self.consume(Tk.LeftBrace, "expected `{` after `quote arm`") { return .Err("parse error") }
-        let pat_id = self.parse_pattern_or()?
-        let pattern = self.pat_of(pat_id)
-        mut guard_id = ExprId(0)
-        mut has_guard = false
-        if self.check(Tk.KwIf) {
-            self.advance()
-            guard_id = self.parse_expression()?
-            has_guard = true
-        }
-        if !self.consume(Tk.Arrow, "expected `->` after pattern in quote arm") { return .Err("parse error") }
-        let body_id = self.parse_expression()?
-        if self.check(Tk.Comma) { self.advance() }
-        if !self.consume(Tk.RightBrace, "expected `}` after quote arm body") { return .Err("parse error") }
-        let arm_guard_id: ExprId? = if has_guard { guard_id } else { none }
-        let arm = MatchArm { pattern, pattern_id: pat_id, guard_id: arm_guard_id, body_id }
-        let arms: List<MatchArm> = [arm]
-        // The synthetic envelope's subject is a real `ExprId` (a leaf `Expr.None`
-        // row) — a walker-opaque scalar, so it records NO edge. B-final F4b:
-        // MatchArm is a MIXED node whose only walked child is the pattern; guard/
-        // body are opaque `ExprId`s carried structurally — so `match_arm_children_
-        // spanned` flattens to just the pattern.
-        let subject_id = self.alloc_leaf(Expr.None)
-        let edges: List<NodeRef> = [NodeRef.PatRef(pat_id)]
-        .Ok(self.alloc_expr(Expr.MatchExpr(subject_id, arms), self.span_from(sp_start), edges))
-    }
-
     // ── B1: native arena allocation ──
     //
     // Productions push the node they just built into `self.store` and return
@@ -2548,6 +2407,13 @@ impl Parser {
     }
 
     /// Alloc a stmt LEAF (no node children) — the arena's one-push path.
+    /// A Let/Mut/Const row — walker order: the bare declared-type field
+    /// contributes a TypeRef (the initializer is an id payload, so it records
+    /// no edge — the payload IS the child mechanism).
+    fn alloc_binding_stmt(self, node: Stmt, ty_vt: ValueType) -> StmtId {
+        self.alloc_stmt(node, byte_span_none(), [NodeRef.TypeRef(self.glue_ingest_type(ty_vt))])
+    }
+
     fn alloc_stmt_leaf(self, node: Stmt) -> StmtId {
         self.store.stmts.add_leaf(node)
     }

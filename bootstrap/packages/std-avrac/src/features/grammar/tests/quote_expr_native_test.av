@@ -173,10 +173,4 @@ spec "t-bwjg: the emitted dispatch routes quote correctly" {
         src.contains("fn parse_quote_type_expr(") && src.contains("mk_quote_type(st, sp_start,") &&
         src.contains("fn parse_quote_arm_expr(") && src.contains("mk_quote_arm(st, sp_start,")
     }
-    then "no quote shape reaches a hand leaf any more" {
-        // The whole point of the slice: `quote` must not appear as an @hand dispatch in the
-        // emitted production parser at all. `--hand-leaves` reports 4 rather than 5 because
-        // of exactly this line.
-        !emit_parser_source(avra_expr_dispatch_grammar()).contains("run_hand_expr(\"quote_expr\"")
-    }
 }

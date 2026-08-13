@@ -37,7 +37,7 @@ fn lamt_grammar_src() -> string {
     "  term       = l:factor ( op:(\"+\" | \"-\") r:factor )* -> fold_binary(l, op, r)\n" +
     "  factor     = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
     "  un         = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
-    "  primary    = NUMBER | STRING | \"true\" | \"false\" | @hand(ident)\n" +
+    "  primary    = NUMBER | STRING | \"true\" | \"false\" | IDENT\n" +
     "             | \"(\" e:expression \")\" -> Grouping(e)\n" +
     "}"
 }

@@ -58,7 +58,6 @@ spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
         let src = decl_src()
         let sel_at = src.index_of("parse_select_decl(st)")
         let par_at = src.index_of("parse_parallel_decl(st)")
-        let hand_at = src.index_of("run_hand_stmt(\"decl_hand\"")
         // BOTH reach the dispatcher by a direct predictive `return parse_X(st)` now:
         // each one's `@try` lives INSIDE its rule (a `@cut`'s commit flag is
         // per-rule-invocation and cannot reach a caller's `@try`), so neither lowers to
@@ -75,7 +74,7 @@ spec "t-47hc Phase 4: select / parallel are emitted as native rules" {
         // entirely — which is the #1028 dead-code failure this assertion exists for.
         let sel_ret = src.index_of("return parse_select_decl(st)")
         let par_ret = src.index_of("return parse_parallel_decl(st)")
-        hand_at < 0 && sel_ret >= 0 && par_ret >= 0 && sel_at >= 0 && par_at >= 0
+        sel_ret >= 0 && par_ret >= 0 && sel_at >= 0 && par_at >= 0
     }
 
     then "`select` / `parallel` are routed as `@try`, never bare — each rule owns its rollback" {

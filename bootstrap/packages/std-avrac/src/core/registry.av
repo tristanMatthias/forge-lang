@@ -35,7 +35,6 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 /// @field expr_tag       — sentinel Expr value whose tag this feature
 ///                          handles (null when not an expr feature).
 /// @field stmt_tag       — sentinel Stmt value, mirror of expr_tag.
-/// @field decl_keyword   — first token of a top-level decl (e.g. "fn").
 /// @field stmt_keyword   — first token of a stmt-level construct.
 /// @field expr_keyword   — leading keyword of a `kw { … }` expression
 ///                          construct (e.g. "grammar"); the generic
@@ -59,7 +58,6 @@ export type Feature = {
     name: string,
     expr_tag: Expr?,
     stmt_tag: Stmt?,
-    decl_keyword: string,
     stmt_keyword: string,
     expr_keyword: string,
     parse_stmt: fn(Parser) -> Result<StmtId, string>,
@@ -116,7 +114,6 @@ export fn feature_new(name: string) -> Feature {
         name,
         expr_tag: null,
         stmt_tag: null,
-        decl_keyword: "",
         stmt_keyword: "",
         expr_keyword: "",
         parse_stmt: noop_parse,
@@ -194,8 +191,6 @@ export fn register(reg: Registry, f: Feature) {
         avra_intmap_set(reg.stmt_resolvers, stag, f.resolve_stmt)
         avra_intmap_set(reg.stmt_checkers, stag, f.check_stmt)
         avra_intmap_set(reg.stmt_evals, stag, f.eval_stmt)
-    }
-    if f.decl_keyword.length > 0 {
     }
     if f.stmt_keyword.length > 0 {
         avra_map_set_cstr(reg.stmt_parsers, f.stmt_keyword, f.parse_stmt)

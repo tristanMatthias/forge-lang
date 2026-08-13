@@ -1,7 +1,6 @@
 // WHY: closure/lambda parser helpers.
 // `expr_contains_it` supports the implicit `it` parameter sugar:
 //   `list.map(it * 2)` → `list.map((it) -> { it * 2 })`
-// `parse_lambda_body` handles lambda body parsing (block or single expression).
 
 use core.{NodeStore, Expr, Stmt, StmtId, ParamEntry, ValueType, ExprId}
 use parse.{Parser}
@@ -77,12 +76,3 @@ export fn wrap_in_it_lambda(body_id: ExprId) -> Expr {
     Expr.Lambda(ps, body_id)
 }
 
-impl Parser {
-    fn parse_lambda_body(self) -> Result<ExprId, string> {
-        // Lambda body: either a block { ... } or a single expression.
-        if self.check(Tk.LeftBrace) {
-            return self.parse_block_expression()
-        }
-        self.parse_expression()
-    }
-}

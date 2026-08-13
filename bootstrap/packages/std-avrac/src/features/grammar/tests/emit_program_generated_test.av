@@ -79,36 +79,12 @@ spec "grammar emitter: renders the whole-program generated static parser" {
         src.contains("mk_for_loop(st, sp_start, fv, flo, fhi, fb)")
     }
 
-    then "NO form delegates to @hand — the whole-program grammar is fully native" {
+    then "every form is native — let, quote, qualified types, return" {
         let src = emit_all()
         src.contains("fn parse_let_stmt(st: PState) -> CapVal") &&
         src.contains("fn parse_quote_expr(st: PState) -> CapVal") &&
         src.contains("mk_qualified_type(qn_list, qargs_list.length > 0, qargs_list, capval_present(qopt))") &&
-        !src.contains("run_hand_type") &&
-        !src.contains("run_hand_stmt") &&
-        !src.contains("run_hand_expr")
-    }
-
-    // t-47hc: the SIMPLE identifier leaf was migrated off the @hand escape hatch.
-    // The unified grammar's `primary` now uses a native `IDENT` terminal (built via
-    // literal_node — the SAME leaf path as NUMBER/STRING), so the whole-program
-    // parser no longer routes a bare identifier through the hand parser. Proven
-    // byte-identical by diagnose.sh --emit-gen-check (whole-program GENPASS) — the
-    // rendered identifier AST is unchanged; only the leaf's provenance is native.
-    then "identifiers parse NATIVELY — @hand(ident) is deleted from the unified grammar" {
-        let src = emit_all()
-        !src.contains("run_hand_expr(\"ident\", st)")
-    }
-
-    // t-47hc: the `return` statement was migrated off @hand. `return_stmt = "return"
-    // ^( rv:expression )? -> MkReturn(rv)` — the `^`-gated optional (same-line) + its
-    // FIRST guard (rejecting `}`/Eof) reproduce the hand parser's newline-sensitive
-    // ReturnEmpty-vs-Return decision, and the shared mk_return_opt core builds the
-    // conditional. Proven byte-identical by diagnose.sh --emit-gen-check.
-    then "return parses NATIVELY via mk_return_opt — @hand(return_stmt) is deleted" {
-        let src = emit_all()
         src.contains("fn parse_return_stmt(st: PState) -> CapVal") &&
-        src.contains("mk_return_opt(st, rv)") &&
-        !src.contains("run_hand_stmt(\"return_stmt\", st)")
+        src.contains("mk_return_opt(st, rv)")
     }
 }

@@ -17,7 +17,6 @@ export fn spec_feature() -> Feature {
         resolve_stmt: spec_resolve_stmt,
         check_stmt: spec_check_stmt,
         eval_stmt: spec_eval_stmt,
-        decl_keyword: "kw_spec",
     }
 }
 

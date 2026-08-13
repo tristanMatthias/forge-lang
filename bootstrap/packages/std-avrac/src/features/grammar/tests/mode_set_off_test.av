@@ -109,7 +109,7 @@ spec "t-47hc: @off(flag) — POSITION validation (accepted where emit HONORS it,
         perr("r = @off(allow_struct_lit) l:num -> fold_binary(l)\nnum = NUMBER") != ""
     }
     then "@off cannot wrap a @hand primary (the delegate owns its own modes)" {
-        perr("r = @off(allow_struct_lit) @hand(foo)\ng = \"x\"") != ""
+        perr("r = @off(allow_struct_lit) @peek(match_table)\ng = \"x\"") != ""
     }
 }
 
