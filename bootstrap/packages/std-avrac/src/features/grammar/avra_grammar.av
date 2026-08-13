@@ -1346,7 +1346,13 @@ export fn avra_program_grammar() -> Grammar {
   param       = pname:IDENT ( ":" @require pt:type_expr )?
                  @expect("IDENT", "expected parameter name") 
                  @expect("type_expr", "expected parameter type after `:`") -> MkParam(pname, pt)
-  statement   = return_stmt | @hand(let_stmt) | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
+  statement   = return_stmt | let_stmt | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
+  // Mirrors the production `let_decl`: MkLetBinding lowers to the same shared
+  // core, so the let-else desugar (fresh temp + divergence check) is identical.
+  let_stmt    = @try "let" @cut ( m:"mut" )? @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
+                @expect("IDENT", "expected variable name")
+                @expect("type_expr", "expected type after `:`")
+                @expect("=", "expected `=` after variable name") -> MkLetBinding(m, n, ty, init, e, tmp)
   return_stmt = "return" ( @peek(return_value) @gate @onfail(bail) rv:expression )? -> MkReturn(rv)
   defer_stmt  = "defer" de:expression -> MkDefer(de)
   errdefer_stmt = "errdefer" ee:expression -> MkErrdefer(ee)
@@ -1371,11 +1377,18 @@ export fn avra_program_grammar() -> Grammar {
   comparison  = l:term ( op:("<" | "<=" | ">" | ">=") r:term )* -> fold_binary(l, op, r)
   term        = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
   factor      = l:un ( op:("*" | "/") r:un )* -> fold_binary(l, op, r)
-  un          = op:("!" | "-" | "not" | "~") operand:un -> Unary(op, operand) | postfix
+  // `~` splits on quote depth exactly as production `unary` does: bitwise-NOT
+  // outside a quote, splice inside one.
+  un          = op:("!" | "-" | "not") operand:un -> Unary(op, operand)
+              | @when(at_quote_top) op:("~") operand:un -> Unary(op, operand)
+              | @when(in_quote_body) "~" t:un -> MkSplice(t)
+              | postfix
   postfix     = base:primary ( s:suffix )* -> fold_postfix(base, s)
   suffix      = "." sn:IDENT -> field_suffix(sn)
               | "(" ( ca:expression ( "," ca:expression )* )? ")" -> call_suffix(ca)
-  primary     = NUMBER | STRING | "true" | "false" | @hand(quote_expr) | IDENT
+  primary     = NUMBER | STRING | "true" | "false" | quote_expr | IDENT
+  quote_expr  = "quote" ( k:("stmt" | "stmts" | "decl") )? @bump(quote_depth) body:quote_body -> MkQuote(k, body)
+  quote_body  = "{" ( qs:statement )* "}" -> MkExprBlock(qs)
     }
     // The DECLARATION rules are no longer here: each decl keyword's rule is owned
     // by its own feature (features/<name>/grammar.av) and collected through the
