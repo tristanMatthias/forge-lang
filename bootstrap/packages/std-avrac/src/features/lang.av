@@ -1,15 +1,15 @@
 // WHY: `LanguageFeature` — the component every language feature instantiates
 // to describe itself in ONE place: title, reference docs, the grammar rules
 // it owns, the F-codes it can raise, an editor snippet, and its pass hooks.
-// The compiler assembles itself from these definitions: `register_lang` maps
-// the hooks into the dispatch registry, `gram` feeds grammar composition,
-// docs/diags feed `avra lang` / `avra explain`, and the editor keyword
-// surface is DERIVED from the grammar so it cannot drift from the syntax.
-// t-kd4y prototype: defer + match are the first instances; the rest of
-// features/ migrates only after the user ratifies the shape.
+// The compiler assembles itself from these definitions (`language_features`
+// in mod.av is the one list every surface folds over); everything derivable
+// from a definition — keywords, highlighting — is DERIVED, never declared
+// twice. t-kd4y prototype: defer + match first; the rest migrates only
+// after the user ratifies the shape.
 
 use core.{feature_new, Registry, register}
-use features.grammar.{GNode, GPrim, code_at, is_ident_start_code}
+use features.grammar.{grammar_literals, code_at, is_ident_start_code}
+use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
 /// adapter onto the core Feature record while both forms coexist.
@@ -30,48 +30,12 @@ export fn register_lang(reg: Registry, f: LanguageFeature) {
     })
 }
 
-/// The identifier-shaped literal terminals of a feature's grammar — its
-/// keywords, derived rather than declared: `"defer"` qualifies, `"+"`
-/// does not. Feeds highlighting / docs without a second keyword list.
+/// A feature's keywords, derived from its declared grammar — the
+/// identifier-shaped literal terminals (`"defer"` yes, `"+"` no).
 export fn feature_keywords(f: LanguageFeature) -> List<string> {
-    mut out: List<string> = []
-    for r in f.gram.rules {
-        out = collect_kw_node(out, r.body)
-    }
-    out
+    [t for t in grammar_literals(f.gram) if is_keyword_shaped(t)] |> list_dedup_str
 }
 
-fn collect_kw_node(acc: List<string>, node: GNode) -> List<string> {
-    mut out = acc
-    match node {
-        .Alt(branches) -> {
-            for b in branches {
-                for item in b.items {
-                    out = collect_kw_prim(out, item.prim)
-                }
-            }
-        }
-    }
-    out
-}
-
-fn collect_kw_prim(acc: List<string>, prim: GPrim) -> List<string> {
-    match prim {
-        .Lit(text) -> {
-            mut out = acc
-            if text.length > 0 && is_ident_start_code(code_at(text, 0)) && !kw_seen(out, text) {
-                out = out.push(text)
-            }
-            out
-        }
-        .Group(inner) -> collect_kw_node(acc, inner)
-        _ -> acc
-    }
-}
-
-fn kw_seen(xs: List<string>, x: string) -> bool {
-    for e in xs {
-        if e == x { return true }
-    }
-    false
+fn is_keyword_shaped(t: string) -> bool {
+    t.length > 0 && is_ident_start_code(code_at(t, 0))
 }

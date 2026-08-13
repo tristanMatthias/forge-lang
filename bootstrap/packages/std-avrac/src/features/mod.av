@@ -60,14 +60,12 @@ fn no_grammar() -> Grammar {
     Grammar { name: "", rules, rule_idx: build_rule_index(rules) }
 }
 
-fn no_diags() -> List<DiagSpec> { [] }
-
 component LanguageFeature {
     config {
         title: string = "",
         docs: string = "",
         gram: Grammar = no_grammar(),
-        diags: List<DiagSpec> = no_diags(),
+        diags: List<DiagSpec> = [],
         snippet: string = "",
         expr_tag: Expr? = null,
         stmt_tag: Stmt? = null,
@@ -91,9 +89,7 @@ component LanguageFeature {
 /// position.
 export fn init_features(reg: Registry) {
     // ── Statements ──
-    // LanguageFeature instances (t-kd4y prototype) — defined in defer.av
-    register_lang(reg, defer_lang())
-    register_lang(reg, errdefer_lang())
+    for f in language_features() { register_lang(reg, f) }
     register(reg, if_stmt_feature())
     register(reg, while_feature())
     register(reg, for_feature())
@@ -149,6 +145,14 @@ export fn init_features(reg: Registry) {
     register(reg, use_feature())
     register(reg, component_decl_feature())
     register(reg, grammar_feature())
+}
+
+/// Every LanguageFeature definition, in registration order — the ONE list
+/// the registry, grammar composition, docs, diagnostics, and editor
+/// surfaces fold over. Migrating a feature = writing its definition file
+/// and adding it here.
+export fn language_features() -> List<LanguageFeature> {
+    [defer_lang(), errdefer_lang()]
 }
 
 /// t-47hc.8: the per-feature grammar fragments, collected in ONE place —

@@ -98,9 +98,6 @@ purely about sized-int WIDTH — callers of the wide `resolve_layout` /
 - **Other:** `defer`, `select` (channels), `parallel`, `spec`/`given`/`then` (testing), `@annotations`, modules/`use`/`export`
 - **Dynamic dispatch:** `dyn Trait` with vtable boxing
 
-### What's parsed but NOT yet in codegen
-- `ListComp` — parsed into AST, no `emit_list_comp` exists
-
 ### Type checker status
 **Gating** — type errors stop compilation before codegen runs. Per spec Axis 20.
 

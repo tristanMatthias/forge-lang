@@ -109,6 +109,33 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 /// first-match semantics, so a composed grammar (compose_grammars) that
 /// re-lists a shared rule still resolves to the head's definition.
 /// Called ONCE per Grammar at construction.
+/// Every literal terminal appearing anywhere in `g`, in declaration order,
+/// duplicates kept (callers dedup). The grammar-DERIVED surfaces — feature
+/// keywords, highlighting — build on this instead of re-walking GNode.
+export fn grammar_literals(g: Grammar) -> List<string> {
+    mut out: List<string> = []
+    for r in g.rules { out = node_literals(out, r.body) }
+    out
+}
+
+fn node_literals(acc: List<string>, node: GNode) -> List<string> {
+    mut out = acc
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for item in b.items {
+                    out = match item.prim {
+                        .Lit(text) -> out.push(text)
+                        .Group(inner) -> node_literals(out, inner)
+                        _ -> out
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 export fn build_rule_index(rules: List<Rule>) -> ptr {
     let m = avra_map_new_cstr()
     mut i = 0
