@@ -36,8 +36,10 @@ use features.while_stmt.{while_feature}
 use features.with_expr.{with_expr_feature}
 use features.component_decl.{component_decl_feature}
 use core.{register}
+use features.defer_stmt.{defer_lang, errdefer_lang}
+use features.match_expr.{match_lang, when_lang}
 use core.{noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt, noop_parse_expr}
-use features.grammar.{Rule, build_rule_index}
+use features.grammar.{Rule, build_rule_index, GrammarParse}
 
 // ── What a feature IS ──
 //
@@ -54,16 +56,16 @@ export type DiagSpec = { code: string, title: string, explain: string }
 
 /// Default for features that own no grammar rules — constructed directly
 /// (`parse_grammar` rejects rule-less sources by design).
-fn no_grammar() -> Grammar {
+fn no_grammar() -> GrammarParse {
     let rules: List<Rule> = []
-    Grammar { name: "", rules, rule_idx: build_rule_index(rules) }
+    GrammarParse { grammar: Grammar { name: "", rules, rule_idx: build_rule_index(rules) }, error: "" }
 }
 
 component LanguageFeature {
     config {
         title: string = "",
         docs: string = "",
-        gram: Grammar = no_grammar(),
+        gram: GrammarParse = no_grammar(),
         // TRANSITION (dies with t-47hc.8): true = this feature's rules are
         // still duplicated inside the central grammar views (drift-guarded,
         // NOT composed); false = `gram` joins feature_grammar_fragments.
@@ -163,7 +165,7 @@ export fn language_features() -> List<LanguageFeature> {
 /// the whole-program grammar composes from, so the two views cannot drift).
 /// Rule-disjointness is guarded by `fragment_rule_conflicts` in the specs.
 export fn feature_grammar_fragments() -> List<Grammar> {
-    mut all = [f.gram for f in language_features() if !f.gram_in_spine && f.gram.rules.length > 0]
+    mut all = [feature_gram(f) for f in language_features() if !f.gram_in_spine && f.gram.grammar.rules.length > 0]
     for g in feature_decl_grammar_fragments() {
         all.push(g)
     }

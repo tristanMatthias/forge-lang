@@ -6,7 +6,7 @@ use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
 use features.eval.{ok_result, value_null}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_gate_unthreaded_lambda}
-use features.grammar.{grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar}
 use list_ops.{list_push_copy}
 
 /// Push one DeferStack entry — the body emits later, at each scope exit.
@@ -48,7 +48,7 @@ an `if` branch fires when that block exits, not at function return.
 Defers run on EVERY exit path: normal return, fall-through, `break`,
 and error propagation via `?`.
 """,
-        gram = grammar { defer_stmt = "defer" e:expression -> MkDefer(e) } |> grammar_checked,
+        gram = grammar { defer_stmt = "defer" e:expression -> MkDefer(e) },
         snippet = r"defer ${1:cleanup()}",
         stmt_tag = Stmt.Defer(ExprId(0)),
         emit_stmt = (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->
@@ -78,7 +78,7 @@ reverses correctly on cleanup:
     let buf = alloc_buf()
     errdefer free_buf(buf)     // only if a later step fails
 """,
-        gram = grammar { errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e) } |> grammar_checked,
+        gram = grammar { errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e) },
         snippet = r"errdefer ${1:rollback()}",
         stmt_tag = Stmt.Errdefer(ExprId(0)),
         emit_stmt = (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->

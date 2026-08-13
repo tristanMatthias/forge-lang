@@ -11,6 +11,7 @@ use typeck.{check_expr, tc_er, EnumTypeReg, ExprResult, TC, check_expr_expected,
 use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use features.union_type.{emit_union_tag, emit_union_extract}
+use features.{DiagSpec, composed}
 
 // ── grammar fragments ──
 
@@ -171,7 +172,7 @@ variants earns a lint. `match` is also an expression — the arms' bodies
 unify to the result type. The row-oriented `match … table { }` form
 desugars into ordinary arms.
 """,
-        gram = compose_fragments([avra_pat_grammar(), avra_match_arm_grammar()]),
+        gram = composed([avra_pat_grammar(), avra_match_arm_grammar()]),
         snippet = r"match ${1:subject} { ${2:pattern} -> ${3:body} }",
         diags = [DiagSpec {
             code: "F9001",
