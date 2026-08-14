@@ -21,8 +21,8 @@
 // these rows and the pass cannot double-apply. The feature's mod.av keeps
 // the SEMANTIC hooks (emit/resolve/check) and references these builds by
 // name in its gram — the reference is still the registration.
-use core.{Stmt, ExprId}
-use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_to_expr}
+use core.{Stmt, ExprId, WhenArm}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr}
 
 export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
 export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
@@ -32,6 +32,37 @@ export fn _gb_build_defer(st: PState, vals: List<CapVal>) -> CapVal {
 }
 export fn _gb_build_errdefer(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_errdefer(capval_to_expr(st, vals[0])))
+}
+
+// ── match/when (t-kd4y.3 match slice) — the arms whose central helpers
+// were already PURE over unwrapped values (mk_when_arm/mk_when_default
+// constructed records, no arena, no span threading). MkMatch/MkArm and
+// the rest stay central: MkArm reads the boxed Pattern back from the
+// arena and the others thread sp_start spans — both need the
+// store-access/span-injection marshalling rows recorded for the wide
+// migration. MkMatch additionally has no feature-gram reference (it is
+// spine-only), so a bind row would be an orphan to the validator.
+export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
+    WhenArm { cond_id: c, body_id: b }
+}
+export fn build_when_default(b: ExprId) -> WhenArm {
+    WhenArm { cond_id: none, body_id: b }
+}
+
+export fn _gb_build_when_arm(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_warm_val(st, build_when_arm(capval_to_expr(st, vals[0]), capval_to_expr(st, vals[1])))
+}
+export fn _gb_build_when_default(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_warm_val(st, build_when_default(capval_to_expr(st, vals[0])))
+}
+
+export fn when_arm_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_when_arm", kind: "warm", arity: 2,
+                   module: "features.grammar", export_name: "_gb_build_when_arm",
+                   build: _gb_build_when_arm },
+     BuilderBind { name: "build_when_default", kind: "warm", arity: 1,
+                   module: "features.grammar", export_name: "_gb_build_when_default",
+                   build: _gb_build_when_default }]
 }
 
 export fn defer_builds() -> List<BuilderBind> {

@@ -2353,8 +2353,6 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkQuote" -> "mk_quote(st, sp_start, ${args[0]}, ${args[1]})"
         "MkSpawn" -> "mk_spawn(st, sp_start, ${args[0]})"
         "MkIsolated" -> "mk_isolated(st, sp_start, ${args[0]})"
-        "MkWhenArm" -> "mk_when_arm(st, ${args[0]}, ${args[1]})"
-        "MkWhenDefault" -> "mk_when_default(st, ${args[0]})"
         "MkWhen" -> "mk_when(st, sp_start, CapVal.WArms(${args[0]}_list))"
         "MkMatchExpr" -> "mk_match_expr(st, sp_start, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         "MkIfExpr" -> "mk_if_expr(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
