@@ -96,9 +96,27 @@ export component LanguageFeature {
 /// feature module exposes a `<name>_feature()` builder. Order
 /// doesn't matter — features dispatch by AST tag, not declaration
 /// position.
-export fn init_features(reg: Registry) {
+/// Returns the composed builder manifest alongside registration so
+/// `build_registry` can store it from the SAME factory run — a second
+/// `language_features()` call here re-parses every definition gram, and a
+/// registry builds once per NodeStore, so that cost multiplies by the
+/// hundreds of stores a package compile creates (the rc-strict +2GB
+/// regression this signature exists to prevent).
+export fn init_features(reg: Registry) -> List<BuilderBind> {
+    mut binds: List<BuilderBind> = []
     // ── Statements ──
-    for f in language_features() { register_lang(reg, f) }
+    for f in language_features() {
+        register_lang(reg, f)
+        for b in f.builders {
+            for seen in binds {
+                if seen.name == b.name {
+                    grammar_startup_fail("build `${b.name}` is supplied by two features — one lowering, one owner")
+                    return binds
+                }
+            }
+            binds.push(b)
+        }
+    }
     register(reg, if_stmt_feature())
     register(reg, while_feature())
     register(reg, for_feature())
@@ -152,6 +170,7 @@ export fn init_features(reg: Registry) {
     register(reg, use_feature())
     register(reg, component_decl_feature())
     register(reg, grammar_feature())
+    binds
 }
 
 /// Every LanguageFeature definition, in registration order — the ONE list
@@ -175,6 +194,7 @@ export fn feature_builders() -> List<BuilderBind> {
             for seen in all {
                 if seen.name == b.name {
                     grammar_startup_fail("build `${b.name}` is supplied by two features — one lowering, one owner")
+                    return all
                 }
             }
             all.push(b)

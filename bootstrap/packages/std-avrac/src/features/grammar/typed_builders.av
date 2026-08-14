@@ -17,10 +17,13 @@
 // instance's overrides. Comptime-ephemeral: the adapter exists only as
 // generated AST (the @derive precedent), never in a source file; the
 // checked-in generated parsers inline the same derivation at regen, which is
-// the audit surface. Because the adapter CONTAINS a real call to the typed
-// fn, arity/type drift between rule and fn is an ordinary compile error in
-// the feature's own file — not a startup surprise (slice A's registry-build
-// validation stays as the backstop and covers hand-supplied binds).
+// the audit surface. The adapter CONTAINS a real call to the typed fn, so
+// the fn's own body typechecks against its signature in the feature's file.
+// Rule-vs-fn ARITY drift is caught at synthesis (typed_targets skips the
+// target, leaving the name unresolved for the registry-build validator to
+// name once); capture-KIND vs param-type checking is the recorded gap for
+// the wide migration (the rule's capture kinds are computable — add the
+// third validation leg when the tables grow past the proof rows).
 //
 // The reference IS the registration (design ratified 2026-08-13): no
 // annotation, no .bind() chain — a build name that is not an engine build
@@ -76,16 +79,18 @@ fn has_grammar_module(ids: List<StmtId>, store: NodeStore) -> bool {
 
 /// `use <path>.{capval helpers + engine types}` — prepended to any scope
 /// that gained adapters, so the generated bodies resolve regardless of what
-/// the feature's own imports carry.
+/// the feature's own imports carry. The helper names derive from the
+/// marshalling tables (every unwrap fn + every wrap helper), so a new row
+/// cannot ship without its import; only the engine TYPE names are fixed.
 fn helper_use_row(store: NodeStore, absolute: bool) -> StmtId {
     let path = if absolute { "@std.avrac.features.grammar" } else { "features.grammar" }
-    let names: List<ParamEntry> = [
-        ParamEntry { name: "capval_stmt_val", vtype: ValueType.Unknown },
-        ParamEntry { name: "capval_to_expr", vtype: ValueType.Unknown },
+    mut names: List<ParamEntry> = [
         ParamEntry { name: "PState", vtype: ValueType.Unknown },
         ParamEntry { name: "CapVal", vtype: ValueType.Unknown },
         ParamEntry { name: "BuilderBind", vtype: ValueType.Unknown },
     ]
+    for u in unwrap_rows() { names.push(ParamEntry { name: u.fn_name, vtype: ValueType.Unknown }) }
+    for w in wrap_rows() { names.push(ParamEntry { name: w.helper, vtype: ValueType.Unknown }) }
     store.stmts.add_leaf(Stmt.Use(path, names))
 }
 
@@ -134,13 +139,21 @@ type RowsResult = { rows: List<StmtId>, adapters: List<StmtId>, changed: bool }
 
 /// Rewrite instance-binding rows in one statement list. Only Let/Mut whose
 /// init is `LanguageFeature_new(…) with { … }` and whose overrides carry a
-/// `gram` pair (and no hand-written `builders` pair) are candidates.
+/// `gram` pair (and no hand-written `builders` pair) are candidates. The
+/// allocation-free `is_candidate` probe runs first: this pass walks EVERY
+/// statement of EVERY compile, and per-row result records on the skip path
+/// are exactly the transient-garbage class strict-mode quarantine turns
+/// into resident growth (the rc-strict regression lesson).
 fn rewrite_rows(rows: List<StmtId>, store: NodeStore, mod_path: string, sigs: List<FnSig>) -> RowsResult {
     mut out: List<StmtId> = []
     mut adapters: List<StmtId> = []
     mut changed = false
     for id in rows {
         let node = store.stmts.get(id)
+        if !is_candidate(store, node) {
+            out.push(id)
+            continue
+        }
         let r = rewrite_instance(store, node, mod_path, sigs)
         if r.changed {
             out.push(store.stmts.add_leaf(rewrap_annotations(store, node, r.stmt)))
@@ -153,11 +166,30 @@ fn rewrite_rows(rows: List<StmtId>, store: NodeStore, mod_path: string, sigs: Li
     RowsResult { rows: out, adapters: adapters, changed: changed }
 }
 
+/// Pure shape probe — no allocations, no result records: a Let/Mut whose
+/// init is a `with` over a `LanguageFeature_new(…)` call.
+fn is_candidate(store: NodeStore, node: Stmt) -> bool {
+    match stmt_unwrap(store, node) {
+        .Let(_, _, init_id) -> init_is_instance(store, init_id)
+        .Mut(_, _, init_id) -> init_is_instance(store, init_id)
+        _ -> false
+    }
+}
+
+fn init_is_instance(store: NodeStore, init_id: ExprId) -> bool {
+    match store.exprs.get(init_id) {
+        .With(base_id, _) -> is_lang_feature_new(store, base_id)
+        _ -> false
+    }
+}
+
 type InstanceResult = { stmt: Stmt, adapters: List<StmtId>, changed: bool }
 
 fn no_rewrite() -> InstanceResult {
     let empty: List<StmtId> = []
-    InstanceResult { stmt: Stmt.Break, adapters: empty, changed: false }
+    // NoOp, not a control-flow variant: a future caller inserting the
+    // sentinel directly must get an inert statement.
+    InstanceResult { stmt: Stmt.NoOp, adapters: empty, changed: false }
 }
 
 fn rewrite_instance(store: NodeStore, node: Stmt, mod_path: string, sigs: List<FnSig>) -> InstanceResult {
@@ -264,9 +296,14 @@ fn strip_quotes(s: string) -> string {
 }
 
 /// The referenced build names that resolve as typed fns: not an engine
-/// build, matching a module fn, and every param + the return type covered
-/// by the marshalling tables. One entry per NAME (a rule set referencing a
-/// builder twice still generates one adapter).
+/// build, matching a module fn with the SAME arg count, and every param +
+/// the return type covered by the marshalling tables. One entry per NAME
+/// (a rule set referencing a builder twice still generates one adapter).
+/// The adapter's call is derived from the SIGNATURE, so it compiles
+/// whatever the rule says — the rule's own arg count is only checkable
+/// here: on drift the target is skipped, the name stays unresolved, and
+/// the registry-build validator names the mismatch once. (Capture-KIND vs
+/// param-type checking is the recorded gap for the wide migration.)
 fn typed_targets(refs: List<BuildRef>, sigs: List<FnSig>) -> List<FnSig> {
     mut out: List<FnSig> = []
     for r in refs {
@@ -274,6 +311,7 @@ fn typed_targets(refs: List<BuildRef>, sigs: List<FnSig>) -> List<FnSig> {
         for sig in sigs {
             if sig.name != r.name { continue }
             if !sig_supported(sig) { continue }
+            if r.argc != sig.params.length { continue }
             mut seen = false
             for done in out { if done.name == sig.name { seen = true } }
             if !seen { out.push(sig) }
@@ -292,32 +330,47 @@ fn sig_supported(sig: FnSig) -> bool {
 
 // ── The type-directed marshalling tables ──
 //
-// One row per capture type a typed builder may take / result type it may
-// return. Rows are added as migrating features need them; an uncovered type
-// fails sig_supported (whole-fn skip, never a half-adapted builder).
+// TWO data lists — one per direction — are the single source every consumer
+// reads: sig_supported gates on them, synth_adapter spells calls from them,
+// bind_literal takes the kind from the wrap row, and helper_use_row imports
+// exactly the fn names they carry. A row added here ships complete
+// (helper + kind + import) by construction; an uncovered type fails
+// sig_supported (whole-fn skip, never a half-adapted builder).
 
-/// Param type → the capval unwrap fn wrapping `vals[i]`.
+/// One param-side row: a capture type name → the capval unwrap fn.
+type UnwrapRow = { ty: string, fn_name: string }
+
+/// One result-side row: a result type name → its wrap helper
+/// (executor.av capval_*_val) + the BuilderBind kind it classifies as.
+type WrapRow = { ty: string, helper: string, kind: string }
+
+fn unwrap_rows() -> List<UnwrapRow> {
+    [UnwrapRow { ty: "ExprId", fn_name: "capval_to_expr" }]
+}
+
+fn wrap_rows() -> List<WrapRow> {
+    [WrapRow { ty: "Stmt", helper: "capval_stmt_val", kind: "stmt" }]
+}
+
+/// Param type → the capval unwrap fn wrapping `vals[i]`; "" = uncovered.
 fn unwrap_call_for(vt: ValueType) -> string {
-    match vtype_head_name(vt) {
-        "ExprId" -> "capval_to_expr"
-        _ -> ""
-    }
+    let n = vtype_head_name(vt)
+    for r in unwrap_rows() { if r.ty == n { return r.fn_name } }
+    ""
 }
 
-/// Return type → the capval wrap helper (executor.av capval_*_val) and,
-/// via kind_for_wrap, the BuilderBind kind.
+/// Return type → its wrap helper; "" = uncovered.
 fn wrap_helper_for(vt: ValueType) -> string {
-    match vtype_head_name(vt) {
-        "Stmt" -> "capval_stmt_val"
-        _ -> ""
-    }
+    let n = vtype_head_name(vt)
+    for r in wrap_rows() { if r.ty == n { return r.helper } }
+    ""
 }
 
+/// Return type → the BuilderBind kind, from the SAME row as the helper.
 fn kind_for_wrap(vt: ValueType) -> string {
-    match vtype_head_name(vt) {
-        "Stmt" -> "stmt"
-        _ -> ""
-    }
+    let n = vtype_head_name(vt)
+    for r in wrap_rows() { if r.ty == n { return r.kind } }
+    ""
 }
 
 /// The nominal head name of a pre-resolve type annotation (the parser

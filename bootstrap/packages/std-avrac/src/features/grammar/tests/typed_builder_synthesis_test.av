@@ -33,6 +33,24 @@ fn probe_src() -> string {
     "}\n"
 }
 
+/// Rule/fn ARITY drift: the rule supplies one capture, the fn declares two
+/// typed params. typed_targets skips the target (the adapter's call derives
+/// from the signature, so synthesizing would hide the drift), the name
+/// stays unresolved, and for a plain value the builders list is just empty
+/// — registered features get the startup validator's named diagnostic.
+fn drift_src() -> string {
+    "use @std.avrac.features.{LanguageFeature, LanguageFeature_new}\n" +
+    "use @std.avrac.core.{ExprId, Stmt}\n" +
+    "use @std.avrac.features.grammar.{parse_grammar}\n" +
+    "\n" +
+    "fn build_probe(e: ExprId, extra: ExprId) -> Stmt { Stmt.Defer(e) }\n" +
+    "\n" +
+    "fn main() {\n" +
+    "    let t = LanguageFeature_new(\"probe\") with { gram: grammar { probe_stmt = \"probetok\" e:expression -> build_probe(e) } }\n" +
+    "    println(\"builders=\" + string(t.builders.length))\n" +
+    "}\n"
+}
+
 /// A control the pass must NOT touch: the referenced name matches no module
 /// fn, so no adapter synthesizes and the instance keeps an empty builders
 /// list (slice A's startup validation owns the diagnostic story for
@@ -64,6 +82,10 @@ spec "t-kd4y.3: typed build fns synthesize adapters + derived BuilderBinds at co
     }
     then "a build name matching no module fn synthesizes nothing" {
         let out = run_fixture("untouched", untouched_src())
+        out.contains("__status=0\n") && out.contains("builders=0")
+    }
+    then "rule/fn arity drift declines synthesis — no adapter with a known-wrong arity" {
+        let out = run_fixture("drift", drift_src())
         out.contains("__status=0\n") && out.contains("builders=0")
     }
 }

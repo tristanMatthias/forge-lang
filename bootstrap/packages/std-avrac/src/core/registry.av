@@ -337,7 +337,6 @@ impl NodeStore {
 /// startup; downstream passes look up handlers from the result.
 export fn build_registry() -> Registry {
     mut reg = registry_new()
-    init_features(reg)
-    reg.builder_binds = feature_builders()
+    reg.builder_binds = init_features(reg)
     reg
 }

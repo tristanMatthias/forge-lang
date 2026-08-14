@@ -3975,15 +3975,21 @@ fn retype_self_param(st: PState, params: List<ParamEntry>, target: string) -> Li
 fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> CapVal {
     // Feature-supplied lowerings first (t-kd4y.3): a definition that carries
     // its own builders owns this name, and the central arms below shrink as
-    // features migrate. The manifest rides the store's registry (the
-    // program-wide parse-registry seam — NOT `st.host`, which is lazy), so
-    // an empty manifest costs one null-checked method call. Linear scan:
-    // the manifest is small; index it if the wide migration makes it hot.
-    for b in st.store.parse_features().builder_binds {
-        if b.name == name && args.length == b.arity {
-            mut vals: List<CapVal> = []
-            for a in args { vals.push(env.get(a)) }
-            return b.build(st, vals)
+    // features migrate. The manifest rides the store's ALREADY-INSTALLED
+    // registry (the program-wide parse-registry seam — NOT `st.host`, which
+    // is lazy for the 12GB reason). The null check is load-bearing twice
+    // over: registry-free oracle PStates (bare executor tests) must not
+    // trigger a full build_registry from inside a build call, and a fresh
+    // sub-parse store mid-compile must not construct a SECOND registry per
+    // apply_build — production paths install the registry at Parser
+    // construction, which is the only population point this reads.
+    if st.store.parse_registry != null && st.store.parse_registry!.builder_binds.length > 0 {
+        for b in st.store.parse_registry!.builder_binds {
+            if b.name == name && args.length == b.arity {
+                mut vals: List<CapVal> = []
+                for a in args { vals.push(env.get(a)) }
+                return b.build(st, vals)
+            }
         }
     }
     // Dispatch on the build name — one arm per grammar `-> Build(...)`, the

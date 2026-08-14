@@ -9,7 +9,7 @@
 
 use core.{feature_new, Registry, register}
 use features.grammar.{grammar_literals, grammar_checked, grammar_startup_fail, compose_fragments, Grammar, GrammarParse, text_is_word}
-use features.grammar.{grammar_build_refs, central_build_kind, BuilderBind}
+use features.grammar.{grammar_build_refs, central_build_kind, engine_build_kinds, str_in, BuilderBind}
 use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
@@ -22,7 +22,10 @@ use list_ops.{list_dedup_str}
 export fn register_lang(reg: Registry, f: LanguageFeature) {
     let _validated = feature_gram(f)
     let err = builder_validation_error(f)
-    if err != "" { grammar_startup_fail(err) }
+    if err != "" {
+        grammar_startup_fail(err)
+        return
+    }
     register(reg, feature_new(f.name) with {
         expr_tag: f.expr_tag,
         stmt_tag: f.stmt_tag,
@@ -96,6 +99,9 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
         // central_build_kind, not build_kind: the analysis wrapper defaults
         // unknown names to "expr", which would both hide unresolved
         // references and false-conflict every non-expr feature builder.
+        if !builder_kind_supported(b.kind) {
+            return "feature `${fname}`: builder `${b.name}` declares unknown kind `${b.kind}`"
+        }
         let central = central_build_kind(b.name)
         if central != "" && central != b.kind {
             return "feature `${fname}`: builder `${b.name}` declares kind `${b.kind}` but the engine classifies it `${central}`"
@@ -107,6 +113,11 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
         }
     }
     ""
+}
+
+/// A declared kind the engine can classify — `central_build_kind`'s range.
+fn builder_kind_supported(k: string) -> bool {
+    str_in(engine_build_kinds(), k)
 }
 
 fn supplies(builders: List<BuilderBind>, name: string) -> bool {
