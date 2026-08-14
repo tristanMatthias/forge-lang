@@ -9,7 +9,7 @@ use features.grammar.{dispatch_has_tail}
 // executor's gate check must say exactly what the generated parser's says.
 use features.grammar.{rule_first_expect_msg, gated_ref_of, GatedRef}
 use features.grammar.{grammar_has_gate, rule_first_is_ident, rule_first_literal}
-use features.grammar.{rule_result_kind, gprim_ref_name}
+use features.grammar.{rule_result_kind, gprim_ref_name, BuildKindRow}
 // The field-name acceptance set (t-47hc.33.1).
 use core.{tk_is_field_name}
 use core.{tk_keyword_str}
@@ -558,6 +558,16 @@ export type BuilderBind = {
     module: string,
     export_name: string,
     build: fn(PState, List<CapVal>) -> CapVal,
+}
+
+/// The manifest's (name → kind) projection, the shape the grammar kind
+/// analysis takes (ast.av BuildKindRow — it must not depend on BuilderBind's
+/// executor values). Stamped onto composed grammars via
+/// grammar_with_builder_kinds at the seams that hold the manifest.
+export fn builder_kind_rows(binds: List<BuilderBind>) -> List<BuildKindRow> {
+    mut rows: List<BuildKindRow> = []
+    for b in binds { rows.push(BuildKindRow { name: b.name, kind: b.kind }) }
+    rows
 }
 
 /// One in-place token-stream mutation (today: only `split_gt`'s `>>` → `>`),

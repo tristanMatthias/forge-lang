@@ -228,8 +228,9 @@ static int avra_rc_strict;   // fwd decl (tentative); real definition + default 
 // free-list pop, and "is this pointer RC-managed?" is a range check against the
 // region, so there is NO malloc lock, NO hash insert, NO table resize on the hot
 // path. Large/rare blocks (> RC_REGION_MAXBLK) still use malloc + the rc_set,
-// which therefore stays tiny. Strict mode (AVRA_RC_STRICT) and AVRA_RC_NO_REGION
-// keep the original malloc+set path unchanged (debugging / A-B verification).
+// which therefore stays tiny. Strict mode (AVRA_RC_STRICT) runs its detectors
+// ON TOP of the region (see rc_reclaim); AVRA_RC_NO_REGION restores the
+// original malloc+set path (debugging / A-B verification, composes with strict).
 //
 // Block layout in the region: [ total_size(8) | RcHeader(8) | payload ]. The
 // 8-byte total lets free() bucket the block by size class; the user pointer is
@@ -250,7 +251,14 @@ static int    rc_region_enabled = 0;
 __attribute__((constructor(102)))                             // after auto_enable_rc_strict (101)
 static void rc_region_init(void) {
     if (rc_region_base) return;
-    if (avra_rc_strict || getenv("AVRA_RC_NO_REGION")) { rc_region_enabled = 0; return; }
+    // Strict mode keeps the region: its detectors (poison-on-free, reuse
+    // quarantine, foreign-release abort) run at the region layer — see
+    // rc_reclaim. Disabling the region under strict made every small object
+    // an individual malloc + hash insert, a measured 3.6x wall / +18% RSS on
+    // a package compile, which is what held the rc-strict CI suite to shard
+    // width 1. AVRA_RC_NO_REGION remains the explicit A/B escape hatch and
+    // composes with strict (= the historical all-malloc strict behaviour).
+    if (getenv("AVRA_RC_NO_REGION")) { rc_region_enabled = 0; return; }
     void* p = mmap(NULL, RC_REGION_BYTES, PROT_READ | PROT_WRITE,
                    MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (p == MAP_FAILED) { rc_region_enabled = 0; return; }   // graceful fallback to malloc+set
@@ -301,14 +309,19 @@ static void* rc_region_try_alloc(size_t payload) {
 }
 
 // Return a region block to its size-class free list (LIFO, link stored in the
-// block's own memory). The size was recorded at the base by rc_region_try_alloc.
-static void rc_region_free_block(void* user_ptr) {
-    char* base = (char*)user_ptr - RC_REGION_HDR;
+// block's own memory). The size was recorded at the base by rc_region_try_alloc
+// and is still intact here: the strict quarantine stores block addresses in its
+// own ring and never writes into a held block, so a base arriving via eviction
+// reads the same size a direct free would.
+static void rc_region_free_base(void* base) {
     size_t li = (*(size_t*)base) / RC_REGION_GRAIN;
     rc_lock();
     *(void**)base = rc_region_free[li];
     rc_region_free[li] = base;
     rc_unlock();
+}
+static void rc_region_free_block(void* user_ptr) {
+    rc_region_free_base((char*)user_ptr - RC_REGION_HDR);
 }
 
 // Thread-local net-allocation accounting for single-threaded leak
@@ -395,6 +408,16 @@ static void rc_set_remove(void* ptr) {
 
 static int avra_rc_strict = 0;
 
+// Strict-mode live-allocation accounting. With the region serving strict
+// allocations, rc_set no longer sees every object (region blocks bypass it by
+// design), so avra_rc_live_count's strict contract — the count moves by N for
+// N stranded objects, whichever path allocated them — is carried by this pair
+// instead: every successful avra_rc_alloc increments, every rc_reclaim
+// decrements. Gated on avra_rc_strict at both sites, so the non-strict hot
+// path pays nothing.
+static _Atomic int64_t rc_strict_allocs = 0;
+static _Atomic int64_t rc_strict_frees = 0;
+
 // High-priority constructor (101 = earliest user priority): the alloc/free
 // layout is flag-dependent (rc_malloc_base), so the flag MUST be settled
 // before the FIRST avra_rc_alloc. All C constructors already finish before
@@ -422,13 +445,25 @@ static inline void* rc_malloc_base(void* user_ptr) {
 }
 
 // Quarantine: an open-addressing hash set (O(1) membership) paired with a
-// FIFO ring (eviction order + deferred-free storage). Holds the malloc
+// FIFO ring (eviction order + deferred-free storage). Holds the malloc/region
 // bases of freed-but-not-yet-reclaimed strict allocations.
-#define RC_QUARANTINE_CAP   16384                     // freed blocks held back
+//
+// The ring is capped by COUNT and by BYTES. The byte cap matters precisely
+// because the region serves small strict allocations now: only >RC_REGION_MAXBLK
+// blocks reach this ring, so the small-block churn that used to cycle big
+// blocks out of the 16384-slot window is gone — without a byte cap, 16384
+// deferred multi-KB..MB blocks pinned gigabytes (observed: an 8.2GB shard on
+// the error-recovery differential batch, F4014 under the pool's soft grant).
+// Evicting by bytes restores the effective deferred-free window big blocks had
+// when everything shared the ring.
+#define RC_QUARANTINE_CAP       16384                 // freed blocks held back
+#define RC_QUARANTINE_MAX_BYTES (256ULL << 20)        // and at most 256MB of them
 #define RC_QUARANTINE_SLOTS (RC_QUARANTINE_CAP * 2)   // hash load ≤ 50%
 static void*  rc_quar_ring[RC_QUARANTINE_CAP];        // zero-init (FIFO order)
+static size_t rc_quar_sizes[RC_QUARANTINE_CAP];       // block bytes, ring-parallel
 static size_t rc_quar_head = 0;                       // next ring slot to write
 static size_t rc_quar_fill = 0;
+static size_t rc_quar_bytes = 0;                      // sum of held block bytes
 static void*  rc_quar_slots[RC_QUARANTINE_SLOTS];     // hash set, NULL = empty
 static pthread_mutex_t rc_quar_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -470,22 +505,48 @@ static int rc_quar_slot_contains(void* base) {
     return 0;
 }
 
-// Defer-free a strict allocation's malloc base; evict + really free the
-// oldest block once the ring is full.
-static void rc_quarantine_push(void* base) {
-    void* evict = NULL;
+// Really reclaim an evicted base. Route by block kind: region blocks rejoin
+// their size-class free list (lock order is rc_quar_mutex → rc_lock, never
+// the reverse — no caller takes the quarantine mutex under rc_lock), malloc
+// blocks free().
+static void rc_quar_reclaim_base(void* base) {
+    if (rc_region_contains(base)) rc_region_free_base(base);
+    else free(base);
+}
+
+// Defer-free a strict allocation's base; evict + really free oldest blocks
+// while either cap (count or bytes) is exceeded. A single oversized push can
+// evict many blocks — eviction happens inline under the mutex.
+static void rc_quarantine_push(void* base, size_t bytes) {
+    // A block larger than the whole byte cap can never legally sit in the
+    // ring — with an empty ring the eviction loop below is a no-op and the
+    // block would park unbounded until the next push. Reclaim it
+    // immediately instead (the ASan rule for over-quarantine chunks). The
+    // deferred-reuse window is knowingly zero for such blocks: they are
+    // >256MB one-offs, and holding even one defeats the bound the cap
+    // exists to enforce.
+    if (bytes > RC_QUARANTINE_MAX_BYTES) {
+        rc_quar_reclaim_base(base);
+        return;
+    }
     pthread_mutex_lock(&rc_quar_mutex);
-    if (rc_quar_fill == RC_QUARANTINE_CAP) {
-        evict = rc_quar_ring[rc_quar_head];
+    while (rc_quar_fill > 0 &&
+           (rc_quar_fill == RC_QUARANTINE_CAP ||
+            rc_quar_bytes + bytes > RC_QUARANTINE_MAX_BYTES)) {
+        size_t oldest = (rc_quar_head + RC_QUARANTINE_CAP - rc_quar_fill) % RC_QUARANTINE_CAP;
+        void* evict = rc_quar_ring[oldest];
         rc_quar_slot_remove(evict);
-    } else {
-        rc_quar_fill++;
+        rc_quar_bytes -= rc_quar_sizes[oldest];
+        rc_quar_fill--;
+        rc_quar_reclaim_base(evict);
     }
     rc_quar_ring[rc_quar_head] = base;
+    rc_quar_sizes[rc_quar_head] = bytes;
     rc_quar_slot_insert(base);
+    rc_quar_bytes += bytes;
+    rc_quar_fill++;
     rc_quar_head = (rc_quar_head + 1) % RC_QUARANTINE_CAP;
     pthread_mutex_unlock(&rc_quar_mutex);
-    if (evict) free(evict);   // real reclamation happens only on eviction
 }
 
 // Is user_ptr a pointer into a freed-and-quarantined strict allocation?
@@ -498,21 +559,32 @@ static int rc_quarantine_contains_user(void* user_ptr) {
 }
 
 // Reclaim an RC object. Under strict mode: poison the payload then hand the
-// base to the quarantine (deferred free). Otherwise: free immediately, the
-// historical path. Caller has already cleared type_tag + removed from rc_set.
+// base to the quarantine (deferred free) — region and malloc blocks alike;
+// both layouts put the base at user_ptr-16 with a size field at base+0, so
+// the quarantine treats them uniformly and only eviction routes by kind.
+// Otherwise: immediate reuse/free, the historical paths. Caller has already
+// cleared type_tag + removed from rc_set.
 static void rc_reclaim(void* user_ptr) {
+    if (avra_rc_strict) {
+        atomic_fetch_add_explicit(&rc_strict_frees, 1, memory_order_relaxed);
+        int in_region = rc_region_contains(user_ptr);
+        void* base = in_region ? (char*)user_ptr - RC_REGION_HDR
+                               : rc_malloc_base(user_ptr);
+        // Region blocks store the TOTAL (header included) at base; strict
+        // malloc blocks store the payload itself (the RC_STRICT_PREFIX).
+        size_t stored = *(size_t*)base;
+        size_t payload = in_region ? stored - RC_REGION_HDR : stored;
+        if (payload) memset(user_ptr, RC_POISON_BYTE, payload);
+        size_t held = in_region ? stored
+                                : payload + RC_HEADER_SIZE + RC_STRICT_PREFIX;
+        rc_quarantine_push(base, held);
+        return;
+    }
     if (rc_region_contains(user_ptr)) {          // region block → size-class free list
         rc_region_free_block(user_ptr);
         return;
     }
-    if (avra_rc_strict) {
-        void* base = rc_malloc_base(user_ptr);
-        size_t payload = *(size_t*)base;        // stored by avra_rc_alloc
-        if (payload) memset(user_ptr, RC_POISON_BYTE, payload);
-        rc_quarantine_push(base);
-    } else {
-        free((char*)user_ptr - RC_HEADER_SIZE);
-    }
+    free((char*)user_ptr - RC_HEADER_SIZE);
 }
 
 // Allocate an RC-managed object via system malloc.
@@ -542,6 +614,7 @@ void* avra_rc_alloc(int64_t payload_size) {
         atomic_store_explicit(&rhdr->refcount, 1, memory_order_relaxed);
         rhdr->type_tag = RC_MAGIC;
         t_rc_allocs++;
+        if (avra_rc_strict) atomic_fetch_add_explicit(&rc_strict_allocs, 1, memory_order_relaxed);
         if (rc_trace) {
             fprintf(stderr, "[RC] alloc %p (payload=%lld, rc=1, region)\n", ruser, (long long)payload_size);
         }
@@ -562,6 +635,7 @@ void* avra_rc_alloc(int64_t payload_size) {
     atomic_store_explicit(&hdr->refcount, 1, memory_order_relaxed);
     hdr->type_tag = RC_MAGIC;
     t_rc_allocs++;
+    if (avra_rc_strict) atomic_fetch_add_explicit(&rc_strict_allocs, 1, memory_order_relaxed);
     rc_set_add(user_ptr);
     if (rc_trace) {
         fprintf(stderr, "[RC] alloc %p (payload=%lld, rc=1)\n", user_ptr, (long long)payload_size);
@@ -583,7 +657,14 @@ void avra_rc_retain(void* ptr) {
         return;
     }
     RcHeader* hdr = rc_header(ptr);
-    if (hdr->type_tag != RC_MAGIC) return;
+    if (hdr->type_tag != RC_MAGIC) {
+        // A freed REGION block still passes the is_rc_managed range check, so
+        // a stale pointer to one lands here (cleared tag), not on the
+        // !is_rc_managed branch above — without this check strict mode would
+        // silently no-op on exactly the zm77 class it exists to catch.
+        if (avra_rc_strict) avra_rc_strict_check("avra_rc_retain", ptr);
+        return;
+    }
     int32_t new_rc = rc_refcount_incr(&hdr->refcount);
     if (rc_trace) {
         fprintf(stderr, "[RC] retain %p (rc=%d)\n", ptr, new_rc);
@@ -598,7 +679,12 @@ void avra_rc_release(void* ptr) {
         return;
     }
     RcHeader* hdr = rc_header(ptr);
-    if (hdr->type_tag != RC_MAGIC) return;
+    if (hdr->type_tag != RC_MAGIC) {
+        // Same region-range subtlety as avra_rc_retain: a stale release of a
+        // freed region block must reach the strict check, not no-op.
+        if (avra_rc_strict) avra_rc_strict_check("avra_rc_release", ptr);
+        return;
+    }
     int32_t new_rc = rc_refcount_decr(&hdr->refcount);
     if (rc_trace) {
         fprintf(stderr, "[RC] release %p (rc=%d)\n", ptr, new_rc);
@@ -624,7 +710,11 @@ int64_t avra_rc_should_free(void* ptr) {
         return 0;
     }
     RcHeader* hdr = rc_header(ptr);
-    if (hdr->type_tag != RC_MAGIC) return 0;
+    if (hdr->type_tag != RC_MAGIC) {
+        // Same region-range subtlety as avra_rc_retain/release above.
+        if (avra_rc_strict) avra_rc_strict_check("avra_rc_should_free", ptr);
+        return 0;
+    }
     int32_t new_rc = rc_refcount_decr(&hdr->refcount);
     if (rc_trace) {
         fprintf(stderr, "[RC] should_free %p (rc=%d)\n", ptr, new_rc);
@@ -647,14 +737,14 @@ void avra_rc_free(void* ptr) {
 
 // Introspection for spec tests / leak checks. Returns the number of currently
 // live RC-managed allocations across the whole heap. NOT for production code
-// paths — held under rc_set_mutex.
+// paths.
 //
-// HARD-GATED ON AVRA_RC_STRICT (t-0ks0). This counts `rc_set`, which
-// `rc_set_add` populates from exactly one place: avra_rc_alloc's FALLBACK path
-// (strict mode / oversized block / region exhausted). Ordinary small objects
-// come from the bump region and are NEVER added — so outside strict mode this
-// counter cannot see them leak, and a delta assertion written against it passes
-// whether or not the code under test leaks.
+// HARD-GATED ON AVRA_RC_STRICT (t-0ks0). Under strict this reads the dedicated
+// rc_strict_allocs/rc_strict_frees pair, bumped on EVERY successful alloc and
+// every reclaim — region and malloc paths alike — so the count sees all
+// objects. Outside strict those counters never move (their increments are
+// strict-gated), so a delta assertion would pass whether or not the code under
+// test leaks — vacuously.
 //
 // That is not hypothetical: t-c6y7 closed three sub-cases as leak-free on
 // "delta == 0 over 200 builds" for four different emitters. Positive control —
@@ -675,10 +765,12 @@ int64_t avra_rc_live_count(void) {
             "measurement with a positive control (strand N objects, assert the count moves by N).");
         exit(1);
     }
-    pthread_mutex_lock(&rc_set_mutex);
-    int64_t n = (int64_t)rc_set_count;
-    pthread_mutex_unlock(&rc_set_mutex);
-    return n;
+    // Region-backed strict allocations never enter rc_set, so the strict
+    // count reads the dedicated alloc/free pair (bumped on BOTH paths) — the
+    // positive-control contract (count moves by N for N stranded objects)
+    // holds regardless of which path served an allocation.
+    return atomic_load_explicit(&rc_strict_allocs, memory_order_relaxed)
+         - atomic_load_explicit(&rc_strict_frees, memory_order_relaxed);
 }
 // (`avra_rc_strict_enabled()` already exists below, next to the strict
 // self-test — a spec that needs a working counter gates on that and skips its
@@ -705,6 +797,15 @@ int64_t avra_rc_strict_selftest_stale_release(void) {
 // output-capturing tests when the whole suite runs under strict).
 int64_t avra_rc_strict_enabled(void) {
     return (int64_t)avra_rc_strict;
+}
+
+// Introspection sibling of avra_rc_strict_enabled, for the spec that pins the
+// strict-over-region composition: strict mode must NOT disable the region
+// (the historical all-malloc strict allocator was a measured 3.6x wall / 2x
+// admission seed, and a silent regression to it would pass every behavioural
+// test — just slowly). AVRA_RC_NO_REGION remains the deliberate opt-out.
+int64_t avra_rc_region_active(void) {
+    return (int64_t)rc_region_enabled;
 }
 
 // ─── RC cycle detection (spec Axis 9.5) ─────────────────────────

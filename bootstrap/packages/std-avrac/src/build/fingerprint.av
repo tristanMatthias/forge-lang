@@ -21,6 +21,7 @@
 use @std.crypto.{sha256_hex, sha256_file}
 use core.{
     avra_selfhost_file_exists,
+    avra_selfhost_read_file,
     avra_shell_exec,
     avra_pkg_fp_cache_get,
     avra_pkg_fp_cache_set,
@@ -286,6 +287,91 @@ export fn fp_short(fp: Fingerprint) -> string {
 /// namespaced key: source can't change mid-invocation.
 export fn package_full_fingerprint(pkg_root: string) -> string {
     package_full_fingerprint_with_toolchain(pkg_root, toolchain_fingerprint())
+}
+
+/// Does this entry source declare file modules (`mod name` / `export mod
+/// name`)? Shared by `cmd_compile`'s cache_eligible gate (its file-level
+/// cache hashes ONLY the entry, so mod-decl sources stay uncached there) and
+/// by the fingerprint closure below — defined as "mod_decl_names finds
+/// any", so the gate and the closure cannot disagree about what counts.
+///
+/// Line-anchored TEXT scan, deliberately: the alternative (running the
+/// module loader here) parses the entry at every fingerprint computation,
+/// and the loader itself resolves paths from the same decl names. The scan
+/// over-approximates safely — a non-decl line starting `mod ` yields a name
+/// whose sibling lookup simply misses (skipped) or adds a hashed source
+/// that isn't read (a stricter key, never a staler one). The recorded
+/// proper fix is depfile-style: persist the loader's ACTUAL file list from
+/// the compile into the slot manifest and fingerprint that on reuse.
+export fn source_has_mod_decls(src: string) -> bool {
+    mod_decl_names(src).length > 0
+}
+
+/// Column-0 `mod X` / `export mod X` names of one source. CR-tolerant (a
+/// CRLF file must resolve the same sibling paths as LF — `sibling\r.av` is
+/// how a stale-cache hole reopens) and whitespace-split on the name.
+fn mod_decl_names(src: string) -> List<string> {
+    mut names: List<string> = []
+    for raw in src.split("\n") {
+        let line = if raw.ends_with("\r") { raw.substring(0, raw.length - 1) } else { raw }
+        let rest = if line.starts_with("mod ") { line.substring(4, line.length) }
+            else if line.starts_with("export mod ") { line.substring(11, line.length) }
+            else { "" }
+        if rest != "" {
+            let name = rest.split(" ")[0].split("\t")[0]
+            if name != "" { names.push(name) }
+        }
+    }
+    names
+}
+
+/// The entry's file-module closure: every sibling source reachable from its
+/// `mod` decls, recursively, by the module loader's lookup rule
+/// (`<dir>/<name>.av`, else `<dir>/<name>/mod.av`). Fed into the unit
+/// fingerprint's `sources` so the key covers what the compile actually
+/// reads. Before this, a bare multi-module entry's key hashed only the
+/// entry file, and a sibling-only edit replayed the STALE binary through
+/// three warm layers in a row — unit slot, object store, linked-binary
+/// cache — with nothing in the entry's diff to explain it (caught live by
+/// the t-kd4y.3 nested-adapter fixture). Missing lookup targets are simply
+/// skipped: the compile itself owns reporting unresolved modules.
+export fn entry_mod_closure(entry_path: string) -> List<string> {
+    mut queue: List<string> = [entry_path]
+    mut out: List<string> = []
+    mut i = 0
+    while i < queue.length {
+        let f = queue[i]
+        i = i + 1
+        let src = avra_selfhost_read_file(f)
+        let dir = path_dirname(f)
+        for name in mod_decl_names(src) {
+            let flat = "${dir}/${name}.av"
+            let nested = "${dir}/${name}/mod.av"
+            let hit = if avra_selfhost_file_exists(flat) == 1 { flat }
+                else if avra_selfhost_file_exists(nested) == 1 { nested }
+                else { "" }
+            if hit != "" && !str_in_list(queue, hit) {
+                queue.push(hit)
+                out.push(hit)
+            }
+        }
+    }
+    out
+}
+
+fn str_in_list(xs: List<string>, x: string) -> bool {
+    for s in xs { if s == x { return true } }
+    false
+}
+
+fn path_dirname(p: string) -> string {
+    mut cut = 0 - 1
+    mut i = 0
+    while i < p.length {
+        if p.substring(i, i + 1) == "/" { cut = i }
+        i = i + 1
+    }
+    if cut < 0 { "." } else { p.substring(0, cut) }
 }
 
 /// The explicit-toolchain variant: `toolchain_hash` names the COMPILER

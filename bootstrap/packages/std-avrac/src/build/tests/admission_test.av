@@ -276,7 +276,7 @@ spec "resources: execution profiles and live pressure stay separate" {
             let strict = resource_profile_with_mode("test-shard", "rc-strict", "toolchain-a", "batch=8")
             resource_profile_key(normal) != resource_profile_key(strict)
                 && resource_profile_seed_mb(normal, 1800) == 1800
-                && resource_profile_seed_mb(strict, 1800) == 3600
+                && resource_profile_seed_mb(strict, 1800) == 1980
         }
         then "the CPU scope is a shared ceiling before memory admission" {
             let two_cpus = resource_snapshot_for_test(16000, 12000, 2, 1, 2)

@@ -22,7 +22,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // engines. The parse<->features.grammar module
 // cycle is fine: the package resolves as a whole (parse<->features.closures
 // already cycles the same way).
-use features.grammar.{word_excluded_as_instance_name, run_dsl_type_at_shared, DslTypeResult, Token, lex_real, lex_real_full, LexDiag, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
+use features.grammar.{grammar_with_builder_kinds, builder_kind_rows, word_excluded_as_instance_name, run_dsl_type_at_shared, DslTypeResult, Token, lex_real, lex_real_full, LexDiag, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
 use parse.static_expr_entry.{run_static_expr, run_static_expr_cell}
 use parse.static_decl_entry.{run_static_decl}
 use parse.static_type_entry.{run_static_type}
@@ -1189,7 +1189,8 @@ impl Parser {
     /// interpreter path.
     fn dsl_expression_grammar(self) -> Grammar {
         if self.dsl_expr_grammar == null {
-            self.dsl_expr_grammar = avra_expr_grammar()
+            self.dsl_expr_grammar = grammar_with_builder_kinds(
+                avra_expr_grammar(), builder_kind_rows(self.features.builder_binds))
         }
         self.dsl_expr_grammar ?? avra_expr_grammar()
     }
@@ -1199,7 +1200,8 @@ impl Parser {
     /// once per parser — the statement sibling of dsl_expression_grammar.
     fn dsl_statement_grammar(self) -> Grammar {
         if self.dsl_stmt_grammar == null {
-            self.dsl_stmt_grammar = avra_stmt_flip_grammar()
+            self.dsl_stmt_grammar = grammar_with_builder_kinds(
+                avra_stmt_flip_grammar(), builder_kind_rows(self.features.builder_binds))
         }
         self.dsl_stmt_grammar ?? avra_stmt_flip_grammar()
     }
@@ -1209,7 +1211,8 @@ impl Parser {
     /// once per parser; the declaration sibling of dsl_statement_grammar.
     fn dsl_declaration_grammar(self) -> Grammar {
         if self.dsl_decl_grammar == null {
-            self.dsl_decl_grammar = avra_decl_flip_grammar()
+            self.dsl_decl_grammar = grammar_with_builder_kinds(
+                avra_decl_flip_grammar(), builder_kind_rows(self.features.builder_binds))
         }
         self.dsl_decl_grammar ?? avra_decl_flip_grammar()
     }
@@ -2013,9 +2016,14 @@ impl Parser {
     // The DSL program grammar for this parser, built at most once (lex-once
     // cache, ps3t.6.5.12 Step D). The `??` fallback is unreachable — the field
     // is non-null after the guard — it only unwraps `Grammar?` to `Grammar`.
+    // Stamped with the registry manifest's kind rows so the executor's kind
+    // analysis answers exactly as emit's does for feature builders (t-kd4y.3
+    // flip) — the binds list is already composed on the registry; no feature
+    // factory re-run here.
     fn dsl_type_grammar(self) -> Grammar {
         if self.dsl_grammar == null {
-            self.dsl_grammar = avra_program_grammar()
+            self.dsl_grammar = grammar_with_builder_kinds(
+                avra_program_grammar(), builder_kind_rows(self.features.builder_binds))
         }
         self.dsl_grammar ?? avra_program_grammar()
     }

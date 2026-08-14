@@ -54,6 +54,46 @@ fn main() -> int {
             out.contains("freed RC memory") == false
         }
     }
+    given "strict mode composed with the region allocator" {
+        then "strict keeps the region ON (and AVRA_RC_NO_REGION opts out)" {
+            // Pins the strict-over-region composition: strict's detectors run
+            // AT the region layer (rc_reclaim), so the region must stay
+            // enabled under AVRA_RC_STRICT — the historical region-off strict
+            // was 3.6x wall and held the rc-strict CI suite to shard width 1,
+            // and a silent regression to it passes every behavioural test.
+            write_fixture("/tmp/rc_strict_region.av", "
+extern fn avra_rc_strict_enabled() -> int
+extern fn avra_rc_region_active() -> int
+
+fn main() -> int {
+    if avra_rc_strict_enabled() == 1 && avra_rc_region_active() == 1 {
+        println(\"STRICT_REGION_ON\")
+    }
+    if avra_rc_strict_enabled() == 1 && avra_rc_region_active() == 0 {
+        println(\"STRICT_REGION_OFF\")
+    }
+    0
+}
+")
+            let on = avra_shell_exec("AVRA_RC_STRICT=1 bash scripts/diagnose.sh --run /tmp/rc_strict_region.av 2>&1 || true")
+            let off = avra_shell_exec("AVRA_RC_STRICT=1 AVRA_RC_NO_REGION=1 bash scripts/diagnose.sh --run /tmp/rc_strict_region.av 2>&1 || true")
+            on.contains("STRICT_REGION_ON") && off.contains("STRICT_REGION_OFF")
+        }
+        then "the stale-release detector fires on the no-region path too" {
+            // The same zm77 selftest, forced onto the historical all-malloc
+            // strict path: detection must not depend on which allocator
+            // served the block.
+            write_fixture("/tmp/rc_strict_stale_noregion.av", "
+extern fn avra_rc_strict_selftest_stale_release() -> int
+
+fn main() -> int {
+    avra_rc_strict_selftest_stale_release()
+}
+")
+            let out = avra_shell_exec("AVRA_RC_STRICT=1 AVRA_RC_NO_REGION=1 bash scripts/diagnose.sh --run /tmp/rc_strict_stale_noregion.av 2>&1 || true")
+            out.contains("AVRA_RC_STRICT") && out.contains("freed RC memory")
+        }
+    }
     given "a normal RC-churning fixture" {
         then "runs green under strict mode (no false positive)" {
             write_fixture("/tmp/rc_strict_clean.av", "

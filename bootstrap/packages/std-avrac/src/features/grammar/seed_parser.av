@@ -23,7 +23,7 @@
 //   annot    = "@expect" "(" STRING "," STRING ")"
 //            | "@recover" "(" "sync_to" ":" STRING ")"
 
-use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot, BuildKindRow}
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
 use features.grammar.{build_rule_index}
 use features.grammar.{rep_is_one, grep_is_multi, onfail_policy_supported, onfail_policy_takes_capture}
@@ -286,7 +286,8 @@ fn parse_grammar_body(p: GP) -> Grammar {
     if rules.length == 0 {
         p.fail("a grammar must declare at least one rule")
     }
-    Grammar { name, rules, rule_idx: build_rule_index(rules) }
+    let no_rows: List<BuildKindRow> = []
+    Grammar { name, rules, rule_idx: build_rule_index(rules), builder_kinds: no_rows }
 }
 
 // rule = NAME "=" alt

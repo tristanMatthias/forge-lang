@@ -59,7 +59,7 @@ use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure, output_has_ceiling_marker}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path, filter_by_paths}
 use @std.avrac.test_runner.{
     scan_gate_diagnostics, render_gate_scan,
@@ -92,7 +92,7 @@ use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
 use @std.avrac.build.{
     BuildInputs, BuildOutcome,
-    decide_build, record_build_result,
+    decide_build, record_build_result, source_has_mod_decls,
     Fingerprint, fp_short,
     LinkOptions, default_link_options, link_objects,
     BuildRequest, BuildReport, build_request, build_ir, build_executable, link_unit_executable,
@@ -2584,6 +2584,7 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // not the static one: a jetsam kill is the strongest evidence the
     // static model under-booked, and the correction is most needed there.
     retry_jetsam_killed(shards, cx, gov.estimate_mb)
+    retry_ceiling_stopped(shards, cx, gov.estimate_mb)
     tp = shard_phase_ms("parent:retry_check", tp)
 
     // Capture BEFORE the probe: this call's value is the command's exit
@@ -3185,6 +3186,31 @@ fn retry_jetsam_killed(shards: List<Shard>, cx: RunCtx, per_shard_mb: int) {
     // corrected estimate, and the retry's small warmed subset would
     // UNDERCUT the main dispatch's just-persisted peak.
     let retry_cx = cx with { jobs: retry_jobs, per_shard_mb: per_shard_mb, snapshot: resource_snapshot() }
+    let _ = dispatch_shards(victims, retry_cx, per_shard_mb)
+}
+
+/// Shards the compiler stopped at its own memory ceiling (error[F4014]).
+/// Pure selection over the logs — the sibling of `jetsam_victims` above.
+fn ceiling_stopped_victims(shards: List<Shard>) -> List<Shard> {
+    list_filter(shards, (s: Shard) -> s.log_alive() && output_has_ceiling_marker(s.read_log()))
+}
+
+// F4014 self-stop recovery (t-d91l): a mid-suite ceiling stop is usually BOX
+// PRESSURE, not the shard's own defect — the F4014 grant shrinks while the
+// pool runs wide, and a whale batch (error_recovery_differential_test peaks
+// ~8.3GB, 4.6x the admission model, strict and normal alike) trips it exactly
+// when siblings are co-resident. The pool has drained by the time this runs,
+// so one solo re-dispatch gives the victim the quiet box — the same room the
+// historic width-1 dispatch gave every shard implicitly. The shard command's
+// truncating `> log` redirect means the retry's outcome REPLACES the F4014
+// log before aggregation. A genuine F4014 (quiet box, normal input — a
+// compiler bug by definition) re-trips and stays red, now with a log free of
+// the pressure confound.
+fn retry_ceiling_stopped(shards: List<Shard>, cx: RunCtx, per_shard_mb: int) {
+    let victims = ceiling_stopped_victims(shards)
+    if victims.length == 0 { return }
+    eprintln("[per-file] retrying ${string(victims.length)} memory-ceiling-stopped shard(s) solo on the drained box")
+    let retry_cx = cx with { jobs: 1, per_shard_mb: per_shard_mb, snapshot: resource_snapshot() }
     let _ = dispatch_shards(victims, retry_cx, per_shard_mb)
 }
 
@@ -4120,8 +4146,7 @@ fn cmd_compile(args: CliResult) -> int {
             && avra_process_env_get("AVRA_DEPS_OUT") == ""
             && avra_process_env_get("AVRA_USE_METADATA") == ""
             && avra_process_env_get("AVRA_DIR_MODULE") == ""
-            && !csource.contains("\nmod ")
-            && !csource.starts_with("mod ")
+            && !source_has_mod_decls(csource)
             // j568: /tmp/ ad-hoc fixtures are now cacheable. They used to
             // be excluded because compile_capture-style tests assert
             // diagnostic text in bs2 stderr on each invocation, and a

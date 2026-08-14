@@ -12,7 +12,8 @@
 // changes this text — run `bash scripts/diagnose.sh --emit-regen-type` to rewrite the
 // checked-in file, then commit it; the guard test fails until you do.
 
-use features.grammar.{avra_type_flip_grammar, emit_parser_source_ex, builder_import_lines}
+use features.grammar.{avra_type_flip_grammar, emit_parser_source_ex, builder_import_lines_for, grammar_with_builder_kinds, builder_kind_rows}
+use features.{feature_builders}
 
 /// The fixed import header of the production type static-parser module: exactly the
 /// features.grammar type-builders + core types the generated body references. An extra
@@ -39,5 +40,7 @@ export fn gen_type_parser_header() -> string {
 /// body. Both the regenerator and the guard read from HERE.
 export fn emit_type_parser_file() -> string {
     let g = avra_type_flip_grammar()
-    gen_type_parser_header() + builder_import_lines(g) + emit_parser_source_ex(g, true)
+    let binds = feature_builders()
+    gen_type_parser_header() + builder_import_lines_for(g, binds)
+        + emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
 }

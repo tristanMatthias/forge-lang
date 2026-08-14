@@ -24,7 +24,24 @@
 /// instead of a linear scan of `rules` on every rule descent — see
 /// build_rule_index / rule_index_of below. Built ONCE at construction
 /// (the two Grammar constructors: parse_grammar_body + compose_grammars).
-export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr }
+/// One feature-supplied build name → result kind row, stamped onto a composed
+/// grammar (t-kd4y.3 flip). The kind ANALYSIS (seq_kind below) must classify a
+/// manifest-only build (`build_defer` → "stmt") by its registration, not the
+/// lenient "expr" default — `declaration`'s Alt-kind takes the first non-empty
+/// branch answer, so one misclassified feature rule can flip a whole family's
+/// accumulator typing. A narrow row (not BuilderBind) because that type carries
+/// executor values (PState/CapVal) this AST hub must not depend on.
+export type BuildKindRow = { name: string, kind: string }
+
+export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr, builder_kinds: List<BuildKindRow> }
+
+/// Stamp manifest kind rows onto a composed grammar. Applied at the seams
+/// that HAVE the manifest (gen_*_file entries, the Parser's cached-grammar
+/// build) — never fetched per analysis call (feature_builders() re-runs the
+/// feature factories; see the #1232 rc-strict RSS regression).
+export fn grammar_with_builder_kinds(g: Grammar, rows: List<BuildKindRow>) -> Grammar {
+    Grammar { name: g.name, rules: g.rules, rule_idx: g.rule_idx, builder_kinds: rows }
+}
 
 /// One production `name = body`, where `body` is always an Alt.
 export type Rule = { name: string, body: GNode }
@@ -769,7 +786,7 @@ export fn node_kind(g: Grammar, node: GNode, visited: List<string>) -> string {
 
 export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
     match seq.build {
-        .Call(bn, _) -> build_kind(bn)
+        .Call(bn, _) -> build_kind_with(g.builder_kinds, bn)
         // A PASSTHROUGH build (`-> n`) has the kind of whatever `n` captured. Left
         // unresolved this defaults the rule to "expr", and the mistyping CASCADES:
         // `use_decl = "use" ut:use_tail -> ut` made `declaration` non-statement, which
@@ -872,14 +889,23 @@ export fn central_build_kind(bn: string) -> string {
     ""
 }
 
-/// Result-kind classification with the historical default: a name the
-/// central rows don't list classifies as "expr". Grammar analysis
-/// (accumulator typing, alternation kind inference) keeps this leniency;
-/// exact membership questions go to `central_build_kind`.
-export fn build_kind(bn: string) -> string {
+/// Result-kind classification with the historical default: a name neither
+/// the central rows nor the supplied manifest rows list classifies as
+/// "expr". Grammar analysis (accumulator typing, alternation kind
+/// inference) keeps this leniency; exact membership questions go to
+/// `central_build_kind`, manifest validation to features/lang.av.
+export fn build_kind_with(rows: List<BuildKindRow>, bn: string) -> string {
     let k = central_build_kind(bn)
-    if k == "" { return "expr" }
-    k
+    if k != "" { return k }
+    for r in rows { if r.name == bn { return r.kind } }
+    "expr"
+}
+
+/// The manifest-free view — callers with no composed grammar in hand
+/// (validation preambles, specs pinning the central table alone).
+export fn build_kind(bn: string) -> string {
+    let empty: List<BuildKindRow> = []
+    build_kind_with(empty, bn)
 }
 
 /// True iff the primary is a zero-width predicate (emit side) — `@when(flag)` mode read
