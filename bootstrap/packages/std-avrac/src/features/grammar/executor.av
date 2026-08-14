@@ -541,6 +541,25 @@ export type GDiag = { code: string, msg: string, at: int, byte: int, end_byte: i
 /// worse — see `seed_lex_diags`. The interleave happens in `boundary_diags`.
 export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, host: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool, lex_diags: List<LexDiag>, first_pos: int }
 
+/// One feature-supplied build lowering (t-kd4y.3): a definition that declares
+/// `-> Name(args)` in its gram can OWN the lowering too, instead of the engine
+/// carrying it in the central tables. `build` is the executor's entry — the
+/// normalized ABI every central arm already reduces to (capture values in
+/// declaration order). `module` + `export_name` are how EMIT spells the same
+/// lowering in a generated parser: `export_name(st, [args…])` plus a derived
+/// `use module.{export_name}` header line. `kind` mirrors `build_kind`'s
+/// classification and `arity` the reference's capture count — both checked
+/// against the referencing grammar when the registry is built
+/// (features/lang.av), so a mismatch is a startup error, not a parse surprise.
+export type BuilderBind = {
+    name: string,
+    kind: string,
+    arity: int,
+    module: string,
+    export_name: string,
+    build: fn(PState, List<CapVal>) -> CapVal,
+}
+
 /// One in-place token-stream mutation (today: only `split_gt`'s `>>` → `>`),
 /// journalled so a rollback can UNDO it. The stream is SHARED — across the
 /// static parse, the interpreter fallback re-parse, and the type/pattern flips
@@ -3954,6 +3973,25 @@ fn retype_self_param(st: PState, params: List<ParamEntry>, target: string) -> Li
 }
 
 fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> CapVal {
+    // Feature-supplied lowerings first (t-kd4y.3): a definition that carries
+    // its own builders owns this name, and the central arms below shrink as
+    // features migrate. The manifest rides the store's ALREADY-INSTALLED
+    // registry (the program-wide parse-registry seam — NOT `st.host`, which
+    // is lazy for the 12GB reason). The null check is load-bearing twice
+    // over: registry-free oracle PStates (bare executor tests) must not
+    // trigger a full build_registry from inside a build call, and a fresh
+    // sub-parse store mid-compile must not construct a SECOND registry per
+    // apply_build — production paths install the registry at Parser
+    // construction, which is the only population point this reads.
+    if st.store.parse_registry != null && st.store.parse_registry!.builder_binds.length > 0 {
+        for b in st.store.parse_registry!.builder_binds {
+            if b.name == name && args.length == b.arity {
+                mut vals: List<CapVal> = []
+                for a in args { vals.push(env.get(a)) }
+                return b.build(st, vals)
+            }
+        }
+    }
     // Dispatch on the build name — one arm per grammar `-> Build(...)`, the
     // one target-specific seam (mirroring the derive engine's pluggable
     // emitters). Each arm is arity-guarded (`if args.length == N`); an
@@ -5479,6 +5517,13 @@ export fn mk_shape_decl(st: PState, name: string, fields: List<FieldEntry>) -> C
 /// side-table write on a node the builder receives already-built, so it does not belong
 /// here — `mk_stamp_stmt_at` does it, driven by the inner rule's own entry byte. See its
 /// WHY for what happens when it is skipped.
+/// Wrap helpers for GENERATED typed-builder adapters (typed_builders.av,
+/// t-kd4y.3): one per result family, so a synthesized adapter body is a
+/// plain nested call — no enum-ctor AST construction in the expansion.
+export fn capval_stmt_val(st: PState, s: Stmt) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(s))
+}
+
 export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
     let no_args: List<ExprId> = []
     let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]

@@ -10,7 +10,8 @@
 
 use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
-use features.{init_features}
+use features.{init_features, feature_builders}
+use features.grammar.{BuilderBind}
 use typeck.{tc_er}
 use features.eval.{value_null}
 
@@ -156,6 +157,11 @@ export type Registry = {
     // handler, so every instance-block production (keyword-free,
     // keyword-prefixed, nested) agrees on raw-vs-structured capture.
     raw_body_comps: ptr,
+    // Feature-supplied grammar-build lowerings (t-kd4y.3) — the composed
+    // manifest from `feature_builders()`, consulted by the grammar
+    // executor's `apply_build` before its central dispatch. Populated
+    // once by `build_registry`.
+    builder_binds: List<BuilderBind>,
 }
 
 /// Empty registry — every map is freshly allocated. Use `register`
@@ -173,6 +179,7 @@ export fn registry_new() -> Registry {
         stmt_parsers: avra_map_new_cstr(),
         expr_parsers: avra_map_new_cstr(),
         raw_body_comps: avra_map_new_cstr(),
+        builder_binds: [],
     }
 }
 
@@ -329,7 +336,7 @@ impl NodeStore {
 /// Construct + populate the Registry. Called once at compiler
 /// startup; downstream passes look up handlers from the result.
 export fn build_registry() -> Registry {
-    let reg = registry_new()
-    init_features(reg)
+    mut reg = registry_new()
+    reg.builder_binds = init_features(reg)
     reg
 }

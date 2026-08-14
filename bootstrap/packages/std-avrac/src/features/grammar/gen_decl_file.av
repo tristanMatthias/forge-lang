@@ -14,7 +14,7 @@
 // this text — run `bash scripts/diagnose.sh --emit-regen-decl` to rewrite the
 // checked-in file, then commit it; the guard test fails until you do.
 
-use features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex, builder_import_lines}
 
 /// The fixed import header of the production declaration static-parser module:
 /// exactly the features.grammar builders + core types the generated body
@@ -36,8 +36,10 @@ export fn gen_decl_parser_header() -> string {
     "use core.{ExprId, Stmt, MatchArm, SelectArm, CompConfig, CompConfigPair, ChildrenSlot, Tk, SrcPos, TypeParamEntry, Annotation}\n\n"
 }
 
-/// The complete text of parse/gen_decl_parser.av: header + the exported generated
-/// body. Both the regenerator and the guard read from HERE.
+/// The complete text of parse/gen_decl_parser.av: header (fixed engine
+/// imports + the DERIVED feature-builder imports, t-kd4y.3) + the exported
+/// generated body. Both the regenerator and the guard read from HERE.
 export fn emit_decl_parser_file() -> string {
-    gen_decl_parser_header() + emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+    let g = avra_decl_dispatch_grammar()
+    gen_decl_parser_header() + builder_import_lines(g) + emit_parser_source_ex(g, true)
 }

@@ -7,6 +7,8 @@ use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, r
 use features.grammar.{ExpectHit, expect_for, rule_own_expect_msg, rule_first_expect_msg, rule_first_expect_msg_leaf, gated_ref_of, node_has_onfail}
 use features.grammar.{grammar_has_gate, rule_body_has_gate, rule_first_is_ident}
 use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule}
+use features.grammar.{grammar_build_refs, BuildRef, BuilderBind}
+use features.{feature_builders}
 
 // ── Pratt collapse of the uniform binary-operator ladder (ps3t.6.7 Step G, slice 1) ──
 type ChainRule = { name: string, operand: string, ops: List<string>, lbp: int }
@@ -2230,10 +2232,67 @@ fn emit_seq_result(g: Grammar, seq: GSeq) -> string {
     }
 }
 
-/// The build-name → emission map — executor.apply_build's one-to-one twin.
-/// Scalar captures are their CapVal vars; a `_list` suffix names an
-/// accumulated arg (only call_suffix's, which takes the whole arg list).
+fn join_args(args: List<string>) -> string {
+    mut out = ""
+    mut i = 0
+    while i < args.length {
+        if i > 0 { out = out + ", " }
+        out = out + args[i]
+        i = i + 1
+    }
+    out
+}
+
+/// The derived import lines a generated parser needs for the feature-supplied
+/// builders its grammar references (t-kd4y.3): one `use <module>.{names…}`
+/// line per owning module, in manifest order — appended to the fixed engine
+/// header by each gen_*_file.av. Empty manifest (or a grammar referencing
+/// none of it) derives nothing, keeping the pre-injection headers
+/// byte-identical.
+export fn builder_import_lines(g: Grammar) -> string {
+    builder_import_lines_for(g, feature_builders())
+}
+
+/// The manifest-parameterized core of `builder_import_lines`, split out so the
+/// specs can feed synthetic manifests and pin the grouping + format without
+/// registering real features.
+export fn builder_import_lines_for(g: Grammar, binds: List<BuilderBind>) -> string {
+    let refs = grammar_build_refs(g)
+    mut out = ""
+    mut done: List<string> = []
+    for b in binds {
+        if !bind_referenced(b, refs) { continue }
+        if str_in(done, b.module) { continue }
+        done.push(b.module)
+        mut names = ""
+        for b2 in binds {
+            if b2.module == b.module && bind_referenced(b2, refs) {
+                if names != "" { names = names + ", " }
+                names = names + b2.export_name
+            }
+        }
+        out = out + "use ${b.module}.{${names}}\n"
+    }
+    out
+}
+
+fn bind_referenced(b: BuilderBind, refs: List<BuildRef>) -> bool {
+    for r in refs { if r.name == b.name { return true } }
+    false
+}
+
+/// The build-name → emission map — executor.apply_build's one-to-one twin,
+/// including its consult order: feature-supplied lowerings first (t-kd4y.3),
+/// spelled as their normalized-ABI call (`export_name(st, [args…])`) with the
+/// import derived into the module header (builder_import_lines), then the
+/// central arms. Scalar captures are their CapVal vars; a `_list` suffix
+/// names an accumulated arg (only call_suffix's, which takes the whole list).
 fn emit_call_build(name: string, args: List<string>) -> string {
+    for b in feature_builders() {
+        if b.name == name && args.length == b.arity {
+            return "${b.export_name}(st, [${join_args(args)}])"
+        }
+    }
     match name {
         // ── Expression builds (target: Expr) ──
         "fold_binary" -> "CapVal.Node(fold_binary_expr(st, ${arg3(args)}))"

@@ -39,7 +39,7 @@ use core.{register}
 use features.defer.{defer_lang, errdefer_lang}
 use features.match.{match_lang, when_lang}
 use core.{noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt, noop_parse_expr}
-use features.grammar.{Rule, build_rule_index, GrammarParse}
+use features.grammar.{Rule, build_rule_index, GrammarParse, BuilderBind, grammar_startup_fail}
 
 // ── What a feature IS ──
 //
@@ -61,7 +61,7 @@ fn no_grammar() -> GrammarParse {
     GrammarParse { grammar: Grammar { name: "", rules, rule_idx: build_rule_index(rules) }, error: "" }
 }
 
-component LanguageFeature {
+export component LanguageFeature {
     config {
         title: string = "",
         docs: string = "",
@@ -72,6 +72,10 @@ component LanguageFeature {
         gram_in_spine: bool = false,
         diags: List<DiagSpec> = [],
         snippet: string = "",
+        // Build lowerings this feature OWNS (t-kd4y.3): one BuilderBind per
+        // build name its gram references that the engine's central tables
+        // should NOT carry. Validated against the gram at registry build.
+        builders: List<BuilderBind> = [],
         expr_tag: Expr? = null,
         stmt_tag: Stmt? = null,
         expr_keyword: string = "",
@@ -92,9 +96,17 @@ component LanguageFeature {
 /// feature module exposes a `<name>_feature()` builder. Order
 /// doesn't matter — features dispatch by AST tag, not declaration
 /// position.
-export fn init_features(reg: Registry) {
+/// Returns the composed builder manifest alongside registration so
+/// `build_registry` can store it from the SAME factory run — a second
+/// `language_features()` call here re-parses every definition gram, and a
+/// registry builds once per NodeStore, so that cost multiplies by the
+/// hundreds of stores a package compile creates (the rc-strict +2GB
+/// regression this signature exists to prevent).
+export fn init_features(reg: Registry) -> List<BuilderBind> {
     // ── Statements ──
-    for f in language_features() { register_lang(reg, f) }
+    let feats = language_features()
+    for f in feats { register_lang(reg, f) }
+    let binds = fold_builders(feats)
     register(reg, if_stmt_feature())
     register(reg, while_feature())
     register(reg, for_feature())
@@ -148,6 +160,7 @@ export fn init_features(reg: Registry) {
     register(reg, use_feature())
     register(reg, component_decl_feature())
     register(reg, grammar_feature())
+    binds
 }
 
 /// Every LanguageFeature definition, in registration order — the ONE list
@@ -156,6 +169,34 @@ export fn init_features(reg: Registry) {
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
     [defer_lang(), errdefer_lang(), match_lang(), when_lang()]
+}
+
+/// The composed builder manifest — every feature-supplied build lowering,
+/// in registration order. BOTH engines consume this one fold: the executor
+/// via `Registry.builder_binds` (populated by `build_registry`), emit
+/// directly at regen time — so the two cannot disagree about who owns a
+/// name. A name supplied twice is two features claiming one lowering:
+/// hard-fail, same policy as a malformed compiled-in grammar.
+export fn feature_builders() -> List<BuilderBind> {
+    fold_builders(language_features())
+}
+
+/// The one dedup fold both manifest producers share: a build name supplied
+/// by two features is one lowering with two owners — hard-fail, naming it.
+fn fold_builders(feats: List<LanguageFeature>) -> List<BuilderBind> {
+    mut all: List<BuilderBind> = []
+    for f in feats {
+        for b in f.builders {
+            for seen in all {
+                if seen.name == b.name {
+                    grammar_startup_fail("build `${b.name}` is supplied by two features — one lowering, one owner")
+                    return all
+                }
+            }
+            all.push(b)
+        }
+    }
+    all
 }
 
 /// The per-feature grammar fragments, folded straight out of the feature

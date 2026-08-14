@@ -237,11 +237,18 @@ extern fn avra_process_exit(code: int)
 /// snippet section, which is right — there is no user source to point at.
 export fn grammar_checked(gp: GrammarParse) -> Grammar {
     if gp.error != "" {
-        render_diagnostic("", "<compiled-in grammar>",
-            diag_ice("compiled-in grammar failed to parse: ${gp.error}"))
-        avra_process_exit(99)
+        grammar_startup_fail("compiled-in grammar failed to parse: ${gp.error}")
     }
     gp.grammar
+}
+
+/// The shared hard-fail for compiled-in grammar INVARIANTS — grammar_checked's
+/// parse gate above and the builder-manifest validation (features/lang.av,
+/// t-kd4y.3) both die through here: the F9999 render, then exit. Compiler
+/// source violating its own grammar contract is never a value to limp past.
+export fn grammar_startup_fail(msg: string) {
+    render_diagnostic("", "<compiled-in grammar>", diag_ice(msg))
+    avra_process_exit(99)
 }
 
 fn parse_grammar_body(p: GP) -> Grammar {
