@@ -47,5 +47,24 @@ spec "bare multi-module entries bypass the file-level unit cache" {
                 && out1.contains("answer=1")
                 && out2.contains("answer=2")
         }
+        then "a CRLF entry resolves the same sibling closure (no `sibling\\r.av` lookup)" {
+            // The compiler accepts CRLF sources, so the closure scan must
+            // strip the `\r` or the decl name resolves to a path that does
+            // not exist — the key silently loses the sibling and the stale
+            // replay reopens for CRLF files only.
+            let dir = "build/_run_sibling_cache_crlf"
+            let _ = avra_shell_exec("mkdir -p '${dir}'")
+            let crlf_entry = "mod sibling\r\nuse sibling.{answer}\r\n\r\nfn main() {\r\n    println(\"answer=\" + string(answer()))\r\n}\r\n"
+            let _ = avra_selfhost_write_file("${dir}/entry.av", crlf_entry)
+            let _ = avra_selfhost_write_file("${dir}/sibling.av", sibling_src(1))
+            let log1 = "${dir}/run1.log"
+            let rc1 = avra_shell_exec_status("./build/bs2 run '${dir}/entry.av' > '${log1}' 2>&1")
+            let _ = avra_selfhost_write_file("${dir}/sibling.av", sibling_src(2))
+            let log2 = "${dir}/run2.log"
+            let rc2 = avra_shell_exec_status("./build/bs2 run '${dir}/entry.av' > '${log2}' 2>&1")
+            rc1 == 0 && rc2 == 0
+                && avra_selfhost_read_file(log1).contains("answer=1")
+                && avra_selfhost_read_file(log2).contains("answer=2")
+        }
     }
 }

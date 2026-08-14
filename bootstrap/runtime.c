@@ -518,6 +518,17 @@ static void rc_quar_reclaim_base(void* base) {
 // while either cap (count or bytes) is exceeded. A single oversized push can
 // evict many blocks — eviction happens inline under the mutex.
 static void rc_quarantine_push(void* base, size_t bytes) {
+    // A block larger than the whole byte cap can never legally sit in the
+    // ring — with an empty ring the eviction loop below is a no-op and the
+    // block would park unbounded until the next push. Reclaim it
+    // immediately instead (the ASan rule for over-quarantine chunks). The
+    // deferred-reuse window is knowingly zero for such blocks: they are
+    // >256MB one-offs, and holding even one defeats the bound the cap
+    // exists to enforce.
+    if (bytes > RC_QUARANTINE_MAX_BYTES) {
+        rc_quar_reclaim_base(base);
+        return;
+    }
     pthread_mutex_lock(&rc_quar_mutex);
     while (rc_quar_fill > 0 &&
            (rc_quar_fill == RC_QUARANTINE_CAP ||

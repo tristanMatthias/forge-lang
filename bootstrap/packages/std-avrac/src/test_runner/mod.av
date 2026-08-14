@@ -1196,14 +1196,20 @@ export fn classify_shard_failure(out: string, fail: int, crashes: int) -> string
     "FAILED — cause not classified; read the log"
 }
 
-/// Did this output's producer stop ITSELF at the compiler's memory ceiling
-/// (error[F4014])? Third sibling of the kill/disk-full markers below, for the
-/// same stated reason: the shard cause classifier and the orchestrator's
-/// solo-retry selection (cli main.av retry_ceiling_stopped, t-d91l) both have
-/// to answer "did this shard self-stop on memory?", and they have to give the
-/// SAME answer — a second inline `contains` is how they drift.
+/// Did this output's producer stop ITSELF at the compiler's memory ceiling?
+/// Third sibling of the kill/disk-full markers below, for the same stated
+/// reason: the shard cause classifier and the orchestrator's solo-retry
+/// selection (cli main.av retry_ceiling_stopped, t-d91l) both have to answer
+/// "did this shard self-stop on memory?", and they have to give the SAME
+/// answer — a second inline `contains` is how they drift.
+///
+/// Matched on the diagnostic's rendered shape (code + its fixed message
+/// head, the one t-drl0's reporter emits), not the bare code: a failing
+/// test that merely QUOTES `error[F4014]` in an assertion message must not
+/// classify as a ceiling stop or earn a pointless solo retry — the same
+/// prose-vs-record distinction the kill marker's line anchoring draws.
 export fn output_has_ceiling_marker(out: string) -> bool {
-    out.contains("error[F4014]")
+    out.contains("error[F4014]: compiler memory ceiling")
 }
 
 /// Did the SHELL report this output's producer as killed?

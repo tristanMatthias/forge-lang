@@ -65,6 +65,20 @@ spec "t-65td: the cause class is named, not left to a log dive" {
                 && !output_has_ceiling_marker(clean)
                 && !output_has_ceiling_marker(plain_compile_err)
         }
+        then "prose QUOTING the F-code is not a ceiling stop (no phantom solo retry)" {
+            // A failing test whose assertion text mentions the code — the
+            // same prose-vs-record trap the kill marker's line anchoring
+            // guards (a test about killing is not a kill). The marker keys
+            // on the diagnostic's rendered head, so bare-code prose stays a
+            // TEST FAILURE and never selects for the solo retry.
+            // (The generic `error[F` rule still classifies quoted codes as
+            // COMPILE FAILED — that leniency is pre-existing and harmless;
+            // what this pins is that no SOLO RETRY selects on prose.)
+            let prose = "spec \"ceilings\"\n    FAIL \"reports error[F4014] when over budget\"\n[shard-summary] pass=0 fail=1 total=1\n"
+            let got = classify_shard_failure(prose, 1, 0)
+            !output_has_ceiling_marker(prose)
+                && !got.contains("MEMORY CEILING")
+        }
         then "ENOSPC is reported as DISK FULL, not as test failures (the t-2qn0 shape)" {
             // Also carries a spec FAIL and an error[F — both outranked.
             let log = "error[F0001]: write failed: No space left on device\n    FAIL \"writes the artifact\"\n"

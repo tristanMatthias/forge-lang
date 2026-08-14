@@ -289,23 +289,35 @@ export fn package_full_fingerprint(pkg_root: string) -> string {
     package_full_fingerprint_with_toolchain(pkg_root, toolchain_fingerprint())
 }
 
-/// Does this entry source declare file modules (`mod name`)? Shared by
-/// `cmd_compile`'s cache_eligible gate (its file-level cache hashes ONLY the
-/// entry, so mod-decl sources stay uncached there) and by callers deciding
-/// whether an entry's inputs extend past the file itself.
+/// Does this entry source declare file modules (`mod name` / `export mod
+/// name`)? Shared by `cmd_compile`'s cache_eligible gate (its file-level
+/// cache hashes ONLY the entry, so mod-decl sources stay uncached there) and
+/// by the fingerprint closure below — defined as "mod_decl_names finds
+/// any", so the gate and the closure cannot disagree about what counts.
+///
+/// Line-anchored TEXT scan, deliberately: the alternative (running the
+/// module loader here) parses the entry at every fingerprint computation,
+/// and the loader itself resolves paths from the same decl names. The scan
+/// over-approximates safely — a non-decl line starting `mod ` yields a name
+/// whose sibling lookup simply misses (skipped) or adds a hashed source
+/// that isn't read (a stricter key, never a staler one). The recorded
+/// proper fix is depfile-style: persist the loader's ACTUAL file list from
+/// the compile into the slot manifest and fingerprint that on reuse.
 export fn source_has_mod_decls(src: string) -> bool {
-    src.starts_with("mod ") || src.contains("\nmod ")
+    mod_decl_names(src).length > 0
 }
 
-/// Column-0 `mod X` names of one source — deliberately the same
-/// conservatism as `source_has_mod_decls` above (line-anchored, no
-/// brace-nesting awareness): the two must agree on what counts as a file
-/// module or the closure below diverges from the gate.
+/// Column-0 `mod X` / `export mod X` names of one source. CR-tolerant (a
+/// CRLF file must resolve the same sibling paths as LF — `sibling\r.av` is
+/// how a stale-cache hole reopens) and whitespace-split on the name.
 fn mod_decl_names(src: string) -> List<string> {
     mut names: List<string> = []
-    for line in src.split("\n") {
-        if line.starts_with("mod ") {
-            let rest = line.substring(4, line.length)
+    for raw in src.split("\n") {
+        let line = if raw.ends_with("\r") { raw.substring(0, raw.length - 1) } else { raw }
+        let rest = if line.starts_with("mod ") { line.substring(4, line.length) }
+            else if line.starts_with("export mod ") { line.substring(11, line.length) }
+            else { "" }
+        if rest != "" {
             let name = rest.split(" ")[0].split("\t")[0]
             if name != "" { names.push(name) }
         }
