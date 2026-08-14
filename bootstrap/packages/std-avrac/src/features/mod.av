@@ -67,10 +67,13 @@ export component LanguageFeature {
         title: string = "",
         docs: string = "",
         gram: GrammarParse = no_grammar(),
-        // TRANSITION (dies with t-47hc.8): true = this feature's rules are
-        // still duplicated inside the central grammar views (drift-guarded,
-        // NOT composed); false = `gram` joins feature_grammar_fragments.
-        gram_in_spine: bool = false,
+        // Which composed VIEW FAMILY this gram's rules join (t-47hc.8): ""
+        // means the gram is composed elsewhere (shared multi-family fragments
+        // like match's, wired by name in avra_grammar.av) or is empty; "stmt"
+        // means the statement views compose it via
+        // feature_stmt_grammar_fragments — so a lowering flip is pure
+        // feature-file metadata: declare the gram, name its family.
+        gram_family: string = "",
         diags: List<DiagSpec> = [],
         snippet: string = "",
         // Build lowerings this feature OWNS (t-kd4y.3): one BuilderBind per
@@ -201,15 +204,14 @@ fn fold_builders(feats: List<LanguageFeature>) -> List<BuilderBind> {
 }
 
 /// The per-feature grammar fragments, folded straight out of the feature
-/// DEFINITIONS: every LanguageFeature whose `gram` composes (not spine-
-/// duplicated, non-empty), in registration order, plus the decl-keyword
-/// fragments (collected in features/grammar/avra_grammar.av — the one list
-/// the whole-program grammar composes from, so the two views cannot drift).
+/// DEFINITIONS: every LanguageFeature's non-empty `gram`, in registration
+/// order, plus the decl-keyword fragments (collected in
+/// features/grammar/avra_grammar.av — the one list the whole-program grammar
+/// composes from, so the two views cannot drift).
 /// Rule-disjointness is guarded by `fragment_rule_conflicts` in the specs.
 export fn feature_grammar_fragments() -> List<Grammar> {
     mut all: List<Grammar> = []
     for f in language_features() {
-        if f.gram_in_spine { continue }
         // Validate FIRST — a malformed gram must F9999 here, never be
         // silently dropped by the empty-rules filter below.
         let g = feature_gram(f)
@@ -219,4 +221,19 @@ export fn feature_grammar_fragments() -> List<Grammar> {
         all.push(g)
     }
     all
+}
+
+/// The STATEMENT-family fragments: every feature whose gram declares
+/// `gram_family = "stmt"`, in registration order. The statement views
+/// (avra_stmt_flip_grammar / avra_stmt_dispatch_grammar and the §2 shadows)
+/// compose this list, so a feature's statement rules live ONLY in its own
+/// file — adding one here is a feature-file edit, never a view edit.
+export fn feature_stmt_grammar_fragments() -> List<Grammar> {
+    mut stmts: List<Grammar> = []
+    for f in language_features() {
+        if f.gram_family == "stmt" {
+            stmts.push(feature_gram(f))
+        }
+    }
+    stmts
 }

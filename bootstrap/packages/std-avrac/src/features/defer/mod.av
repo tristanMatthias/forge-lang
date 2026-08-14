@@ -60,7 +60,7 @@ and error propagation via `?`.
             match s { .Defer(b) -> check_effect_body(tc, b), _ -> tc },
         // The eval path doesn't model deferred execution yet (t-amoj).
         eval_stmt = (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
-        gram_in_spine = true,
+        gram_family = "stmt",
     }
     defer_def
 }
@@ -91,7 +91,7 @@ reverses correctly on cleanup:
             match s { .Errdefer(b) -> check_effect_body(tc, b), _ -> tc },
         // The eval path doesn't model deferred execution yet (t-amoj).
         eval_stmt = (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
-        gram_in_spine = true,
+        gram_family = "stmt",
     }
     errdefer_def
 }

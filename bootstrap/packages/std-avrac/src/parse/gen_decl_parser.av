@@ -3608,66 +3608,6 @@ fn parse_while_stmt(st: PState) -> CapVal {
     mk_while(st, sp_start, c, body)
 }
 
-fn parse_match_stmt(st: PState) -> CapVal {
-    if lookahead_ok("match_subjectless", st) && (st.cur().text == "match") {
-        let sp_start = st.cur().pos
-        mut a_list: List<WhenArm> = []
-        let _ = st.advance()
-        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected `{`")
-        }
-        while st.cur().text == "_" || tok_starts_expr_leaf(st.cur()) {
-            a_list.push(capval_to_when_arm(st, parse_match_when_arm(st)))
-            if st.cur().tk == Tk.Comma { let _ = st.advance() }
-        }
-        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected `}` after match arms")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(a_list))))))
-    }
-    if lookahead_ok("match_table", st) && (st.cur().text == "match") {
-        return parse_match_table_stmt(st)
-    }
-    if st.cur().text == "match" {
-        mut arms_list: List<MatchArm> = []
-        let _ = st.advance()
-        let __modes_1 = st.modes
-        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
-        let subj = parse_expression(st)
-        st.set_modes(__modes_1)
-        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected `{` after match subject")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        while st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || tok_starts_pattern(st.cur()) {
-            arms_list.push(capval_to_arm(st, parse_match_arm(st)))
-            if st.cur().tk == Tk.Comma { let _ = st.advance() }
-        }
-        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected `}` after match arms")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        return mk_match(st, subj, CapVal.Arms(arms_list))
-    }
-    CapVal.Node(st.error_node_expected_expr())
-}
-
-fn parse_defer_stmt(st: PState) -> CapVal {
-    let _ = st.advance()
-    let e = parse_expression(st)
-    _gb_build_defer(st, [e])
-}
-
-fn parse_errdefer_stmt(st: PState) -> CapVal {
-    let _ = st.advance()
-    let e = parse_expression(st)
-    _gb_build_errdefer(st, [e])
-}
-
 fn parse_return_stmt(st: PState) -> CapVal {
     mut e: CapVal = CapVal.Nil
     let _ = st.advance()
@@ -3843,6 +3783,54 @@ fn parse_arm_body(st: PState) -> CapVal {
     parse_expression(st)
 }
 
+fn parse_match_stmt(st: PState) -> CapVal {
+    if lookahead_ok("match_subjectless", st) && (st.cur().text == "match") {
+        let sp_start = st.cur().pos
+        mut a_list: List<WhenArm> = []
+        let _ = st.advance()
+        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+            st.report("expected `{`")
+        }
+        while st.cur().text == "_" || tok_starts_expr_leaf(st.cur()) {
+            a_list.push(capval_to_when_arm(st, parse_match_when_arm(st)))
+            if st.cur().tk == Tk.Comma { let _ = st.advance() }
+        }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected `}` after match arms")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, sp_start, CapVal.WArms(a_list))))))
+    }
+    if lookahead_ok("match_table", st) && (st.cur().text == "match") {
+        return parse_match_table_stmt(st)
+    }
+    if st.cur().text == "match" {
+        mut arms_list: List<MatchArm> = []
+        let _ = st.advance()
+        let __modes_1 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+        let subj = parse_expression(st)
+        st.set_modes(__modes_1)
+        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+            st.report("expected `{` after match subject")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        while st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || tok_starts_pattern(st.cur()) {
+            arms_list.push(capval_to_arm(st, parse_match_arm(st)))
+            if st.cur().tk == Tk.Comma { let _ = st.advance() }
+        }
+        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+            st.report("expected `}` after match arms")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        return mk_match(st, subj, CapVal.Arms(arms_list))
+    }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
 fn parse_match_table_stmt(st: PState) -> CapVal {
     mut cols_list: List<Token> = []
     mut p_list: List<PatId> = []
@@ -3946,5 +3934,17 @@ fn parse_match_table_expr(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     mk_match_table_expr(st, sp_start, subj, CapVal.Toks(cols_list), CapVal.PNodes(p_list), CapVal.Nodes(v_list))
+}
+
+fn parse_defer_stmt(st: PState) -> CapVal {
+    let _ = st.advance()
+    let e = parse_expression(st)
+    _gb_build_defer(st, [e])
+}
+
+fn parse_errdefer_stmt(st: PState) -> CapVal {
+    let _ = st.advance()
+    let e = parse_expression(st)
+    _gb_build_errdefer(st, [e])
 }
 

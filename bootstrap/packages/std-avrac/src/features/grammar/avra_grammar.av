@@ -1,7 +1,11 @@
 // WHY: ps3t.6.5.11 — Avra's grammar, DOGFOODED into compiler `src/` as an
 
 use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_grammars, compose_fragments}
-use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_table_grammar}
+use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_grammar, avra_match_table_grammar}
+// t-47hc.8 — the statement-family registry: every feature whose gram declares
+// `gram_family = "stmt"`, in registration order. The statement views fold it
+// in below, so a statement keyword's rules live ONLY in its feature file.
+use features.{feature_stmt_grammar_fragments}
 // t-47hc slice 9 — the DECL-keyword grammar fragments, each owned by the feature
 // that owns the keyword (the same colocation `match` already has for
 // patterns). Imported here rather than assembled in features/mod.av because this
@@ -905,28 +909,17 @@ export fn avra_stmt_grammar() -> Grammar {
   statement     = break_stmt | continue_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | expr_stmt
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
-  match_stmt    = "match" @off(allow_struct_lit) subj:expression "{" ( arms:match_arm ","? )* "}" -> MkMatch(subj, arms)
-  // This §2 view is SELF-CONTAINED (its own simplified match_stmt / match_arm, not the
-  // production ones) because emit-gen-check compiles the statement parser ALONE, with no
-  // sibling generated file to call into. It now composes an expression grammar whose
-  // native `match_expr` reaches match_when_arm, so this view must define that rule too —
-  // isolated-view duplication,
-  // grammar-text-only. The PRODUCTION views get it from the shared fragment (t-47hc.25).
-  match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> build_when_default(b)
-                 | c:expression "->" @off(allow_dot_postfix) b:expression -> build_when_arm(c, b)
-  match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
-  defer_stmt    = "defer" e:expression -> build_defer(e)
-  errdefer_stmt = "errdefer" e:expression -> build_errdefer(e)
   return_stmt   = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
-    // The match-table fragment is composed IN (not left external) for the same
-    // reason this view defines its own match_when_arm: the composed expr core's
-    // match branch references `match_table_expr`, and emit-gen-check compiles
-    // this view STANDALONE — an external reference has no sibling generated
-    // file to land on there (parse_match_table_expr is module-private in
-    // gen_decl_parser.av), so the harness died with an undefined fn.
-    compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(grammar_checked(gp), avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar()), avra_match_table_grammar())
+    // SELF-CONTAINED by composition (t-47hc.8): emit-gen-check compiles this
+    // view STANDALONE, with no sibling generated file to call into, so every
+    // rule the alternation or the composed expr core reaches must be DEFINED
+    // here — match/defer arrive as the same feature-owned fragments the
+    // production views compose, never as local shadow copies.
+    mut frags: List<Grammar> = [grammar_checked(gp), avra_expr_core(), avra_decl_edge_grammar(), avra_type_flip_grammar(), avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]
+    for g in feature_stmt_grammar_fragments() { frags.push(g) }
+    compose_fragments(frags)
 }
 
 /// ps3t.6.7 Step G slice 4 — the PRODUCTION statement grammar the statement
@@ -971,45 +964,12 @@ fn avra_stmt_common_grammar() -> Grammar {
   // to report about the `{` too.
   while_stmt    = "while" @onfail(bail) @off(allow_struct_lit) c:expression @require body:block
                   @expect("{", "expected `{` after while condition", F0010) -> While(c, body)
-  // t-47hc.22: the SUBJECTLESS form `match { cond -> body }` is grammar-native. Its arms
-  // are NOT the expression family's `when_arm`: a subjectless match
-  // takes `_` as the ONLY default (never `else`, which `when { … }` does accept), so
-  // match_when_arm is defined LOCALLY here rather than reusing when_arm — reusing it would
-  // silently widen the accepted language. Local also means its FIRST and its `warm` result
-  // kind are both derived, with no cross-family declarations. The `@peek` is decisive
-  // (`match` then `{`), so the branch is predictive and owns its own `}` diagnostic.
-  match_stmt    = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhenStmt(a)
-                // The TABLE sub-language, peeled off by lookahead (`@peek(match_table)` scans
-                // to the body brace and asks whether `table` precedes it) and GRAMMAR-
-                // NATIVE (t-47hc.29).
-                // The width is a BOUND, not a computation: the header's first column names
-                // the pattern column and the rest are the value columns, so `#cols` IS the
-                // `value_count`, and `x{#cols}` (t-47hc.28) expresses it exactly.
-                //
-                // Header and rows live in ONE branch because a repetition bound may only
-                // name a capture collected earlier in the same branch (validate_bounds) and
-                // exec_rule mints a fresh CapEnv per rule — so the cells arrive flattened and
-                // MkMatchTable re-chunks them by the header count.
-                // The rule itself lives in the feature's own fragment (features/match.av,
-                // t-47hc.8) and is built from a grammar STRING, not a surface `grammar { }`
-                // block: its row width is `( … )*{#cols}`, and `#` is not an Avra token, so a
-                // `{#cols}` written HERE dies in the lexer (F0001 `unexpected character '#'`)
-                // long before parse_grammar ever sees it. Bounded repetition is therefore
-                // spendable only from string-built fragments today — the reference below keeps
-                // this dogfooded block free of the sigil.
-                | @peek(match_table) match_table_stmt
-                // With table peeled off, the ordinary form no longer needs to speculate: it
-                // is PREDICTIVE and owns BOTH of its diagnostics. Previously the `@try` was
-                // load-bearing only because a table header had to be able to roll back
-                // through it, which cost every ordinary `match` a snapshot and left the
-                // missing-`{` message with the oracle.
-                | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatch(subj, arms)
-  // match_when_arm + match_arm moved to features/match.av
-  // (avra_match_arm_grammar) — the expression `match_expr` needs the SAME rules and
-  // each family's emitted parser is generated from its own dispatch grammar, so one
-  // shared fragment composed into both is the only home that serves both (t-47hc.25).
-  defer_stmt    = "defer" e:expression -> build_defer(e)
-  errdefer_stmt = "errdefer" e:expression -> build_errdefer(e)
+  // match_stmt / match_when_arm / match_arm live with their owning feature
+  // (avra_match_stmt_grammar / avra_match_arm_grammar, features/match) and
+  // defer_stmt / errdefer_stmt ride the feature_stmt_grammar_fragments
+  // registry (t-47hc.8) — the `statement` alternation above names them and
+  // the reference binds against the composed rule set. ONE definition each,
+  // in the feature's own file; the views only choose dispatch order.
   return_stmt   = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> MkReturn(e)
   // STATEMENT-position `if let` — not its
   // expression twin. Routing this to `expression` (which reaches `if_expr`) parsed the
@@ -1076,7 +1036,9 @@ export fn avra_stmt_flip_grammar() -> Grammar {
     // emitted parsers have. Missing avra_match_arm_grammar() would leave match_arm /
     // match_when_arm unresolved and the DSL would error on every `match`
     // statement. Caught in review on #1028.
-    compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(compose_grammars(stmt, avra_expr_core()), avra_decl_edge_grammar()), avra_type_flip_grammar()), avra_pat_grammar()), avra_match_arm_grammar()), avra_match_table_grammar())
+    mut frags: List<Grammar> = [stmt, avra_expr_core(), avra_decl_edge_grammar(), avra_type_flip_grammar(), avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]
+    for g in feature_stmt_grammar_fragments() { frags.push(g) }
+    compose_fragments(frags)
 }
 
 /// ps3t.6.7 Step G slice 4b — the PRODUCTION declaration / whole-program grammar
@@ -1086,18 +1048,14 @@ export fn avra_decl_flip_grammar() -> Grammar {
 
 /// ps3t.6.7 Phase 2 — the DISPATCH-ONLY statement grammar the STATIC production
 export fn avra_stmt_dispatch_grammar() -> Grammar {
-    // The match ARM fragment is composed in rather than defined inline: the
-    // expression family needs the identical rules and is emitted from its OWN
-    // dispatch grammar, so one shared fragment is the only home that serves both
-    // (t-47hc.25). Composed LAST so the statement rules keep leading the merged
-    // rule set — the emitted function order is observable.
-    compose_grammars(
-        compose_grammars(
-            compose_grammars(avra_stmt_common_grammar(), avra_stmt_dispatch_for_grammar()),
-            avra_match_arm_grammar()
-        ),
-        avra_match_table_grammar()
-    )
+    // The feature fragments are composed in rather than defined inline: the
+    // expression family needs the identical arm rules and is emitted from its
+    // OWN dispatch grammar, so one shared fragment is the only home that serves
+    // both (t-47hc.25). Composed LAST so the statement rules keep leading the
+    // merged rule set — the emitted function order is observable.
+    mut frags: List<Grammar> = [compose_grammars(avra_stmt_common_grammar(), avra_stmt_dispatch_for_grammar()), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]
+    for g in feature_stmt_grammar_fragments() { frags.push(g) }
+    compose_fragments(frags)
 }
 
 /// ps3t.6.7 Phase 2 — the DISPATCH-ONLY declaration grammar (the static-emit twin of
@@ -1243,8 +1201,6 @@ export fn avra_program_grammar() -> Grammar {
                 @expect("type_expr", "expected type after `:`")
                 @expect("=", "expected `=` after variable name") -> MkLetBinding(m, n, ty, init, e, tmp)
   return_stmt = "return" ( @peek(return_value) @gate @onfail(bail) rv:expression )? -> MkReturn(rv)
-  defer_stmt  = "defer" de:expression -> build_defer(de)
-  errdefer_stmt = "errdefer" ee:expression -> build_errdefer(ee)
   block_stmt  = "{" ( bs:statement )* "}" -> Block(bs)
   while_stmt  = "while" wc:expression wb:block_stmt -> While(wc, wb)
   if_stmt     = "if" ic:expression it:block_stmt ( "else" ie:else_target )? -> If(ic, it, ie)
@@ -1287,6 +1243,13 @@ export fn avra_program_grammar() -> Grammar {
     // This block stays FIRST so `program` remains the start symbol.
     mut frags: List<Grammar> = [grammar_checked(gp)]
     for g in feature_decl_grammar_fragments() {
+        frags.push(g)
+    }
+    // The statement-family registry serves this view too: `defer_stmt` /
+    // `errdefer_stmt` in the alternation above bind against the SAME
+    // feature-owned fragments the production views compose — the §2 shadow
+    // no longer keeps copies with drifted capture names.
+    for g in feature_stmt_grammar_fragments() {
         frags.push(g)
     }
     compose_fragments(frags)
