@@ -14,7 +14,8 @@
 // export now propagates to its generated type + factory.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file, ExprId, StmtId}
+use @std.avrac.features.grammar.{CapVal, capval_to_node_list, capval_to_stmt_list}
 
 fn probe_src() -> string {
     "use @std.avrac.features.{LanguageFeature, LanguageFeature_new}\n" +
@@ -131,6 +132,18 @@ spec "t-kd4y.3: typed build fns synthesize adapters + derived BuilderBinds at co
     then "rule/fn arity drift declines synthesis — no adapter with a known-wrong arity" {
         let out = run_fixture("drift", drift_src())
         out.contains("__status=0\n") && out.contains("builders=0")
+    }
+    then "list unwraps preserve SINGLETON captures (one-effective-value repetition)" {
+        // `x:expression ("," x:expression)* ` leaves x as a SCALAR CapVal
+        // when exactly one item matched — the rows point at the engine's
+        // scalar-or-list converters, which normalise that into a singleton
+        // list. A reader matching only the list carrier silently dropped
+        // the value (caught in review before any feature shipped on it).
+        let one = capval_to_node_list(CapVal.Node(ExprId(7)))
+        let many = capval_to_node_list(CapVal.Nodes([ExprId(1), ExprId(2)]))
+        let nil = capval_to_node_list(CapVal.Nil)
+        let sone = capval_to_stmt_list(CapVal.SNode(StmtId(9)))
+        one.length == 1 && many.length == 2 && nil.length == 0 && sone.length == 1
     }
     then "the match-flip rows derive: pat/optional/list/token params, arm/warm/expr/pat returns" {
         // Compiling + running rows_src IS the adapter proof: a takes_st
