@@ -845,48 +845,73 @@ export fn engine_build_kinds() -> List<string> {
 }
 
 export fn central_build_kind(bn: string) -> string {
-    if bn == "fold_binary" || bn == "fold_logical" || bn == "fold_nullish" || bn == "fold_pipe" || bn == "fold_with" || bn == "fold_postfix_with" || bn == "fold_postfix" || bn == "mk_assign" || bn == "rebind_eq" || bn == "mk_is" || bn == "mk_inlist" || bn == "mk_inrange" || bn == "mk_enum_ctor" || bn == "mk_eqchain" || bn == "MkListLit" || bn == "MkListComp" || bn == "MkChannel" || bn == "MkWhen" || bn == "MkMatchExpr" || bn == "MkIfExpr" || bn == "MkIfLet" || bn == "MkQuote" || bn == "MkQuoteType" || bn == "MkQuoteArm" || bn == "MkExprBlock" || bn == "MkSpawn" || bn == "MkIsolated" || bn == "MkTuple" || bn == "MkLambda" || bn == "MkLambdaTyped" || bn == "Unary" || bn == "Grouping" || bn == "field_suffix" || bn == "index_suffix" || bn == "call_suffix" || bn == "MkWithSuffix" || bn == "MkMapLit" || bn == "MkSplice" || bn == "MkSpliceStruct" || bn == "MkQualExpr" || bn == "MkTemplate" || bn == "MkTrySuffix" || bn == "MkCatchSuffix" || bn == "MkOptChain" || bn == "MkTupleIndex" || bn == "MkFieldAccess" || bn == "MkMatchTableExpr" || bn == "MkIndexSuffix" || bn == "MkCallSuffix" || bn == "MkGenericCallSuffix" || bn == "MkEnumCtorSuffix" || bn == "MkOptMethodCall" || bn == "MkForceUnwrap" || bn == "MkCallArg" || bn == "MkStructLit" || bn == "MkGrammarBlock" || bn == "MkTaggedTemplate" || bn == "MkTableHeader" || bn == "MkTableRow" || bn == "MkTableLit" || bn == "MkPrimaryFail" { return "expr" }
-    if bn == "Break" || bn == "Continue" || bn == "ReturnEmpty" || bn == "Return" || bn == "MkReturn" || bn == "MkDefer" || bn == "MkErrdefer" || bn == "ExprStmt" || bn == "Block" || bn == "While" || bn == "If" || bn == "ForLoop" || bn == "MkForDestructure" || bn == "MkMatch" || bn == "MkMatchTable" || bn == "MkWhenStmt" || bn == "MkIfLetStmt" { return "stmt" }
-    if bn == "MkArmReturn" { return "expr" }
-    // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
-    // is inferred from the OTHER branch alone in some orders and from this one in others,
-    // and a `( arms:match_arm )*` accumulator silently declares `List<ExprId>` — the
-    // capval_to_expr default. That is the same silent tree-corruption trap the annotation
-    // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
-    if bn == "MkSpliceArm" { return "arm" }
-    if bn == "MkArm" { return "arm" }
-    if bn == "MkFieldInit" { return "finit" }
-    if bn == "MkWhenArm" || bn == "MkWhenDefault" { return "warm" }
-    if bn == "MkSelectArm" { return "sarm" }
-    if bn == "MkCompConfig" { return "ccfg" }
-    if bn == "MkCompConfigPair" { return "cpair" }
-    if bn == "MkChildrenSlot" { return "cslot" }
-    // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
-    // except the component CapVals (MkParam → PEntry, MkField → Field,
-    // MkEVariant → Var).
-    if bn == "MkFnDecl" || bn == "MkExtern" || bn == "MkShapeDecl" || bn == "MkExport" || bn == "MkTypeDecl" || bn == "MkTypeDeclAny" || bn == "MkEnumDecl" || bn == "MkTraitDecl" || bn == "MkImpl" || bn == "MkUse" || bn == "MkUseBare" || bn == "MkUsePkg" || bn == "MkModule" || bn == "MkAssocType" || bn == "MkAssocTypeDef" || bn == "MkTraitMethod" || bn == "MkMethod" || bn == "MkAnnotatedArgs" || bn == "MkDocAnnotated" || bn == "MkModuleDoc" || bn == "MkLetBinding" || bn == "MkMutBinding" || bn == "MkConstBinding" || bn == "MkDestructure" || bn == "MkParallel" || bn == "MkSelect" || bn == "MkSpecBlock" || bn == "MkGivenBlock" || bn == "MkThenBlock" || bn == "MkComponentDef" || bn == "MkComponentParenDef" || bn == "MkComponentBlock" || bn == "MkRawComponentBlock" || bn == "MkMethodShorthand" || bn == "MkCompField" { return "stmt" }
-    if bn == "MkAnn" { return "ann" }
-    if bn == "MkParam" { return "pentry" }
-    // `MkWhereParam` yields the SAME TypeParamEntry a `tparam` does — a where entry is
-    // a type parameter that names its bounds after the parameter list instead of inside
-    // it — so it must classify identically or the accumulator's element coercion drifts.
-    // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
-    // name string with a `~` prefix, so it must classify as `tok` and flow through
-    // `capval_tok_text` exactly as a bare IDENT does.
-    // A splice in TYPE position yields a TypeExpr, not a token — it is `named_type`'s
-    // sibling atom, not a name-slot splice (t-47hc.4.3).
-    if bn == "MkSpliceType" { return "type" }
-    if bn == "MkSpliceName" || bn == "MkPlainName" { return "tok" }
-    if bn == "MkTraitList" { return "toks" }
-    if bn == "MkCompBodyMarker" { return "tok" }
-    if bn == "MkCompConfigList" { return "ccfgs" }
-    if bn == "MkChildrenSlotList" { return "cslots" }
-    if bn == "MkTypeParam" || bn == "MkWhereParam" { return "tparam" }
-    if bn == "MkField" { return "field" }
-    if bn == "MkEVariant" { return "variant" }
-    if bn == "OrMaybe" || bn == "IdentPat" || bn == "MkVariant" || bn == "PatBool" || bn == "PatStr" || bn == "PatNum" || bn == "PatNegNum" || bn == "OptPresent" || bn == "OptAbsent" { return "pat" }
-    if bn == "TyUnion" || bn == "MkFn" || bn == "TyDyn" || bn == "TyList" || bn == "TyParen" || bn == "MkNamed" || bn == "MkQualified" { return "type" }
-    ""
+    match bn {
+        "fold_binary" or "fold_logical" or "fold_nullish" or "fold_pipe" or "fold_with"
+            or "fold_postfix_with" or "fold_postfix" or "mk_assign" or "rebind_eq" or "mk_is"
+            or "mk_inlist" or "mk_inrange" or "mk_enum_ctor" or "mk_eqchain" or "MkListLit"
+            or "MkListComp" or "MkChannel" or "MkWhen" or "MkMatchExpr" or "MkIfExpr"
+            or "MkIfLet" or "MkQuote" or "MkQuoteType" or "MkQuoteArm" or "MkExprBlock"
+            or "MkSpawn" or "MkIsolated" or "MkTuple" or "MkLambda" or "MkLambdaTyped"
+            or "Unary" or "Grouping" or "field_suffix" or "index_suffix" or "call_suffix"
+            or "MkWithSuffix" or "MkMapLit" or "MkSplice" or "MkSpliceStruct" or "MkQualExpr"
+            or "MkTemplate" or "MkTrySuffix" or "MkCatchSuffix" or "MkOptChain" or "MkTupleIndex"
+            or "MkFieldAccess" or "MkMatchTableExpr" or "MkIndexSuffix" or "MkCallSuffix" or "MkGenericCallSuffix"
+            or "MkEnumCtorSuffix" or "MkOptMethodCall" or "MkForceUnwrap" or "MkCallArg" or "MkStructLit"
+            or "MkGrammarBlock" or "MkTaggedTemplate" or "MkTableHeader" or "MkTableRow" or "MkTableLit"
+            or "MkPrimaryFail" -> "expr"
+        "Break" or "Continue" or "ReturnEmpty" or "Return" or "MkReturn"
+            or "MkDefer" or "MkErrdefer" or "ExprStmt" or "Block" or "While"
+            or "If" or "ForLoop" or "MkForDestructure" or "MkMatch" or "MkMatchTable"
+            or "MkWhenStmt" or "MkIfLetStmt" -> "stmt"
+        "MkArmReturn" -> "expr"
+        // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
+        // is inferred from the OTHER branch alone in some orders and from this one in others,
+        // and a `( arms:match_arm )*` accumulator silently declares `List<ExprId>` — the
+        // capval_to_expr default. That is the same silent tree-corruption trap the annotation
+        // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
+        "MkSpliceArm" -> "arm"
+        "MkArm" -> "arm"
+        "MkFieldInit" -> "finit"
+        "MkWhenArm" or "MkWhenDefault" -> "warm"
+        "MkSelectArm" -> "sarm"
+        "MkCompConfig" -> "ccfg"
+        "MkCompConfigPair" -> "cpair"
+        "MkChildrenSlot" -> "cslot"
+        // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
+        // except the component CapVals (MkParam → PEntry, MkField → Field,
+        // MkEVariant → Var).
+        "MkFnDecl" or "MkExtern" or "MkShapeDecl" or "MkExport" or "MkTypeDecl"
+            or "MkTypeDeclAny" or "MkEnumDecl" or "MkTraitDecl" or "MkImpl" or "MkUse"
+            or "MkUseBare" or "MkUsePkg" or "MkModule" or "MkAssocType" or "MkAssocTypeDef"
+            or "MkTraitMethod" or "MkMethod" or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
+            or "MkLetBinding" or "MkMutBinding" or "MkConstBinding" or "MkDestructure" or "MkParallel"
+            or "MkSelect" or "MkSpecBlock" or "MkGivenBlock" or "MkThenBlock" or "MkComponentDef"
+            or "MkComponentParenDef" or "MkComponentBlock" or "MkRawComponentBlock" or "MkMethodShorthand" or "MkCompField" -> "stmt"
+        "MkAnn" -> "ann"
+        "MkParam" -> "pentry"
+        // `MkWhereParam` yields the SAME TypeParamEntry a `tparam` does — a where entry is
+        // a type parameter that names its bounds after the parameter list instead of inside
+        // it — so it must classify identically or the accumulator's element coercion drifts.
+        // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
+        // name string with a `~` prefix, so it must classify as `tok` and flow through
+        // `capval_tok_text` exactly as a bare IDENT does.
+        // A splice in TYPE position yields a TypeExpr, not a token — it is `named_type`'s
+        // sibling atom, not a name-slot splice (t-47hc.4.3).
+        "MkSpliceType" -> "type"
+        "MkSpliceName" or "MkPlainName" -> "tok"
+        "MkTraitList" -> "toks"
+        "MkCompBodyMarker" -> "tok"
+        "MkCompConfigList" -> "ccfgs"
+        "MkChildrenSlotList" -> "cslots"
+        "MkTypeParam" or "MkWhereParam" -> "tparam"
+        "MkField" -> "field"
+        "MkEVariant" -> "variant"
+        "OrMaybe" or "IdentPat" or "MkVariant" or "PatBool" or "PatStr"
+            or "PatNum" or "PatNegNum" or "OptPresent" or "OptAbsent" -> "pat"
+        "TyUnion" or "MkFn" or "TyDyn" or "TyList" or "TyParen"
+            or "MkNamed" or "MkQualified" -> "type"
+        _ -> ""
+    }
 }
 
 /// Result-kind classification with the historical default: a name neither

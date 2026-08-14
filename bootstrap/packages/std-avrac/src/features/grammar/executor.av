@@ -5534,6 +5534,61 @@ export fn capval_stmt_val(st: PState, s: Stmt) -> CapVal {
     CapVal.SNode(st.store.stmts.add_leaf(s))
 }
 
+export fn capval_expr_val(st: PState, e: Expr) -> CapVal {
+    CapVal.Node(st.store.exprs.add_leaf(e))
+}
+
+export fn capval_arm_val(st: PState, a: MatchArm) -> CapVal {
+    CapVal.Arm(a)
+}
+
+export fn capval_warm_val(st: PState, a: WhenArm) -> CapVal {
+    CapVal.WArm(a)
+}
+
+export fn capval_pat_val(st: PState, p: Pattern) -> CapVal {
+    CapVal.PNode(st.store.pats.add_leaf(p))
+}
+
+/// Unwrap helpers for GENERATED typed-builder adapters — the param-side
+/// twins of the wrap helpers above, added as the marshalling tables grow
+/// (t-kd4y.3 match-flip rows). Each reads the capture family's carrier and
+/// tolerates Nil/absent where the typed param is optional or a list (an
+/// absent optional group is Nil; an empty repetition never produced its
+/// accumulator).
+export fn capval_to_expr_opt(st: PState, v: CapVal) -> ExprId? {
+    if !capval_present(v) { return none }
+    capval_to_expr(st, v)
+}
+
+export fn capval_expr_list(v: CapVal) -> List<ExprId> {
+    match v {
+        .Nodes(ns) -> ns
+        _ -> []
+    }
+}
+
+export fn capval_arm_list(v: CapVal) -> List<MatchArm> {
+    match v {
+        .Arms(xs) -> xs
+        _ -> []
+    }
+}
+
+export fn capval_warm_list(v: CapVal) -> List<WhenArm> {
+    match v {
+        .WArms(xs) -> xs
+        _ -> []
+    }
+}
+
+export fn capval_stmt_list(v: CapVal) -> List<StmtId> {
+    match v {
+        .SNodes(ns) -> ns
+        _ -> []
+    }
+}
+
 export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
     let no_args: List<ExprId> = []
     let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]

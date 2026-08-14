@@ -346,18 +346,49 @@ fn sig_supported(sig: FnSig) -> bool {
 // sig_supported (whole-fn skip, never a half-adapted builder).
 
 /// One param-side row: a capture type name → the capval unwrap fn.
-type UnwrapRow = { ty: string, fn_name: string }
+/// `takes_st`: whether the fn's first arg is the PState (arena-reading
+/// unwraps) or the CapVal alone (pure carrier readers — the list/token
+/// accessors central arms already call as one-arg fns). synth_adapter
+/// spells the call from this flag, so a row cannot ship with the wrong
+/// arity.
+type UnwrapRow = { ty: string, fn_name: string, takes_st: bool }
 
 /// One result-side row: a result type name → its wrap helper
 /// (executor.av capval_*_val) + the BuilderBind kind it classifies as.
 type WrapRow = { ty: string, helper: string, kind: string }
 
 fn unwrap_rows() -> List<UnwrapRow> {
-    [UnwrapRow { ty: "ExprId", fn_name: "capval_to_expr" }]
+    [
+        UnwrapRow { ty: "ExprId", fn_name: "capval_to_expr", takes_st: true },
+        // ── match-flip rows (t-kd4y.3) — one per capture shape the match/
+        // when grams bind: pattern scalars, optional guards, statement
+        // bodies, name tokens, and the repetition accumulators. Every
+        // fn_name is an executor.av engine helper the injected use row
+        // imports by construction (helper_use_row reads THIS table).
+        UnwrapRow { ty: "PatId", fn_name: "capval_to_pat", takes_st: true },
+        UnwrapRow { ty: "ExprId?", fn_name: "capval_to_expr_opt", takes_st: true },
+        UnwrapRow { ty: "StmtId", fn_name: "capval_to_stmt", takes_st: true },
+        UnwrapRow { ty: "string", fn_name: "capval_tok_text", takes_st: false },
+        UnwrapRow { ty: "List<ExprId>", fn_name: "capval_expr_list", takes_st: false },
+        UnwrapRow { ty: "List<StmtId>", fn_name: "capval_stmt_list", takes_st: false },
+        UnwrapRow { ty: "List<PatId>", fn_name: "capval_to_pat_list", takes_st: false },
+        UnwrapRow { ty: "List<MatchArm>", fn_name: "capval_arm_list", takes_st: false },
+        UnwrapRow { ty: "List<WhenArm>", fn_name: "capval_warm_list", takes_st: false },
+        UnwrapRow { ty: "List<string>", fn_name: "capval_tok_texts", takes_st: false },
+    ]
 }
 
 fn wrap_rows() -> List<WrapRow> {
-    [WrapRow { ty: "Stmt", helper: "capval_stmt_val", kind: "stmt" }]
+    [
+        WrapRow { ty: "Stmt", helper: "capval_stmt_val", kind: "stmt" },
+        // ── match-flip rows: the result families the match/when builds
+        // construct. Kind strings are engine_build_kinds members (validated
+        // at registry build via builder_kind_supported).
+        WrapRow { ty: "Expr", helper: "capval_expr_val", kind: "expr" },
+        WrapRow { ty: "MatchArm", helper: "capval_arm_val", kind: "arm" },
+        WrapRow { ty: "WhenArm", helper: "capval_warm_val", kind: "warm" },
+        WrapRow { ty: "Pattern", helper: "capval_pat_val", kind: "pat" },
+    ]
 }
 
 /// Param type → the capval unwrap fn wrapping `vals[i]`; "" = uncovered.
@@ -365,6 +396,14 @@ fn unwrap_call_for(vt: ValueType) -> string {
     let n = vtype_head_name(vt)
     for r in unwrap_rows() { if r.ty == n { return r.fn_name } }
     ""
+}
+
+/// Param type → whether its unwrap fn takes the PState first (same row as
+/// unwrap_call_for; callers only ask after sig_supported passed).
+fn unwrap_takes_st(vt: ValueType) -> bool {
+    let n = vtype_head_name(vt)
+    for r in unwrap_rows() { if r.ty == n { return r.takes_st } }
+    false
 }
 
 /// Return type → its wrap helper; "" = uncovered.
@@ -381,13 +420,25 @@ fn kind_for_wrap(vt: ValueType) -> string {
     ""
 }
 
-/// The nominal head name of a pre-resolve type annotation (the parser
+/// The table-key rendering of a pre-resolve type annotation (the parser
 /// defaults unresolved names to Struct; resolved forms keep the name).
+/// Optionals render `T?` and lists `List<T>` so the tables key on the same
+/// spelling a feature's signature writes; a shape this can't name returns
+/// "" and the fn is skipped whole (sig_supported).
 fn vtype_head_name(vt: ValueType) -> string {
     match vt {
         .Struct(n, _, _) -> n
         .Enum(n, _, _) -> n
         .Newtype(n, _, _) -> n
+        .Optional(inner) -> {
+            let n = vtype_head_name(inner)
+            if n == "" { "" } else { "${n}?" }
+        }
+        .List(elem) -> {
+            let n = vtype_head_name(elem)
+            if n == "" { "" } else { "List<${n}>" }
+        }
+        .Str -> "string"
         _ -> ""
     }
 }
@@ -405,9 +456,14 @@ fn synth_adapter(store: NodeStore, sig: FnSig) -> StmtId {
         let idx = store.exprs.add_leaf(Expr.Index(
             store.exprs.add_leaf(Expr.Ident("vals")),
             store.exprs.add_leaf(Expr.Number("${i}"))))
+        // Arena-reading unwraps take (st, v); pure carrier readers take (v)
+        // alone — the row's takes_st flag is the schema (UnwrapRow's WHY).
+        let call_args = if unwrap_takes_st(sig.params[i].vtype) {
+            [store.exprs.add_leaf(Expr.Ident("st")), idx]
+        } else { [idx] }
         args.push(store.exprs.add_leaf(Expr.Call(
             store.exprs.add_leaf(Expr.Ident(unwrap_call_for(sig.params[i].vtype))),
-            [store.exprs.add_leaf(Expr.Ident("st")), idx])))
+            call_args)))
         i = i + 1
     }
     let typed_call = store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident(sig.name)), args))
