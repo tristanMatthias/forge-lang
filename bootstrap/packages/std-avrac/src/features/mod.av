@@ -103,20 +103,10 @@ export component LanguageFeature {
 /// hundreds of stores a package compile creates (the rc-strict +2GB
 /// regression this signature exists to prevent).
 export fn init_features(reg: Registry) -> List<BuilderBind> {
-    mut binds: List<BuilderBind> = []
     // ── Statements ──
-    for f in language_features() {
-        register_lang(reg, f)
-        for b in f.builders {
-            for seen in binds {
-                if seen.name == b.name {
-                    grammar_startup_fail("build `${b.name}` is supplied by two features — one lowering, one owner")
-                    return binds
-                }
-            }
-            binds.push(b)
-        }
-    }
+    let feats = language_features()
+    for f in feats { register_lang(reg, f) }
+    let binds = fold_builders(feats)
     register(reg, if_stmt_feature())
     register(reg, while_feature())
     register(reg, for_feature())
@@ -188,8 +178,14 @@ export fn language_features() -> List<LanguageFeature> {
 /// name. A name supplied twice is two features claiming one lowering:
 /// hard-fail, same policy as a malformed compiled-in grammar.
 export fn feature_builders() -> List<BuilderBind> {
+    fold_builders(language_features())
+}
+
+/// The one dedup fold both manifest producers share: a build name supplied
+/// by two features is one lowering with two owners — hard-fail, naming it.
+fn fold_builders(feats: List<LanguageFeature>) -> List<BuilderBind> {
     mut all: List<BuilderBind> = []
-    for f in language_features() {
+    for f in feats {
         for b in f.builders {
             for seen in all {
                 if seen.name == b.name {

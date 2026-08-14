@@ -109,7 +109,15 @@ fn rewrite_scope(ids: List<StmtId>, store: NodeStore, mod_path: string, absolute
             .Module(mname, body) -> {
                 let child_path = if mod_path == "" { mname } else { mod_path + "." + mname }
                 let new_body = rewrite_scope(body, store, child_path, absolute)
-                out.push(store.stmts.add_leaf(rewrap_annotations(store, node, Stmt.Module(mname, new_body))))
+                // Keep the original row when the child scope came back
+                // unchanged — the common every-compile case; reallocating
+                // every module here is the same skip-path garbage class
+                // the candidacy probe exists to avoid.
+                if stmt_id_list_eq(new_body, body) {
+                    out.push(id)
+                } else {
+                    out.push(store.stmts.add_leaf(rewrap_annotations(store, node, Stmt.Module(mname, new_body))))
+                }
             }
             .Function(fname, tp, params, ret, body) -> {
                 // Definition factories construct instances inside fn bodies —
@@ -457,4 +465,14 @@ fn list_concat_stmt(a: List<StmtId>, b: List<StmtId>) -> List<StmtId> {
     mut out = a
     for x in b { out.push(x) }
     out
+}
+
+fn stmt_id_list_eq(a: List<StmtId>, b: List<StmtId>) -> bool {
+    if a.length != b.length { return false }
+    mut i = 0
+    while i < a.length {
+        if a[i] != b[i] { return false }
+        i = i + 1
+    }
+    true
 }
