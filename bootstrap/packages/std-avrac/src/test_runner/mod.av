@@ -1172,7 +1172,7 @@ export fn classify_shard_failure(out: string, fail: int, crashes: int) -> string
     if output_has_disk_full_marker(out) {
         return "DISK FULL — the box ran out of space (this is not a test failure; see `make cache-gc`)"
     }
-    if out.contains("error[F4014]") {
+    if output_has_ceiling_marker(out) {
         let phase = extract_after(out, "phase: ")
         let detail = if phase == "" { "" } else { " during ${phase}" }
         return "MEMORY CEILING — the compiler stopped itself${detail} (F4014; an F4014 on normal input is a compiler bug, not a small box)"
@@ -1194,6 +1194,16 @@ export fn classify_shard_failure(out: string, fail: int, crashes: int) -> string
         return "${string(fail)} TEST FAILURE(S)${named}"
     }
     "FAILED — cause not classified; read the log"
+}
+
+/// Did this output's producer stop ITSELF at the compiler's memory ceiling
+/// (error[F4014])? Third sibling of the kill/disk-full markers below, for the
+/// same stated reason: the shard cause classifier and the orchestrator's
+/// solo-retry selection (cli main.av retry_ceiling_stopped, t-d91l) both have
+/// to answer "did this shard self-stop on memory?", and they have to give the
+/// SAME answer — a second inline `contains` is how they drift.
+export fn output_has_ceiling_marker(out: string) -> bool {
+    out.contains("error[F4014]")
 }
 
 /// Did the SHELL report this output's producer as killed?

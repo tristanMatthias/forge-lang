@@ -95,7 +95,15 @@ export fn resource_profile_key(profile: ResourceProfile) -> string {
 /// Conservative seed before the controller has a measurement for this exact
 /// profile. This lives in one profile policy rather than as a CI AVRA_JOBS
 /// workaround. The learned model remains the authority after the first run.
+///
+/// The rc-strict margin is 10%: strict mode runs its detectors ON TOP of the
+/// region allocator (runtime.c rc_reclaim), so its resident cost over a normal
+/// run is the bounded quarantine window (~64MB) plus poison writes — measured
+/// byte-identical peak RSS on the std-avrac metadata lib compile. The old 2x
+/// dated from the all-malloc strict allocator and held the rc-strict CI suite
+/// to shard width 1 (a fresh runner has no persisted observation, and the
+/// in-run ratchet only corrects upward).
 export fn resource_profile_seed_mb(profile: ResourceProfile, normal_mb: int) -> int {
     let base = if normal_mb < 1 { 1 } else { normal_mb }
-    if profile.runtime_mode == "rc-strict" { base * 2 } else { base }
+    if profile.runtime_mode == "rc-strict" { base + base / 10 } else { base }
 }
