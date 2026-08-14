@@ -20,14 +20,19 @@ spec "defer as a LanguageFeature" {
             && e.title.length > 0 && e.docs.contains("ERROR exit") && e.snippet.contains("errdefer")
     }
     then "declared rules match the production statement grammar, spelling and all" {
+        // Post-flip (t-kd4y.3) the agreed spelling is the TYPED FN — the
+        // feature's build_defer/build_errdefer, which every spine copy
+        // references identically. This spec is the flip's spelling lockstep:
+        // a spine copy left on the old central name fails here.
         let stmt_view = render_grammar(avra_stmt_grammar())
-        let defer_rule = "defer_stmt = \"defer\" e:expression -> MkDefer(e)"
-        let errdefer_rule = "errdefer_stmt = \"errdefer\" e:expression -> MkErrdefer(e)"
+        let defer_rule = "defer_stmt = \"defer\" e:expression -> build_defer(e)"
+        let errdefer_rule = "errdefer_stmt = \"errdefer\" e:expression -> build_errdefer(e)"
         render_grammar(feature_gram(defer_lang())).contains(defer_rule) && stmt_view.contains(defer_rule)
             && render_grammar(feature_gram(errdefer_lang())).contains(errdefer_rule) && stmt_view.contains(errdefer_rule)
     }
     then "the whole-program view lowers through the same builders" {
         let prod = render_grammar(avra_program_grammar())
-        prod.contains("MkDefer(") && prod.contains("MkErrdefer(")
+        prod.contains("build_defer(") && prod.contains("build_errdefer(")
+            && !prod.contains("MkDefer(") && !prod.contains("MkErrdefer(")
     }
 }

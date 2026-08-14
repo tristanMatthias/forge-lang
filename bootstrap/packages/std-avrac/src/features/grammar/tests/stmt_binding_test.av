@@ -1,6 +1,6 @@
 // ps3t.6.5.4 — the grammar-DSL STATEMENT family, bindings slice: `let` /
 // `mut` / `const` (with optional `: type` annotations and pattern
-// destructure) plus `defer` / `errdefer`. This is where the statement,
+// destructure). This is where the statement,
 // type, and expression families COMPOSE: a binding's annotation lowers
 // through the SHARED type family (a captured TExpr → ValueType via
 // type_expr_to_vtype), and its initializer through the expression family —
@@ -29,15 +29,13 @@ use @std.avrac.core.{render_stmt_id}
 // `mut` → Mut, `(` → destructure, an identifier → Let.
 fn binding_grammar_src() -> string {
     "grammar Stmt {\n" +
-    "  statement   = let_stmt | mut_stmt | const_stmt | defer_stmt | errdefer_stmt | expr_stmt\n" +
+    "  statement   = let_stmt | mut_stmt | const_stmt | expr_stmt\n" +
     "  let_stmt    = \"let\" let_body\n" +
     "  let_body    = \"mut\" mn:IDENT ( \":\" mt:type_expr )? \"=\" me:expression -> MkMut(mn, mt, me)\n" +
     "              | \"(\" dn:IDENT ( \",\" dn:IDENT )* \")\" \"=\" de:expression -> MkDestructure(dn, de)\n" +
     "              | ln:IDENT ( \":\" lt:type_expr )? \"=\" le:expression -> MkLet(ln, lt, le)\n" +
     "  mut_stmt    = \"mut\" n:IDENT ( \":\" t:type_expr )? \"=\" e:expression -> MkMut(n, t, e)\n" +
     "  const_stmt  = \"const\" n:IDENT ( \":\" t:type_expr )? \"=\" e:expression -> MkConst(n, t, e)\n" +
-    "  defer_stmt  = \"defer\" e:expression -> MkDefer(e)\n" +
-    "  errdefer_stmt = \"errdefer\" e:expression -> MkErrdefer(e)\n" +
     "  expr_stmt   = e:expression -> ExprStmt(e)\n" +
     // ── type family (binding annotations) ──
     "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
@@ -115,21 +113,19 @@ spec "grammar-DSL statement family: bindings == hand-written parser (ps3t.6.5.4)
             agree("let (x, y, z) = t")
         }
     }
-    given "defer / errdefer" {
-        then "expression-bodied defers agree" {
-            agree("defer a") &&
-            agree("defer 1 + 2") &&
-            agree("errdefer b")
-        }
-    }
+    // defer/errdefer left this fixture with the t-kd4y.3 flip: the engine
+    // carries NO central defer lowering anymore — build_defer/build_errdefer
+    // are the defer FEATURE's typed fns, resolved through the registry
+    // manifest, which a standalone registry-less gram cannot reach BY
+    // DESIGN. Production-path coverage lives in the defer feature's own
+    // tests + builder_injection_test's manifest-resolution spec.
     given "the DSL trees are the expected shapes (sanity: really built the Stmt)" {
         then "canonical renders of representative forms" {
             dsl_stmt("let x: int = 5") == "(let x:int 5)" &&
             dsl_stmt("let x = 5") == "(let x:<unknown> 5)" &&
             dsl_stmt("mut y = a") == "(mut y:<unknown> a)" &&
             dsl_stmt("const N: int = a") == "(const N:int a)" &&
-            dsl_stmt("let (a, b) = p") == "(let-destruct (a, b) p)" &&
-            dsl_stmt("defer a") == "(defer a)"
+            dsl_stmt("let (a, b) = p") == "(let-destruct (a, b) p)"
         }
     }
 }

@@ -915,8 +915,8 @@ export fn avra_stmt_grammar() -> Grammar {
   match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
-  defer_stmt    = "defer" e:expression -> MkDefer(e)
-  errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
+  defer_stmt    = "defer" e:expression -> build_defer(e)
+  errdefer_stmt = "errdefer" e:expression -> build_errdefer(e)
   return_stmt   = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> MkReturn(e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
@@ -1008,8 +1008,8 @@ fn avra_stmt_common_grammar() -> Grammar {
   // (avra_match_arm_grammar) — the expression `match_expr` needs the SAME rules and
   // each family's emitted parser is generated from its own dispatch grammar, so one
   // shared fragment composed into both is the only home that serves both (t-47hc.25).
-  defer_stmt    = "defer" e:expression -> MkDefer(e)
-  errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e)
+  defer_stmt    = "defer" e:expression -> build_defer(e)
+  errdefer_stmt = "errdefer" e:expression -> build_errdefer(e)
   return_stmt   = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> MkReturn(e)
   // STATEMENT-position `if let` — not its
   // expression twin. Routing this to `expression` (which reaches `if_expr`) parsed the
@@ -1243,8 +1243,8 @@ export fn avra_program_grammar() -> Grammar {
                 @expect("type_expr", "expected type after `:`")
                 @expect("=", "expected `=` after variable name") -> MkLetBinding(m, n, ty, init, e, tmp)
   return_stmt = "return" ( @peek(return_value) @gate @onfail(bail) rv:expression )? -> MkReturn(rv)
-  defer_stmt  = "defer" de:expression -> MkDefer(de)
-  errdefer_stmt = "errdefer" ee:expression -> MkErrdefer(ee)
+  defer_stmt  = "defer" de:expression -> build_defer(de)
+  errdefer_stmt = "errdefer" ee:expression -> build_errdefer(ee)
   block_stmt  = "{" ( bs:statement )* "}" -> Block(bs)
   while_stmt  = "while" wc:expression wb:block_stmt -> While(wc, wb)
   if_stmt     = "if" ic:expression it:block_stmt ( "else" ie:else_target )? -> If(ic, it, ie)
