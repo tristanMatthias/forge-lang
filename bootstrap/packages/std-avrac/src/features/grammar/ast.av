@@ -872,7 +872,6 @@ export fn central_build_kind(bn: string) -> string {
         "MkSpliceArm" -> "arm"
         "MkArm" -> "arm"
         "MkFieldInit" -> "finit"
-        "MkWhenArm" or "MkWhenDefault" -> "warm"
         "MkSelectArm" -> "sarm"
         "MkCompConfig" -> "ccfg"
         "MkCompConfigPair" -> "cpair"

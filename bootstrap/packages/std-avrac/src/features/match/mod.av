@@ -8,7 +8,7 @@ use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, St
 use core.{Pattern, MatchArm, ParamEntry, Expr, Stmt, WhenArm, PatId, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types, type_short_name, vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding, VarBinding, variant_lookup, ExprId}
 use resolve.{resolve_expr, Resolver, enter_resolve_scope, exit_resolve_scope, declare_params, declare_name, define_name}
 use typeck.{check_expr, tc_er, EnumTypeReg, ExprResult, TC, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_exit, tc_gate_unthreaded_lambda, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
-use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments}
+use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments, when_arm_builds}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use features.union_type.{emit_union_tag, emit_union_extract}
 use features.{DiagSpec, composed}
@@ -60,8 +60,8 @@ export fn avra_pat_grammar() -> Grammar {
 /// that lets an arm reference the expression ladder without re-defining it.
 export fn avra_match_arm_grammar() -> Grammar {
     let gp = grammar {
-  match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
-                 | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
+  match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> build_when_default(b)
+                 | c:expression "->" @off(allow_dot_postfix) b:expression -> build_when_arm(c, b)
   // t-47hc.4.3 — the SPLICE arm comes first, gated on `@when(in_quote_body)` exactly as
   // the hand gates it (`self.check(Tk.Tilde) && self.quote_depth > 0`). Outside a quote a
   // leading `~` is not an arm at all and must fall through to `pattern_or`, which reports.
@@ -173,6 +173,7 @@ unify to the result type. The row-oriented `match … table { }` form
 desugars into ordinary arms.
 """,
         gram = composed([avra_pat_grammar(), avra_match_arm_grammar()]),
+        builders = when_arm_builds(),
         snippet = r"match ${1:subject} { ${2:pattern} -> ${3:body} }",
         diags = [DiagSpec {
             code: "F9001",

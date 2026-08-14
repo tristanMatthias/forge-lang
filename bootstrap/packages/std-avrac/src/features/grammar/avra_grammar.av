@@ -356,8 +356,8 @@ fn avra_expr_core() -> Grammar {
                  // `@expect` and so rendered F0001.
                  @expect("{", "expected `{` after if condition", F0010) -> MkIfExpr(c, t, e)
   else_tail    = if_expr | block_expr | expression
-  when_arm     = ( "_" | "else" ) "->" body:expression -> MkWhenDefault(body)
-               | cond:expression "->" body:expression -> MkWhenArm(cond, body)
+  when_arm     = ( "_" | "else" ) "->" body:expression -> build_when_default(body)
+               | cond:expression "->" body:expression -> build_when_arm(cond, body)
   // PREDICTIVE, by the same scan `paren_expr` uses. The `@try` rewound the cursor to
   // before `[`, so a malformed comprehension failed the list-LITERAL branch's closer with
   // the cursor sitting ON `for`, and statement-level resync then parsed a for-LOOP out of
@@ -912,8 +912,8 @@ export fn avra_stmt_grammar() -> Grammar {
   // native `match_expr` reaches match_when_arm, so this view must define that rule too —
   // isolated-view duplication,
   // grammar-text-only. The PRODUCTION views get it from the shared fragment (t-47hc.25).
-  match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> MkWhenDefault(b)
-                 | c:expression "->" @off(allow_dot_postfix) b:expression -> MkWhenArm(c, b)
+  match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> build_when_default(b)
+                 | c:expression "->" @off(allow_dot_postfix) b:expression -> build_when_arm(c, b)
   match_arm     = p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:expression -> MkArm(p, g, b)
   defer_stmt    = "defer" e:expression -> build_defer(e)
   errdefer_stmt = "errdefer" e:expression -> build_errdefer(e)

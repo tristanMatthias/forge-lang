@@ -3983,18 +3983,20 @@ fn retype_self_param(st: PState, params: List<ParamEntry>, target: string) -> Li
 }
 
 fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> CapVal {
-    // Feature-supplied lowerings first (t-kd4y.3): a definition that carries
-    // its own builders owns this name, and the central arms below shrink as
-    // features migrate. The manifest rides the store's ALREADY-INSTALLED
-    // registry (the program-wide parse-registry seam — NOT `st.host`, which
-    // is lazy for the 12GB reason). The null check is load-bearing twice
-    // over: registry-free oracle PStates (bare executor tests) must not
-    // trigger a full build_registry from inside a build call, and a fresh
-    // sub-parse store mid-compile must not construct a SECOND registry per
-    // apply_build — production paths install the registry at Parser
-    // construction, which is the only population point this reads.
-    if st.store.parse_registry != null && st.store.parse_registry!.builder_binds.length > 0 {
-        for b in st.store.parse_registry!.builder_binds {
+    // Feature-supplied lowerings (t-kd4y.3): a name central_build_kind does
+    // not know belongs to the manifest, and the central arms below shrink
+    // as features migrate. Consulting CENTRAL FIRST keeps every engine
+    // build free of the manifest scan; only feature names pay it — and for
+    // those, `parse_features()` LAZY-INITS the store's registry. That lazy
+    // init is required for correctness now the manifest is non-empty: a
+    // bare-store executor harness (the expr/stmt differentials, agree_all)
+    // parses production spine rules whose actions ARE feature builds —
+    // "when { true -> 1 }" must lower via build_when_arm there exactly as
+    // in a full compile. (The former null-guarded read was a #1232-era
+    // cost guard from when the manifest was empty; with disjoint name sets
+    // the order flip preserves semantics and the cost story both.)
+    if central_build_kind(name) == "" {
+        for b in st.store.parse_features().builder_binds {
             if b.name == name && args.length == b.arity {
                 mut vals: List<CapVal> = []
                 for a in args { vals.push(env.get(a)) }
@@ -4097,8 +4099,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkQuote" if args.length == 2 -> mk_quote(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkSpawn" if args.length == 1 -> mk_spawn(st, 0 - 1, env.get(args[0]))
         "MkIsolated" if args.length == 1 -> mk_isolated(st, 0 - 1, env.get(args[0]))
-        "MkWhenArm" if args.length == 2 -> mk_when_arm(st, env.get(args[0]), env.get(args[1]))
-        "MkWhenDefault" if args.length == 1 -> mk_when_default(st, env.get(args[0]))
         "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
         // The concurrency statements (t-47hc Phase 4) — both engines lower
         // through the shared cores.
