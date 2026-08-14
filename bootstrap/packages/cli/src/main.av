@@ -92,7 +92,7 @@ use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
 use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
 use @std.avrac.build.{
     BuildInputs, BuildOutcome,
-    decide_build, record_build_result,
+    decide_build, record_build_result, source_has_mod_decls,
     Fingerprint, fp_short,
     LinkOptions, default_link_options, link_objects,
     BuildRequest, BuildReport, build_request, build_ir, build_executable, link_unit_executable,
@@ -4146,8 +4146,7 @@ fn cmd_compile(args: CliResult) -> int {
             && avra_process_env_get("AVRA_DEPS_OUT") == ""
             && avra_process_env_get("AVRA_USE_METADATA") == ""
             && avra_process_env_get("AVRA_DIR_MODULE") == ""
-            && !csource.contains("\nmod ")
-            && !csource.starts_with("mod ")
+            && !source_has_mod_decls(csource)
             // j568: /tmp/ ad-hoc fixtures are now cacheable. They used to
             // be excluded because compile_capture-style tests assert
             // diagnostic text in bs2 stderr on each invocation, and a

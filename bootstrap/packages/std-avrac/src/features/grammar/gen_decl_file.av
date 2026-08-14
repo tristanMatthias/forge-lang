@@ -14,7 +14,8 @@
 // this text — run `bash scripts/diagnose.sh --emit-regen-decl` to rewrite the
 // checked-in file, then commit it; the guard test fails until you do.
 
-use features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex, builder_import_lines}
+use features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex, builder_import_lines_for, grammar_with_builder_kinds, builder_kind_rows}
+use features.{feature_builders}
 
 /// The fixed import header of the production declaration static-parser module:
 /// exactly the features.grammar builders + core types the generated body
@@ -41,5 +42,10 @@ export fn gen_decl_parser_header() -> string {
 /// generated body. Both the regenerator and the guard read from HERE.
 export fn emit_decl_parser_file() -> string {
     let g = avra_decl_dispatch_grammar()
-    gen_decl_parser_header() + builder_import_lines(g) + emit_parser_source_ex(g, true)
+    // ONE manifest fetch feeds both the derived import header and the kind
+    // rows the emit-side analysis reads (feature builders classify by their
+    // registration — build_defer -> "stmt" — not the lenient "expr" default).
+    let binds = feature_builders()
+    gen_decl_parser_header() + builder_import_lines_for(g, binds)
+        + emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
 }

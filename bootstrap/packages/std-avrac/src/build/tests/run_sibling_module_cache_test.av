@@ -1,0 +1,51 @@
+// WHY: the unit cache's file-level key is BLIND to a bare (manifest-less)
+// entry's `mod` siblings — `sources: [entry_path]`, no dep axis — so a
+// sibling edit used to replay the PREVIOUS binary from the cache: `bs2 run`
+// printed stale output with no diff in the entry to explain it (caught live
+// by the t-kd4y.3 nested-adapter fixture, whose sibling gained a `let` and
+// whose reruns kept reporting the old builders count). `bs2 compile` had
+// already recorded this exact decision as its cache_eligible source-gate;
+// decide_build/record_build_result now apply the SAME gate through the one
+// shared predicate (source_has_mod_decls + unit_cache_blind), so bare
+// multi-module entries never Hit and never publish.
+//
+// @@fixture-stateful@@  probes the shared build cache via `bs2 run`; never
+// freeze a transient FAIL (fxfz, see CLAUDE.md).
+
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn entry_src() -> string {
+    "mod sibling\n" +
+    "use sibling.{answer}\n" +
+    "\n" +
+    "fn main() {\n" +
+    "    println(\"answer=\" + string(answer()))\n" +
+    "}\n"
+}
+
+fn sibling_src(v: int) -> string {
+    "export fn answer() -> int { ${string(v)} }\n"
+}
+
+spec "bare multi-module entries bypass the file-level unit cache" {
+    given "a manifest-less entry with a `mod` sibling, run twice with a sibling-only edit" {
+        then "the second run reflects the edit (no stale replay)" {
+            let dir = "build/_run_sibling_cache"
+            let _ = avra_shell_exec("mkdir -p '${dir}'")
+            let _ = avra_selfhost_write_file("${dir}/entry.av", entry_src())
+            let _ = avra_selfhost_write_file("${dir}/sibling.av", sibling_src(1))
+            let log1 = "${dir}/run1.log"
+            let rc1 = avra_shell_exec_status("./build/bs2 run '${dir}/entry.av' > '${log1}' 2>&1")
+            // Sibling-only edit: the entry file's bytes are unchanged, which
+            // is exactly the shape the file-level key cannot distinguish.
+            let _ = avra_selfhost_write_file("${dir}/sibling.av", sibling_src(2))
+            let log2 = "${dir}/run2.log"
+            let rc2 = avra_shell_exec_status("./build/bs2 run '${dir}/entry.av' > '${log2}' 2>&1")
+            let out1 = avra_selfhost_read_file(log1)
+            let out2 = avra_selfhost_read_file(log2)
+            rc1 == 0 && rc2 == 0
+                && out1.contains("answer=1")
+                && out2.contains("answer=2")
+        }
+    }
+}

@@ -759,7 +759,7 @@ Per spec (Axis 20): F-codes are stable identifiers. Ranges: F0001-0999 lexer/par
 - **`export let` vs `export mut`:** `let` compiles to local allocas. Use `mut` for cross-module globals.
 - **Nullable `return null`:** use `maybe_wrap_nullable` (detects const_zero), not `wrap_in_nullable` (always tag=1).
 - **Type info:** use `LLVMGetAllocatedType` / `get_type_by_name` — never global flags or parallel lists. LLVM is single source of truth.
-- **Naming:** shadowing a fn/type name with a pattern var or local is now SAFE (zo1a fixed — the binding wins lexically, no closure leak), but still discouraged for readability. Short prefixes (`se`, `ss`, `sv`) keep intent clear.
+- **Naming:** shadowing a fn/type name with a pattern var or local is now SAFE (zo1a fixed — the binding wins lexically, no closure leak), but still discouraged for readability. Short prefixes (`se`, `ss`, `sv`) keep intent clear. **Never put `__` in a fn name** — `is_mangled_method` is `name.contains("__")`, so any such name reads as a `Type__method` mangling and the resolver SKIPS module-qualifying its decl while references resolve fully qualified; codegen then dies with `undefined name @…::<fn>` on a fn that plainly exists (the t-kd4y.3 `__gb_` adapter prefix was the caught instance — renamed `_gb_`; guard: typed_builder_synthesis_test's module-nested spec).
 - **Seed cycle is 3+ min** — use LLDB or C-side traces, never eprintln traces requiring rebuild.
 - **Duplicate codegen paths:** `emit_statement` exists twice (feature path + inline path). Both must handle all statement types.
 - **BasicBlockRefs CANNOT survive Avra global store/load** — use C-side `avra_loop_push/break` stack instead.

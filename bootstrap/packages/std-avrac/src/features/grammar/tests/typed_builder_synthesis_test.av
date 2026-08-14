@@ -78,7 +78,7 @@ spec "t-kd4y.3: typed build fns synthesize adapters + derived BuilderBinds at co
         let out = run_fixture("synth", probe_src())
         out.contains("__status=0\n")
             && out.contains("builders=1")
-            && out.contains("name=build_probe kind=stmt arity=1 export=__gb_build_probe")
+            && out.contains("name=build_probe kind=stmt arity=1 export=_gb_build_probe")
     }
     then "a build name matching no module fn synthesizes nothing" {
         let out = run_fixture("untouched", untouched_src())
@@ -87,5 +87,45 @@ spec "t-kd4y.3: typed build fns synthesize adapters + derived BuilderBinds at co
     then "rule/fn arity drift declines synthesis — no adapter with a known-wrong arity" {
         let out = run_fixture("drift", drift_src())
         out.contains("__status=0\n") && out.contains("builders=0")
+    }
+    then "a MODULE-NESTED instance synthesizes a resolvable, codegen-able adapter" {
+        // The real-feature shape (features/defer): typed fn + instance inside
+        // a file MODULE, not at entry scope. This is where the original
+        // `__gb_` adapter prefix died: `is_mangled_method` treats any name
+        // containing `__` as a `Type__method` mangling, so the resolver
+        // skipped module-qualifying the adapter DECL while every reference
+        // resolved fully qualified — codegen then failed with
+        // `undefined name @…::__gb_build_probe`. The `_gb_` prefix stays out
+        // of the mangling namespace; this fixture pins the whole loop
+        // (synthesis in a module scope → qualified decl → codegen → run).
+        let dir = "build/_typed_builder_nested"
+        let _ = avra_shell_exec("mkdir -p '${dir}'")
+        let _ = avra_selfhost_write_file("${dir}/probe_mod.av",
+            "use @std.avrac.features.{LanguageFeature, LanguageFeature_new}\n" +
+            "use @std.avrac.core.{ExprId, Stmt}\n" +
+            "use @std.avrac.features.grammar.{parse_grammar}\n" +
+            "\n" +
+            "fn build_probe(e: ExprId) -> Stmt { Stmt.Defer(e) }\n" +
+            "\n" +
+            "export fn mk() -> LanguageFeature {\n" +
+            "    let t = LanguageFeature_new(\"probe\") with { gram: grammar { probe_stmt = \"probetok\" e:expression -> build_probe(e) } }\n" +
+            "    t\n" +
+            "}\n")
+        let _ = avra_selfhost_write_file("${dir}/entry.av",
+            "use @std.avrac.features.{LanguageFeature}\n" +
+            "mod probe_mod\n" +
+            "use probe_mod.{mk}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    let t = mk()\n" +
+            "    println(\"builders=\" + string(t.builders.length))\n" +
+            "    if t.builders.length == 1 { println(\"export=\" + t.builders[0].export_name) }\n" +
+            "}\n")
+        let log = "${dir}/run.log"
+        let rc = avra_shell_exec_status("./build/bs2 run '${dir}/entry.av' > '${log}' 2>&1")
+        let out = "__status=${rc}\n" + avra_selfhost_read_file(log)
+        out.contains("__status=0\n")
+            && out.contains("builders=1")
+            && out.contains("export=_gb_build_probe")
     }
 }

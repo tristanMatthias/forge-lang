@@ -9,7 +9,7 @@
 // and this pass — running once over the expanded program, before name
 // resolution (resolve_and_expand_program) — synthesizes
 //
-//     export fn __gb_build_defer(st: PState, vals: List<CapVal>) -> CapVal {
+//     export fn _gb_build_defer(st: PState, vals: List<CapVal>) -> CapVal {
 //         capval_stmt_val(st, build_defer(capval_to_expr(st, vals[0])))
 //     }
 //
@@ -394,7 +394,7 @@ fn vtype_head_name(vt: ValueType) -> string {
 
 // ── Synthesis ──
 
-/// `export fn __gb_<name>(st: PState, vals: List<CapVal>) -> CapVal {
+/// `export fn _gb_<name>(st: PState, vals: List<CapVal>) -> CapVal {
 ///      <wrap>(st, <name>(<unwrap_i>(st, vals[i])…)) }`
 /// Exported because generated static parsers import it cross-module via the
 /// manifest-derived header line.
@@ -427,7 +427,7 @@ fn synth_adapter(store: NodeStore, sig: FnSig) -> StmtId {
 }
 
 export fn adapter_name(build_name: string) -> string {
-    "__gb_" + build_name
+    "_gb_" + build_name
 }
 
 /// The derived BuilderBind row: every field slice A made hand-authored,

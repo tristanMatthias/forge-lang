@@ -25,7 +25,7 @@ use build.cache.{cache_for, cache_entry_realobj_path, linked_bin_key, linked_bin
                  linked_bin_publish, entry_source_meta_path, ensure_source_meta_dir, entry_ll_path,
                  entry_covmap_path}
 use build.driver.{BuildInputs, BuildOutcome, decide_build, record_build_result, cached_build_fp}
-use build.fingerprint.{Fingerprint, fp_short, package_full_fingerprint, source_slot_fp}
+use build.fingerprint.{Fingerprint, fp_short, package_full_fingerprint, source_slot_fp, entry_mod_closure}
 use build.graph.{Unit, build_graph}
 use features.modules.{load_manifest, package_root_for_file, Manifest, Dep}
 use pathutil.{basename_no_ext, dirname}
@@ -194,11 +194,19 @@ export fn build_ir(req: BuildRequest, run: fn(string, string, int) -> int) -> Bu
     // key, so editing any source in the dep closure (not just the entry
     // file) misses the cache. "" (no manifest) → no dep axis.
     let full_fp = package_full_fingerprint(project_dir)
+    // The entry's `mod` sibling closure joins the sources so the key covers
+    // what the compile actually reads — without it a bare multi-module
+    // entry's key hashed only the entry file, and a sibling-only edit
+    // replayed the stale binary through the unit slot, the object store,
+    // AND the linked-binary cache in a row (entry_mod_closure's WHY).
+    // Empty for mod-less entries, so single-file keys are unchanged.
+    mut unit_sources: List<string> = [entry_path]
+    for s in entry_mod_closure(entry_path) { unit_sources.push(s) }
     let inputs = BuildInputs {
         project_root: project_dir,
         unit_name: unit_name,
         kind: target_kind,
-        sources: [entry_path],
+        sources: unit_sources,
         entry_path: entry_path,
         compiler_path: compiler_path,
         target_triple: "host",
