@@ -1,9 +1,0 @@
-// WHY: parses `channel<T>()` / `channel<T>(cap)` into Expr.ChannelNew.
-// Spec Axis 18: typed channel construction. Capacity selects the
-// semantics — absent = unbounded, 0 = rendezvous, N > 0 = bounded.
-
-use parse.{Parser}
-use core.{Expr, Tk, type_expr_to_vtype, NodeRef, byte_span_none}
-
-impl Parser {
-}

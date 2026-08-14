@@ -1,9 +1,0 @@
-// WHY: parses `isolated { body }` into an Isolated expression.
-// Sibling of `spawn { }` but with process isolation — body runs in
-// a forked subprocess, return value marshals back through a pipe.
-
-use parse.{Parser}
-use core.{Expr, Tk, ExprId}
-
-impl Parser {
-}

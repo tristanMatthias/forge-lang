@@ -85,6 +85,30 @@ export fn avra_match_arm_grammar() -> Grammar {
     grammar_checked(gp)
 }
 
+/// The `match` STATEMENT rule — the third fragment this feature owns
+/// (t-47hc.8). The statement views compose it beside the arm and table
+/// fragments it references, so the whole statement surface of `match`
+/// reads out of this one file; no view keeps a copy.
+///
+/// t-47hc.22: the SUBJECTLESS form `match { cond -> body }` leads. Its arms
+/// take `_` as the ONLY default (never `else`, which `when { … }` does
+/// accept) — see the match_when_arm note above. The `@peek` is decisive
+/// (`match` then `{`), so the branch is predictive and owns its own `}`
+/// diagnostic. The TABLE sub-language is peeled off next by lookahead
+/// (`@peek(match_table)` scans to the body brace and asks whether `table`
+/// precedes it); with table peeled, the ordinary subject form no longer
+/// needs to speculate — it is PREDICTIVE and owns BOTH of its diagnostics
+/// (the old `@try` was load-bearing only so a table header could roll back
+/// through it, which cost every ordinary `match` a snapshot).
+export fn avra_match_stmt_grammar() -> Grammar {
+    let gp = grammar {
+  match_stmt    = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhenStmt(a)
+                | @peek(match_table) match_table_stmt
+                | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatch(subj, arms)
+    }
+    grammar_checked(gp)
+}
+
 /// t-47hc.29 — a match-table CELL. This is `parse_primary` (parse/mod.av:2528) and
 /// deliberately NOT `@hand(primary_base)`.
 ///
