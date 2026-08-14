@@ -14,7 +14,8 @@
 // export now propagates to its generated type + factory.
 
 extern fn avra_shell_exec(cmd: string) -> string
-use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file, ExprId, StmtId}
+use @std.avrac.features.grammar.{CapVal, capval_to_node_list, capval_to_stmt_list}
 
 fn probe_src() -> string {
     "use @std.avrac.features.{LanguageFeature, LanguageFeature_new}\n" +
@@ -31,6 +32,50 @@ fn probe_src() -> string {
     "        println(\"name=\" + b.name + \" kind=\" + b.kind + \" arity=\" + string(b.arity) + \" export=\" + b.export_name)\n" +
     "    }\n" +
     "}\n"
+}
+
+/// The match-flip marshalling rows (t-kd4y.3 slice), one fn per new capture/
+/// result shape: pattern + optional-guard + expr params deriving an ARM
+/// (MkArm's exact signature), a WARM builder, a list-accumulator param
+/// deriving an EXPR, and token-text params deriving a PATTERN. The derived
+/// kinds/arities are asserted verbatim; the ADAPTERS' correctness is proven
+/// by the fixture compiling and running at all — a wrong unwrap arity
+/// (takes_st drift) or a missing helper import is a compile error here.
+fn rows_src() -> string {
+    """
+use @std.avrac.features.{LanguageFeature, LanguageFeature_new}
+use @std.avrac.core.{ExprId, PatId, Stmt, Expr, MatchArm, WhenArm, Pattern}
+use @std.avrac.features.grammar.{parse_grammar}
+
+fn build_arm(p: PatId, g: ExprId?, b: ExprId) -> MatchArm {
+    MatchArm { pattern: Pattern.Wildcard, pattern_id: p, guard_id: g, body_id: b }
+}
+fn build_when(c: ExprId, b: ExprId) -> WhenArm {
+    WhenArm { cond_id: c, body_id: b }
+}
+fn build_list(xs: List<ExprId>) -> Expr { Expr.ListLit(xs) }
+fn build_variant(name: string, binds: List<string>) -> Pattern {
+    let subs: List<PatId> = []
+    if binds.length > 99 { println("unreachable") }
+    Pattern.NestedVariant(name, subs)
+}
+
+fn show(t: LanguageFeature) {
+    for b in t.builders {
+        println("bind name=" + b.name + " kind=" + b.kind + " arity=" + string(b.arity) + " export=" + b.export_name)
+    }
+}
+
+fn main() {
+    let t = LanguageFeature_new("rows") with { gram: grammar {
+        arm_probe  = "armtok" p:pattern ( "if" g:expression )? "->" b:expression -> build_arm(p, g, b)
+        when_probe = "whentok" c:expression "->" b:expression -> build_when(c, b)
+        list_probe = "listtok" x:expression ( "," x:expression )* -> build_list(x)
+        var_probe  = "vartok" n:IDENT ( "," bs:IDENT )* -> build_variant(n, bs)
+    } }
+    show(t)
+}
+"""
 }
 
 /// Rule/fn ARITY drift: the rule supplies one capture, the fn declares two
@@ -87,6 +132,30 @@ spec "t-kd4y.3: typed build fns synthesize adapters + derived BuilderBinds at co
     then "rule/fn arity drift declines synthesis — no adapter with a known-wrong arity" {
         let out = run_fixture("drift", drift_src())
         out.contains("__status=0\n") && out.contains("builders=0")
+    }
+    then "list unwraps preserve SINGLETON captures (one-effective-value repetition)" {
+        // `x:expression ("," x:expression)* ` leaves x as a SCALAR CapVal
+        // when exactly one item matched — the rows point at the engine's
+        // scalar-or-list converters, which normalise that into a singleton
+        // list. A reader matching only the list carrier silently dropped
+        // the value (caught in review before any feature shipped on it).
+        let one = capval_to_node_list(CapVal.Node(ExprId(7)))
+        let many = capval_to_node_list(CapVal.Nodes([ExprId(1), ExprId(2)]))
+        let nil = capval_to_node_list(CapVal.Nil)
+        let sone = capval_to_stmt_list(CapVal.SNode(StmtId(9)))
+        one.length == 1 && many.length == 2 && nil.length == 0 && sone.length == 1
+    }
+    then "the match-flip rows derive: pat/optional/list/token params, arm/warm/expr/pat returns" {
+        // Compiling + running rows_src IS the adapter proof: a takes_st
+        // drift, a missing helper import, or an uncovered type is a compile
+        // error of the fixture, not a soft skip (sig_supported covered every
+        // param, or the bind below would not print).
+        let out = run_fixture("rows", rows_src())
+        out.contains("__status=0\n")
+            && out.contains("bind name=build_arm kind=arm arity=3 export=_gb_build_arm")
+            && out.contains("bind name=build_when kind=warm arity=2 export=_gb_build_when")
+            && out.contains("bind name=build_list kind=expr arity=1 export=_gb_build_list")
+            && out.contains("bind name=build_variant kind=pat arity=2 export=_gb_build_variant")
     }
     then "a MODULE-NESTED instance synthesizes a resolvable, codegen-able adapter" {
         // The real-feature shape (features/defer): typed fn + instance inside
