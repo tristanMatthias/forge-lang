@@ -1,0 +1,407 @@
+// WHY: t-kd4y.3 typed build fns — the expansion that makes a grammar rule's
+// `-> build_defer(e)` resolve to a MODULE-LOCAL TYPED FN, with the CapVal
+// adapter and the whole BuilderBind record DERIVED from the fn's signature.
+// The feature author writes
+//
+//     fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
+//     LanguageFeature t { gram = grammar { defer_stmt = "defer" e:expression -> build_defer(e) }, … }
+//
+// and this pass — running once over the expanded program, before name
+// resolution (resolve_and_expand_program) — synthesizes
+//
+//     export fn __gb_build_defer(st: PState, vals: List<CapVal>) -> CapVal {
+//         capval_stmt_val(st, build_defer(capval_to_expr(st, vals[0])))
+//     }
+//
+// at module level and appends `builders = [BuilderBind { … }]` to the
+// instance's overrides. Comptime-ephemeral: the adapter exists only as
+// generated AST (the @derive precedent), never in a source file; the
+// checked-in generated parsers inline the same derivation at regen, which is
+// the audit surface. Because the adapter CONTAINS a real call to the typed
+// fn, arity/type drift between rule and fn is an ordinary compile error in
+// the feature's own file — not a startup surprise (slice A's registry-build
+// validation stays as the backstop and covers hand-supplied binds).
+//
+// The reference IS the registration (design ratified 2026-08-13): no
+// annotation, no .bind() chain — a build name that is not an engine build
+// (central_build_kind == "") and matches a module fn is the intent signal.
+// Names matching neither stay untouched for slice A's "resolves to no
+// builder" startup diagnostic.
+//
+// The marshalling tables (unwrap_call_for / wrap_helper_for) grow one row
+// per capture/result type as features migrate; a referenced fn using a type
+// outside them is SKIPPED whole (never half-adapted), leaving the name
+// unresolved for the startup diagnostic. Bootstrap: compiler src may only
+// dogfood typed build refs AFTER the seed train ships this pass (standard
+// two-cycle bridge — the pinned seed must expand them to build a src that
+// uses them).
+
+use core.{NodeStore, Stmt, Expr, StmtId, ExprId, ValueType, ParamEntry, TypeParamEntry, FieldInit, Annotation, stmt_unwrap, rewrap_annotations}
+use features.grammar.{parse_grammar, grammar_build_refs, central_build_kind, BuildRef}
+
+/// One module-local fn signature, indexed for build-name resolution.
+type FnSig = { name: string, params: List<ParamEntry>, ret: ValueType }
+
+/// The entry: rewrite `ids` (one program's top-level statements) so every
+/// LanguageFeature instance whose gram references module-local typed fns
+/// gains generated adapters + a derived `builders` list. Programs with no
+/// such instance pass through with every row untouched.
+export fn synthesize_typed_builders(ids: List<StmtId>, store: NodeStore) -> List<StmtId> {
+    // The engine-helper import the generated adapters need: relative when
+    // this program IS the compiler package (an absolute self-import
+    // double-expands every derive — the F4012 trap the generated-parser
+    // headers document), absolute for every other program.
+    let absolute = !has_grammar_module(ids, store)
+    rewrite_scope(ids, store, "", absolute)
+}
+
+fn has_grammar_module(ids: List<StmtId>, store: NodeStore) -> bool {
+    for id in ids {
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Module(mname, body) -> {
+                if mname == "features" {
+                    for cid in body {
+                        match stmt_unwrap(store, store.stmts.get(cid)) {
+                            .Module(cname, _) -> { if cname == "grammar" { return true } }
+                            _ -> {}
+                        }
+                    }
+                }
+            }
+            _ -> {}
+        }
+    }
+    false
+}
+
+/// `use <path>.{capval helpers + engine types}` — prepended to any scope
+/// that gained adapters, so the generated bodies resolve regardless of what
+/// the feature's own imports carry.
+fn helper_use_row(store: NodeStore, absolute: bool) -> StmtId {
+    let path = if absolute { "@std.avrac.features.grammar" } else { "features.grammar" }
+    let names: List<ParamEntry> = [
+        ParamEntry { name: "capval_stmt_val", vtype: ValueType.Unknown },
+        ParamEntry { name: "capval_to_expr", vtype: ValueType.Unknown },
+        ParamEntry { name: "PState", vtype: ValueType.Unknown },
+        ParamEntry { name: "CapVal", vtype: ValueType.Unknown },
+        ParamEntry { name: "BuilderBind", vtype: ValueType.Unknown },
+    ]
+    store.stmts.add_leaf(Stmt.Use(path, names))
+}
+
+/// Rewrite one MODULE scope: index its fns, rewrite instance bindings in its
+/// statements (including inside fn bodies — definition factories build
+/// instances there), recurse into child modules, and append any synthesized
+/// adapters at the scope's end (exported, so generated parsers can import
+/// them by the manifest-derived path).
+fn rewrite_scope(ids: List<StmtId>, store: NodeStore, mod_path: string, absolute: bool) -> List<StmtId> {
+    let sigs = index_fn_sigs(ids, store)
+    mut out: List<StmtId> = []
+    mut adapters: List<StmtId> = []
+    for id in ids {
+        let node = store.stmts.get(id)
+        match stmt_unwrap(store, node) {
+            .Module(mname, body) -> {
+                let child_path = if mod_path == "" { mname } else { mod_path + "." + mname }
+                let new_body = rewrite_scope(body, store, child_path, absolute)
+                out.push(store.stmts.add_leaf(rewrap_annotations(store, node, Stmt.Module(mname, new_body))))
+            }
+            .Function(fname, tp, params, ret, body) -> {
+                // Definition factories construct instances inside fn bodies —
+                // rewrite those rows against THIS module's fn index.
+                let r = rewrite_rows(body, store, mod_path, sigs)
+                adapters = list_concat_stmt(adapters, r.adapters)
+                if r.changed {
+                    out.push(store.stmts.add_leaf(rewrap_annotations(store, node, Stmt.Function(fname, tp, params, ret, r.rows))))
+                } else {
+                    out.push(id)
+                }
+            }
+            _ -> {
+                let r = rewrite_rows([id], store, mod_path, sigs)
+                adapters = list_concat_stmt(adapters, r.adapters)
+                if r.changed { out.push(r.rows[0]) } else { out.push(id) }
+            }
+        }
+    }
+    if adapters.length == 0 { return out }
+    mut with_use: List<StmtId> = [helper_use_row(store, absolute)]
+    with_use = list_concat_stmt(with_use, out)
+    list_concat_stmt(with_use, adapters)
+}
+
+type RowsResult = { rows: List<StmtId>, adapters: List<StmtId>, changed: bool }
+
+/// Rewrite instance-binding rows in one statement list. Only Let/Mut whose
+/// init is `LanguageFeature_new(…) with { … }` and whose overrides carry a
+/// `gram` pair (and no hand-written `builders` pair) are candidates.
+fn rewrite_rows(rows: List<StmtId>, store: NodeStore, mod_path: string, sigs: List<FnSig>) -> RowsResult {
+    mut out: List<StmtId> = []
+    mut adapters: List<StmtId> = []
+    mut changed = false
+    for id in rows {
+        let node = store.stmts.get(id)
+        let r = rewrite_instance(store, node, mod_path, sigs)
+        if r.changed {
+            out.push(store.stmts.add_leaf(rewrap_annotations(store, node, r.stmt)))
+            adapters = list_concat_stmt(adapters, r.adapters)
+            changed = true
+        } else {
+            out.push(id)
+        }
+    }
+    RowsResult { rows: out, adapters: adapters, changed: changed }
+}
+
+type InstanceResult = { stmt: Stmt, adapters: List<StmtId>, changed: bool }
+
+fn no_rewrite() -> InstanceResult {
+    let empty: List<StmtId> = []
+    InstanceResult { stmt: Stmt.Break, adapters: empty, changed: false }
+}
+
+fn rewrite_instance(store: NodeStore, node: Stmt, mod_path: string, sigs: List<FnSig>) -> InstanceResult {
+    match stmt_unwrap(store, node) {
+        .Let(nm, vt, init_id) -> {
+            let r = rewrite_init(store, init_id, mod_path, sigs)
+            if !r.changed { return no_rewrite() }
+            InstanceResult { stmt: Stmt.Let(nm, vt, r.init), adapters: r.adapters, changed: true }
+        }
+        .Mut(nm, vt, init_id) -> {
+            let r = rewrite_init(store, init_id, mod_path, sigs)
+            if !r.changed { return no_rewrite() }
+            InstanceResult { stmt: Stmt.Mut(nm, vt, r.init), adapters: r.adapters, changed: true }
+        }
+        _ -> no_rewrite()
+    }
+}
+
+type InitResult = { init: ExprId, adapters: List<StmtId>, changed: bool }
+
+fn no_init_rewrite() -> InitResult {
+    let empty: List<StmtId> = []
+    InitResult { init: ExprId(0), adapters: empty, changed: false }
+}
+
+fn rewrite_init(store: NodeStore, init_id: ExprId, mod_path: string, sigs: List<FnSig>) -> InitResult {
+    match store.exprs.get(init_id) {
+        .With(base_id, inits) -> {
+            if !is_lang_feature_new(store, base_id) { return no_init_rewrite() }
+            if has_field(inits, "builders") { return no_init_rewrite() }
+            let text = gram_text_of(store, inits)
+            if text == "" { return no_init_rewrite() }
+            let gp = parse_grammar(text)
+            // A malformed gram is register_lang's F9999 to report, not ours.
+            if gp.error != "" { return no_init_rewrite() }
+            let refs = grammar_build_refs(gp.grammar)
+            let targets = typed_targets(refs, sigs)
+            if targets.length == 0 { return no_init_rewrite() }
+            mut adapters: List<StmtId> = []
+            mut bind_rows: List<ExprId> = []
+            for sig in targets {
+                adapters.push(synth_adapter(store, sig))
+                bind_rows.push(bind_literal(store, sig, mod_path))
+            }
+            let builders_init = FieldInit { name: "builders", value_id: store.exprs.add_leaf(Expr.ListLit(bind_rows)) }
+            mut new_inits: List<FieldInit> = []
+            for fi in inits { new_inits.push(fi) }
+            new_inits.push(builders_init)
+            InitResult { init: store.exprs.add_leaf(Expr.With(base_id, new_inits)), adapters: adapters, changed: true }
+        }
+        _ -> no_init_rewrite()
+    }
+}
+
+// ── Recognition ──
+
+fn is_lang_feature_new(store: NodeStore, base_id: ExprId) -> bool {
+    match store.exprs.get(base_id) {
+        .Call(callee_id, _) -> {
+            match store.exprs.get(callee_id) {
+                .Ident(nm) -> nm == "LanguageFeature_new"
+                _ -> false
+            }
+        }
+        _ -> false
+    }
+}
+
+fn has_field(inits: List<FieldInit>, name: string) -> bool {
+    for fi in inits { if fi.name == name { return true } }
+    false
+}
+
+/// The raw DSL text of the instance's `gram` pair — the String argument of
+/// the `parse_grammar("…")` call the `grammar { }` block desugared to at
+/// parse time (executor.av mk_grammar_block), outer quotes stripped. ""
+/// when the pair is absent or shaped differently (e.g. a no_grammar()
+/// call), which simply opts the instance out.
+fn gram_text_of(store: NodeStore, inits: List<FieldInit>) -> string {
+    for fi in inits {
+        if fi.name != "gram" { continue }
+        match store.exprs.get(fi.value_id) {
+            .Call(callee_id, args) -> {
+                match store.exprs.get(callee_id) {
+                    .Ident(nm) -> {
+                        if nm != "parse_grammar" || args.length != 1 { return "" }
+                        match store.exprs.get(args[0]) {
+                            .String(quoted) -> return strip_quotes(quoted)
+                            _ -> return ""
+                        }
+                    }
+                    _ -> return ""
+                }
+            }
+            _ -> return ""
+        }
+    }
+    ""
+}
+
+fn strip_quotes(s: string) -> string {
+    if s.length < 2 { return "" }
+    s.substring(1, s.length - 1)
+}
+
+/// The referenced build names that resolve as typed fns: not an engine
+/// build, matching a module fn, and every param + the return type covered
+/// by the marshalling tables. One entry per NAME (a rule set referencing a
+/// builder twice still generates one adapter).
+fn typed_targets(refs: List<BuildRef>, sigs: List<FnSig>) -> List<FnSig> {
+    mut out: List<FnSig> = []
+    for r in refs {
+        if central_build_kind(r.name) != "" { continue }
+        for sig in sigs {
+            if sig.name != r.name { continue }
+            if !sig_supported(sig) { continue }
+            mut seen = false
+            for done in out { if done.name == sig.name { seen = true } }
+            if !seen { out.push(sig) }
+        }
+    }
+    out
+}
+
+fn sig_supported(sig: FnSig) -> bool {
+    if wrap_helper_for(sig.ret) == "" { return false }
+    for p in sig.params {
+        if unwrap_call_for(p.vtype) == "" { return false }
+    }
+    true
+}
+
+// ── The type-directed marshalling tables ──
+//
+// One row per capture type a typed builder may take / result type it may
+// return. Rows are added as migrating features need them; an uncovered type
+// fails sig_supported (whole-fn skip, never a half-adapted builder).
+
+/// Param type → the capval unwrap fn wrapping `vals[i]`.
+fn unwrap_call_for(vt: ValueType) -> string {
+    match vtype_head_name(vt) {
+        "ExprId" -> "capval_to_expr"
+        _ -> ""
+    }
+}
+
+/// Return type → the capval wrap helper (executor.av capval_*_val) and,
+/// via kind_for_wrap, the BuilderBind kind.
+fn wrap_helper_for(vt: ValueType) -> string {
+    match vtype_head_name(vt) {
+        "Stmt" -> "capval_stmt_val"
+        _ -> ""
+    }
+}
+
+fn kind_for_wrap(vt: ValueType) -> string {
+    match vtype_head_name(vt) {
+        "Stmt" -> "stmt"
+        _ -> ""
+    }
+}
+
+/// The nominal head name of a pre-resolve type annotation (the parser
+/// defaults unresolved names to Struct; resolved forms keep the name).
+fn vtype_head_name(vt: ValueType) -> string {
+    match vt {
+        .Struct(n, _, _) -> n
+        .Enum(n, _, _) -> n
+        .Newtype(n, _, _) -> n
+        _ -> ""
+    }
+}
+
+// ── Synthesis ──
+
+/// `export fn __gb_<name>(st: PState, vals: List<CapVal>) -> CapVal {
+///      <wrap>(st, <name>(<unwrap_i>(st, vals[i])…)) }`
+/// Exported because generated static parsers import it cross-module via the
+/// manifest-derived header line.
+fn synth_adapter(store: NodeStore, sig: FnSig) -> StmtId {
+    mut args: List<ExprId> = []
+    mut i = 0
+    while i < sig.params.length {
+        let idx = store.exprs.add_leaf(Expr.Index(
+            store.exprs.add_leaf(Expr.Ident("vals")),
+            store.exprs.add_leaf(Expr.Number("${i}"))))
+        args.push(store.exprs.add_leaf(Expr.Call(
+            store.exprs.add_leaf(Expr.Ident(unwrap_call_for(sig.params[i].vtype))),
+            [store.exprs.add_leaf(Expr.Ident("st")), idx])))
+        i = i + 1
+    }
+    let typed_call = store.exprs.add_leaf(Expr.Call(store.exprs.add_leaf(Expr.Ident(sig.name)), args))
+    let wrapped = store.exprs.add_leaf(Expr.Call(
+        store.exprs.add_leaf(Expr.Ident(wrap_helper_for(sig.ret))),
+        [store.exprs.add_leaf(Expr.Ident("st")), typed_call]))
+    let fn_params: List<ParamEntry> = [
+        ParamEntry { name: "st", vtype: ValueType.Struct("PState", [], 0) },
+        ParamEntry { name: "vals", vtype: ValueType.List(ValueType.Struct("CapVal", [], 0)) },
+    ]
+    let body: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(wrapped))]
+    let empty_tp: List<TypeParamEntry> = []
+    let decl = Stmt.Function(adapter_name(sig.name), empty_tp, fn_params, ValueType.Struct("CapVal", [], 0), body)
+    let no_args: List<ExprId> = []
+    let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
+    store.stmts.add_leaf(Stmt.Annotated(exp, store.stmts.add_leaf(decl)))
+}
+
+export fn adapter_name(build_name: string) -> string {
+    "__gb_" + build_name
+}
+
+/// The derived BuilderBind row: every field slice A made hand-authored,
+/// read off the signature and the expansion site instead.
+fn bind_literal(store: NodeStore, sig: FnSig, mod_path: string) -> ExprId {
+    let fields: List<FieldInit> = [
+        FieldInit { name: "name", value_id: str_lit(store, sig.name) },
+        FieldInit { name: "kind", value_id: str_lit(store, kind_for_wrap(sig.ret)) },
+        FieldInit { name: "arity", value_id: store.exprs.add_leaf(Expr.Number("${sig.params.length}")) },
+        FieldInit { name: "module", value_id: str_lit(store, mod_path) },
+        FieldInit { name: "export_name", value_id: str_lit(store, adapter_name(sig.name)) },
+        FieldInit { name: "build", value_id: store.exprs.add_leaf(Expr.Ident(adapter_name(sig.name))) },
+    ]
+    store.exprs.add_leaf(Expr.StructLit("BuilderBind", fields))
+}
+
+fn str_lit(store: NodeStore, s: string) -> ExprId {
+    store.exprs.add_leaf(Expr.String("\"" + s + "\""))
+}
+
+// ── Fn-signature index ──
+
+fn index_fn_sigs(ids: List<StmtId>, store: NodeStore) -> List<FnSig> {
+    mut out: List<FnSig> = []
+    for id in ids {
+        match stmt_unwrap(store, store.stmts.get(id)) {
+            .Function(name, _, params, ret, _) -> out.push(FnSig { name: name, params: params, ret: ret })
+            _ -> {}
+        }
+    }
+    out
+}
+
+fn list_concat_stmt(a: List<StmtId>, b: List<StmtId>) -> List<StmtId> {
+    mut out = a
+    for x in b { out.push(x) }
+    out
+}

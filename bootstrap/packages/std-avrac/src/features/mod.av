@@ -61,7 +61,7 @@ fn no_grammar() -> GrammarParse {
     GrammarParse { grammar: Grammar { name: "", rules, rule_idx: build_rule_index(rules) }, error: "" }
 }
 
-component LanguageFeature {
+export component LanguageFeature {
     config {
         title: string = "",
         docs: string = "",

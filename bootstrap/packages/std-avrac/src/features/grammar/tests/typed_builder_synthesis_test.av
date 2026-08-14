@@ -1,0 +1,69 @@
+// WHY: t-kd4y.3 typed build fns — the END-TO-END proof that a grammar rule's
+// `-> build_probe(e)` referencing a MODULE-LOCAL TYPED FN synthesizes its
+// CapVal adapter + derived BuilderBind at comptime (typed_builders.av), with
+// nothing hand-authored and nothing stored in a file. The child program the
+// fixture compiles exercises the WHOLE loop: grammar-block desugar →
+// synthesis (signature read, adapter generation, builders derivation) →
+// resolve (injected engine-helper import) → typecheck (the adapter's REAL
+// call to build_probe) → codegen → run. The printed BuilderBind fields are
+// the derivation, asserted verbatim.
+//
+// Also the guard for `export component` (the visibility half of the same
+// slice): the child imports LanguageFeature + LanguageFeature_new
+// cross-package, which only resolves because the component declaration's
+// export now propagates to its generated type + factory.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
+
+fn probe_src() -> string {
+    "use @std.avrac.features.{LanguageFeature, LanguageFeature_new}\n" +
+    "use @std.avrac.core.{ExprId, Stmt}\n" +
+    "use @std.avrac.features.grammar.{parse_grammar}\n" +
+    "\n" +
+    "fn build_probe(e: ExprId) -> Stmt { Stmt.Defer(e) }\n" +
+    "\n" +
+    "fn main() {\n" +
+    "    let t = LanguageFeature_new(\"probe\") with { gram: grammar { probe_stmt = \"probetok\" e:expression -> build_probe(e) } }\n" +
+    "    println(\"builders=\" + string(t.builders.length))\n" +
+    "    if t.builders.length == 1 {\n" +
+    "        let b = t.builders[0]\n" +
+    "        println(\"name=\" + b.name + \" kind=\" + b.kind + \" arity=\" + string(b.arity) + \" export=\" + b.export_name)\n" +
+    "    }\n" +
+    "}\n"
+}
+
+/// A control the pass must NOT touch: the referenced name matches no module
+/// fn, so no adapter synthesizes and the instance keeps an empty builders
+/// list (slice A's startup validation owns the diagnostic story for
+/// registered features; a plain value just stays empty).
+fn untouched_src() -> string {
+    "use @std.avrac.features.{LanguageFeature, LanguageFeature_new}\n" +
+    "use @std.avrac.features.grammar.{parse_grammar}\n" +
+    "\n" +
+    "fn main() {\n" +
+    "    let t = LanguageFeature_new(\"plain\") with { gram: grammar { plain_stmt = \"plaintok\" e:expression -> NotAFn(e) } }\n" +
+    "    println(\"builders=\" + string(t.builders.length))\n" +
+    "}\n"
+}
+
+fn run_fixture(name: string, src: string) -> string {
+    let fixture = "build/_typed_builder_${name}.av"
+    let log = "build/_typed_builder_${name}.log"
+    let _ = avra_selfhost_write_file(fixture, src)
+    let rc = avra_shell_exec_status("./build/bs2 run '${fixture}' > '${log}' 2>&1")
+    "__status=${rc}\n" + avra_selfhost_read_file(log)
+}
+
+spec "t-kd4y.3: typed build fns synthesize adapters + derived BuilderBinds at comptime" {
+    then "a rule referencing a module-local typed fn derives its whole BuilderBind from the signature" {
+        let out = run_fixture("synth", probe_src())
+        out.contains("__status=0\n")
+            && out.contains("builders=1")
+            && out.contains("name=build_probe kind=stmt arity=1 export=__gb_build_probe")
+    }
+    then "a build name matching no module fn synthesizes nothing" {
+        let out = run_fixture("untouched", untouched_src())
+        out.contains("__status=0\n") && out.contains("builders=0")
+    }
+}

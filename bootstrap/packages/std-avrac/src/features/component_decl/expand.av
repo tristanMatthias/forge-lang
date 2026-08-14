@@ -280,7 +280,7 @@ fn config_pairs_to_field_inits(store: NodeStore, pairs: List<CompConfigPair>) ->
 /// triple `type Name`, its prefixed method fns, and a factory
 /// `fn name_new(name) -> Name`. Spliced ahead of `rest` so the
 /// surrounding code sees the synthesized definitions.
-fn splice_component_def(store: NodeStore, name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, body: List<StmtId>, line: int, col: int, rest: List<StmtId>) -> List<StmtId> {
+fn splice_component_def(store: NodeStore, name: string, params: List<ParamEntry>, config: List<CompConfig>, children: List<ChildrenSlot>, body: List<StmtId>, line: int, col: int, rest: List<StmtId>, exported: bool) -> List<StmtId> {
     // Fields: implicit `name` + config + children-slot lists (vez6.7).
     let type_name = capitalize(name)
     let config_fields = config_to_fields(config)
@@ -303,8 +303,19 @@ fn splice_component_def(store: NodeStore, name: string, params: List<ParamEntry>
 
     let methods = extract_methods(store, body, name)
 
-    let synthesized: List<StmtId> = [synth_row(store, type_decl, line, col), synth_row(store, factory, line, col)]
+    let type_row = synth_row(store, export_wrap(store, type_decl, exported), line, col)
+    let factory_row = synth_row(store, export_wrap(store, factory, exported), line, col)
+    let synthesized: List<StmtId> = [type_row, factory_row]
     list_concat(synthesized, list_concat(methods, rest))
+}
+
+/// Wrap a synthesized decl in the export annotation when the component
+/// declaration itself was exported.
+fn export_wrap(store: NodeStore, decl: Stmt, exported: bool) -> Stmt {
+    if !exported { return decl }
+    let no_args: List<ExprId> = []
+    let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
+    Stmt.Annotated(exp, store.stmts.add_leaf(decl))
 }
 
 // ── vez6.7.6: children-slot fields + auto-push ──
@@ -570,7 +581,11 @@ fn expand_stmt_list(store: NodeStore, stmts: List<StmtId>, reg: List<CompDefEntr
         let inner = stmt_unwrap_deep(store, node)
         tail = match inner {
             .ComponentDef(name, params, config, children, _, body) -> {
-                splice_component_def(store, name, params, config, children, body, p.line, p.col, tail)
+                // `export component X { }` exports the generated type +
+                // factory too (t-kd4y.3: external programs and test shards
+                // construct data-component instances through them).
+                let exported = find_annotation(store, node, "export") != null
+                splice_component_def(store, name, params, config, children, body, p.line, p.col, tail, exported)
             }
             .ComponentBlock(comp, inst, config, body) -> {
                 let lookup = comp_reg_lookup(reg, comp)

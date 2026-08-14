@@ -5511,6 +5511,13 @@ export fn mk_shape_decl(st: PState, name: string, fields: List<FieldEntry>) -> C
 /// side-table write on a node the builder receives already-built, so it does not belong
 /// here — `mk_stamp_stmt_at` does it, driven by the inner rule's own entry byte. See its
 /// WHY for what happens when it is skipped.
+/// Wrap helpers for GENERATED typed-builder adapters (typed_builders.av,
+/// t-kd4y.3): one per result family, so a synthesized adapter body is a
+/// plain nested call — no enum-ctor AST construction in the expansion.
+export fn capval_stmt_val(st: PState, s: Stmt) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(s))
+}
+
 export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
     let no_args: List<ExprId> = []
     let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
