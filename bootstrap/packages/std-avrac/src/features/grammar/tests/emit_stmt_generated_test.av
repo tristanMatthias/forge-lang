@@ -43,8 +43,11 @@ spec "grammar emitter: renders the statement family's generated static parser" {
         src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Break))") &&
         src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))") &&
         src.contains("mk_return_opt(st, e)") &&
-        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, e))))") &&
-        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, e))))") &&
+        // defer/errdefer lower through the FEATURE manifest post-flip
+        // (t-kd4y.3): the emitted call is the derived adapter's ABI form,
+        // not a central SNode construction.
+        src.contains("_gb_build_defer(st, [e])") &&
+        src.contains("_gb_build_errdefer(st, [e])") &&
         src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, e))))")
     }
 

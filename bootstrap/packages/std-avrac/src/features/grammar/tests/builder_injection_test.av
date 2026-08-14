@@ -133,6 +133,24 @@ spec "t-kd4y.3: generated import headers derive from the manifest" {
     }
 }
 
+spec "t-kd4y.3: defer resolves through the manifest — the flip's registration proof" {
+    then "build_defer/build_errdefer ride the production manifest as stmt builders" {
+        // The engine carries NO central defer rows anymore (executor arm,
+        // emit arm, and central_build_kind line all deleted); this is the
+        // spec stmt_binding_test's port note points at — the defer FEATURE's
+        // typed fns, derived to manifest rows by synthesis, are the one
+        // lowering the spine's defer rules resolve to.
+        let binds = feature_builders()
+        mut d = ""
+        mut ed = ""
+        for b in binds {
+            if b.name == "build_defer" { d = "${b.kind}/${string(b.arity)}/${b.export_name}" }
+            if b.name == "build_errdefer" { ed = "${b.kind}/${string(b.arity)}/${b.export_name}" }
+        }
+        d == "stmt/1/_gb_build_defer" && ed == "stmt/1/_gb_build_errdefer"
+    }
+}
+
 spec "t-kd4y.3: the production manifest is duplicate-free" {
     then "no build name is supplied by two features" {
         let binds = feature_builders()

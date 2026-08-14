@@ -26,6 +26,15 @@ fn check_effect_body(tc: TC, body: ExprId) -> TC {
     check_expr(tc_gate_unthreaded_lambda(tc, e), e).tc
 }
 
+/// Typed grammar builders (t-kd4y.3): the gram references these fns
+/// directly and the whole raw-ABI surface — the CapVal adapter, the
+/// BuilderBind manifest row, the generated parser's import — is DERIVED
+/// from the signatures at comptime (grammar/typed_builders.av). The
+/// engine's central tables carry no defer rows anymore; these two fns ARE
+/// the lowering.
+export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
+export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
+
 export fn defer_lang() -> LanguageFeature {
     LanguageFeature defer_def {
         name = "defer",
@@ -48,7 +57,7 @@ an `if` branch fires when that block exits, not at function return.
 Defers run on EVERY exit path: normal return, fall-through, `break`,
 and error propagation via `?`.
 """,
-        gram = grammar { defer_stmt = "defer" e:expression -> MkDefer(e) },
+        gram = grammar { defer_stmt = "defer" e:expression -> build_defer(e) },
         snippet = r"defer ${1:cleanup()}",
         stmt_tag = Stmt.Defer(ExprId(0)),
         emit_stmt = (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->
@@ -78,7 +87,7 @@ reverses correctly on cleanup:
     let buf = alloc_buf()
     errdefer free_buf(buf)     // only if a later step fails
 """,
-        gram = grammar { errdefer_stmt = "errdefer" e:expression -> MkErrdefer(e) },
+        gram = grammar { errdefer_stmt = "errdefer" e:expression -> build_errdefer(e) },
         snippet = r"errdefer ${1:rollback()}",
         stmt_tag = Stmt.Errdefer(ExprId(0)),
         emit_stmt = (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->

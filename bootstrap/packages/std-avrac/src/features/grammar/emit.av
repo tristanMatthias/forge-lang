@@ -2384,8 +2384,6 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // `return ^( value )?` — the conditional Return/ReturnEmpty core, shared with
         // apply_build's MkReturn arm so interpreter + generated parser stay in lockstep.
         "MkReturn" -> "mk_return_opt(st, ${args[0]})"
-        "MkDefer" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, ${args[0]}))))"
-        "MkErrdefer" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, ${args[0]}))))"
         // A statement-position expression that FAILED (st.had_error set by
         // parse_expression's report/error_node) recovers as a bare Stmt.Error (the
         // whole-program loop then synchronises via parse_declaration's

@@ -2561,7 +2561,7 @@ mode_emit_gen_check() {
 // the canonical expression grammar and writes a runnable module: the emitted
 // parse fns + the differential harness that compares the generated parser's
 // tree to the hand parser's over the §2 corpus.
-use @std.avrac.features.grammar.{avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, emit_parser_source}
+use @std.avrac.features.grammar.{avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, emit_parser_source, builder_import_lines}
 use @std.avrac.features.match.{avra_pat_grammar}
 use @std.avrac.core.{avra_selfhost_write_file}
 
@@ -2803,15 +2803,15 @@ fn program_harness_block() -> string {
 }
 
 fn main() {
-    let expr_src = imports_block() + emit_parser_source(avra_expr_grammar()) + "\n" + harness_block()
+    let expr_src = imports_block() + builder_import_lines(avra_expr_grammar()) + emit_parser_source(avra_expr_grammar()) + "\n" + harness_block()
     let _ = avra_selfhost_write_file("build/emit_gen/generated_parser.av", expr_src)
-    let stmt_src = stmt_imports_block() + emit_parser_source(avra_stmt_grammar()) + "\n" + stmt_harness_block()
+    let stmt_src = stmt_imports_block() + builder_import_lines(avra_stmt_grammar()) + emit_parser_source(avra_stmt_grammar()) + "\n" + stmt_harness_block()
     let _ = avra_selfhost_write_file("build/emit_gen/generated_stmt_parser.av", stmt_src)
-    let pat_src = pat_imports_block() + emit_parser_source(avra_pat_grammar()) + "\n" + pat_harness_block()
+    let pat_src = pat_imports_block() + builder_import_lines(avra_pat_grammar()) + emit_parser_source(avra_pat_grammar()) + "\n" + pat_harness_block()
     let _ = avra_selfhost_write_file("build/emit_gen/generated_pat_parser.av", pat_src)
-    let type_src = type_imports_block() + emit_parser_source(avra_type_grammar()) + "\n" + type_harness_block()
+    let type_src = type_imports_block() + builder_import_lines(avra_type_grammar()) + emit_parser_source(avra_type_grammar()) + "\n" + type_harness_block()
     let _ = avra_selfhost_write_file("build/emit_gen/generated_type_parser.av", type_src)
-    let prog_src = program_imports_block() + emit_parser_source(avra_program_grammar()) + "\n" + program_harness_block()
+    let prog_src = program_imports_block() + builder_import_lines(avra_program_grammar()) + emit_parser_source(avra_program_grammar()) + "\n" + program_harness_block()
     let _ = avra_selfhost_write_file("build/emit_gen/generated_program_parser.av", prog_src)
     println("wrote generated expr + stmt + pat + type + program parsers")
 }

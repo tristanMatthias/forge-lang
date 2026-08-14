@@ -4264,8 +4264,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // this build is on the PRODUCTION path now, so apply_build and the
         // generated static parser must lower through one implementation).
         "MkDestructure" if args.length == 2 -> mk_let_destructure_g(st, capval_tok_list(env.get(args[0])), env.get(args[1]))
-        "MkDefer" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Defer(capval_to_expr(st, env.get(args[0])))))
-        "MkErrdefer" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Errdefer(capval_to_expr(st, env.get(args[0])))))
         // ── Match statement builds (target: Stmt, ps3t.6.5.4) ──
         "MkArmReturn" if args.length == 1 -> mk_arm_return(st, 0 - 1, env.get(args[0]))
         "MkSpliceArm" if args.length == 1 -> mk_splice_arm(st, env.get(args[0]))
