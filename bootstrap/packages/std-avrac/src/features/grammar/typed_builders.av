@@ -259,6 +259,12 @@ fn is_lang_feature_new(store: NodeStore, base_id: ExprId) -> bool {
         .Call(callee_id, _) -> {
             match store.exprs.get(callee_id) {
                 .Ident(nm) -> nm == "LanguageFeature_new"
+                // The metadata lib path hands this pass ident-REWRITTEN rows
+                // (the expansion eval resolves in one shot there), so the
+                // factory arrives fully qualified — match its terminal name.
+                // A qualified *_new ending in LanguageFeature_new IS the
+                // component factory: the name is component-generated.
+                .QualifiedIdent(q) -> q.ends_with("::LanguageFeature_new")
                 _ -> false
             }
         }
@@ -523,7 +529,7 @@ fn list_concat_stmt(a: List<StmtId>, b: List<StmtId>) -> List<StmtId> {
     out
 }
 
-fn stmt_id_list_eq(a: List<StmtId>, b: List<StmtId>) -> bool {
+export fn stmt_id_list_eq(a: List<StmtId>, b: List<StmtId>) -> bool {
     if a.length != b.length { return false }
     mut i = 0
     while i < a.length {
