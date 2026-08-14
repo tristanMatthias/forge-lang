@@ -1,8 +1,0 @@
-// WHY: parses `spawn { body }` into a Spawn expression.
-// Per spec Axis 18: spawn creates a green-thread task.
-
-use parse.{Parser}
-use core.{Expr, Tk, ExprId}
-
-impl Parser {
-}

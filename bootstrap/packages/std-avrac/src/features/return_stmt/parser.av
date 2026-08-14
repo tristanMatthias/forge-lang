@@ -1,8 +1,0 @@
-// WHY: parses the `return` statement, both with and without a value.
-
-use core.{Stmt}
-use parse.{Parser}
-use core.{Tk}
-
-impl Parser {
-}
