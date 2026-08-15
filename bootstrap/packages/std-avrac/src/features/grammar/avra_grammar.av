@@ -883,7 +883,7 @@ export fn avra_expr_grammar() -> Grammar {
     compose_grammars(
         compose_grammars(
             compose_grammars(avra_expr_core(), avra_decl_dispatch_grammar()),
-            avra_type_flip_grammar()
+            avra_type_grammar()
         ),
         avra_pat_grammar()
     )
@@ -899,28 +899,15 @@ export fn avra_expr_dispatch_grammar() -> Grammar {
     avra_expr_core()
 }
 
-/// The §2 statement family (ps3t.6.5.2 scope — break / continue / `return
-/// <expr>` / bare expression-statements) composed with the shared expression
-/// grammar. Statements embed FULL Avra expressions, reused not re-defined:
-/// `return e:expression` / `e:expression` resolve to avra_expr_grammar()'s
-/// `expression` rule. Later statement forms (block, if/for/while, let/mut/
-/// const, match) join this block as their slices land (§2.5).
-export fn avra_stmt_grammar() -> Grammar {
-    let gp = grammar {
-  statement     = break_stmt | continue_stmt | match_stmt | defer_stmt | errdefer_stmt | return_stmt | expr_stmt
-  break_stmt    = "break" -> Break()
-  continue_stmt = "continue" -> Continue()
-  return_stmt   = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> MkReturn(e)
-  expr_stmt     = e:expression -> ExprStmt(e)
-    }
-    // SELF-CONTAINED by composition (t-47hc.8): emit-gen-check compiles this
-    // view STANDALONE, with no sibling generated file to call into, so every
-    // rule the alternation or the composed expr core reaches must be DEFINED
-    // here — match/defer arrive as the same feature-owned fragments the
-    // production views compose, never as local shadow copies.
-    mut frags: List<Grammar> = [grammar_checked(gp), avra_expr_core(), avra_decl_edge_grammar(), avra_type_flip_grammar(), avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]
-    for g in feature_stmt_grammar_fragments() { frags.push(g) }
-    compose_fragments(frags)
+
+/// The statement-family tail every statement view composes — the match/for
+/// fragments plus the feature registry, written ONCE. A view adds only what
+/// distinguishes it (the flip view: the expr/decl/type/pat rule sets its
+/// interpreter needs defined locally; the dispatch view: nothing).
+fn stmt_family_fragments() -> List<Grammar> {
+    mut fr: List<Grammar> = [avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar(), avra_for_grammar()]
+    for g in feature_stmt_grammar_fragments() { fr.push(g) }
+    fr
 }
 
 /// ps3t.6.7 Step G slice 4 — the PRODUCTION statement grammar the statement
@@ -1010,8 +997,8 @@ export fn avra_stmt_flip_grammar() -> Grammar {
     // emitted parsers have. Missing avra_match_arm_grammar() would leave match_arm /
     // match_when_arm unresolved and the DSL would error on every `match`
     // statement. Caught in review on #1028.
-    mut frags: List<Grammar> = [stmt, avra_expr_core(), avra_decl_edge_grammar(), avra_type_flip_grammar(), avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar(), avra_for_grammar()]
-    for g in feature_stmt_grammar_fragments() { frags.push(g) }
+    mut frags: List<Grammar> = [stmt, avra_expr_core(), avra_decl_edge_grammar(), avra_type_grammar(), avra_pat_grammar()]
+    for g in stmt_family_fragments() { frags.push(g) }
     compose_fragments(frags)
 }
 
@@ -1027,8 +1014,8 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
     // OWN dispatch grammar, so one shared fragment is the only home that serves
     // both (t-47hc.25). Composed LAST so the statement rules keep leading the
     // merged rule set — the emitted function order is observable.
-    mut frags: List<Grammar> = [avra_stmt_common_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar(), avra_for_grammar()]
-    for g in feature_stmt_grammar_fragments() { frags.push(g) }
+    mut frags: List<Grammar> = [avra_stmt_common_grammar()]
+    for g in stmt_family_fragments() { frags.push(g) }
     compose_fragments(frags)
 }
 
@@ -1080,41 +1067,6 @@ export fn avra_type_grammar() -> Grammar {
     grammar_checked(gp)
 }
 
-/// The PRODUCTION type-expression grammar (t-47hc.4.4 Phase 3d — the static
-/// type-parser source). It includes the native `@pkg::T` qualified-type form used
-/// by the whole-program grammar. This is the family-isolated production view,
-/// the sibling of avra_stmt_flip_grammar / avra_decl_flip_grammar: a self-contained grammar the
-/// generated static type parser (parse/gen_type_parser.av, via run_static_type) is
-/// emitted from, byte-identical to the whole-program grammar's type path (same
-/// rules; diff-test-gated). `avra_type_grammar()` stays the
-/// isolated view the emit-gen-check differential uses unchanged.
-export fn avra_type_flip_grammar() -> Grammar {
-    let gp = grammar {
-  type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
-  // t-47hc.4.3 — `~var` in TYPE position, as its own atom rather than a widened
-  // `named_type`. `consume_name_or_splice`'s encoding is the
-  // ordinary name string PREFIXED with `~` for the quote lowerer to read back; this
-  // builds the same `TypeExpr.Named("~var")`.
-  //
-  // An atom, not a wider `named_type`, because `named_type`'s name slot is a REPEATED
-  // capture (the dotted path) and its accumulator type is inferred from the first item —
-  // leading with a rule reference silently redeclared it `List<ExprId>` and the generated
-  // parser then pushed a Token into it. A splice is a single name with no dotted tail, so
-  // it has no business in that list.
-  //
-  // `@when(in_quote_body)` keeps `~` a parse error outside a quote, so valid input is
-  // untouched. Placed BEFORE `named_type` because `~` starts no other atom.
-  splice_type = @when(in_quote_body) "~" sn:IDENT ( opt:"?" )? -> MkSpliceType(sn, opt)
-  type_atom  = splice_type | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
-  qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
-  fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
-  dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)
-  list_type  = "[" e:type_expr "]" -> TyList(e)
-  paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
-  named_type = name:IDENT ( "." name:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
-    }
-    grammar_checked(gp)
-}
 
 /// t-47hc slice 9 — the DECL-keyword fragment registry: every feature that owns a
 /// declaration keyword contributes its rule(s) from its own directory, and this
@@ -1140,91 +1092,21 @@ export fn feature_decl_grammar_fragments() -> List<Grammar> {
     ]
 }
 
-/// The UNIFIED whole-program Avra grammar (ps3t.6.5.7 / the 6.5.11 composed
+/// The UNIFIED whole-program Avra grammar (t-47hc.8): ONE rule of its own —
+/// the start — and everything else IS the production declaration grammar.
+/// avra_decl_flip_grammar is self-contained (decl edge + statement family +
+/// expression core + type spine + pattern/match/for fragments + the feature
+/// registry), so a grammar edit lands in exactly one place and propagates to
+/// every consumer of this view: the §2 whole-program gen-check leg, the
+/// executor seams (this view backs the TYPE family via dsl_type_grammar), and
+/// the differential harnesses. The historical §2 shadows this view carried —
+/// its own simplified expression ladder, type spine, and statement rules,
+/// with drifted capture names and a type_atom missing splice_type — are gone;
+/// the executor now runs the same type rules the static parser is emitted
+/// from.
 export fn avra_program_grammar() -> Grammar {
     let gp = grammar {
   program     = ( d:declaration )* -> Block(d)
-  declaration = fn_decl | extern_decl | type_decl | shape_decl | enum_decl | trait_decl | impl_decl | use_decl | mod_decl
-  // Defined in BOTH views, like every other rule the shared decl fragments reach: the
-  // §2 program grammar and the production decl view compose different rule sets, and
-  // `type_decl` (a shared fragment) names this one, so a definition in only one view
-  // leaves the other with an unknown rule and a hard parse failure.
-  name_or_splice = @when(in_quote_body) "~" sn:IDENT -> MkSpliceName(sn)
-                 | pn:IDENT -> MkPlainName(pn)
-  // t-20wd — the BODY nonterminal, defined per VIEW. This §2 `declaration` is
-  // declarations-ONLY (no `statement` tail), so a body here must be a statement list.
-  // The production view (avra_decl_edge_grammar) defines it as `declaration`, whose tail
-  // IS `statement` — a superset that also reaches the `decl_lead` component gate, which
-  // is what a fn body needs. The two views never compose
-  // each other, so each owns its own definition and the shared fragments stay body-agnostic.
-  body_item   = statement
-  // The TYPE position is `@require`d, keyed on the rule NAME because `type_expr`'s FIRST
-  // is a disjunction with no single token to name (t-myz7) — the same treatment `field`
-  // already has, for the same reason. Unrequired, a missing type did not abort: the
-  // expression view reported its own generic F0040 and the type view added "expected a
-  // type", so `fn foo(x: ) -> int { 1 }` came out F0040 + F0001 instead of the single
-  // "expected parameter type after `:`".
-  param       = pname:IDENT ( ":" @require pt:type_expr )?
-                 @expect("IDENT", "expected parameter name") 
-                 @expect("type_expr", "expected parameter type after `:`") -> MkParam(pname, pt)
-  statement   = return_stmt | let_stmt | defer_stmt | errdefer_stmt | block_stmt | while_stmt | if_stmt | for_stmt | break_stmt | continue_stmt | expr_stmt
-  // Mirrors the production `let_decl`: MkLetBinding lowers to the same shared
-  // core, so the let-else desugar (fresh temp + divergence check) is identical.
-  let_stmt    = @try "let" @cut ( m:"mut" )? @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
-                @expect("IDENT", "expected variable name")
-                @expect("type_expr", "expected type after `:`")
-                @expect("=", "expected `=` after variable name") -> MkLetBinding(m, n, ty, init, e, tmp)
-  return_stmt = "return" ( @peek(return_value) @gate @onfail(bail) rv:expression )? -> MkReturn(rv)
-  block_stmt  = "{" ( bs:statement )* "}" -> Block(bs)
-  while_stmt  = "while" wc:expression wb:block_stmt -> While(wc, wb)
-  if_stmt     = "if" ic:expression it:block_stmt ( "else" ie:else_target )? -> If(ic, it, ie)
-  else_target = if_stmt | block_stmt
-  for_stmt    = "for" fv:IDENT "in" flo:expression ( ".." fhi:expression )? fb:block_stmt -> ForLoop(fv, flo, fhi, fb)
-  break_stmt  = "break" -> Break()
-  continue_stmt = "continue" -> Continue()
-  expr_stmt   = es:expression -> ExprStmt(es)
-  type_expr   = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
-  type_atom   = qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
-  qualified_type = "@" qn:IDENT ( @peek(double_colon) ":" ":" qn:IDENT )+ ( "<" qargs:type_expr ( "," qargs:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qn, qargs, qopt)
-  fn_type     = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" tr:type_expr )? -> MkFn(lp, p, tr)
-  dyn_type    = "dyn" dt:IDENT ( opt:"?" )? -> TyDyn(dt, opt)
-  list_type   = "[" el:type_expr "]" -> TyList(el)
-  paren_type  = "(" ( pt2:type_expr ( "," pt2:type_expr )* )? ")" -> TyParen(pt2)
-  named_type  = tn:IDENT ( "." tn:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(tn, a, opt)
-  expression  = equality
-  equality    = l:comparison ( op:("!=" | "==") r:comparison )* -> fold_binary(l, op, r)
-  comparison  = l:term ( op:("<" | "<=" | ">" | ">=") r:term )* -> fold_binary(l, op, r)
-  term        = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
-  factor      = l:un ( op:("*" | "/") r:un )* -> fold_binary(l, op, r)
-  // `~` splits on quote depth exactly as production `unary` does: bitwise-NOT
-  // outside a quote, splice inside one.
-  un          = op:("!" | "-" | "not") operand:un -> Unary(op, operand)
-              | @when(at_quote_top) op:("~") operand:un -> Unary(op, operand)
-              | @when(in_quote_body) "~" t:un -> MkSplice(t)
-              | postfix
-  postfix     = base:primary ( s:suffix )* -> fold_postfix(base, s)
-  suffix      = "." sn:IDENT -> field_suffix(sn)
-              | "(" ( ca:expression ( "," ca:expression )* )? ")" -> call_suffix(ca)
-  primary     = NUMBER | STRING | "true" | "false" | quote_expr | IDENT
-  quote_expr  = "quote" ( k:("stmt" | "stmts" | "decl") )? @bump(quote_depth) body:quote_body -> MkQuote(k, body)
-  quote_body  = "{" ( qs:statement )* "}" -> MkExprBlock(qs)
     }
-    // The DECLARATION rules are no longer here: each decl keyword's rule is owned
-    // by its own feature (features/<name>/grammar.av) and collected through the
-    // registry, exactly as the pattern rules already are. `declaration` above
-    // still names them — cross-fragment nonterminal references bind by name
-    // against the merged rule set, so the composed grammar is the same language.
-    // This block stays FIRST so `program` remains the start symbol.
-    mut frags: List<Grammar> = [grammar_checked(gp)]
-    for g in feature_decl_grammar_fragments() {
-        frags.push(g)
-    }
-    // The statement-family registry serves this view too: `defer_stmt` /
-    // `errdefer_stmt` in the alternation above bind against the SAME
-    // feature-owned fragments the production views compose — the §2 shadow
-    // no longer keeps copies with drifted capture names.
-    for g in feature_stmt_grammar_fragments() {
-        frags.push(g)
-    }
-    compose_fragments(frags)
+    compose_fragments([grammar_checked(gp), avra_decl_flip_grammar()])
 }

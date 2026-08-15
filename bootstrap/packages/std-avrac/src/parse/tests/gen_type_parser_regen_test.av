@@ -1,7 +1,7 @@
 // WHY: t-47hc.4.4 Phase 3d — the REGEN GUARD for the checked-in production type
 // static parser (parse/gen_type_parser.av). That file MUST always equal
 // emit_type_parser_file() = the fixed import header + emit_parser_source_ex(
-// avra_type_flip_grammar(), true). Editing the type grammar (avra_grammar.av) without
+// avra_type_grammar(), true). Editing the type grammar (avra_grammar.av) without
 // running `bash scripts/diagnose.sh --emit-regen-type` leaves the checked-in parser
 // stale (silently parsing the OLD grammar in production under
 // AVRA_PARSER_TYPE_STATIC=1) — and this test fails until it's regenerated + committed.

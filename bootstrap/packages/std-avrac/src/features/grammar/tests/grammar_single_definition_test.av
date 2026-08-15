@@ -1,0 +1,75 @@
+// WHY: every grammar rule in avra_grammar.av is defined EXACTLY ONCE.
+//
+// This is the INVERSION of the retired view_rule_lockstep_test. That test
+// existed because the §2 shadow views (stmt / program / type-flip) forced
+// byte-identical COPIES of rules — 29 names defined more than once, drift
+// guarded by a hand-maintained contract. t-47hc.8 made every view a
+// COMPOSITION of single-source fragments, so the copies are gone and the
+// invariant flips: a rule name defined twice inside avra_grammar.av is no
+// longer "load-bearing duplication to keep in step" — it is a regression
+// reintroducing the copy-drift class this file spent months escaping.
+//
+// The scan is TOTAL (derived from the file, no hand list): a rule line is
+// `  <name> = <body>` at exactly two spaces of indent — the grammar's own
+// layout for a production; alternation continuations (`| ...`) sit deeper
+// and comments start with `/`, so neither matches. Cross-FILE duplicates
+// (a view rule colliding with a feature fragment) are the compose layer's
+// job — fragment_rule_conflicts guards those at assembly.
+
+use @std.avrac.core.{avra_selfhost_read_file}
+
+fn grammar_path() -> string {
+    "packages/std-avrac/src/features/grammar/avra_grammar.av"
+}
+
+fn has(xs: List<string>, n: string) -> bool {
+    for x in xs {
+        if x == n { return true }
+    }
+    false
+}
+
+fn rule_name_of(line: string) -> string {
+    if !line.starts_with("  ") { return "" }
+    if line.length < 3 { return "" }
+    let c = line.substring(2, 3)
+    if c == " " || c == "/" || c == "|" { return "" }
+    let eq = line.index_of("=")
+    if eq < 0 { return "" }
+    let head = line.substring(2, eq)
+    // a rule head is a bare identifier padded with spaces — anything else
+    // (an expression, a field init, a comparison) is not a production
+    mut name = ""
+    mut seen_space = false
+    for i in 0..head.length {
+        let ch = head.substring(i, i + 1)
+        if ch == " " {
+            seen_space = true
+            continue
+        }
+        if seen_space { return "" }
+        name = name + ch
+    }
+    name
+}
+
+spec "t-47hc.8: every rule in avra_grammar.av has exactly ONE definition" {
+    then "no rule name is defined more than once" {
+        let src = avra_selfhost_read_file(grammar_path())
+        mut seen: List<string> = []
+        mut dups: List<string> = []
+        for line in src.split("\n") {
+            let n = rule_name_of(line)
+            if n == "" { continue }
+            if has(seen, n) {
+                if !has(dups, n) { dups.push(n) }
+            } else {
+                seen.push(n)
+            }
+        }
+        if dups.length > 0 {
+            for d in dups { eprintln("duplicate rule definition: " + d) }
+        }
+        dups.length == 0 && seen.length > 30
+    }
+}

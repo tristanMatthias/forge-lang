@@ -9,7 +9,7 @@
 // migration replaces an `@hand` leaf with real alternatives, any FIRST overlap
 // it introduces trips THIS guard instead of silently shadowing a branch at
 // runtime. (Not in the compile path → byte-identical.)
-use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, GAmbiguity, Grammar, avra_expr_grammar, avra_stmt_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar, parse_grammar}
+use @std.avrac.features.grammar.{grammar_ambiguities, render_ambiguities, GAmbiguity, Grammar, avra_expr_grammar, avra_stmt_flip_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar, parse_grammar}
 
 // The ONE intended ordered-choice shadow the guard tolerates: `in_rhs`'s membership
 // branch 0 (`"[" … "]"`) legitimately takes precedence over its range branch 1
@@ -103,7 +103,7 @@ fn is_intended_shadow(a: GAmbiguity) -> bool {
 // INDEX SHIFT (t-myz7): `statement` gained a leading `@peek(if_let) iflet_stmt`
 // branch at index 2, so every entry above with an index >= 2 moved by +1
 // (9/10 -> 10/11, 5/10 -> 6/11, 2/10 -> 3/11). The 2/6 entry is NOT shifted: it
-// belongs to `avra_stmt_grammar()`, a different view whose `statement` rule this
+// belongs to `avra_stmt_flip_grammar()`, a different view whose `statement` rule this
 // change does not touch. The shadows themselves
 // are unchanged and still the ones documented above — this allowlist is pinned by
 // exact branch PAIR by design, so inserting a branch necessarily renumbers it.
@@ -129,7 +129,7 @@ spec "t-47hc.3: the production grammars are FIRST/FIRST unambiguous" {
         is_unambiguous(avra_expr_grammar())
     }
     then "the statement grammar is unambiguous" {
-        is_unambiguous(avra_stmt_grammar())
+        is_unambiguous(avra_stmt_flip_grammar())
     }
     then "the type grammar is unambiguous" {
         is_unambiguous(avra_type_grammar())

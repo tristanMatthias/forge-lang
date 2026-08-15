@@ -12,19 +12,19 @@
 // Scope (simplest-first): break, continue, `return <expr>`, and bare
 // expression-statements. Bare `return` (ReturnEmpty, newline-sensitive), block,
 // let/mut/const, if, for follow in later slices.
-use @std.avrac.features.grammar.{avra_stmt_grammar, run_grammar_stmt}
+use @std.avrac.features.grammar.{avra_stmt_flip_grammar, run_grammar_stmt}
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id}
 
 // The statement grammar is the SOURCE-OF-TRUTH `grammar { }` block dogfooded
-// into compiler src/ (avra_grammar.av avra_stmt_grammar(), ps3t.6.5.11) — the
+// into compiler src/ (avra_grammar.av avra_stmt_flip_grammar(), ps3t.6.5.11) — the
 // simplest statement forms COMPOSED with the shared expression grammar (the
 // statements embed full Avra expressions, reused not re-defined). This test
 // runs it through the executor as the differential oracle.
 
 // The DSL-generated statement parser's tree for `src`, rendered canonically.
 fn dsl_stmt(src: string) -> string {
-    let r = run_grammar_stmt(avra_stmt_grammar(), src)
+    let r = run_grammar_stmt(avra_stmt_flip_grammar(), src)
     // A diagnostic-bearing (error-tolerant partial) parse is a distinct
     // outcome — surface it so a recovered tree can't spuriously match the
     // hand-written parser's clean tree in the differential comparison.

@@ -5,7 +5,7 @@
 // composition consumes the definitions directly (t-kd4y follow-up).
 use @std.avrac.features.defer.{defer_lang, errdefer_lang}
 use @std.avrac.features.{feature_keywords, feature_gram}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_grammar}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar}
 
 spec "defer as a LanguageFeature" {
     then "keywords derive from the declared grammar" {
@@ -24,7 +24,7 @@ spec "defer as a LanguageFeature" {
         // feature's build_defer/build_errdefer, which every spine copy
         // references identically. This spec is the flip's spelling lockstep:
         // a spine copy left on the old central name fails here.
-        let stmt_view = render_grammar(avra_stmt_grammar())
+        let stmt_view = render_grammar(avra_stmt_flip_grammar())
         let defer_rule = "defer_stmt = \"defer\" e:expression -> build_defer(e)"
         let errdefer_rule = "errdefer_stmt = \"errdefer\" e:expression -> build_errdefer(e)"
         render_grammar(feature_gram(defer_lang())).contains(defer_rule) && stmt_view.contains(defer_rule)

@@ -1,0 +1,94 @@
+// WHY: compose_fragments dedupes EXACT duplicate rules (a fragment reached
+// through two composition paths — decl_edge rides the decl view directly AND
+// via the statement flip view) but must NEVER dedupe two same-name rules that
+// differ in any way — including the item markers the DISPLAY render omits
+// (`^`, mode sets, @cut, @require, @gate, @onfail, @try). The dedupe key is
+// rule_identity (the marker-lossless render); this spec is the regression
+// guard CodeRabbit asked for on #1239: a marker-only difference must keep
+// BOTH rules in the merged list, so emit's duplicate-fn FATAL guard still
+// sees the real conflict instead of one variant silently vanishing.
+
+use @std.avrac.features.grammar.{parse_grammar, compose_fragments, rule_identity, Grammar}
+
+fn gram_of(src: string) -> Grammar {
+    let p = parse_grammar(src)
+    p.grammar
+}
+
+/// Two single-rule fragments composed; the merged rule count tells whether
+/// the pair deduped (1) or both survived (2).
+fn composed_count(a: string, b: string) -> int {
+    compose_fragments([gram_of(a), gram_of(b)]).rules.length
+}
+
+spec "compose_fragments dedupe: exact repeats drop, ANY divergence survives" {
+    given "byte-identical duplicate rules (the double-composition-path shape)" {
+        then "the exact repeat is dropped — one rule remains" {
+            composed_count(
+                "r = \"a\" e:expression -> B(e)",
+                "r = \"a\" e:expression -> B(e)") == 1
+        }
+
+        then "composing the SAME fragment twice is idempotent" {
+            let g = gram_of("r = \"a\" e:expression -> B(e)")
+            compose_fragments([g, g]).rules.length == 1
+        }
+    }
+
+    given "same-name rules that differ only by a DISPLAY-RENDERED part" {
+        then "a different body survives" {
+            composed_count(
+                "r = \"a\" e:expression -> B(e)",
+                "r = \"b\" e:expression -> B(e)") == 2
+        }
+    }
+
+    given "same-name rules that differ ONLY by an item marker" {
+        // Each pair is display-render-identical; only rule_identity separates
+        // them. One assertion per marker family so a future render/identity
+        // regression names the marker it lost.
+        then "@cut-only difference survives" {
+            composed_count(
+                "r = \"a\" @cut e:expression -> B(e)",
+                "r = \"a\" e:expression -> B(e)") == 2
+        }
+
+        then "@require-only difference survives" {
+            composed_count(
+                "r = \"a\" @require e:expression -> B(e)",
+                "r = \"a\" e:expression -> B(e)") == 2
+        }
+
+        then "@onfail-only difference survives" {
+            composed_count(
+                "r = \"a\" @onfail(bail) e:expression -> B(e)",
+                "r = \"a\" e:expression -> B(e)") == 2
+        }
+
+        then "mode-set (@off) difference survives" {
+            composed_count(
+                "r = \"a\" @off(allow_struct_lit) e:expression -> B(e)",
+                "r = \"a\" e:expression -> B(e)") == 2
+        }
+
+        then "same-line (^) difference survives" {
+            composed_count(
+                "r = \"a\" ^( e:expression )? -> B(e)",
+                "r = \"a\" ( e:expression )? -> B(e)") == 2
+        }
+
+        then "@try (speculative branch) difference survives" {
+            composed_count(
+                "r = @try \"a\" @cut e:expression -> B(e) | \"b\" -> C()",
+                "r = \"a\" @cut e:expression -> B(e) | \"b\" -> C()") == 2
+        }
+    }
+
+    given "the identity key itself" {
+        then "marker-divergent rules render EQUAL on display but DIFFER on identity" {
+            let a = gram_of("r = \"a\" @cut e:expression -> B(e)").rules[0]
+            let b = gram_of("r = \"a\" e:expression -> B(e)").rules[0]
+            rule_identity(a) != rule_identity(b)
+        }
+    }
+}
