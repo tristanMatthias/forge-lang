@@ -1,0 +1,133 @@
+// THE LANGUAGE PIPELINE (t-47hc.8) — the one place the language assembles.
+// Four stages, and this file is their spine:
+//
+//   1. LOAD     language_features() — every feature's self-description
+//               (gram + typed lowering + hooks + docs), one factory run.
+//   2. COMPOSE  the view fns (avra_grammar.av) assemble the engine-core
+//               fragments + the feature registry into each family's grammar.
+//   3. BUILD    build_registry() registers the features (dispatch tables +
+//               the builder manifest); grammar_with_builder_kinds stamps
+//               each composed view with the manifest's kind rows.
+//   4. RUN      the entries drive the built system — the static parsers /
+//               the executor over these views (parse), then the pass
+//               families over the registry (resolve → typeck → codegen,
+//               routed through the query engine on the CLI front pipeline).
+//
+// Everything that needs a stamped view or the registry asks a `Language`;
+// nothing re-runs a pipeline fragment on its own. The record is also the
+// CATALOG of every view the language has — a reader sees the whole surface
+// here. Views are LAZY (composed+stamped on first ask, the cost profile the
+// per-parser caches had — now shared per record instead of re-composed per
+// consumer); the registry itself is cached per NodeStore (parse_features),
+// so `language_for(reg)` wraps the cached one and `assemble_language()`
+// builds fresh (regen drivers, tools).
+use core.{Registry, build_registry}
+use features.grammar.{Grammar, BuildKindRow, grammar_with_builder_kinds, builder_kind_rows}
+use features.grammar.{avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar, avra_stmt_flip_grammar, avra_expr_grammar, avra_expr_dispatch_grammar, avra_type_grammar}
+use features.match.{avra_pat_grammar}
+
+export type Language = {
+    // Stage 3's dispatch product: tag→hook tables + the builder manifest.
+    registry: Registry,
+    // The manifest's (name → kind, spanned) projection every view is
+    // stamped with — computed once per record.
+    kind_rows: List<BuildKindRow>,
+    // Stage 2+3's parse products, lazy: null until a consumer asks.
+    mut program_v: Grammar?,
+    mut decl_flip_v: Grammar?,
+    mut decl_dispatch_v: Grammar?,
+    mut stmt_flip_v: Grammar?,
+    mut expr_v: Grammar?,
+    mut expr_dispatch_v: Grammar?,
+    mut type_v: Grammar?,
+    mut pat_v: Grammar?,
+}
+
+/// Wrap an already-built registry (the per-NodeStore cached one) — the
+/// parse layer's constructor. Stages 1+3's registry work happened when the
+/// registry was built; this record adds the stamped-view surface.
+export fn language_for(reg: Registry) -> Language {
+    Language { registry: reg, kind_rows: builder_kind_rows(reg.builder_binds),
+               program_v: null, decl_flip_v: null, decl_dispatch_v: null,
+               stmt_flip_v: null, expr_v: null, expr_dispatch_v: null,
+               type_v: null, pat_v: null }
+}
+
+/// Build the whole system fresh — stages 1 through 3 in one call. The
+/// regen drivers and standalone tools use this; production parsing goes
+/// through `language_for(store.parse_features())` so the registry stays
+/// program-wide.
+export fn assemble_language() -> Language {
+    language_for(build_registry())
+}
+
+impl Language {
+    /// The whole-program view — the executor's production TYPE path walks
+    /// this tree (parse/mod.av's type seam).
+    fn program(self) -> Grammar {
+        if self.program_v == null {
+            self.program_v = grammar_with_builder_kinds(avra_program_grammar(), self.kind_rows)
+        }
+        self.program_v ?? avra_program_grammar()
+    }
+
+    /// The declaration FLIP view — the interpreter engine's declaration
+    /// family (the static parser compiles the same grammar ahead of time).
+    fn decls(self) -> Grammar {
+        if self.decl_flip_v == null {
+            self.decl_flip_v = grammar_with_builder_kinds(avra_decl_flip_grammar(), self.kind_rows)
+        }
+        self.decl_flip_v ?? avra_decl_flip_grammar()
+    }
+
+    /// The declaration DISPATCH view — what gen_decl_file.av emits the
+    /// static declaration parser from.
+    fn decl_dispatch(self) -> Grammar {
+        if self.decl_dispatch_v == null {
+            self.decl_dispatch_v = grammar_with_builder_kinds(avra_decl_dispatch_grammar(), self.kind_rows)
+        }
+        self.decl_dispatch_v ?? avra_decl_dispatch_grammar()
+    }
+
+    /// The statement FLIP view — the interpreter's statement family.
+    fn stmts(self) -> Grammar {
+        if self.stmt_flip_v == null {
+            self.stmt_flip_v = grammar_with_builder_kinds(avra_stmt_flip_grammar(), self.kind_rows)
+        }
+        self.stmt_flip_v ?? avra_stmt_flip_grammar()
+    }
+
+    /// The expression view — the interpreter's expression family.
+    fn exprs(self) -> Grammar {
+        if self.expr_v == null {
+            self.expr_v = grammar_with_builder_kinds(avra_expr_grammar(), self.kind_rows)
+        }
+        self.expr_v ?? avra_expr_grammar()
+    }
+
+    /// The expression DISPATCH view — gen_expr_file.av's emit source.
+    fn expr_dispatch(self) -> Grammar {
+        if self.expr_dispatch_v == null {
+            self.expr_dispatch_v = grammar_with_builder_kinds(avra_expr_dispatch_grammar(), self.kind_rows)
+        }
+        self.expr_dispatch_v ?? avra_expr_dispatch_grammar()
+    }
+
+    /// The type view — both engines' type family runs these rules
+    /// (executor at runtime, gen_type_file.av at regen).
+    fn types(self) -> Grammar {
+        if self.type_v == null {
+            self.type_v = grammar_with_builder_kinds(avra_type_grammar(), self.kind_rows)
+        }
+        self.type_v ?? avra_type_grammar()
+    }
+
+    /// The pattern view — the match feature's fragment, gen_pat_file.av's
+    /// emit source.
+    fn pats(self) -> Grammar {
+        if self.pat_v == null {
+            self.pat_v = grammar_with_builder_kinds(avra_pat_grammar(), self.kind_rows)
+        }
+        self.pat_v ?? avra_pat_grammar()
+    }
+}

@@ -464,7 +464,7 @@ fn avra_expr_core() -> Grammar {
 }
 
 /// The §2 expression grammar the INTERPRETER runs (run_grammar_expr / the
-/// dsl_expr_grammar cache in parse/mod.av / the equivalence oracles) — SELF-CONTAINED:
+/// Language record's `exprs()` view / the equivalence oracles) — SELF-CONTAINED:
 /// it composes declarations/statements for expression blocks, types for typed lambdas and
 /// channels, and patterns for match statements nested in those blocks. The EMIT view keeps
 /// those families EXTERNAL (avra_expr_dispatch_grammar), so the checked-in parser calls the
@@ -1084,8 +1084,8 @@ export fn feature_decl_grammar_fragments() -> List<Grammar> {
 /// expression core + type spine + pattern/match/for fragments + the feature
 /// registry), so a grammar edit lands in exactly one place and propagates to
 /// every consumer of this view: the §2 whole-program gen-check leg, the
-/// executor seams (this view backs the TYPE family via dsl_type_grammar), and
-/// the differential harnesses. The historical §2 shadows this view carried —
+/// executor seams (this view backs the TYPE family via the Language record's
+/// `program()` view), and the differential harnesses. The historical §2 shadows this view carried —
 /// its own simplified expression ladder, type spine, and statement rules,
 /// with drifted capture names and a type_atom missing splice_type — are gone;
 /// the executor now runs the same type rules the static parser is emitted

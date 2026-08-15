@@ -22,7 +22,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // engines. The parse<->features.grammar module
 // cycle is fine: the package resolves as a whole (parse<->features.closures
 // already cycles the same way).
-use features.grammar.{grammar_with_builder_kinds, builder_kind_rows, word_excluded_as_instance_name, run_dsl_type_at_shared, DslTypeResult, Token, lex_real, lex_real_full, LexDiag, Grammar, avra_program_grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, avra_expr_grammar, run_dsl_stmt_at_shared, DslStmtResult, avra_stmt_flip_grammar, run_dsl_decl_at_shared, avra_decl_flip_grammar}
+use features.grammar.{Language, language_for, word_excluded_as_instance_name, run_dsl_type_at_shared, DslTypeResult, Token, lex_real, lex_real_full, LexDiag, Grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, run_dsl_stmt_at_shared, DslStmtResult, run_dsl_decl_at_shared}
 use parse.static_expr_entry.{run_static_expr, run_static_expr_cell}
 use parse.static_decl_entry.{run_static_decl}
 use parse.static_type_entry.{run_static_type}
@@ -248,26 +248,18 @@ export type Parser = {
     // lost. Carried alongside the tokens so the native runners can
     // release each at the point the streaming lexer reported it.
     mut grammar_lex_diags: List<LexDiag>,
-    // ps3t.6.5.12 lex-once cache (Step D): the DSL program grammar, built at most
-    // once per parser (null = not built). Rebuilding its 41 rules per annotation
-    // was ~half the flip's memory blow-up; the type-flip delegation reuses this
-    // one grammar AND this parser's own `store` (the type success path never
-    // allocates into it, so the surrounding parse's node-id space is untouched).
-    mut dsl_grammar: Grammar?,
-    // ps3t.6.5.12 pattern-family swap-in: when true, parse_pattern_or delegates
+    // The assembled LANGUAGE (features/grammar/language.av) — the one
+    // record every stamped view comes from. Replaces the four per-view
+    // Grammar? caches this struct used to carry (dsl_grammar /
+    // dsl_expr_grammar / dsl_stmt_grammar / dsl_decl_grammar): the record
+    // keeps the same lazy build-at-most-once cost profile (the ps3t.6.5.12
+    // lex-once lesson — rebuilding a view's rules per annotation was ~half
+    // a flip's memory blow-up), with the pipeline spelled in ONE place.
+    lang: Language,
     // ps3t.6.7 expression-family swap-in: when true, parse_expression delegates
     mut expr_flip: bool,
-    mut dsl_expr_grammar: Grammar?,
     // ps3t.6.7 Phase 2 — the STATIC declaration parser: when set,
     mut decl_static: bool,
-    mut dsl_stmt_grammar: Grammar?,
-    // ps3t.6.7 Step G slice 4b — the declaration/whole-program grammar, the
-    // ONLY declaration parser: parse_declaration delegates to the grammar-DSL
-    // (avra_decl_flip_grammar) unconditionally —
-    // the grammar owns valid input and recovery alike.
-    // (The function keeps its `_flip_` name; there is no flip flag left to match it.)
-    // dsl_decl_grammar caches avra_decl_flip_grammar() lazily, once.
-    mut dsl_decl_grammar: Grammar?,
     mut host: Parser?,
 }
 
@@ -684,28 +676,20 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         type_static: avra_process_env_get("AVRA_PARSER_TYPE_STATIC") != "0",
         grammar_toks: [],
         grammar_lex_diags: [],
-        dsl_grammar: null,
+        // The assembled language over this store's program-wide registry —
+        // views compose lazily inside (see the field comment). The grammar-DSL
+        // drives statements + the whole TOP-LEVEL dispatch UNCONDITIONALLY
+        // (no stmt/decl flip flags exist — prose naming a flag the compiler
+        // does not read is the t-bw9s failure in its cheapest form); the
+        // shared host Parser (ensure_host) is SINGLE-LEVEL so bodies do not
+        // re-enter the DSL through it.
+        lang: language_for(store.parse_features()),
         // Which GRAMMAR ENGINE runs the expression grammar: the tree interpreter
         // (opt-in, AVRA_PARSER_EXPR_FLIP=1) or the checked-in generated static parser
         // (default). Not a grammar-vs-hand switch — there is no hand ladder left to
         // fall back to; see the field comment.
         expr_flip: avra_process_env_get("AVRA_PARSER_EXPR_FLIP") == "1",
-        dsl_expr_grammar: null,
         decl_static: avra_process_env_get("AVRA_PARSER_DECL_STATIC") != "0",
-        // ps3t.6.7 Step G slice 4, promoted by t-47hc.37: the grammar-DSL
-        // statement parser, UNCONDITIONAL. There is no `stmt_flip` field and no
-        // `AVRA_PARSER_STMT_FLIP` env var. Prose that names a flag the compiler does
-        // not read is the t-bw9s failure in its cheapest form: the run succeeds,
-        // the reader sets the variable, and nothing selects anything.
-        dsl_stmt_grammar: null,
-        // ps3t.6.7 Step G slice 5.4, then t-47hc — the grammar-DSL drives the whole
-        // TOP-LEVEL dispatch (declaration vs statement vs expr-stmt), and does so
-        // UNCONDITIONALLY: there is no decl flip flag. The shared host Parser
-        // (ensure_host) is a
-        // SINGLE-LEVEL parser (its own `*_static` toggles are OFF) so bodies
-        // do not re-enter the DSL through it. Proven byte-identical over the full
-        // selfhost + corpus.
-        dsl_decl_grammar: null,
         // The host Parser handle — built lazily (ensure_host).
         host: null,
     }
@@ -888,7 +872,7 @@ impl Parser {
         mut dsl = if self.decl_static {
             run_static_decl(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, modes, d)
         } else {
-            run_dsl_decl_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_declaration_grammar(), modes, d)
+            run_dsl_decl_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.decls(), modes, d)
         }
         // t-47hc.4.3 — a successful DSL parse is final; there is no re-parse fallback.
         if !dsl.had_error {
@@ -1068,7 +1052,7 @@ impl Parser {
         // error_message on the error path exactly like its siblings, so it
         // needs the same per-item clear.
         d.begin_delegate_item()
-        let dsl = run_dsl_stmt_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_statement_grammar(), modes, d)
+        let dsl = run_dsl_stmt_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.stmts(), modes, d)
         if !dsl.had_error {
             // Forward-advance the delegate to the statement's true end (past any
             // trailing structural tokens the DSL itself consumed), then adopt
@@ -1135,7 +1119,7 @@ impl Parser {
         // Both share the token stream, modes, host delegate, and resync below —
         // they differ only in HOW they drive the identical builders.
         let dsl = if self.expr_flip {
-            run_dsl_expr_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.dsl_expression_grammar(), modes, d)
+            run_dsl_expr_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.exprs(), modes, d)
         } else {
             run_static_expr(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, modes, d)
         }
@@ -1181,40 +1165,6 @@ impl Parser {
         }
         self.had_error = true
         .Err("expression parse error")
-    }
-
-    /// The expression grammar, as a TREE — the input the interpreter engine
-    /// (`expr_flip`) walks. The generated static parser compiles the same grammar
-    /// ahead of time and needs no tree, so this is built lazily and only on the
-    /// interpreter path.
-    fn dsl_expression_grammar(self) -> Grammar {
-        if self.dsl_expr_grammar == null {
-            self.dsl_expr_grammar = grammar_with_builder_kinds(
-                avra_expr_grammar(), builder_kind_rows(self.features.builder_binds))
-        }
-        self.dsl_expr_grammar ?? avra_expr_grammar()
-    }
-
-    /// The DSL statement grammar (the production dispatch: the native statement
-    /// rules + expr_stmt over the composed expression grammar), built at most
-    /// once per parser — the statement sibling of dsl_expression_grammar.
-    fn dsl_statement_grammar(self) -> Grammar {
-        if self.dsl_stmt_grammar == null {
-            self.dsl_stmt_grammar = grammar_with_builder_kinds(
-                avra_stmt_flip_grammar(), builder_kind_rows(self.features.builder_binds))
-        }
-        self.dsl_stmt_grammar ?? avra_stmt_flip_grammar()
-    }
-
-    /// The DSL declaration grammar — the native declaration rules over the composed
-    /// statement + expression grammars, falling through to `statement`. Built at most
-    /// once per parser; the declaration sibling of dsl_statement_grammar.
-    fn dsl_declaration_grammar(self) -> Grammar {
-        if self.dsl_decl_grammar == null {
-            self.dsl_decl_grammar = grammar_with_builder_kinds(
-                avra_decl_flip_grammar(), builder_kind_rows(self.features.builder_binds))
-        }
-        self.dsl_decl_grammar ?? avra_decl_flip_grammar()
     }
 
     /// Boxed readback for callers not yet converted to ids (statements,
@@ -2013,21 +1963,6 @@ impl Parser {
         self.grammar_lex_diags
     }
 
-    // The DSL program grammar for this parser, built at most once (lex-once
-    // cache, ps3t.6.5.12 Step D). The `??` fallback is unreachable — the field
-    // is non-null after the guard — it only unwraps `Grammar?` to `Grammar`.
-    // Stamped with the registry manifest's kind rows so the executor's kind
-    // analysis answers exactly as emit's does for feature builders (t-kd4y.3
-    // flip) — the binds list is already composed on the registry; no feature
-    // factory re-run here.
-    fn dsl_type_grammar(self) -> Grammar {
-        if self.dsl_grammar == null {
-            self.dsl_grammar = grammar_with_builder_kinds(
-                avra_program_grammar(), builder_kind_rows(self.features.builder_binds))
-        }
-        self.dsl_grammar ?? avra_program_grammar()
-    }
-
     fn parse_type_expr(self, message: string) -> Result<TypeExpr, string> {
         {
             // t-47hc.4.4 Phase 3d, now UNCONDITIONAL: the STATIC generated type parser
@@ -2038,7 +1973,7 @@ impl Parser {
             let dsl = if self.type_static {
                 run_static_type(self.grammar_tokens(), self.current_start, self.source, self.store)
             } else {
-                run_dsl_type_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.store, self.dsl_type_grammar())
+                run_dsl_type_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.store, self.lang.program())
             }
             if !dsl.had_error {
                 while self.current_start < dsl.stop_byte && !self.check(Tk.Eof) {
