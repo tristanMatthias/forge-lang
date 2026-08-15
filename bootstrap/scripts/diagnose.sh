@@ -2567,7 +2567,7 @@ use @std.avrac.features.match.{avra_pat_grammar}
 use @std.avrac.core.{avra_selfhost_write_file}
 
 // The expression and statement harnesses render COMPOSED interpreter views
-// (avra_expr_grammar / avra_stmt_grammar), which inline the declaration, type
+// (avra_expr_grammar / avra_stmt_flip_grammar), which inline the declaration, type
 // and pattern families alongside the expr core — every family defined in the
 // grammar is emitted, not externalized. The import line therefore must carry
 // the FULL emitted-surface core set, not just one family's helpers: it went

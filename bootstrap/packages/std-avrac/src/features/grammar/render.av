@@ -10,45 +10,59 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 export fn render_grammar(g: Grammar) -> string {
     mut out = "grammar ${g.name} {\n"
     for r in g.rules {
-        out = out + "  ${r.name} = ${render_node(r.body)}\n"
+        out = out + "  ${r.name} = ${render_node(r.body, false)}\n"
     }
     out + "}"
 }
 
-/// Render one rule as `name = body` — the identity key compose_fragments
-/// dedupes on (same spelling ⇒ same rule).
+/// Render one rule as `name = body` in the display form (markers omitted,
+/// per the structure-only contract above).
 export fn render_rule(r: Rule) -> string {
-    "${r.name} = ${render_node(r.body)}"
+    "${r.name} = ${render_node(r.body, false)}"
 }
 
-fn render_node(n: GNode) -> string {
+/// The LOSSLESS identity of a rule: the display render PLUS every item
+/// marker and branch flag the display form omits (`^`, mode sets, `@cut`,
+/// `@require`, `@gate`, `@onfail`, `@try`, `@fallback`). compose_fragments
+/// dedupes on THIS — two rules are "the same" only if nothing about their
+/// parsing semantics differs. One walker serves both forms (the `full`
+/// flag), so a future marker field has one place to join, not two.
+export fn rule_identity(r: Rule) -> string {
+    "${r.name} = ${render_node(r.body, true)}"
+}
+
+fn render_node(n: GNode, full: bool) -> string {
     match n {
-        .Alt(branches) -> render_branches(branches)
+        .Alt(branches) -> render_branches(branches, full)
     }
 }
 
-fn render_branches(branches: List<GSeq>) -> string {
+fn render_branches(branches: List<GSeq>, full: bool) -> string {
     mut out = ""
     mut i = 0
     for b in branches {
         if i > 0 { out = out + " | " }
-        out = out + render_seq(b)
+        out = out + render_seq(b, full)
         i = i + 1
     }
     out
 }
 
-fn render_seq(s: GSeq) -> string {
+fn render_seq(s: GSeq, full: bool) -> string {
     mut out = ""
     mut i = 0
     for it in s.items {
         if i > 0 { out = out + " " }
-        out = out + render_item(it)
+        out = out + render_item(it, full)
         i = i + 1
     }
     out = out + render_build(s.build)
     for a in s.annots {
         out = out + " " + render_annot(a)
+    }
+    if full {
+        if s.speculative { out = out + " [try]" }
+        if s.fallback { out = out + " [fallback]" }
     }
     out
 }
@@ -59,11 +73,31 @@ fn render_seq(s: GSeq) -> string {
 /// part of the repetition itself rather than a marker on the item: dropping it would
 /// turn a capped loop into an unbounded one, which is a different grammar, not just a
 /// less-annotated one.
-fn render_item(it: GItem) -> string {
+fn render_item(it: GItem, full: bool) -> string {
     mut out = ""
     if it.label != "" { out = it.label + ":" }
-    out = out + render_prim(it.prim) + render_rep(it.rep) + render_bound(it.bound)
+    out = out + render_prim(it.prim, full) + render_rep(it.rep) + render_bound(it.bound)
+    if full { out = out + item_marker_digest(it) }
     out
+}
+
+/// Every per-item marker the display render omits, in one bracket blob.
+/// Injective over the marker fields: distinct marker sets yield distinct
+/// digests, which is all the identity key needs.
+fn item_marker_digest(it: GItem) -> string {
+    mut m = ""
+    if it.sameline { m = m + "^" }
+    if it.cut { m = m + "!cut" }
+    if it.require { m = m + "!req" }
+    if it.gate { m = m + "!gate" }
+    if it.onfail != "" { m = m + "!onfail:" + it.onfail }
+    if it.onfail_cap != "" { m = m + "!ofc:" + it.onfail_cap }
+    if it.mode_off != "" { m = m + "!off:" + it.mode_off }
+    if it.mode_on != "" { m = m + "!on:" + it.mode_on }
+    if it.mode_bump != "" { m = m + "!bump:" + it.mode_bump }
+    if it.mode_on_if != "" { m = m + "!onif:" + it.mode_on_if }
+    if m == "" { return "" }
+    "[" + m + "]"
 }
 
 fn render_bound(b: string) -> string {
@@ -80,12 +114,12 @@ fn render_rep(r: GRep) -> string {
     }
 }
 
-fn render_prim(p: GPrim) -> string {
+fn render_prim(p: GPrim, full: bool) -> string {
     match p {
         .Ref(name) -> name
         .Lit(text) -> "\"${text}\""
         .Named(tok) -> tok
-        .Group(inner) -> "( ${render_node(inner)} )"
+        .Group(inner) -> "( ${render_node(inner, full)} )"
         .Pred(m) -> "@when(${m})"
         .Peek(c) -> "@peek(${c})"
         .Gensym(tag) -> "@gensym(${tag})"
