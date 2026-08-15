@@ -15,7 +15,7 @@
 // This file holds NO language rules — only the generic assembly logic. It is the
 // counterpart of the per-feature fragment files: features contribute fragments,
 // compose.av joins them, and the engine (executor/emit) runs the result.
-use features.grammar.{Grammar, Rule, build_rule_index, BuildKindRow}
+use features.grammar.{Grammar, Rule, build_rule_index, BuildKindRow, render_rule}
 
 /// Assemble an ordered list of grammar fragments into one Grammar. The first
 /// fragment's name + start rule lead; every fragment's rules are concatenated in
@@ -23,8 +23,16 @@ use features.grammar.{Grammar, Rule, build_rule_index, BuildKindRow}
 /// Cross-fragment nonterminal references bind by name against the merged rule
 /// set — the mechanism that lets a statement fragment reference the expression
 /// fragment's `expression` rule without re-defining it.
+fn seen_rule(seen: List<string>, key: string) -> bool {
+    for s in seen {
+        if s == key { return true }
+    }
+    false
+}
+
 export fn compose_fragments(fragments: List<Grammar>) -> Grammar {
     mut rules: List<Rule> = []
+    mut seen: List<string> = []
     mut name = ""
     mut first = true
     for g in fragments {
@@ -33,6 +41,16 @@ export fn compose_fragments(fragments: List<Grammar>) -> Grammar {
             first = false
         }
         for r in g.rules {
+            // A fragment reachable through two composition paths (decl_edge
+            // rides the decl view directly AND the statement flip view it
+            // composes) would duplicate its rules in the merged list —
+            // harmless to the executor (rule_idx lookup is first-wins) but
+            // FATAL to emit (duplicate parse fns). An exact repeat is
+            // dropped; a DIVERGENT same-name rule is kept, so emit's
+            // duplicate-fn guard still fires on real conflicts.
+            let key = render_rule(r)
+            if seen_rule(seen, key) { continue }
+            seen.push(key)
             rules.push(r)
         }
     }

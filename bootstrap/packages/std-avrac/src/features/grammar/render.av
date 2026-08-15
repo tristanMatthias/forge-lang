@@ -15,6 +15,12 @@ export fn render_grammar(g: Grammar) -> string {
     out + "}"
 }
 
+/// Render one rule as `name = body` — the identity key compose_fragments
+/// dedupes on (same spelling ⇒ same rule).
+export fn render_rule(r: Rule) -> string {
+    "${r.name} = ${render_node(r.body)}"
+}
+
 fn render_node(n: GNode) -> string {
     match n {
         .Alt(branches) -> render_branches(branches)
