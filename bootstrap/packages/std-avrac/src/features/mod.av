@@ -26,7 +26,7 @@ use features.spawn_expr.{spawn_expr_feature}
 use features.channels.{channels_feature}
 use features.isolated_expr.{isolated_expr_feature}
 use features.quote_expr.{quote_expr_feature}
-use features.return_stmt.{return_stmt_feature}
+use features.return_stmt.{return_lang}
 use features.select_stmt.{select_feature}
 use features.spec_test.{spec_feature, given_feature, then_feature}
 use features.struct_decl.{struct_lit_feature, field_access_feature, enum_ctor_feature, field_assign_feature, type_decl_feature, shape_decl_feature}
@@ -151,7 +151,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
     register(reg, trait_decl_feature())
     register(reg, type_decl_feature())
     register(reg, shape_decl_feature())
-    register(reg, return_stmt_feature())
     register(reg, let_keyword_feature())
     register(reg, const_keyword_feature())
     register(reg, mut_keyword_feature())
@@ -172,7 +171,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,

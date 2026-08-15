@@ -4,5 +4,7 @@
 ReturnStmt ::= 'return' Expr?
 ```
 
-The expression is optional; an empty `return` becomes `RetEmpty`
-in the AST and emits a zero value of the function's return type.
+The expression is optional and must start on the same line as the
+keyword; an empty `return` becomes `Stmt.ReturnEmpty` in the AST and
+emits the function's default value. The production rule lives in
+`mod.av` (`return_lang`'s gram — the source of truth).

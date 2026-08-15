@@ -1,12 +1,37 @@
-// dir-as-module (g2eo.1): parser.av auto-loads as a sibling, surfaces flat at `features.return_stmt.{...}`
-use core.{feature_new, Feature}
+// return — exit the enclosing function (spec Axis 28). The definition
+// carries the feature whole: syntax, docs, editor surface, and the grammar
+// rule the statement views compose (gram_family = "stmt", t-47hc.8). The
+// lowering (build_return) is feature-owned via the builder manifest
+// (t-kd4y.3); Stmt.Return / Stmt.ReturnEmpty codegen — return-slot stores,
+// DeferStack unwinding, RC releases — stays with the central emitters.
+use features.grammar.{parse_grammar, return_builds}
 
-/// Register the `return` statement feature with the compiler.
-/// Picks up the `return` keyword and routes to the parser's
-/// `parse_return_statement`. Registered via `init_features` in
-/// `features/mod.av`.
-export fn return_stmt_feature() -> Feature {
-    feature_new("return_stmt") with {
-        stmt_keyword: "kw_return",
+export fn return_lang() -> LanguageFeature {
+    LanguageFeature return_def {
+        name = "return",
+        title = "return — exit the enclosing function",
+        docs = """
+`return expr` exits the enclosing function with `expr` as its value;
+bare `return` exits with the function's default value (unit fns, or a
+`null` for a nullable return type wrapped by `maybe_wrap_nullable`).
+
+The operand must start on the SAME LINE as the `return` keyword — the
+language is newline-sensitive, so a value on the next line is a separate
+statement, not the return's operand:
+
+    fn pick(flag: bool) -> int {
+        if flag { return 1 }
+        return
+        compute()     // unreachable statement, NOT `return compute()`
     }
+
+Every `return` runs the scope's pending `defer` / `errdefer` entries
+(LIFO) before the function actually exits.
+""",
+        gram = grammar { return_stmt = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> build_return(e) },
+        builders = return_builds(),
+        snippet = r"return ${1:value}",
+        gram_family = "stmt",
+    }
+    return_def
 }

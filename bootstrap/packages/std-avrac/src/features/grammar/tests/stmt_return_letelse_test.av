@@ -4,9 +4,12 @@
 //
 // (1) bare `return` — `return` with no operand builds Stmt.ReturnEmpty, vs
 //     `return expr` → Stmt.Return(expr). The DSL expresses this as an OPTIONAL
-//     operand: `"return" ( re:expression )? -> MkReturn(re)`. A bare `return`
-//     before `}` / EOF simply doesn't match the optional (its FIRST-set rejects
-//     those tokens), so it folds to ReturnEmpty with NO newline info needed —
+//     operand: `"return" ( re:expression )? -> build_return(re)` (the
+//     return feature's manifest lowering — resolved through the lazy
+//     parse_features() registry exactly as the production spine does). A bare
+//     `return` before `}` / EOF simply doesn't match the optional (its
+//     FIRST-set rejects those tokens), so it folds to ReturnEmpty with NO
+//     newline info needed —
 //     which is what makes it expressible now. The one residual case,
 //     `return\n<expr>` (a value on the NEXT line, which the hand parser treats
 //     as ReturnEmpty + a separate statement via its `current_line != prev_line`
@@ -38,7 +41,7 @@ fn stmt_grammar_src() -> string {
     "  let_decl    = @try \"let\" @cut ( m:\"mut\" )? @require n:IDENT ( \":\" @require ty:type_expr )? @require \"=\" @onfail(bail) init:expression ( \"else\" e:statement tmp:@gensym(letelse) )? @expect(\"IDENT\", \"expected variable name\") @expect(\"type_expr\", \"expected type after `:`\") @expect(\"=\", \"expected `=` after variable name\") -> MkLetBinding(m, n, ty, init, e, tmp)\n" +
     "  type_expr   = tn:IDENT -> MkNamed(tn, targ, topt)\n" +
     // bare `return` OR `return expr` — the operand is optional (FIRST-set gated).
-    "  return_stmt = \"return\" ( re:expression )? -> MkReturn(re)\n" +
+    "  return_stmt = \"return\" ( re:expression )? -> build_return(re)\n" +
     "  block_stmt  = \"{\" ( bs:statement )* \"}\" -> Block(bs)\n" +
     "  expr_stmt   = es:expression -> ExprStmt(es)\n" +
     // ── expression family ──
@@ -101,7 +104,7 @@ spec "grammar-DSL statement family: bare return + let-else == hand-written parse
         }
     }
     given "let_decl composes as an alternative with the pure return/expr rules" {
-        then "let, return → MkReturn, bare expr → ExprStmt all route right" {
+        then "let, return → build_return, bare expr → ExprStmt all route right" {
             agree("let a = 1") &&
             agree("return") &&
             agree("x + 1")
