@@ -205,6 +205,37 @@ spec "t-d91l: a soft grant under the pressure floor backs off before tripping" {
 /// parsed to 0 would quietly DISABLE the back-off this knob configures.
 extern fn avra_mem_soft_wait_parse(s: string) -> int
 
+/// The back-off's RELEASE VALVE, pure: may a borrower keep holding at this
+/// fresh MemAvailable reading, given the hold's high-water mark? Pinned at
+/// the numbers that killed three CI runs: back-off v1 held unconditionally,
+/// so two over-grant shards sat on ~4.6 GiB while the ~7 GiB @std prebuild
+/// kept allocating — the kernel OOM-killer then took the RUNNER (exit 143,
+/// "shutdown signal", three consecutive runs, same suite phase). Holding is
+/// legitimate only while the box holds steady or recovers; a net fall past
+/// the 256 MiB jitter margin means a neighbour is allocating into the hole
+/// and the borrower must yield NOW — the pre-back-off release valve,
+/// restored inside the wait loop.
+extern fn avra_mem_hold_is_safe(high_water_kb: int, avail_kb: int) -> int
+
+spec "t-d91l: the back-off holds only while the box is not deteriorating (the release valve)" {
+    then "steady or recovering availability keeps the hold legitimate" {
+        // Flat, above, and within-jitter readings all hold: the trough has
+        // bottomed — the exact t-d91l shape the back-off exists to ride.
+        avra_mem_hold_is_safe(1536000, 1536000) == 1
+            && avra_mem_hold_is_safe(1536000, 1800000) == 1
+            && avra_mem_hold_is_safe(1536000, 1536000 - 262144) == 1
+    }
+    then "a net fall past the jitter margin yields — the neighbour is still allocating" {
+        // One KiB past the 256 MiB margin flips it: the valve is a boundary,
+        // not a vibe. At the eviction's own numbers (high water ~1.5 GiB,
+        // the prebuild still climbing), the fall crosses this within a few
+        // 100 ms samples — the borrower dies an attributable F4014 instead
+        // of the runner dying an unattributable exit 143.
+        avra_mem_hold_is_safe(1536000, 1536000 - 262145) == 0
+            && avra_mem_hold_is_safe(1536000, 500000) == 0
+    }
+}
+
 spec "t-d91l: the wait knob parses completely or falls back to the default" {
     then "a complete integer is taken verbatim; negatives clamp to the explicit instant-trip 0" {
         avra_mem_soft_wait_parse("300") == 300

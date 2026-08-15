@@ -6386,6 +6386,26 @@ int64_t avra_mem_soft_wait_parse(const char* e) {
     return (int64_t)v;
 }
 
+// The back-off's RELEASE-VALVE guard, pure for spec-pinning: may a borrower
+// keep holding at this fresh reading, given the highest MemAvailable seen
+// since the hold began? Holding is only safe while the box is NOT
+// deteriorating — under the old instant-trip code the borrowers' F4014s
+// were, functionally, the box's pressure-release valve, and back-off v1
+// removed it: three consecutive rc-strict runs died as runner-level OOM
+// evictions at the same suite phase (the ~7 GiB @std prebuild still
+// climbing while two over-grant shards HELD ~4.6 GiB under the floor —
+// avail 1536 MiB and falling, dead 48 s later). A net fall of more than
+// 256 MiB from the hold's high-water mark means a neighbour is still
+// allocating into the hole; the borrower must yield NOW and give the
+// memory back, exactly as the pre-back-off code did. The margin tolerates
+// meminfo jitter and kernel reclaim churn; a genuinely climbing build
+// crosses it within a few 100 ms samples. A trough that has BOTTOMED
+// (siblings peaked, avail flat or recovering) never trips this — that is
+// the t-d91l shape the back-off exists to ride.
+int64_t avra_mem_hold_is_safe(int64_t high_water_kb, int64_t avail_kb) {
+    return avail_kb >= high_water_kb - 256 * 1024;
+}
+
 static int64_t avra_mem_soft_wait_ms(void) {
     static _Atomic int64_t cached = -1;
     int64_t c = atomic_load(&cached);
@@ -6401,7 +6421,7 @@ static int64_t avra_mem_soft_wait_ms(void) {
 // but it can and does speak the same language.
 static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb,
                                     int soft, int64_t avail_kb, int64_t floor_kb,
-                                    int64_t waited_ms) {
+                                    int64_t waited_ms, int deepened) {
     const char* phase = atomic_load_explicit(&avra_mem_phase, memory_order_relaxed);
     fflush(stdout);
     fprintf(stderr,
@@ -6440,10 +6460,18 @@ static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb,
             "  budget: soft grant exceeded while the box is under pressure "
             "(%lld MiB available < %lld MiB floor)\n",
             (long long)(avail_kb / 1024), (long long)(floor_kb / 1024));
-        // The back-off is the difference between "a trough touched the floor"
-        // and "pressure never lifted" — a reader deciding between t-d91l's
-        // transient shape and a genuine cliff needs the duration stated.
-        if (waited_ms > 0) {
+        // The back-off line is the reader's tell between three shapes: a
+        // transient trough (no trip at all — no report), a genuine cliff
+        // (held the whole budget, pressure never lifted), and a DEEPENING
+        // collapse (yielded early so a still-allocating neighbour survives —
+        // the release valve, avra_mem_hold_is_safe).
+        if (waited_ms > 0 && deepened) {
+            fprintf(stderr,
+                "  backed off: held allocation %lld ms, then yielded — pressure kept "
+                "DEEPENING (a neighbour is still allocating; holding would feed the "
+                "OS OOM-killer a bigger victim)\n",
+                (long long)waited_ms);
+        } else if (waited_ms > 0) {
             fprintf(stderr,
                 "  backed off: held allocation %lld ms waiting for the box to recover "
                 "(AVRA_MEM_SOFT_WAIT_MS) — pressure never lifted\n",
@@ -6504,8 +6532,10 @@ static void avra_mem_poll(void) {
     // of grace to push the box over. avra_mem_should_trip stays the one
     // trip decision — this loop only re-asks it with fresh readings.
     int64_t waited_ms = 0;
+    int deepened = 0;
     if (soft) {
         int64_t budget_ms = avra_mem_soft_wait_ms();
+        int64_t high_water_kb = avail_kb;
         while (waited_ms < budget_ms) {
             // Sleep the REMAINDER when under one quantum, so the total wait
             // lands exactly on the budget (never past it) and the report's
@@ -6518,11 +6548,19 @@ static void avra_mem_poll(void) {
             rss = avra_mem_rss_kb();
             avail_kb = avra_mem_available_kb();
             if (!avra_mem_should_trip(rss, limit_kb, soft, avail_kb, floor_kb)) return;
+            // The release valve (avra_mem_hold_is_safe): holding is only
+            // legitimate while the box holds steady or recovers. Still
+            // falling past the margin = a neighbour is allocating into the
+            // hole we are sitting on — yield the memory NOW, exactly as the
+            // pre-back-off code did, instead of feeding the kernel
+            // OOM-killer a runner-sized victim.
+            if (avail_kb > high_water_kb) high_water_kb = avail_kb;
+            if (!avra_mem_hold_is_safe(high_water_kb, avail_kb)) { deepened = 1; break; }
         }
     }
     // Latch: the first thread to cross reports; others fall through to _exit.
     if (atomic_exchange_explicit(&avra_mem_tripped, 1, memory_order_relaxed)) return;
-    avra_mem_ceiling_report(rss, limit_kb, soft, avail_kb, floor_kb, waited_ms);
+    avra_mem_ceiling_report(rss, limit_kb, soft, avail_kb, floor_kb, waited_ms, deepened);
 }
 
 // Per-`while`-loop iteration ceiling for comptime execution. A comptime loop
