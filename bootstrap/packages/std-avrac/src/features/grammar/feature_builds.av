@@ -22,7 +22,7 @@
 // the SEMANTIC hooks (emit/resolve/check) and references these builds by
 // name in its gram — the reference is still the registration.
 use core.{Stmt, ExprId, StmtId, WhenArm}
-use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_to_stmt_opt}
 
 export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
 export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
@@ -31,6 +31,11 @@ export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
 /// keyword rides the bind's `spanned` row (the engine wraps the emitted
 /// call in mk_stamp_stmt_at), never this fn.
 export fn build_while(c: ExprId, body: StmtId) -> Stmt { Stmt.While(c, body) }
+
+/// `if cond { then } ( else stmt )?`. Same spanned discipline as
+/// build_while; the absent-else fold lives in capval_to_stmt_opt (the
+/// adapter's unwrap), so this fn is the bare shape.
+export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
 
 /// `return ( value )?` — an absent same-line value is a bare
 /// `Stmt.ReturnEmpty`; a present one is `Stmt.Return(value)`. The
@@ -51,6 +56,9 @@ export fn _gb_build_return(st: PState, vals: List<CapVal>) -> CapVal {
 }
 export fn _gb_build_while(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_while(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1])))
+}
+export fn _gb_build_if(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_if(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1]), capval_to_stmt_opt(st, vals[2])))
 }
 
 // ── match/when (t-kd4y.3 match slice) — the arms whose central helpers
@@ -106,4 +114,11 @@ export fn while_builds() -> List<BuilderBind> {
     [BuilderBind { name: "build_while", kind: "stmt", arity: 2, spanned: true,
                    module: "features.grammar", export_name: "_gb_build_while",
                    build: _gb_build_while }]
+}
+export fn if_builds() -> List<BuilderBind> {
+    // spanned like build_while — the stamp lands at the `if` keyword, the
+    // retired mk_if's add_stmt_at anchor.
+    [BuilderBind { name: "build_if", kind: "stmt", arity: 3, spanned: true,
+                   module: "features.grammar", export_name: "_gb_build_if",
+                   build: _gb_build_if }]
 }

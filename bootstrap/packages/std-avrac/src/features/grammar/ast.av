@@ -861,7 +861,7 @@ export fn central_build_kind(bn: string) -> string {
             or "MkPrimaryFail" -> "expr"
         "Break" or "Continue" or "ReturnEmpty" or "Return"
             or "ExprStmt" or "Block"
-            or "If" or "ForLoop" or "MkForDestructure" or "MkMatch" or "MkMatchTable"
+            or "ForLoop" or "MkForDestructure" or "MkMatch" or "MkMatchTable"
             or "MkWhenStmt" or "MkIfLetStmt" -> "stmt"
         "MkArmReturn" -> "expr"
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind

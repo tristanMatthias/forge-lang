@@ -4189,7 +4189,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             else { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, env.get(args[0]))))) }
         }
         // ── Control-flow + block builds (target: Stmt, ps3t.6.5.3) — each arm
-        //    delegates to the SHARED constructor core (mk_block / mk_if /
+        //    delegates to the SHARED constructor core (mk_block /
         //    mk_for_loop), so apply_build and the generated static
         //    whole-program parser build byte-identical trees. ──
         // sp_start = 0 - 1 (span-free): the interpreter is the differential oracle and
@@ -4197,10 +4197,10 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // parser passes the real rule-entry sp_start (emit) so its per-statement SrcPos
         // side-table matches the hand parser's parse_statement_list_ids. (t-47hc.12)
         "Block" if args.length == 1 -> mk_block(st, 0 - 1, capval_to_stmt_list(env.get(args[0])))
-        // `While` is feature-owned now: build_while in the manifest (t-47hc.8
-        // flip, spanned row) — the interpreter's span-free lowering is the
-        // bare adapter call, exactly what the central arm's `0 - 1` did.
-        "If" if args.length == 3 -> mk_if(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
+        // `While` / `If` are feature-owned now: build_while / build_if in the
+        // manifest (t-47hc.8 flips, spanned rows) — the interpreter's
+        // span-free lowering is the bare adapter call, exactly what the
+        // central arms' `0 - 1` did.
         "ForLoop" if args.length == 4 -> mk_for_loop(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
         "MkForBinding" if args.length == 2 -> mk_for_binding(env.get(args[0]), env.get(args[1]))
         "MkForDestructure" if args.length == 3 -> mk_for_destructure(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
@@ -5197,19 +5197,6 @@ export fn mk_block(st: PState, sp_start: int, body: List<StmtId>) -> CapVal {
     add_stmt_at(st, Stmt.Block(body), sp_start)
 }
 
-/// `if cond then ( "else" else )?` (the `If` build's core). An absent else is a
-/// null else_branch; a present else (a block or a nested if for `else if`) is an
-/// SNode.
-export fn mk_if(st: PState, sp_start: int, cond: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
-    let c = capval_to_expr(st, cond)
-    let then_s = capval_to_stmt(st, then_cv)
-    mut else_opt: StmtId? = none
-    match else_cv {
-        .SNode(eid) -> else_opt = eid
-        _ -> {}
-    }
-    add_stmt_at(st, Stmt.If(c, then_s, else_opt), sp_start)
-}
 
 /// `for v in lo ( ".." hi )? body` (the `ForLoop` build's core). A present `..`
 /// picks the integer-range `For`, absent the collection `ForIn`.
@@ -5546,6 +5533,19 @@ export fn capval_to_expr_opt(st: PState, v: CapVal) -> ExprId? {
     capval_to_expr(st, v)
 }
 
+/// The STATEMENT twin — spelled as the retired mk_if's else-match
+/// (`.SNode -> some, anything else -> none`), NOT present-then-coerce like
+/// capval_to_expr_opt above: mk_if silently treated a present-but-non-SNode
+/// carrier as absent (unreachable on valid parses — the else target is
+/// always a statement — but exactness is what makes a flip byte-identical),
+/// so its manifest replacement must too.
+export fn capval_to_stmt_opt(st: PState, v: CapVal) -> StmtId? {
+    match v {
+        .SNode(id) -> id
+        _ -> none
+    }
+}
+
 export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
     let no_args: List<ExprId> = []
     let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
@@ -5622,7 +5622,7 @@ export fn mk_let_destructure_g(st: PState, names: List<Token>, init_cv: CapVal) 
 ///
 /// The position is the OWNING RULE's entry byte, so the rule that names this build must
 /// begin exactly where the inner declaration does. The interpreter passes `0 - 1` and
-/// records nothing, matching every other span-stamping build (`mk_block`, `mk_if`, …):
+/// records nothing, matching every other span-stamping build (`mk_block`, `mk_for_loop`, …):
 /// it is the differential oracle and carries no spans.
 export fn mk_stamp_stmt_at(st: PState, sp_start: int, inner: CapVal) -> CapVal {
     let id = capval_to_stmt(st, inner)

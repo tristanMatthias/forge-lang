@@ -1,0 +1,59 @@
+// The if LanguageFeature definition (features/if_stmt/mod.av): the
+// definition carries title/docs/snippet + BOTH position families' hooks
+// (stmt + expr), its keyword DERIVES from the declared grammar, and the
+// declared STATEMENT rule reaches the composed views through
+// feature_stmt_grammar_fragments — the t-47hc.8 flip's guard. The lowering
+// rides a `spanned` manifest row whose optional-else unwrap
+// (capval_to_stmt_opt, the StmtId? marshalling row this flip added) is
+// pinned by the row shape below.
+use @std.avrac.features.if_stmt.{if_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar, grammar_build_refs, Grammar}
+
+spec "if as a LanguageFeature" {
+    then "the keyword derives from the declared grammar" {
+        // "else" is a derived keyword too — both literals live in the rule.
+        let kws = feature_keywords(if_lang())
+        kws.length == 2 && kws[0] == "if" && kws[1] == "else"
+    }
+    then "title, docs, and editor snippet are carried" {
+        let f = if_lang()
+        f.title.length > 0 && f.docs.contains("flow-narrows") && f.snippet.contains("if")
+    }
+    then "the declared rule reaches the composed statement view, spelling and all" {
+        // The DISPLAY render omits item markers (@onfail/@off/@require live
+        // only in rule_identity), so the pinned string is the marker-free
+        // head + the feature-owned lowering.
+        let rule = "if_stmt = \"if\" c:expression t:block ( \"else\" e:statement )? -> build_if(c, t, e)"
+        render_grammar(feature_gram(if_lang())).contains(rule)
+            && render_grammar(avra_stmt_flip_grammar()).contains(rule)
+    }
+    then "the whole-program view lowers through the same builder" {
+        let prod = render_grammar(avra_program_grammar())
+        prod.contains("build_if(") && !prod.contains("-> If(")
+    }
+    then "if_stmt is a DEFINED rule in every view's rule TABLE, build arity and all" {
+        // The structural twin of the spelling pins above (review find on
+        // #1243): a rendered substring proves the display form, the rule
+        // table + grammar_build_refs prove the rule EXISTS and references
+        // build_if at arity 3 — an unresolved reference cannot satisfy this.
+        mut ok = true
+        for g in [feature_gram(if_lang()), avra_stmt_flip_grammar(), avra_program_grammar()] {
+            mut has_rule = false
+            for r in g.rules { if r.name == "if_stmt" { has_rule = true } }
+            mut has_ref = false
+            for br in grammar_build_refs(g) {
+                if br.name == "build_if" && br.argc == 3 { has_ref = true }
+            }
+            if !has_rule || !has_ref { ok = false }
+        }
+        ok
+    }
+    then "build_if rides the manifest as a SPANNED stmt row" {
+        mut row = ""
+        for b in feature_builders() {
+            if b.name == "build_if" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
+        }
+        row == "stmt/3/spanned/_gb_build_if"
+    }
+}
