@@ -2243,48 +2243,215 @@ fn join_args(args: List<string>) -> string {
     out
 }
 
-/// The derived import lines a generated parser needs for the feature-supplied
-/// builders its grammar references (t-kd4y.3): one `use <module>.{names…}`
-/// line per owning module, in manifest order — appended to the fixed engine
-/// header by each gen_*_file.av. Empty manifest (or a grammar referencing
-/// none of it) derives nothing, keeping the pre-injection headers
-/// byte-identical.
-export fn builder_import_lines(g: Grammar) -> string {
-    builder_import_lines_for(g, feature_builders())
+/// GENERATOR-OWNS-IMPORTS (t-47hc.8): derive a generated parser module's
+/// import header from the emitted source ITSELF — every external free call
+/// and every referenced type, classified to its home module. The generator
+/// knows exactly what it emitted, so nothing hand-curated can drift: a name
+/// the scan misses fails the regen gate as F3000 undefined, and a stale
+/// extra import can't exist because the header is recomputed per emit.
+/// `grammar_mod`/`core_mod` are the module spellings — relative
+/// ("features.grammar"/"core") for the checked-in in-package parsers (an
+/// absolute self-import double-expands derives, F4012 — see gen_decl_file),
+/// absolute ("@std.avrac.features.grammar"/"@std.avrac.core") for the
+/// standalone gen-check harness.
+export fn derived_import_lines(src: string, grammar_mod: string, core_mod: string) -> string {
+    derived_import_lines_for(src, feature_builders(), grammar_mod, core_mod)
 }
 
-/// The manifest-parameterized core of `builder_import_lines`, split out so the
-/// specs can feed synthetic manifests and pin the grouping + format without
-/// registering real features.
-export fn builder_import_lines_for(g: Grammar, binds: List<BuilderBind>) -> string {
-    let refs = grammar_build_refs(g)
-    mut out = ""
-    mut done: List<string> = []
-    for b in binds {
-        if !bind_referenced(b, refs) { continue }
-        if str_in(done, b.module) { continue }
-        done.push(b.module)
-        mut names = ""
-        for b2 in binds {
-            if b2.module == b.module && bind_referenced(b2, refs) {
-                if names != "" { names = names + ", " }
-                names = names + b2.export_name
-            }
+/// The manifest-parameterized core: a call name that is a feature builder's
+/// export lands under the builder's OWN module (today always the engine —
+/// feature_builds.av — but the manifest is the authority, so a builder that
+/// moves home moves its import with it); the engine's spelling is the
+/// caller's `grammar_mod`, a foreign module renders verbatim.
+export fn derived_import_lines_for(src: string, binds: List<BuilderBind>, grammar_mod: string, core_mod: string) -> string {
+    // ONE pass collects calls and words, skipping comments and string
+    // literals inline. No stripped intermediate: rebuilding a 160KB source
+    // line-by-line is ~half a GB of arena churn per pass, and find-from-
+    // offset rescans are O(n^2) — both took the gen-check driver to a
+    // 13.8GB F4014 before this shape.
+    let scan = scan_import_names(src)
+    let calls = scan.calls
+    mut gram_names: List<string> = []
+    mut core_names: List<string> = []
+    mut foreign_mods: List<string> = []
+    mut foreign_names: List<string> = []
+    for n in calls {
+        mut home_mod = ""
+        for b in binds {
+            if b.export_name == n && b.module != "" && b.module != "features.grammar" { home_mod = b.module }
         }
-        out = out + "use ${b.module}.{${names}}\n"
+        if home_mod != "" {
+            foreign_mods.push(home_mod)
+            foreign_names.push(n)
+        } else if str_in(core_fn_homes(), n) {
+            core_names.push(n)
+        } else {
+            gram_names.push(n)
+        }
+    }
+    for t in grammar_type_homes() {
+        if str_in(scan.words, t) { gram_names.push(t) }
+    }
+    for t in core_type_homes() {
+        if str_in(scan.words, t) { core_names.push(t) }
+    }
+    mut out = ""
+    if gram_names.length > 0 {
+        out = out + "use ${grammar_mod}.{${join_sorted(gram_names)}}\n"
+    }
+    if core_names.length > 0 {
+        out = out + "use ${core_mod}.{${join_sorted(core_names)}}\n"
+    }
+    mut done_mods: List<string> = []
+    for m in foreign_mods {
+        if str_in(done_mods, m) { continue }
+        done_mods.push(m)
+        mut names: List<string> = []
+        mut i = 0
+        for fm in foreign_mods {
+            if fm == m { names.push(foreign_names[i]) }
+            i = i + 1
+        }
+        out = out + "use ${m}.{${join_sorted(names)}}\n"
     }
     out
 }
 
-fn bind_referenced(b: BuilderBind, refs: List<BuildRef>) -> bool {
-    for r in refs { if r.name == b.name { return true } }
-    false
+/// The core-module FNS a generated parser may call free. Everything else a
+/// parser calls free lives in features.grammar (engine helpers + _gb_
+/// adapters) — by construction of emit_call_build and the marshalling rows.
+fn core_fn_homes() -> List<string> {
+    ["pattern_optional_present", "pattern_optional_absent"]
+}
+
+/// Types the engine module owns.
+fn grammar_type_homes() -> List<string> {
+    ["Token", "CapVal", "PState"]
+}
+
+/// Types core owns that generated code can reference (annotations, enum
+/// paths like `Tk.` / `Stmt.`, list element types).
+fn core_type_homes() -> List<string> {
+    ["ExprId", "StmtId", "PatId", "Expr", "Stmt", "Pattern", "MatchArm", "SelectArm", "CompConfig", "CompConfigPair", "ChildrenSlot", "Tk", "SrcPos", "TypeParamEntry", "Annotation", "TypeExpr", "ParamEntry", "FieldEntry", "FieldInit", "Variant", "WhenArm", "ValueType", "NodeStore"]
+}
+
+/// Builtins that read as free calls but are language-level, never imported.
+fn builtin_call_names() -> List<string> {
+    ["string"]
+}
+
+fn is_ident_ch(ch: string) -> bool {
+    (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9") || ch == "_"
+}
+
+type ImportScan = { calls: List<string>, words: List<string> }
+
+/// ONE forward pass over the (comment- and string-stripped) source:
+/// - `calls`: every EXTERNAL free-call name — an identifier run immediately
+///   followed by `(`, not preceded by `.` (a method or variant call) nor by
+///   `fn ` (a definition), minus locally-defined fns, builtins, and the
+///   `parse_`-prefixed generated family (same-module siblings, never
+///   imported).
+/// - `words`: every identifier run not preceded by `.` — the set the type
+///   scan checks membership against (a `.Name` member suffix like
+///   Pattern.Variant is not a reference to the type `Name`).
+fn scan_import_names(src: string) -> ImportScan {
+    mut found: List<string> = []
+    mut defined: List<string> = []
+    mut words: List<string> = []
+    mut i = 0
+    let n = src.length
+    mut prev = ""
+    while i < n {
+        let ch = src.substring(i, i + 1)
+        // `// …` line comment: prose never feeds the scan
+        if ch == "/" && i + 1 < n && src.substring(i + 1, i + 2) == "/" {
+            while i < n && src.substring(i, i + 1) != "\n" { i = i + 1 }
+            prev = "\n"
+            continue
+        }
+        // `"…"` string literal: diagnostic text never feeds the scan
+        if ch == "\"" {
+            mut k = i + 1
+            mut esc = false
+            while k < n {
+                let sc = src.substring(k, k + 1)
+                if esc {
+                    esc = false
+                } else if sc == "\\" {
+                    esc = true
+                } else if sc == "\"" {
+                    break
+                }
+                k = k + 1
+            }
+            i = k + 1
+            prev = "\""
+            continue
+        }
+        if is_ident_ch(ch) && !is_ident_ch(prev) {
+            mut j = i + 1
+            while j < n && is_ident_ch(src.substring(j, j + 1)) { j = j + 1 }
+            let name = src.substring(i, j)
+            if prev != "." && !str_in(words, name) { words.push(name) }
+            let callable_head = ch == "_" || (ch >= "a" && ch <= "z")
+            if j < n && src.substring(j, j + 1) == "(" && callable_head {
+                if prev == "." {
+                    // method / variant call — owned by the receiver
+                } else if i >= 3 && src.substring(i - 3, i) == "fn " {
+                    if !str_in(defined, name) { defined.push(name) }
+                } else {
+                    if !str_in(found, name) { found.push(name) }
+                }
+            }
+            prev = src.substring(j - 1, j)
+            i = j
+        } else {
+            prev = ch
+            i = i + 1
+        }
+    }
+    mut calls: List<string> = []
+    for f in found {
+        if str_in(defined, f) { continue }
+        if str_in(builtin_call_names(), f) { continue }
+        if f.starts_with("parse_") { continue }
+        calls.push(f)
+    }
+    ImportScan { calls: calls, words: words }
+}
+
+
+fn join_sorted(names: List<string>) -> string {
+    mut xs: List<string> = []
+    for x in names {
+        if !str_in(xs, x) { xs.push(x) }
+    }
+    // selection sort into a fresh list — the sets are small and the
+    // output must be deterministic for the regen guards
+    mut sorted: List<string> = []
+    while sorted.length < xs.length {
+        mut best = ""
+        for x in xs {
+            if str_in(sorted, x) { continue }
+            if best == "" || x < best { best = x }
+        }
+        sorted.push(best)
+    }
+    mut out = ""
+    mut k = 0
+    for x in sorted {
+        if k > 0 { out = out + ", " }
+        out = out + x
+        k = k + 1
+    }
+    out
 }
 
 /// The build-name → emission map — executor.apply_build's one-to-one twin,
 /// including its consult order: feature-supplied lowerings first (t-kd4y.3),
 /// spelled as their normalized-ABI call (`export_name(st, [args…])`) with the
-/// import derived into the module header (builder_import_lines), then the
+/// import derived into the module header (derived_import_lines), then the
 /// central arms. Scalar captures are their CapVal vars; a `_list` suffix
 /// names an accumulated arg (only call_suffix's, which takes the whole list).
 fn emit_call_build(name: string, args: List<string>) -> string {

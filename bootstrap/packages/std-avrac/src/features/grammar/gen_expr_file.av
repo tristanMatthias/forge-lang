@@ -5,22 +5,19 @@
 // transitively emit.av — never enters the production compiler graph (mod.av imports
 // the GENERATED file, which pulls only the grammar builders, not the emitter).
 //
-// `emit_expr_parser_file()` returns the COMPLETE module text: a fixed import header
-// (the grammar builders the generated body calls) + `emit_parser_source_ex(_, true)`
+// `emit_expr_parser_file()` returns the COMPLETE module text: a provenance banner + the DERIVED
+// import header (computed from the emitted source) + `emit_parser_source_ex(_, true)`
 // (the exported static parser fns). Editing the §2 expression grammar (avra_grammar.av)
 // changes this text — run `bash scripts/diagnose.sh --emit-regen-expr` to rewrite the
 // checked-in file, then commit it; the guard test fails until you do.
 
-use features.grammar.{avra_expr_dispatch_grammar, emit_parser_source_ex, builder_import_lines_for, grammar_with_builder_kinds, builder_kind_rows}
+use features.grammar.{avra_expr_dispatch_grammar, emit_parser_source_ex, derived_import_lines, grammar_with_builder_kinds, builder_kind_rows}
 use features.{feature_builders}
 
-/// The fixed import header of the production static-parser module: exactly the
-/// features.grammar builders + core types the generated body references. An extra
-/// import is only an F9002 warning, but a MISSING one is a hard undefined-symbol
-/// error — keep this in lockstep with the build helpers avra_expr_grammar's rules
-/// name (mk_assign / fold_pipe / fold_with / fold_nullish / fold_logical / rebind_eq /
-/// mk_is / mk_inlist / mk_inrange / mk_eqchain, plus the Pratt prelude's mk_binary +
-/// the tok_starts_expr_leaf FIRST-guard).
+/// The BANNER of this generated parser module — provenance comments only.
+/// The import header is no longer hand-kept: it derives from the emitted
+/// source itself (derived_import_lines, t-47hc.8 generator-owns-imports),
+/// so nothing here can drift from what the body references.
 export fn gen_expr_parser_header() -> string {
     // RELATIVE imports (features.grammar / core), NOT the absolute `@std.avrac.`
     // form the emit-gen-check STANDALONE harness uses: this file is a globbed
@@ -32,9 +29,7 @@ export fn gen_expr_parser_header() -> string {
     "// Source of truth: the §2 expression grammar in features/grammar/avra_grammar.av.\n" +
     "// This is the PRODUCTION expression parser under AVRA_PARSER_EXPR_STATIC=1 (ps3t.6.7\n" +
     "// Step G); parse/tests/gen_expr_parser_regen_test.av asserts it equals\n" +
-    "// emit_expr_parser_file() so a grammar edit that isn't regenerated fails the suite.\n" +
-    "use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_tok_text, capval_present, lookahead_ok, mk_binary, unary_expr, mk_assign_expr, fold_pipe_expr, fold_with_expr, fold_postfix_with_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_enum_ctor_expr, mk_eqchain_expr, mk_list_lit, mk_list_comp, mk_channel, mk_expr_block, mk_quote, mk_quote_type, mk_quote_arm, mk_spawn, mk_isolated, mk_when_arm, mk_when_default, mk_when, capval_to_when_arm, mk_match_expr, mk_if_expr, mk_if_let, gensym_token, capval_to_arm, tok_starts_pattern, modes_with_flag_off, mk_group_or_empty, mk_tuple_fr, mk_lambda, mk_lambda_typed, mk_param, capval_to_pentry, modes_with_flag_on, tok_starts_expr_leaf, mk_field_init, mk_with_suffix, capval_to_finit, mk_map_lit, mk_splice, mk_splice_struct, base_pred, modes_with_counter_bumped, mk_try_suffix, mk_catch_suffix, mk_opt_chain, mk_tuple_index, mk_field_access, mk_index_suffix, mk_none_cap, mk_qualified, capval_toks, mk_template, mk_struct_lit, mk_grammar_block, mk_table_header, mk_table_row, mk_table_lit, mk_primary_fail, rawbrace_scan, mk_tagged_template, literal_node, mk_call_arg, mk_call_suffix, mk_generic_call_suffix, mk_enum_ctor_suffix, mk_opt_method_call, mk_force_unwrap}\n" +
-    "use core.{ExprId, StmtId, Stmt, SrcPos, Tk, ParamEntry, WhenArm, MatchArm, FieldInit}\n\n"
+    "// emit_expr_parser_file() so a grammar edit that isn't regenerated fails the suite.\n\n"
 }
 
 /// The complete text of parse/gen_expr_parser.av: header + the exported generated
@@ -42,6 +37,6 @@ export fn gen_expr_parser_header() -> string {
 export fn emit_expr_parser_file() -> string {
     let g = avra_expr_dispatch_grammar()
     let binds = feature_builders()
-    gen_expr_parser_header() + builder_import_lines_for(g, binds)
-        + emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    let src = emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    gen_expr_parser_header() + derived_import_lines(src, "features.grammar", "core") + "\n" + src
 }

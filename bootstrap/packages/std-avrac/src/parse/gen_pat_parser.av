@@ -3,8 +3,9 @@
 // This is the PRODUCTION pattern parser;
 // parse/tests/gen_pat_parser_regen_test.av asserts it equals
 // emit_pat_parser_file() so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_pat, capval_tok_text, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks}
-use core.{Pattern, PatId, ValueType, Tk, pattern_optional_present, pattern_optional_absent}
+
+use features.grammar.{CapVal, PState, Token, capval_to_pat, capval_tok_text, ident_pat_bare, param_entries_from_toks, pat_bool_node, pat_num_node, pat_str_node}
+use core.{PatId, Pattern, Tk, ValueType, pattern_optional_absent, pattern_optional_present}
 
 // generated recursive-descent parser for grammar `grammar`
 export fn parse_pattern_or(st: PState) -> CapVal {
