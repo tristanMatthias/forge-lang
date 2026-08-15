@@ -110,7 +110,7 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
         let err = builder_validation_error_for("toy", grammar_checked(g), spanny)
         err.contains("Spanny") && err.contains("spanned") && err.contains("stmt")
     }
-    then "shadowing a central name with a different kind is rejected" {
+    then "shadowing a central name is rejected — different kind" {
         // MkMatch: a durable central "stmt" row — spine-only, no feature gram
         // references it, so it stays central (feature_builds.av documents
         // why). (MkDefer was the original fixture name until its t-kd4y.3
@@ -125,7 +125,25 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ]
         let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
-        err.contains("MkMatch") && err.contains("`expr`") && err.contains("`stmt`")
+        err.contains("MkMatch") && err.contains("shadows")
+    }
+    then "shadowing a central name is rejected — SAME kind and arity too" {
+        // The dangerous shape (CodeRabbit find on #1242): a same-kind shadow
+        // used to validate CLEAN, and the two dispatchers consult in
+        // opposite orders — emit_call_build would lower `If` through the
+        // feature adapter while apply_build took the central arm. Disjoint
+        // name sets are what make the opposite orders coherent; this pins
+        // the gate that enforces them.
+        let g = grammar {
+            top  = a:leaf -> If(a)
+            leaf = "ztok" -> Zed()
+        }
+        let shadow = [
+            bind("If", "stmt", 1, "features.toy", "if_build"),
+            bind("Zed", "expr", 0, "features.toy", "zed_build"),
+        ]
+        let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
+        err.contains("If") && err.contains("shadows") && err.contains("central")
     }
 }
 
