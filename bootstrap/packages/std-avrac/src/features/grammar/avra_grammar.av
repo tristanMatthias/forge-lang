@@ -2,6 +2,7 @@
 
 use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_grammars, compose_fragments}
 use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_grammar, avra_match_table_grammar}
+use features.for_stmt.{avra_for_grammar}
 // t-47hc.8 — the statement-family registry: every feature whose gram declares
 // `gram_family = "stmt"`, in registration order. The statement views fold it
 // in below, so a statement keyword's rules live ONLY in its feature file.
@@ -957,7 +958,6 @@ fn avra_stmt_common_grammar() -> Grammar {
   // reports about ITS closer instead — two diagnostics, neither the right one.
   if_stmt       = "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block ( "else" e:statement )?
                   @expect("{", "expected `{` after if condition", F0010) -> If(c, t, e)
-  for_binding   = lp:"(" ( names:IDENT ( @peek(comma_ident) "," names:IDENT )* ","? )? ")" -> MkForBinding(lp, names)
   // `@onfail(bail)` on the CONDITION: a
   // failed condition ends the rule and the missing block is never reported. `while return
   // 2` is the shape — one F0040, and without the bail the native rule went on
@@ -1001,42 +1001,16 @@ fn avra_stmt_common_grammar() -> Grammar {
     grammar_checked(gp)
 }
 
-fn avra_stmt_flip_for_grammar() -> Grammar {
-    let gp = grammar {
-  for_stmt = @peek(for_destructure) "for" fb:for_binding @require "in" @off(allow_struct_lit) coll:expression body:block @expect("in", "expected `in` after for destructure pattern") -> MkForDestructure(fb, coll, body)
-           | "for" v:IDENT @require "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block @expect("in", "expected `in` after loop variable") -> ForLoop(v, lo, hi, body)
-    }
-    grammar_checked(gp)
-}
 
-// t-47hc.21: the dispatch view is IDENTICAL to the flip view above —
-// the branches are predictive, not speculative:
-// `@require` aborts a malformed header before a body is built (no runaway that eats the
-// next declaration), and the error path surfaces a GRAMMAR-NATIVE diagnostic and
-// adopts the DSL's stop byte, so a native rule owns its own message and resync point.
-fn avra_stmt_dispatch_for_grammar() -> Grammar {
-    let gp = grammar {
-  // t-47hc.21: `@require` (the abort) exists now and fixes the RUNAWAY here — a
-  // malformed `for Foo { }` header no longer parses `{ … }` as the collection and
-  // swallows the next declaration. It is NOT spent on this branch: on `impl for
-  // Foo { }` the pinned recovery resyncs and re-parses `Foo { }` as a
-  // struct-literal expr-stmt
-  // (F0001 F0001 F0013, two nodes) where the abort yields one (F0001). Spending the
-  // capability waits on matching that resync.
-  for_stmt = @peek(for_destructure) "for" fb:for_binding @require "in" @off(allow_struct_lit) coll:expression body:block @expect("in", "expected `in` after for destructure pattern") -> MkForDestructure(fb, coll, body)
-           | "for" v:IDENT @require "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block @expect("in", "expected `in` after loop variable") -> ForLoop(v, lo, hi, body)
-    }
-    grammar_checked(gp)
-}
 
 export fn avra_stmt_flip_grammar() -> Grammar {
-    let stmt = compose_grammars(avra_stmt_common_grammar(), avra_stmt_flip_for_grammar())
+    let stmt = avra_stmt_common_grammar()
     // The INTERPRETER walks the composed Grammar, so every rule match_stmt references
     // must be DEFINED here — there is no cross-file linking to fall back on the way the
     // emitted parsers have. Missing avra_match_arm_grammar() would leave match_arm /
     // match_when_arm unresolved and the DSL would error on every `match`
     // statement. Caught in review on #1028.
-    mut frags: List<Grammar> = [stmt, avra_expr_core(), avra_decl_edge_grammar(), avra_type_flip_grammar(), avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]
+    mut frags: List<Grammar> = [stmt, avra_expr_core(), avra_decl_edge_grammar(), avra_type_flip_grammar(), avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar(), avra_for_grammar()]
     for g in feature_stmt_grammar_fragments() { frags.push(g) }
     compose_fragments(frags)
 }
@@ -1053,7 +1027,7 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
     // OWN dispatch grammar, so one shared fragment is the only home that serves
     // both (t-47hc.25). Composed LAST so the statement rules keep leading the
     // merged rule set — the emitted function order is observable.
-    mut frags: List<Grammar> = [compose_grammars(avra_stmt_common_grammar(), avra_stmt_dispatch_for_grammar()), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]
+    mut frags: List<Grammar> = [avra_stmt_common_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar(), avra_for_grammar()]
     for g in feature_stmt_grammar_fragments() { frags.push(g) }
     compose_fragments(frags)
 }

@@ -7,6 +7,29 @@ use core.{feature_new, Feature}
 use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
 use features.eval.{Runtime, StepResult, execute_for_range, execute_for_in, error_result}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
+
+/// The `for` statement rules — feature-owned (t-47hc.8), composed into the
+/// statement views; the builds (MkForDestructure / ForLoop / MkForBinding)
+/// stay engine-central until this feature's lowering flip. The tuple-
+/// destructure binding `for (a, b) in coll` is peeled first by lookahead;
+/// `for_binding` lives here because only that branch references it.
+///
+/// t-47hc.21: `@require` (the abort) fixes the RUNAWAY — a malformed
+/// `for Foo { }` header no longer parses `{ … }` as the collection and
+/// swallows the next declaration. It is NOT spent on the destructure
+/// branch: on `impl for Foo { }` the pinned recovery resyncs and re-parses
+/// `Foo { }` as a struct-literal expr-stmt (F0001 F0001 F0013, two nodes)
+/// where the abort yields one (F0001). Spending the capability waits on
+/// matching that resync.
+export fn avra_for_grammar() -> Grammar {
+    let gp = grammar {
+  for_stmt = @peek(for_destructure) "for" fb:for_binding @require "in" @off(allow_struct_lit) coll:expression body:block @expect("in", "expected `in` after for destructure pattern") -> MkForDestructure(fb, coll, body)
+           | "for" v:IDENT @require "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block @expect("in", "expected `in` after loop variable") -> ForLoop(v, lo, hi, body)
+  for_binding = lp:"(" ( names:IDENT ( @peek(comma_ident) "," names:IDENT )* ","? )? ")" -> MkForBinding(lp, names)
+    }
+    grammar_checked(gp)
+}
 
 /// Resolver hook for `for i in start..end { body }`. Resolves
 /// both bounds in the outer scope, opens a new scope for the
