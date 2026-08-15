@@ -3,8 +3,9 @@
 // This is the PRODUCTION type parser under AVRA_PARSER_TYPE_STATIC=1 (t-47hc.4.4
 // Phase 3d); parse/tests/gen_type_parser_regen_test.av asserts it equals
 // emit_type_parser_file() so a grammar edit that isn't regenerated fails the suite.
-use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, lookahead_ok, fold_type_union, mk_named_type, mk_splice_type, mk_qualified_type, mk_paren_type, mk_fn_type, mk_dyn_type}
-use core.{TypeExpr, Tk}
+
+use features.grammar.{CapVal, PState, Token, capval_present, capval_to_texpr, capval_tok_text, fold_type_union, lookahead_ok, mk_dyn_type, mk_fn_type, mk_named_type, mk_paren_type, mk_qualified_type, mk_splice_type}
+use core.{Tk, TypeExpr}
 
 // generated recursive-descent parser for grammar `grammar`
 export fn parse_type_expr(st: PState) -> CapVal {

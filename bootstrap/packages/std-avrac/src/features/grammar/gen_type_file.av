@@ -12,7 +12,7 @@
 // changes this text — run `bash scripts/diagnose.sh --emit-regen-type` to rewrite the
 // checked-in file, then commit it; the guard test fails until you do.
 
-use features.grammar.{avra_type_grammar, emit_parser_source_ex, builder_import_lines_for, grammar_with_builder_kinds, builder_kind_rows}
+use features.grammar.{avra_type_grammar, emit_parser_source_ex, derived_import_lines, grammar_with_builder_kinds, builder_kind_rows}
 use features.{feature_builders}
 
 /// The fixed import header of the production type static-parser module: exactly the
@@ -31,9 +31,7 @@ export fn gen_type_parser_header() -> string {
     "// Source of truth: avra_type_grammar() in features/grammar/avra_grammar.av.\n" +
     "// This is the PRODUCTION type parser under AVRA_PARSER_TYPE_STATIC=1 (t-47hc.4.4\n" +
     "// Phase 3d); parse/tests/gen_type_parser_regen_test.av asserts it equals\n" +
-    "// emit_type_parser_file() so a grammar edit that isn't regenerated fails the suite.\n" +
-    "use features.grammar.{Token, CapVal, PState, capval_to_texpr, capval_present, capval_tok_text, lookahead_ok, fold_type_union, mk_named_type, mk_splice_type, mk_qualified_type, mk_paren_type, mk_fn_type, mk_dyn_type}\n" +
-    "use core.{TypeExpr, Tk}\n\n"
+    "// emit_type_parser_file() so a grammar edit that isn't regenerated fails the suite.\n\n"
 }
 
 /// The complete text of parse/gen_type_parser.av: header + the exported generated
@@ -41,6 +39,6 @@ export fn gen_type_parser_header() -> string {
 export fn emit_type_parser_file() -> string {
     let g = avra_type_grammar()
     let binds = feature_builders()
-    gen_type_parser_header() + builder_import_lines_for(g, binds)
-        + emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    let src = emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    gen_type_parser_header() + derived_import_lines(src, "features.grammar", "core") + "\n" + src
 }

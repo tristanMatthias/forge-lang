@@ -15,7 +15,7 @@
 // commit it; the guard test fails until you do.
 
 use features.match.{avra_pat_grammar}
-use features.grammar.{emit_parser_source_ex, builder_import_lines_for, grammar_with_builder_kinds, builder_kind_rows}
+use features.grammar.{emit_parser_source_ex, derived_import_lines, grammar_with_builder_kinds, builder_kind_rows}
 use features.{feature_builders}
 
 /// The fixed import header of the production pattern static-parser module: exactly the
@@ -36,9 +36,7 @@ export fn gen_pat_parser_header() -> string {
     "// Source of truth: avra_pat_grammar() in features/match.av.\n" +
     "// This is the PRODUCTION pattern parser;\n" +
     "// parse/tests/gen_pat_parser_regen_test.av asserts it equals\n" +
-    "// emit_pat_parser_file() so a grammar edit that isn't regenerated fails the suite.\n" +
-    "use features.grammar.{Token, CapVal, PState, capval_to_pat, capval_tok_text, pat_num_node, pat_bool_node, pat_str_node, ident_pat_bare, param_entries_from_toks}\n" +
-    "use core.{Pattern, PatId, ValueType, Tk, pattern_optional_present, pattern_optional_absent}\n\n"
+    "// emit_pat_parser_file() so a grammar edit that isn't regenerated fails the suite.\n\n"
 }
 
 /// The complete text of parse/gen_pat_parser.av: header + the exported generated body.
@@ -46,6 +44,6 @@ export fn gen_pat_parser_header() -> string {
 export fn emit_pat_parser_file() -> string {
     let g = avra_pat_grammar()
     let binds = feature_builders()
-    gen_pat_parser_header() + builder_import_lines_for(g, binds)
-        + emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    let src = emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    gen_pat_parser_header() + derived_import_lines(src, "features.grammar", "core") + "\n" + src
 }

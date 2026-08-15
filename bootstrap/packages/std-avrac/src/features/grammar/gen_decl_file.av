@@ -14,14 +14,13 @@
 // this text — run `bash scripts/diagnose.sh --emit-regen-decl` to rewrite the
 // checked-in file, then commit it; the guard test fails until you do.
 
-use features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex, builder_import_lines_for, grammar_with_builder_kinds, builder_kind_rows}
+use features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex, derived_import_lines, grammar_with_builder_kinds, builder_kind_rows}
 use features.{feature_builders}
 
-/// The fixed import header of the production declaration static-parser module:
-/// exactly the features.grammar builders + core types the generated body
-/// references (verified against the emitted source — an extra import is only an
-/// F9002 warning, but a MISSING one is a hard undefined-symbol error). Superset of
-/// gen_expr_parser_header: adds `Stmt` (the Break/Continue/Expr statement constructors).
+/// The BANNER of the production declaration static-parser module — provenance
+/// comments only. The import header is no longer hand-kept: it derives from
+/// the emitted source itself (derived_import_lines, t-47hc.8 generator-owns-
+/// imports), so nothing here can drift from what the body references.
 export fn gen_decl_parser_header() -> string {
     // RELATIVE imports (features.grammar / core), NOT the absolute `@std.avrac.` form:
     // this is a globbed in-package compiler-src module, and an absolute self-import of
@@ -32,20 +31,19 @@ export fn gen_decl_parser_header() -> string {
     "// features/grammar/avra_grammar.av (avra_decl_flip_grammar). This is the PRODUCTION\n" +
     "// declaration parser under AVRA_PARSER_DECL_STATIC=1 (ps3t.6.7 Phase 2);\n" +
     "// parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()\n" +
-    "// so a grammar edit that isn't regenerated fails the suite.\n" +
-    "use features.grammar.{Token, CapVal, PState, capval_to_expr, capval_to_stmt, capval_is_error_expr, capval_is_error_stmt, error_stmt_of, capval_to_arm, lookahead_ok, mk_binary, mk_assign_expr, fold_pipe_expr, fold_nullish_expr, fold_logical_expr, rebind_eq_expr, mk_is_expr, mk_inlist_expr, mk_inrange_expr, mk_eqchain_expr, tok_starts_expr_leaf, tok_starts_pattern, mk_block, mk_while, mk_if, mk_if_let_stmt, mk_for_loop, mk_for_binding, mk_for_destructure, mk_return_opt, mk_arm, mk_splice_arm, mk_arm_return, mk_match, mk_match_table, mk_match_table_expr, capval_to_pat, mk_use, mk_use_pkg, mk_module, capval_present, capval_tok_text, capval_tok_list, mk_fn_decl_g, mk_fn_decl_where_g, mk_where_param, mk_type_decl_g, mk_type_decl_any, mk_enum_decl_g, mk_type_param, mk_extern_fn, mk_shape_decl, mk_impl, mk_method, mk_trait_decl, mk_trait_method, mk_assoc_type, mk_assoc_type_def, mk_when, mk_when_arm, mk_when_default, capval_to_when_arm, mk_export_decl, mk_stamp_stmt_at, mk_ann_g, mk_annotated_args_g, mk_doc_annotated, mk_module_doc, mk_let_binding_g, mk_const_binding_g, mk_let_destructure_g, gensym_token, mk_splice_name, mk_splice_type, mk_plain_name, mk_parallel_g, mk_select_g, mk_select_arm_g, capval_to_select_arm, mk_spec_block_g, mk_given_block_g, mk_then_block_g, mk_comp_config_g, mk_children_slot_g, mk_comp_field_g, mk_component_def_g, mk_component_paren_def_g, mk_trait_list, mk_comp_body_marker, mk_comp_config_list, mk_children_slot_list, mk_comp_config_pair_g, mk_component_block_g, mk_raw_component_block_g, mk_method_shorthand_g, rawbrace_scan, capval_to_comp_config_pair, capval_to_comp_config_pair_list, capval_to_comp_config, capval_to_children_slot, capval_tok_texts, capval_to_ann, mk_evariant, mk_field, capval_to_tparam, capval_to_field, capval_to_variant, capval_to_pentry, capval_to_texpr, tok_starts_type, modes_with_flag_off, text_is_word}\n" +
-    "use core.{ExprId, Stmt, MatchArm, SelectArm, CompConfig, CompConfigPair, ChildrenSlot, Tk, SrcPos, TypeParamEntry, Annotation}\n\n"
+    "// so a grammar edit that isn't regenerated fails the suite.\n\n"
 }
 
-/// The complete text of parse/gen_decl_parser.av: header (fixed engine
-/// imports + the DERIVED feature-builder imports, t-kd4y.3) + the exported
-/// generated body. Both the regenerator and the guard read from HERE.
+/// The complete text of parse/gen_decl_parser.av: banner + the DERIVED
+/// import header (computed from the emitted source — generator-owns-imports)
+/// + the exported generated body. Both the regenerator and the guard read
+/// from HERE.
 export fn emit_decl_parser_file() -> string {
     let g = avra_decl_dispatch_grammar()
     // ONE manifest fetch feeds both the derived import header and the kind
     // rows the emit-side analysis reads (feature builders classify by their
     // registration — build_defer -> "stmt" — not the lenient "expr" default).
     let binds = feature_builders()
-    gen_decl_parser_header() + builder_import_lines_for(g, binds)
-        + emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    let src = emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    gen_decl_parser_header() + derived_import_lines(src, "features.grammar", "core") + "\n" + src
 }
