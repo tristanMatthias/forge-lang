@@ -38,7 +38,7 @@ fn cf_grammar_src() -> string {
     "  while_stmt    = \"while\" c:expression body:block -> build_while(c, body)\n" +
     "  if_stmt       = \"if\" c:expression t:block ( \"else\" e:else_target )? -> build_if(c, t, e)\n" +
     "  else_target   = block | if_stmt\n" +
-    "  for_stmt      = \"for\" v:IDENT \"in\" lo:expression ( \"..\" hi:expression )? body:block -> ForLoop(v, lo, hi, body)\n" +
+    "  for_stmt      = \"for\" v:IDENT \"in\" lo:expression ( \"..\" hi:expression )? body:block -> build_for(v, lo, hi, body)\n" +
     "  block         = \"{\" stmts:statement* \"}\" -> Block(stmts)\n" +
     "  expr_stmt     = e:expression -> ExprStmt(e)\n" +
     "  expression    = equality\n" +

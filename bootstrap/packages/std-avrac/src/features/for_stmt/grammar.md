@@ -7,6 +7,9 @@ iterable    ::= expr ".." expr      // range form
               | expr                // collection / iterator form
 ```
 
+The production rules live in `mod.av` (`for_lang`'s gram — the source
+of truth).
+
 ### Range form
 
 ```

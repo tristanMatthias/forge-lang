@@ -1,0 +1,60 @@
+// The for LanguageFeature definitions (features/for_stmt/mod.av): for_lang
+// carries the gram (ONE rule, TWO statements — `..` splits For / ForIn) +
+// the build_for lowering (a `spanned` manifest row) + the For-tag hooks;
+// for_in_lang carries the ForIn-tag hooks alone. The destructure branch
+// keeps its CENTRAL builds (MkForDestructure / MkForBinding) — the partial
+// flip this spec pins: the gram may reference central builds freely, the
+// validator only requires supplied binds to be referenced and referenced
+// non-central names to be supplied.
+use @std.avrac.features.for_stmt.{for_lang, for_in_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar, grammar_build_refs, Grammar}
+
+spec "for as a LanguageFeature (partial flip: build_for owned, destructure central)" {
+    then "the keywords derive from the declared grammar" {
+        let kws = feature_keywords(for_lang())
+        kws.length == 2 && kws[0] == "for" && kws[1] == "in"
+    }
+    then "titles, docs, and editor surface are carried; for_in is hooks-only" {
+        let f = for_lang()
+        let fi = for_in_lang()
+        f.title.length > 0 && f.docs.contains("half-open") && f.snippet.contains("for")
+            && fi.title.length > 0 && feature_gram(for_in_lang()).rules.length == 0
+    }
+    then "for_stmt + for_binding are DEFINED rules in every view's table, build refs and all" {
+        // Structural (the #1243 discipline): the rule table proves the rules
+        // exist; grammar_build_refs proves the branch lowerings — the OWNED
+        // build_for at arity 4 AND the central MkForDestructure/MkForBinding
+        // references — survive composition.
+        mut ok = true
+        for g in [feature_gram(for_lang()), avra_stmt_flip_grammar(), avra_program_grammar()] {
+            mut has_stmt = false
+            mut has_binding = false
+            for r in g.rules {
+                if r.name == "for_stmt" { has_stmt = true }
+                if r.name == "for_binding" { has_binding = true }
+            }
+            mut has_for = false
+            mut has_destructure = false
+            mut has_mkbinding = false
+            for br in grammar_build_refs(g) {
+                if br.name == "build_for" && br.argc == 4 { has_for = true }
+                if br.name == "MkForDestructure" && br.argc == 3 { has_destructure = true }
+                if br.name == "MkForBinding" && br.argc == 2 { has_mkbinding = true }
+            }
+            if !has_stmt || !has_binding || !has_for || !has_destructure || !has_mkbinding { ok = false }
+        }
+        ok
+    }
+    then "the whole-program view lowers the range/collection branch through build_for" {
+        let prod = render_grammar(avra_program_grammar())
+        prod.contains("build_for(v, lo, hi, body)") && !prod.contains("ForLoop(")
+    }
+    then "build_for rides the manifest as a SPANNED stmt row" {
+        mut row = ""
+        for b in feature_builders() {
+            if b.name == "build_for" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
+        }
+        row == "stmt/4/spanned/_gb_build_for"
+    }
+}
