@@ -1,3 +1,10 @@
+// if — conditional branching, statement AND expression positions (spec
+// Axis 28). The definition carries the feature whole: syntax, docs, editor
+// surface, hooks, and the STATEMENT grammar rule the statement views
+// compose (gram_family = "stmt", t-47hc.8) with its feature-owned lowering
+// (build_if, a `spanned` manifest row). The EXPRESSION form (`if_expr`,
+// incl. its if-let branch) stays a spine rule — it is woven into the
+// expression precedence ladder, not the statement family.
 // dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
 // surface flat at `features.if_stmt.{...}`. emit_if + emit_if_expr are
 // in scope without a self-import.
@@ -6,27 +13,56 @@ use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
 use features.eval.{eval_expr, execute_stmt}
-use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_er, tc_report, tc_gate_unthreaded_lambda, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if, generic_args_layout_conflict}
+use features.grammar.{parse_grammar, if_builds}
 
-/// Register the `if` feature for both statement (`if cond { ... }`)
-/// and expression (`let x = if cond a else b`) positions. Wires
-/// up resolver, type-checker, codegen, and eval hooks for each.
-export fn if_stmt_feature() -> Feature {
-    feature_new("if") with {
-        expr_tag: Expr.IfExpr(ExprId(0), ExprId(0), ExprId(0)),
-        stmt_tag: Stmt.If(ExprId(0), StmtId(0), null),
-        emit_expr: if_emit_expr,
-        emit_stmt: if_emit_stmt,
-        resolve_stmt: if_resolve_stmt,
-        resolve_expr: if_resolve_expr,
-        check_stmt: if_check_stmt,
-        check_expr: if_check_expr,
-        eval_stmt: if_eval_stmt,
-        eval_expr: if_eval_expr,
-        stmt_keyword: "kw_if",
+export fn if_lang() -> LanguageFeature {
+    LanguageFeature if_def {
+        name = "if",
+        title = "if — conditional branching",
+        docs = """
+`if cond { then }` runs the block when `cond` is true; an optional
+`else` takes any statement, so `else { }` blocks and `else if` chains
+both fall out of the same rule. The condition must be `bool` (a bare
+`int` is accepted for legacy compatibility); the THEN branch must be a
+`{ }` block (F0010), while the else branch is deliberately unrestricted.
+
+Struct literals are disabled in the condition (`if foo { }` reads `foo`
+as the condition, never a struct literal). An `x != none` / `x == none`
+condition flow-narrows `x` inside the proven branch — and after the
+whole `if`, when the none-side diverges (`if x == none { return }`).
+
+`if` is also an EXPRESSION: `let x = if cond { a } else { b }` — that
+form (and its `if let` sibling) lives in the expression grammar, not
+this rule.
+""",
+        // `@onfail(bail)` on the CONDITION: a failed condition ends the rule
+        // so the missing block is never also reported (`if return 2 …` is
+        // one F0040, not F0040 + F0010). `@require t:block`: without it a
+        // missing block is not an error HERE — the rule builds an `if` with
+        // no consequent and the enclosing body reports about ITS closer
+        // instead. Dual-key @expect on that @require — same
+        // fragment-vs-compose split the while rule documents: standalone
+        // validation needs the rule-name key (`block` is a spine rule it
+        // cannot resolve), the composed emit looks up block's FIRST literal
+        // `{`. One message, one F0010, both keys.
+        gram = grammar { if_stmt = "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block ( "else" e:statement )? @expect("{", "expected `{` after if condition", F0010) @expect("block", "expected `{` after if condition", F0010) -> build_if(c, t, e) },
+        builders = if_builds(),
+        snippet = r"if ${1:cond} {\n    ${2:body}\n}",
+        expr_tag = Expr.IfExpr(ExprId(0), ExprId(0), ExprId(0)),
+        stmt_tag = Stmt.If(ExprId(0), StmtId(0), null),
+        emit_expr = if_emit_expr,
+        emit_stmt = if_emit_stmt,
+        resolve_stmt = if_resolve_stmt,
+        resolve_expr = if_resolve_expr,
+        check_stmt = if_check_stmt,
+        check_expr = if_check_expr,
+        eval_stmt = if_eval_stmt,
+        eval_expr = if_eval_expr,
+        gram_family = "stmt",
     }
+    if_def
 }
 
 /// Resolver hook for `IfExpr`. Walks condition + both branches.

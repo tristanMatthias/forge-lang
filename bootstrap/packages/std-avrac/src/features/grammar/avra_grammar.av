@@ -939,23 +939,13 @@ fn avra_stmt_common_grammar() -> Grammar {
   stmt_block    = "{" stmts:declaration* "}" -> Block(stmts)
   break_stmt    = "break" -> Break()
   continue_stmt = "continue" -> Continue()
-  // t-47hc.5: `@require t:block` with the pinned message AND its F-CODE.
-  // Without the `@require` the missing block is not an error at
-  // all here, so the rule builds an `if` with no consequent and the enclosing body then
-  // reports about ITS closer instead — two diagnostics, neither the right one.
-  if_stmt       = "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block ( "else" e:statement )?
-                  @expect("{", "expected `{` after if condition", F0010) -> If(c, t, e)
-  // `@onfail(bail)` on the CONDITION: a
-  // failed condition ends the rule and the missing block is never reported. `while return
-  // 2` is the shape — one F0040, and without the bail the native rule went on
-  // to report about the `{` too.
   // match_stmt / match_when_arm / match_arm live with their owning feature
   // (avra_match_stmt_grammar / avra_match_arm_grammar, features/match) and
-  // defer_stmt / errdefer_stmt / return_stmt / while_stmt ride the
-  // feature_stmt_grammar_fragments registry (t-47hc.8) — the `statement`
-  // alternation above names them and the reference binds against the
-  // composed rule set. ONE definition each, in the feature's own file; the
-  // views only choose dispatch order.
+  // defer_stmt / errdefer_stmt / return_stmt / while_stmt / if_stmt ride
+  // the feature_stmt_grammar_fragments registry (t-47hc.8) — the
+  // `statement` alternation above names them and the reference binds
+  // against the composed rule set. ONE definition each, in the feature's
+  // own file; the views only choose dispatch order.
   // STATEMENT-position `if let` — not its
   // expression twin. Routing this to `expression` (which reaches `if_expr`) parsed the
   // form correctly but lowered it to the WRONG SHAPE: an `ExprStmt(Block-expr)` holding

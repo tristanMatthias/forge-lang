@@ -575,10 +575,11 @@ fn build_uses_sp_start(name: string) -> bool {
         // in every emitted control-flow body. Measured against the hand:
         //     hand = 2:5 4:9 3:5 6:5
         //     emit = 2:5 4:9 3:18 3:5 6:5      <-- 3:18 is the `{`
-        // The If/ForLoop entries stay: their rule entry IS the statement start, so
-        // the stamp agrees with the list loop's rather than adding a row. (`While`
-        // moved to the manifest — build_while's `spanned` row answers above.)
-        name == "If" || name == "ForLoop" ||
+        // The ForLoop entry stays: its rule entry IS the statement start, so
+        // the stamp agrees with the list loop's rather than adding a row.
+        // (`While` / `If` moved to the manifest — build_while's / build_if's
+        // `spanned` rows answer above.)
+        name == "ForLoop" ||
         name == "MkForDestructure" ||
         // A `with { … }` suffix spans sp_start = the `with` byte (t-47hc.17): its owning
         // with_suffix rule enters there, and rebind_with reads the partial node's `.hi`
@@ -2611,7 +2612,6 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // `0 - 1` (span-free) — the SAME argument the interpreter passes, and the
         // hand's unstamped `alloc_stmt_leaf`. See the `Block` note in build_uses_sp_start.
         "Block" -> "mk_block(st, 0 - 1, ${args[0]}_list)"
-        "If" -> "mk_if(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
         "ForLoop" -> "mk_for_loop(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]})"
         "MkForBinding" -> "mk_for_binding(${args[0]}, CapVal.Toks(${args[1]}_list))"
         "MkForDestructure" -> "mk_for_destructure(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"

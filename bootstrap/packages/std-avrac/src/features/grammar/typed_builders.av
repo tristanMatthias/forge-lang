@@ -374,6 +374,7 @@ fn unwrap_rows() -> List<UnwrapRow> {
         UnwrapRow { ty: "PatId", fn_name: "capval_to_pat", takes_st: true },
         UnwrapRow { ty: "ExprId?", fn_name: "capval_to_expr_opt", takes_st: true },
         UnwrapRow { ty: "StmtId", fn_name: "capval_to_stmt", takes_st: true },
+        UnwrapRow { ty: "StmtId?", fn_name: "capval_to_stmt_opt", takes_st: true },
         UnwrapRow { ty: "string", fn_name: "capval_tok_text", takes_st: false },
         UnwrapRow { ty: "List<ExprId>", fn_name: "capval_to_node_list", takes_st: false },
         UnwrapRow { ty: "List<StmtId>", fn_name: "capval_to_stmt_list", takes_st: false },
