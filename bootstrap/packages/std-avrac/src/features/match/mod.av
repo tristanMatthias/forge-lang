@@ -9,6 +9,20 @@ use core.{Pattern, MatchArm, ParamEntry, Expr, Stmt, WhenArm, PatId, Variant, Va
 use resolve.{resolve_expr, Resolver, enter_resolve_scope, exit_resolve_scope, declare_params, declare_name, define_name}
 use typeck.{check_expr, tc_er, EnumTypeReg, ExprResult, TC, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_exit, tc_gate_unthreaded_lambda, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments, when_arm_builds}
+
+// ── when-arm typed lowerings, home in the feature file (t-47hc.8
+// dissolution) — the arms whose central helpers were already PURE over
+// unwrapped values (mk_when_arm/mk_when_default constructed records, no
+// arena, no span threading). MkMatch/MkArm and the rest stay central: MkArm
+// reads the boxed Pattern back from the arena and the others thread
+// sp_start spans — both need marshalling rows the tables don't carry yet.
+// The engine's checked-in `_gb_` adapters import these back.
+export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
+    WhenArm { cond_id: c, body_id: b }
+}
+export fn build_when_default(b: ExprId) -> WhenArm {
+    WhenArm { cond_id: none, body_id: b }
+}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use features.union_type.{emit_union_tag, emit_union_extract}
 use features.{DiagSpec, composed}

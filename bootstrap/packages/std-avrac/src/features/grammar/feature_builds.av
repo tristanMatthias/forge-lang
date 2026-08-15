@@ -1,70 +1,43 @@
-// Checked-in derived builder surfaces for BOOTSTRAP features (t-kd4y.3):
-// defer/errdefer today, each migrating feature adds its rows here.
+// The checked-in ADAPTER SURFACE for bootstrap features (t-kd4y.3, slimmed
+// by the t-47hc.8 dissolution): `_gb_` CapVal adapters + BuilderBind row
+// fns ONLY. The TYPED LOWERING FNS live in their feature files
+// (features/defer, features/return_stmt, …) — this file imports them back,
+// so the meaningful logic sits with its feature and only the mechanical
+// marshalling stays engine-side.
 //
-// WHY this file exists, and why it lives in the ENGINE module: the
-// generated parsers call feature builders through their manifest-derived
-// import, and that import edge is CONSTRAINED — it must stay inside the
-// closure the parse module already has. Importing a feature module
-// directly (features.defer pulls typeck/resolve/codegen) widens the parse
-// closure, and on the metadata lib path that re-visits modules whose
-// derives already ran — every @derive in them reports the F4012 "already
-// derived in this compile" cycle (bisected: base parser clean, a parser
-// importing features.defer red with 14 errors). features.grammar is
-// already in every generated parser's fixed header, so rows living here
-// add ZERO import edges.
+// WHY the adapters live in the ENGINE module: the generated parsers call
+// them through their manifest-derived import, and that import edge is
+// CONSTRAINED — it must stay inside the closure the parse module already
+// has. A PARSE-side file importing a feature module (features.defer pulls
+// typeck/resolve/codegen) widens the parse closure and F4012s on the
+// metadata lib path (bisected: base parser clean, a parser importing
+// features.defer red with 14 errors). features.grammar is already in every
+// generated parser's fixed header, so adapters living here add ZERO import
+// edges to parse/. The features.grammar → features.X edges THIS file takes
+// instead are probe-verified safe (the same edge class the statement-view
+// composition uses) — the F4012 class binds parse/-side files only.
 //
-// The typed build fns + `_gb_` adapters + BuilderBind rows are DERIVED
-// output checked in as source — the same audit-surface rule as the
-// generated parsers themselves. Comptime synthesis (typed_builders.av)
-// stays the path for EXTERNAL programs; it skips instances that already
-// declare `builders` (explicit wins — rewrite_init's has_field probe), so
-// these rows and the pass cannot double-apply. The feature's mod.av keeps
-// the SEMANTIC hooks (emit/resolve/check) and references these builds by
-// name in its gram — the reference is still the registration.
+// The adapters + rows are DERIVED output checked in as source — the same
+// audit-surface rule as the generated parsers. Comptime synthesis
+// (typed_builders.av) stays the path for EXTERNAL programs; it skips
+// instances that already declare `builders` (explicit wins), so these rows
+// and the pass cannot double-apply. The eventual endpoint (recorded on
+// t-47hc.8) is regen-time INLINING of the pure typed fns into the
+// generated parsers, which deletes this file entirely.
 use core.{Stmt, ExprId, StmtId, WhenArm}
 use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_to_stmt_opt, capval_tok_text}
-
-export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
-export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
-
-/// `break` / `continue` — zero-arg, span-FREE: the retired central
-/// lowerings were bare `CapVal.SNode(add_leaf(...))` constructions (no
-/// add_stmt_at, no stamp), which the flat adapters reproduce exactly. The
-/// engine's `Break()` / `Continue()` builds SURVIVE as toy-grammar
-/// vocabulary (like `Return` / `ReturnEmpty` after the return flip) — only
-/// the production rules lower through these.
-export fn build_break() -> Stmt { Stmt.Break }
-export fn build_continue() -> Stmt { Stmt.Continue }
-
-/// `while cond { body }`. Pure shape — the SrcPos stamp at the `while`
-/// keyword rides the bind's `spanned` row (the engine wraps the emitted
-/// call in mk_stamp_stmt_at), never this fn.
-export fn build_while(c: ExprId, body: StmtId) -> Stmt { Stmt.While(c, body) }
-
-/// `if cond { then } ( else stmt )?`. Same spanned discipline as
-/// build_while; the absent-else fold lives in capval_to_stmt_opt (the
-/// adapter's unwrap), so this fn is the bare shape.
-export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
-
-/// `for v in lo ( ".." hi )? body` — ONE rule, TWO statements: a present
-/// `..` picks the integer-range `Stmt.For`, an absent one the collection
-/// `Stmt.ForIn` (the retired mk_for_loop's exact split, keyed on the same
-/// Nil probe via capval_to_expr_opt). The destructure form
-/// (`for (a, b) in …`) keeps its central builds — MkForDestructure's
-/// desugar is mid-build arena choreography the typed rows don't express
-/// yet (the match precedent: flip what the rows cover, keep the rest
-/// central until the rows grow).
-export fn build_for(v: string, lo: ExprId, hi: ExprId?, body: StmtId) -> Stmt {
-    if hi == null { Stmt.ForIn(v, lo, body) } else { Stmt.For(v, lo, hi!, body) }
-}
-
-/// `return ( value )?` — an absent same-line value is a bare
-/// `Stmt.ReturnEmpty`; a present one is `Stmt.Return(value)`. The
-/// same-line/FIRST gating lives in the rule (feature-owned, return_stmt's
-/// gram); this build only folds presence.
-export fn build_return(e: ExprId?) -> Stmt {
-    if e == null { Stmt.ReturnEmpty } else { Stmt.Return(e!) }
-}
+// The typed fns live in their FEATURE FILES (t-47hc.8 dissolution, slice
+// b): this surface imports them back. The features.grammar → features.X
+// file-level edges (with each feature file importing features.grammar in
+// return — a dir-module cycle) are probe-verified safe on the metadata lib
+// path.
+use features.defer.{build_defer, build_errdefer}
+use features.return_stmt.{build_return}
+use features.while_stmt.{build_while}
+use features.if_stmt.{build_if}
+use features.for_stmt.{build_for}
+use features.break_continue.{build_break, build_continue}
+use features.match.{build_when_arm, build_when_default}
 
 export fn _gb_build_defer(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_defer(capval_to_expr(st, vals[0])))
@@ -95,21 +68,6 @@ export fn _gb_build_for(st: PState, vals: List<CapVal>) -> CapVal {
     let lo = capval_to_expr(st, vals[1])
     let body = capval_to_stmt(st, vals[3])
     capval_stmt_val(st, build_for(v, lo, capval_to_expr_opt(st, vals[2]), body))
-}
-
-// ── match/when (t-kd4y.3 match slice) — the arms whose central helpers
-// were already PURE over unwrapped values (mk_when_arm/mk_when_default
-// constructed records, no arena, no span threading). MkMatch/MkArm and
-// the rest stay central: MkArm reads the boxed Pattern back from the
-// arena and the others thread sp_start spans — both need the
-// store-access/span-injection marshalling rows recorded for the wide
-// migration. MkMatch additionally has no feature-gram reference (it is
-// spine-only), so a bind row would be an orphan to the validator.
-export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
-    WhenArm { cond_id: c, body_id: b }
-}
-export fn build_when_default(b: ExprId) -> WhenArm {
-    WhenArm { cond_id: none, body_id: b }
 }
 
 export fn _gb_build_when_arm(st: PState, vals: List<CapVal>) -> CapVal {
