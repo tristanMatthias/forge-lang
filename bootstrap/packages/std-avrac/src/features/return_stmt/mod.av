@@ -6,6 +6,15 @@
 // DeferStack unwinding, RC releases — stays with the central emitters.
 use features.grammar.{parse_grammar, return_builds}
 
+/// `return ( value )?` — an absent same-line value is a bare
+/// `Stmt.ReturnEmpty`; a present one is `Stmt.Return(value)`. The
+/// same-line/FIRST gating lives in the rule below; this build only folds
+/// presence. Home in the feature file (t-47hc.8 dissolution) — the engine's
+/// checked-in `_gb_` adapter imports it back.
+export fn build_return(e: ExprId?) -> Stmt {
+    if e == null { Stmt.ReturnEmpty } else { Stmt.Return(e!) }
+}
+
 export fn return_lang() -> LanguageFeature {
     LanguageFeature return_def {
         name = "return",

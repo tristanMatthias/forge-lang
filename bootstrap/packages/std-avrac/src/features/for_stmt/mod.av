@@ -19,6 +19,15 @@ use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
 use features.eval.{Runtime, StepResult, execute_for_range, execute_for_in, error_result}
 use features.grammar.{parse_grammar, for_builds}
 
+/// `for v in lo ( ".." hi )? body` — ONE rule, TWO statements: a present
+/// `..` picks the integer-range `Stmt.For`, an absent one the collection
+/// `Stmt.ForIn` (the retired mk_for_loop's exact split, keyed on the same
+/// Nil probe via capval_to_expr_opt). Home in the feature file (t-47hc.8
+/// dissolution) — the engine's checked-in `_gb_` adapter imports it back.
+export fn build_for(v: string, lo: ExprId, hi: ExprId?, body: StmtId) -> Stmt {
+    if hi == null { Stmt.ForIn(v, lo, body) } else { Stmt.For(v, lo, hi!, body) }
+}
+
 /// Resolver hook for `for i in start..end { body }`. Resolves
 /// both bounds in the outer scope, opens a new scope for the
 /// loop variable, then resolves the body.
