@@ -3561,25 +3561,6 @@ fn parse_if_stmt(st: PState) -> CapVal {
     mk_if(st, sp_start, c, t, e)
 }
 
-fn parse_for_binding(st: PState) -> CapVal {
-    mut names_list: List<Token> = []
-    let lp = CapVal.Tok(st.advance())
-    if st.cur().tk == Tk.Identifier {
-        names_list.push(st.advance())
-        while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
-            let _ = st.advance()
-            if st.cur().tk == Tk.Identifier { names_list.push(st.advance()) } else {
-                st.report_ident("expected `IDENT`")
-            }
-        }
-        if st.cur().tk == Tk.Comma { let _ = st.advance() }
-    }
-    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-        st.report("expected `)`")
-    }
-    mk_for_binding(lp, CapVal.Toks(names_list))
-}
-
 fn parse_while_stmt(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     let _ = st.advance()
@@ -3667,53 +3648,6 @@ fn parse_iflet_stmt(st: PState) -> CapVal {
 fn parse_expr_stmt(st: PState) -> CapVal {
     let e = parse_expression(st)
     if st.had_error { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)) } else { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, e)))) }
-}
-
-fn parse_for_stmt(st: PState) -> CapVal {
-    if lookahead_ok("for_destructure", st) && (st.cur().text == "for") {
-        let sp_start = st.cur().pos
-        let _ = st.advance()
-        let fb = parse_for_binding(st)
-        if st.cur().text == "in" { let _ = st.advance() } else {
-            st.report("expected `in` after for destructure pattern")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        let __modes_3 = st.modes
-        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
-        let coll = parse_expression(st)
-        st.set_modes(__modes_3)
-        let body = parse_block(st)
-        return mk_for_destructure(st, sp_start, fb, coll, body)
-    }
-    if st.cur().text == "for" {
-        let sp_start = st.cur().pos
-        mut hi: CapVal = CapVal.Nil
-        let _ = st.advance()
-        let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report_ident("expected `IDENT`")
-            CapVal.Tok(st.cur())
-        }
-        if st.cur().text == "in" { let _ = st.advance() } else {
-            st.report("expected `in` after loop variable")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        let __modes_3 = st.modes
-        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
-        let lo = parse_expression(st)
-        st.set_modes(__modes_3)
-        let __modes_4 = st.modes
-        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
-        if st.cur().tk == Tk.DotDot {
-            let _ = st.advance()
-            hi = parse_expression(st)
-        }
-        st.set_modes(__modes_4)
-        let body = parse_block(st)
-        return mk_for_loop(st, sp_start, v, lo, hi, body)
-    }
-    CapVal.Node(st.error_node_expected_expr())
 }
 
 fn parse_match_when_arm(st: PState) -> CapVal {
@@ -3934,6 +3868,72 @@ fn parse_match_table_expr(st: PState) -> CapVal {
         return CapVal.Node(st.error_node_silent())
     }
     mk_match_table_expr(st, sp_start, subj, CapVal.Toks(cols_list), CapVal.PNodes(p_list), CapVal.Nodes(v_list))
+}
+
+fn parse_for_stmt(st: PState) -> CapVal {
+    if lookahead_ok("for_destructure", st) && (st.cur().text == "for") {
+        let sp_start = st.cur().pos
+        let _ = st.advance()
+        let fb = parse_for_binding(st)
+        if st.cur().text == "in" { let _ = st.advance() } else {
+            st.report("expected `in` after for destructure pattern")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __modes_3 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+        let coll = parse_expression(st)
+        st.set_modes(__modes_3)
+        let body = parse_block(st)
+        return mk_for_destructure(st, sp_start, fb, coll, body)
+    }
+    if st.cur().text == "for" {
+        let sp_start = st.cur().pos
+        mut hi: CapVal = CapVal.Nil
+        let _ = st.advance()
+        let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+            st.report_ident("expected `IDENT`")
+            CapVal.Tok(st.cur())
+        }
+        if st.cur().text == "in" { let _ = st.advance() } else {
+            st.report("expected `in` after loop variable")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let __modes_3 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+        let lo = parse_expression(st)
+        st.set_modes(__modes_3)
+        let __modes_4 = st.modes
+        st.set_modes(modes_with_flag_off(st.modes, "allow_struct_lit"))
+        if st.cur().tk == Tk.DotDot {
+            let _ = st.advance()
+            hi = parse_expression(st)
+        }
+        st.set_modes(__modes_4)
+        let body = parse_block(st)
+        return mk_for_loop(st, sp_start, v, lo, hi, body)
+    }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
+fn parse_for_binding(st: PState) -> CapVal {
+    mut names_list: List<Token> = []
+    let lp = CapVal.Tok(st.advance())
+    if st.cur().tk == Tk.Identifier {
+        names_list.push(st.advance())
+        while lookahead_ok("comma_ident", st) && (st.cur().tk == Tk.Comma) {
+            let _ = st.advance()
+            if st.cur().tk == Tk.Identifier { names_list.push(st.advance()) } else {
+                st.report_ident("expected `IDENT`")
+            }
+        }
+        if st.cur().tk == Tk.Comma { let _ = st.advance() }
+    }
+    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+        st.report("expected `)`")
+    }
+    mk_for_binding(lp, CapVal.Toks(names_list))
 }
 
 fn parse_defer_stmt(st: PState) -> CapVal {
