@@ -22,7 +22,7 @@
 // the SEMANTIC hooks (emit/resolve/check) and references these builds by
 // name in its gram — the reference is still the registration.
 use core.{Stmt, ExprId, StmtId, WhenArm}
-use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_to_stmt_opt}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_to_stmt_opt, capval_tok_text}
 
 export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
 export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
