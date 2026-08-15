@@ -1,0 +1,45 @@
+// break / continue — loop-control statements (spec Axis 28), completing
+// the simple-statement family's flips (t-47hc.8). The definitions carry
+// the features whole: syntax, docs, editor surface, and the grammar rules
+// the statement views compose (gram_family = "stmt") with their
+// feature-owned lowerings (build_break / build_continue — zero-arg,
+// span-free manifest rows). Codegen stays with the central emitters
+// (codegen/mod.av's LoopStack branch targets), like return's does; there
+// is no per-tag hook to carry.
+use features.grammar.{parse_grammar, break_builds, continue_builds}
+
+export fn break_lang() -> LanguageFeature {
+    LanguageFeature break_def {
+        name = "break",
+        title = "break — exit the enclosing loop",
+        docs = """
+`break` exits the innermost enclosing `while` / `for` loop immediately,
+resuming after the loop's body. Using it outside a loop is a compile
+error. Pending `defer` / `errdefer` entries for the scopes being exited
+run before control leaves.
+""",
+        gram = grammar { break_stmt = "break" -> build_break() },
+        builders = break_builds(),
+        snippet = r"break",
+        gram_family = "stmt",
+    }
+    break_def
+}
+
+export fn continue_lang() -> LanguageFeature {
+    LanguageFeature continue_def {
+        name = "continue",
+        title = "continue — skip to the next loop iteration",
+        docs = """
+`continue` skips the rest of the innermost enclosing loop body and
+jumps to the next iteration test (the condition for `while`, the
+increment for `for`). Using it outside a loop is a compile error.
+Scope-exit `defer` entries for the skipped remainder run first.
+""",
+        gram = grammar { continue_stmt = "continue" -> build_continue() },
+        builders = continue_builds(),
+        snippet = r"continue",
+        gram_family = "stmt",
+    }
+    continue_def
+}

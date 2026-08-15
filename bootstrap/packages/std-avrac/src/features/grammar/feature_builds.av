@@ -27,6 +27,15 @@ use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_
 export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
 export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
 
+/// `break` / `continue` — zero-arg, span-FREE: the retired central
+/// lowerings were bare `CapVal.SNode(add_leaf(...))` constructions (no
+/// add_stmt_at, no stamp), which the flat adapters reproduce exactly. The
+/// engine's `Break()` / `Continue()` builds SURVIVE as toy-grammar
+/// vocabulary (like `Return` / `ReturnEmpty` after the return flip) — only
+/// the production rules lower through these.
+export fn build_break() -> Stmt { Stmt.Break }
+export fn build_continue() -> Stmt { Stmt.Continue }
+
 /// `while cond { body }`. Pure shape — the SrcPos stamp at the `while`
 /// keyword rides the bind's `spanned` row (the engine wraps the emitted
 /// call in mk_stamp_stmt_at), never this fn.
@@ -62,6 +71,12 @@ export fn _gb_build_defer(st: PState, vals: List<CapVal>) -> CapVal {
 }
 export fn _gb_build_errdefer(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_errdefer(capval_to_expr(st, vals[0])))
+}
+export fn _gb_build_break(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_break())
+}
+export fn _gb_build_continue(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_continue())
 }
 export fn _gb_build_return(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_return(capval_to_expr_opt(st, vals[0])))
@@ -149,4 +164,14 @@ export fn for_builds() -> List<BuilderBind> {
     [BuilderBind { name: "build_for", kind: "stmt", arity: 4, spanned: true,
                    module: "features.grammar", export_name: "_gb_build_for",
                    build: _gb_build_for }]
+}
+export fn break_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_break", kind: "stmt", arity: 0, spanned: false,
+                   module: "features.grammar", export_name: "_gb_build_break",
+                   build: _gb_build_break }]
+}
+export fn continue_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_continue", kind: "stmt", arity: 0, spanned: false,
+                   module: "features.grammar", export_name: "_gb_build_continue",
+                   build: _gb_build_continue }]
 }

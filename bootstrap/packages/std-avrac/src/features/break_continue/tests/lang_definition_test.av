@@ -1,0 +1,58 @@
+// The break / continue LanguageFeature definitions
+// (features/break_continue/mod.av): the pair completes the simple-statement
+// family's flips (t-47hc.8) — zero-arg, span-FREE lowerings (the retired
+// central forms were bare SNode constructions, no add_stmt_at), with the
+// engine's Break()/Continue() builds surviving as toy-grammar vocabulary.
+use @std.avrac.features.break_continue.{break_lang, continue_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar, grammar_build_refs, Grammar}
+
+spec "break / continue as LanguageFeatures" {
+    then "the keywords derive from the declared grammars" {
+        let bk = feature_keywords(break_lang())
+        let ck = feature_keywords(continue_lang())
+        bk.length == 1 && bk[0] == "break" && ck.length == 1 && ck[0] == "continue"
+    }
+    then "titles, docs, and editor surface are carried" {
+        let b = break_lang()
+        let c = continue_lang()
+        b.title.length > 0 && b.docs.contains("innermost") && b.snippet == "break"
+            && c.title.length > 0 && c.docs.contains("next iteration") && c.snippet == "continue"
+    }
+    then "both rules are DEFINED in every view's table with their zero-arg builds" {
+        mut ok = true
+        for g in [avra_stmt_flip_grammar(), avra_program_grammar()] {
+            mut has_break = false
+            mut has_continue = false
+            for r in g.rules {
+                if r.name == "break_stmt" { has_break = true }
+                if r.name == "continue_stmt" { has_continue = true }
+            }
+            mut ref_break = false
+            mut ref_continue = false
+            for br in grammar_build_refs(g) {
+                if br.name == "build_break" && br.argc == 0 { ref_break = true }
+                if br.name == "build_continue" && br.argc == 0 { ref_continue = true }
+            }
+            if !has_break || !has_continue || !ref_break || !ref_continue { ok = false }
+        }
+        ok
+    }
+    then "the production views lower through the feature builds, not the toy vocabulary" {
+        let prod = render_grammar(avra_program_grammar())
+        prod.contains("-> build_break()") && prod.contains("-> build_continue()")
+            && !prod.contains("-> Break()") && !prod.contains("-> Continue()")
+    }
+    then "the manifest rows are zero-arg and span-FREE" {
+        // The retired central lowerings never stamped (bare add_leaf, no
+        // add_stmt_at) — a spanned row here would ADD a SrcPos row the old
+        // parser did not record. This pins the flat shape.
+        mut b = ""
+        mut c = ""
+        for r in feature_builders() {
+            if r.name == "build_break" { b = "${r.kind}/${string(r.arity)}/${if r.spanned { "spanned" } else { "flat" }}" }
+            if r.name == "build_continue" { c = "${r.kind}/${string(r.arity)}/${if r.spanned { "spanned" } else { "flat" }}" }
+        }
+        b == "stmt/0/flat" && c == "stmt/0/flat"
+    }
+}
