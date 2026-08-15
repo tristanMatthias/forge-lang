@@ -40,11 +40,13 @@ spec "grammar emitter: renders the statement family's generated static parser" {
 
     then "the Stmt builds lower to CapVal.SNode + Stmt.add_leaf" {
         let src = emit_all()
-        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Break))") &&
-        src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))") &&
-        // defer/errdefer/return lower through the FEATURE manifest post-flip
-        // (t-kd4y.3): the emitted call is the derived adapter's ABI form,
-        // not a central SNode construction.
+        // The whole simple-statement family lowers through the FEATURE
+        // manifest post-flip (t-kd4y.3 / t-47hc.8): the emitted call is the
+        // derived adapter's ABI form, not a central SNode construction.
+        // (The bare Break()/Continue() engine builds survive as toy-grammar
+        // vocabulary but no longer appear in PRODUCTION emitted output.)
+        src.contains("_gb_build_break(st, [])") &&
+        src.contains("_gb_build_continue(st, [])") &&
         src.contains("_gb_build_defer(st, [e])") &&
         src.contains("_gb_build_errdefer(st, [e])") &&
         src.contains("_gb_build_return(st, [e])") &&

@@ -937,15 +937,13 @@ fn avra_stmt_common_grammar() -> Grammar {
   // for exactly this reason; using statement* here silently dropped that case, which the
   // full suite caught. NOT the same body as `block` — do not "dedupe" the two.
   stmt_block    = "{" stmts:declaration* "}" -> Block(stmts)
-  break_stmt    = "break" -> Break()
-  continue_stmt = "continue" -> Continue()
   // match_stmt / match_when_arm / match_arm live with their owning feature
-  // (avra_match_stmt_grammar / avra_match_arm_grammar, features/match) and
-  // defer_stmt / errdefer_stmt / return_stmt / while_stmt / if_stmt ride
-  // the feature_stmt_grammar_fragments registry (t-47hc.8) — the
-  // `statement` alternation above names them and the reference binds
-  // against the composed rule set. ONE definition each, in the feature's
-  // own file; the views only choose dispatch order.
+  // (avra_match_stmt_grammar / avra_match_arm_grammar, features/match); the
+  // rest of the statement family — defer / errdefer / return / while / if /
+  // for / break / continue — rides the feature_stmt_grammar_fragments
+  // registry (t-47hc.8): the `statement` alternation above names each rule
+  // and the reference binds against the composed rule set. ONE definition
+  // each, in the feature's own file; the views only choose dispatch order.
   // STATEMENT-position `if let` — not its
   // expression twin. Routing this to `expression` (which reaches `if_expr`) parsed the
   // form correctly but lowered it to the WRONG SHAPE: an `ExprStmt(Block-expr)` holding
