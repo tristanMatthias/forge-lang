@@ -6368,13 +6368,29 @@ int64_t avra_mem_peak_mb(void) { return atomic_load(&avra_mem_peak_kb) / 1024; }
 // keeps the ceiling's purpose intact: a box whose pressure NEVER lifts (a
 // genuine cliff — resident sets alone exceeding RAM) still trips, just late.
 // 0 restores the instant trip (tests that pin the trip itself use it).
+//
+// The parse policy is PURE and separately callable (the avra_mem_ceiling_for
+// pattern): the COMPLETE value must be a valid integer. A prefix parse
+// ("300ms" → 300) or a non-numeric value ("oops" → 0) must not silently
+// become some other wait — 0 in particular would disable the back-off on a
+// typo, reopening the exact first-sample kill this knob exists to fix. Any
+// incomplete/out-of-range value falls back to the default; a NEGATIVE value
+// is a complete parse and clamps to 0 (an explicit instant-trip request).
+int64_t avra_mem_soft_wait_parse(const char* e) {
+    if (!e || !*e) return 60000;
+    char* end = NULL;
+    errno = 0;
+    long long v = strtoll(e, &end, 10);
+    if (errno != 0 || end == e || *end != '\0') return 60000;
+    if (v < 0) return 0;
+    return (int64_t)v;
+}
+
 static int64_t avra_mem_soft_wait_ms(void) {
     static _Atomic int64_t cached = -1;
     int64_t c = atomic_load(&cached);
     if (c >= 0) return c;
-    const char* e = getenv("AVRA_MEM_SOFT_WAIT_MS");
-    int64_t v = (e && *e) ? strtoll(e, NULL, 10) : 60000;
-    if (v < 0) v = 0;
+    int64_t v = avra_mem_soft_wait_parse(getenv("AVRA_MEM_SOFT_WAIT_MS"));
     atomic_store(&cached, v);
     return v;
 }
@@ -6491,9 +6507,14 @@ static void avra_mem_poll(void) {
     if (soft) {
         int64_t budget_ms = avra_mem_soft_wait_ms();
         while (waited_ms < budget_ms) {
-            struct timespec ts = { 0, 100 * 1000 * 1000 };
+            // Sleep the REMAINDER when under one quantum, so the total wait
+            // lands exactly on the budget (never past it) and the report's
+            // duration is the configured bound, not a rounded-up one.
+            int64_t slice_ms = budget_ms - waited_ms;
+            if (slice_ms > 100) slice_ms = 100;
+            struct timespec ts = { slice_ms / 1000, (slice_ms % 1000) * 1000000L };
             nanosleep(&ts, NULL);
-            waited_ms += 100;
+            waited_ms += slice_ms;
             rss = avra_mem_rss_kb();
             avail_kb = avra_mem_available_kb();
             if (!avra_mem_should_trip(rss, limit_kb, soft, avail_kb, floor_kb)) return;

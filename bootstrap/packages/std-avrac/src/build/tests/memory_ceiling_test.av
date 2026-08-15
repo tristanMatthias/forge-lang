@@ -119,42 +119,102 @@ spec "the F4014 report separates in-phase growth from what preceded it" {
 // ~2 GiB shard grant — twice on one CI head). The borrower now HOLDS
 // allocation and re-samples for a bounded window, resuming on recovery.
 //
-// The trip-after-wait and instant-trip directions are end-to-end below. The
-// RECOVERY direction (condition clears mid-wait → resume, no trip) has no
-// end-to-end leg by the same reasoning as the pure-policy specs above: this
-// box cannot be made to recover on cue. Its decision point is
-// avra_mem_should_trip with fresh readings — already pinned pure — and the
-// loop's only new state is the bound, pinned by the wait-then-trip leg.
-fn soft_trip_out(floor_mb: string, wait_ms: string) -> string {
+// The trip-after-wait and instant-trip directions are end-to-end below,
+// status-aware (avra_shell_exec_status + a per-run log, the slot_gate_test
+// idiom): the trip legs assert the child DIED (rc != 0) and the borrow leg
+// asserts a CLEAN exit (rc == 0), so a timeout or unrelated failure cannot
+// satisfy them vacuously. `timeout 60` on every command doubles as the
+// silent-wait regression bound — a path that wrongly waited the 60 s default
+// gets killed by timeout and fails the F4014 assertion. The RECOVERY
+// direction (condition clears mid-wait → resume) has no end-to-end leg by
+// the same reasoning as the pure-policy specs above: this box cannot be made
+// to recover on cue, and the loop's per-iteration decision is
+// avra_mem_should_trip on fresh readings — already pinned pure. The loop's
+// own new state is the bound, pinned EXACTLY below (300 ms in, 300 ms
+// reported — the slice-clamped sleep makes the duration deterministic).
+extern fn avra_shell_exec_status(cmd: string) -> int
+extern fn avra_selfhost_read_file(path: string) -> string
+extern fn avra_getpid() -> int
+
+use @std.avrac.test_runner.{write_fixture}
+
+fn soft_trip_status(floor_mb: string, wait_ms: string, log: string) -> int {
     // env -u guards: the suite's own pool exports a budget and tests may run
     // under an explicit limit; both would repoint the path under test.
-    avra_shell_exec("env -u AVRA_MEM_LIMIT_MB AVRA_MEM_BUDGET_MB=150 AVRA_MEM_SLACK_FLOOR_MB=${floor_mb} AVRA_MEM_SOFT_WAIT_MS=${wait_ms} timeout 300 ./build/bs2 check '${BIG_FILE}' 2>&1 || true")
+    avra_shell_exec_status("env -u AVRA_MEM_LIMIT_MB AVRA_MEM_BUDGET_MB=150 AVRA_MEM_SLACK_FLOOR_MB=${floor_mb} AVRA_MEM_SOFT_WAIT_MS=${wait_ms} timeout 60 ./build/bs2 check '${BIG_FILE}' > '${log}' 2>&1")
+}
+
+fn backoff_log(tag: string) -> string {
+    "/tmp/avra_mem_backoff_${string(avra_getpid())}_${tag}.log"
 }
 
 spec "t-d91l: a soft grant under the pressure floor backs off before tripping" {
-    then "pressure that never lifts still trips F4014 — after the bounded back-off, saying so" {
+    then "pressure that never lifts still trips F4014 — after EXACTLY the configured back-off" {
         // Floor forced astronomically high: the pressure condition is
         // permanently true, so recovery is impossible and the bound is what
-        // fires. The report must carry the back-off line — the reader's tell
-        // between a transient trough and a genuine cliff.
-        let out = soft_trip_out("9999999", "300")
-        out.contains("F4014") && out.contains("backed off:") && out.contains("pressure never lifted")
+        // fires. The report must carry the back-off DURATION — the reader's
+        // tell between a transient trough and a genuine cliff — and it must
+        // be the configured 300 ms, not a rounded-up overshoot, so a
+        // regression that ignores AVRA_MEM_SOFT_WAIT_MS cannot pass.
+        let log = backoff_log("trip")
+        let rc = soft_trip_status("9999999", "300", log)
+        let out = avra_selfhost_read_file(log)
+        rc != 0 && out.contains("F4014")
+            && out.contains("backed off: held allocation 300 ms")
+            && out.contains("pressure never lifted")
     }
     then "AVRA_MEM_SOFT_WAIT_MS=0 keeps the instant trip — and no back-off line" {
-        let out = soft_trip_out("9999999", "0")
-        out.contains("F4014") && !out.contains("backed off:")
+        let log = backoff_log("instant")
+        let rc = soft_trip_status("9999999", "0", log)
+        let out = avra_selfhost_read_file(log)
+        rc != 0 && out.contains("F4014") && !out.contains("backed off:")
     }
-    then "with slack above the floor an over-grant compile still just borrows — no trip, no wait" {
+    then "with slack above the floor an over-grant compile still just borrows — clean exit, no trip" {
         // The pre-existing borrowing semantics, as the control: floor forced
-        // to 1 MiB so availability always clears it.
-        let out = soft_trip_out("1", "300")
-        !out.contains("F4014")
+        // to 1 MiB so availability always clears it. rc == 0 is the
+        // non-vacuity half — a timeout or unrelated failure cannot pass this
+        // as 'no F4014'. The input must therefore standalone-check CLEAN
+        // (BIG_FILE cannot: an in-package module's relative imports don't
+        // resolve standalone — its rc is 1 for reasons unrelated to memory),
+        // so this leg checks a tiny self-contained program against a 1 MiB
+        // grant — over-grant from the first allocation, borrowing throughout.
+        let src = "/tmp/avra_mem_backoff_${string(avra_getpid())}_ok.av"
+        write_fixture(src, "fn main() {\n    println(\"ok\")\n}\n")
+        let log = backoff_log("borrow")
+        let rc = avra_shell_exec_status("env -u AVRA_MEM_LIMIT_MB AVRA_MEM_BUDGET_MB=1 AVRA_MEM_SLACK_FLOOR_MB=1 AVRA_MEM_SOFT_WAIT_MS=300 timeout 60 ./build/bs2 check '${src}' > '${log}' 2>&1")
+        let out = avra_selfhost_read_file(log)
+        rc == 0 && !out.contains("F4014")
     }
     then "a HARD explicit limit is untouched by the wait knob — instant, no back-off line" {
         // The back-off must not give a runaway under a user-set quota a
-        // minute of grace; the hard path bypasses the loop entirely.
-        let out = avra_shell_exec("AVRA_MEM_LIMIT_MB=1 AVRA_MEM_SOFT_WAIT_MS=60000 timeout 300 ./build/bs2 check '${BIG_FILE}' 2>&1 || true")
-        out.contains("F4014") && !out.contains("backed off:")
+        // minute of grace; the hard path bypasses the loop entirely. The
+        // `timeout 60` bounds the regression where the wait wrongly applied:
+        // a 60 s hold would be killed mid-wait and fail the F4014 assertion.
+        let log = backoff_log("hard")
+        let rc = avra_shell_exec_status("AVRA_MEM_LIMIT_MB=1 AVRA_MEM_SOFT_WAIT_MS=60000 timeout 60 ./build/bs2 check '${BIG_FILE}' > '${log}' 2>&1")
+        let out = avra_selfhost_read_file(log)
+        rc != 0 && out.contains("F4014") && !out.contains("backed off:")
+    }
+}
+
+/// The AVRA_MEM_SOFT_WAIT_MS parse policy, pure (the avra_mem_ceiling_for
+/// pattern): the complete value must be a valid integer or the default
+/// stands. Pinned directly because the cached env read is per-process — a
+/// spec cannot vary its own process's env after first use — and because the
+/// dangerous outcomes are silent: a prefix parse ("300ms" → 300) or a typo
+/// parsed to 0 would quietly DISABLE the back-off this knob configures.
+extern fn avra_mem_soft_wait_parse(s: string) -> int
+
+spec "t-d91l: the wait knob parses completely or falls back to the default" {
+    then "a complete integer is taken verbatim; negatives clamp to the explicit instant-trip 0" {
+        avra_mem_soft_wait_parse("300") == 300
+            && avra_mem_soft_wait_parse("0") == 0
+            && avra_mem_soft_wait_parse("-5") == 0
+    }
+    then "a prefix parse or a typo falls back to the 60 s default — never a silent other value" {
+        avra_mem_soft_wait_parse("300ms") == 60000
+            && avra_mem_soft_wait_parse("oops") == 60000
+            && avra_mem_soft_wait_parse("") == 60000
     }
 }
 
