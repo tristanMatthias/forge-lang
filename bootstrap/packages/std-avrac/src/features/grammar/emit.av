@@ -2264,9 +2264,13 @@ export fn derived_import_lines(src: string, grammar_mod: string, core_mod: strin
 /// moves home moves its import with it); the engine's spelling is the
 /// caller's `grammar_mod`, a foreign module renders verbatim.
 export fn derived_import_lines_for(src: string, binds: List<BuilderBind>, grammar_mod: string, core_mod: string) -> string {
-    // Comments carry prose that mentions type names — scan code only.
-    let code = strip_line_comments(src)
-    let calls = external_call_names(code)
+    // ONE pass collects calls and words, skipping comments and string
+    // literals inline. No stripped intermediate: rebuilding a 160KB source
+    // line-by-line is ~half a GB of arena churn per pass, and find-from-
+    // offset rescans are O(n^2) — both took the gen-check driver to a
+    // 13.8GB F4014 before this shape.
+    let scan = scan_import_names(src)
+    let calls = scan.calls
     mut gram_names: List<string> = []
     mut core_names: List<string> = []
     mut foreign_mods: List<string> = []
@@ -2286,10 +2290,10 @@ export fn derived_import_lines_for(src: string, binds: List<BuilderBind>, gramma
         }
     }
     for t in grammar_type_homes() {
-        if word_present(code, t) { gram_names.push(t) }
+        if str_in(scan.words, t) { gram_names.push(t) }
     }
     for t in core_type_homes() {
-        if word_present(code, t) { core_names.push(t) }
+        if str_in(scan.words, t) { core_names.push(t) }
     }
     mut out = ""
     if gram_names.length > 0 {
@@ -2328,7 +2332,7 @@ fn grammar_type_homes() -> List<string> {
 /// Types core owns that generated code can reference (annotations, enum
 /// paths like `Tk.` / `Stmt.`, list element types).
 fn core_type_homes() -> List<string> {
-    ["ExprId", "StmtId", "PatId", "Expr", "Stmt", "Pattern", "MatchArm", "SelectArm", "CompConfig", "CompConfigPair", "ChildrenSlot", "Tk", "SrcPos", "TypeParamEntry", "Annotation", "TypeExpr", "ParamEntry", "FieldEntry", "FieldInit", "Variant", "ValueType", "NodeStore"]
+    ["ExprId", "StmtId", "PatId", "Expr", "Stmt", "Pattern", "MatchArm", "SelectArm", "CompConfig", "CompConfigPair", "ChildrenSlot", "Tk", "SrcPos", "TypeParamEntry", "Annotation", "TypeExpr", "ParamEntry", "FieldEntry", "FieldInit", "Variant", "WhenArm", "ValueType", "NodeStore"]
 }
 
 /// Builtins that read as free calls but are language-level, never imported.
@@ -2340,25 +2344,57 @@ fn is_ident_ch(ch: string) -> bool {
     (ch >= "a" && ch <= "z") || (ch >= "A" && ch <= "Z") || (ch >= "0" && ch <= "9") || ch == "_"
 }
 
-/// Every EXTERNAL free-call name in `src`: an identifier run immediately
-/// followed by `(`, not preceded by `.` (a method or enum-variant call) nor
-/// by `fn ` (a definition), minus the names the module itself defines, the
-/// builtins, and the `parse_`-prefixed generated family (same-module
-/// siblings in the flat `parse` package, never imported).
-fn external_call_names(src: string) -> List<string> {
+type ImportScan = { calls: List<string>, words: List<string> }
+
+/// ONE forward pass over the (comment- and string-stripped) source:
+/// - `calls`: every EXTERNAL free-call name — an identifier run immediately
+///   followed by `(`, not preceded by `.` (a method or variant call) nor by
+///   `fn ` (a definition), minus locally-defined fns, builtins, and the
+///   `parse_`-prefixed generated family (same-module siblings, never
+///   imported).
+/// - `words`: every identifier run not preceded by `.` — the set the type
+///   scan checks membership against (a `.Name` member suffix like
+///   Pattern.Variant is not a reference to the type `Name`).
+fn scan_import_names(src: string) -> ImportScan {
     mut found: List<string> = []
     mut defined: List<string> = []
+    mut words: List<string> = []
     mut i = 0
     let n = src.length
     mut prev = ""
     while i < n {
         let ch = src.substring(i, i + 1)
+        // `// …` line comment: prose never feeds the scan
+        if ch == "/" && i + 1 < n && src.substring(i + 1, i + 2) == "/" {
+            while i < n && src.substring(i, i + 1) != "\n" { i = i + 1 }
+            prev = "\n"
+            continue
+        }
+        // `"…"` string literal: diagnostic text never feeds the scan
+        if ch == "\"" {
+            mut k = i + 1
+            mut esc = false
+            while k < n {
+                let sc = src.substring(k, k + 1)
+                if esc {
+                    esc = false
+                } else if sc == "\\" {
+                    esc = true
+                } else if sc == "\"" {
+                    break
+                }
+                k = k + 1
+            }
+            i = k + 1
+            prev = "\""
+            continue
+        }
         if is_ident_ch(ch) && !is_ident_ch(prev) {
             mut j = i + 1
             while j < n && is_ident_ch(src.substring(j, j + 1)) { j = j + 1 }
             let name = src.substring(i, j)
-            let head = src.substring(i, i + 1)
-            let callable_head = head == "_" || (head >= "a" && head <= "z")
+            if prev != "." && !str_in(words, name) { words.push(name) }
+            let callable_head = ch == "_" || (ch >= "a" && ch <= "z")
             if j < n && src.substring(j, j + 1) == "(" && callable_head {
                 if prev == "." {
                     // method / variant call — owned by the receiver
@@ -2375,50 +2411,16 @@ fn external_call_names(src: string) -> List<string> {
             i = i + 1
         }
     }
-    mut out: List<string> = []
+    mut calls: List<string> = []
     for f in found {
         if str_in(defined, f) { continue }
         if str_in(builtin_call_names(), f) { continue }
         if f.starts_with("parse_") { continue }
-        out.push(f)
+        calls.push(f)
     }
-    out
+    ImportScan { calls: calls, words: words }
 }
 
-/// Drop `// …` line comments so prose never feeds the name scans. String
-/// literals are kept — a `//` inside one is rare in emitted code and the
-/// cost of a false comment-strip there is an under-import the regen gate
-/// catches loudly.
-fn strip_line_comments(src: string) -> string {
-    mut out = ""
-    for line in src.split("\n") {
-        let at = line.index_of("//")
-        if at < 0 {
-            out = out + line + "\n"
-        } else {
-            out = out + line.substring(0, at) + "\n"
-        }
-    }
-    out
-}
-
-/// True when `name` occurs in `src` bounded by non-identifier chars — the
-/// word-level containment the type scan needs (`Tk` must not match `TkX`).
-fn word_present(src: string, name: string) -> bool {
-    mut from = 0
-    let n = src.length
-    let m = name.length
-    while from < n {
-        let rel = src.substring(from, n).index_of(name)
-        if rel < 0 { return false }
-        let at = from + rel
-        let before = if at == 0 { "" } else { src.substring(at - 1, at) }
-        let after = if at + m >= n { "" } else { src.substring(at + m, at + m + 1) }
-        if !is_ident_ch(before) && !is_ident_ch(after) { return true }
-        from = at + m
-    }
-    false
-}
 
 fn join_sorted(names: List<string>) -> string {
     mut xs: List<string> = []

@@ -5,8 +5,8 @@
 // transitively emit.av — never enters the production compiler graph (mod.av imports
 // the GENERATED file, which pulls only the grammar builders, not the emitter).
 //
-// `emit_expr_parser_file()` returns the COMPLETE module text: a fixed import header
-// (the grammar builders the generated body calls) + `emit_parser_source_ex(_, true)`
+// `emit_expr_parser_file()` returns the COMPLETE module text: a provenance banner + the DERIVED
+// import header (computed from the emitted source) + `emit_parser_source_ex(_, true)`
 // (the exported static parser fns). Editing the §2 expression grammar (avra_grammar.av)
 // changes this text — run `bash scripts/diagnose.sh --emit-regen-expr` to rewrite the
 // checked-in file, then commit it; the guard test fails until you do.
@@ -14,13 +14,10 @@
 use features.grammar.{avra_expr_dispatch_grammar, emit_parser_source_ex, derived_import_lines, grammar_with_builder_kinds, builder_kind_rows}
 use features.{feature_builders}
 
-/// The fixed import header of the production static-parser module: exactly the
-/// features.grammar builders + core types the generated body references. An extra
-/// import is only an F9002 warning, but a MISSING one is a hard undefined-symbol
-/// error — keep this in lockstep with the build helpers avra_expr_grammar's rules
-/// name (mk_assign / fold_pipe / fold_with / fold_nullish / fold_logical / rebind_eq /
-/// mk_is / mk_inlist / mk_inrange / mk_eqchain, plus the Pratt prelude's mk_binary +
-/// the tok_starts_expr_leaf FIRST-guard).
+/// The BANNER of this generated parser module — provenance comments only.
+/// The import header is no longer hand-kept: it derives from the emitted
+/// source itself (derived_import_lines, t-47hc.8 generator-owns-imports),
+/// so nothing here can drift from what the body references.
 export fn gen_expr_parser_header() -> string {
     // RELATIVE imports (features.grammar / core), NOT the absolute `@std.avrac.`
     // form the emit-gen-check STANDALONE harness uses: this file is a globbed

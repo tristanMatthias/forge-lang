@@ -6,7 +6,7 @@
 // never enters the production compiler graph (mod.av imports the GENERATED file via
 // static_type_entry, which pulls only the grammar type-builders, not the emitter).
 //
-// `emit_type_parser_file()` returns the COMPLETE module text: a fixed import header
+// `emit_type_parser_file()` returns the COMPLETE module text: a derived import header
 // (the type-builders the generated body calls) + `emit_parser_source_ex(_, true)`
 // (the exported static parser fns). Editing avra_type_grammar (avra_grammar.av)
 // changes this text — run `bash scripts/diagnose.sh --emit-regen-type` to rewrite the
@@ -15,12 +15,10 @@
 use features.grammar.{avra_type_grammar, emit_parser_source_ex, derived_import_lines, grammar_with_builder_kinds, builder_kind_rows}
 use features.{feature_builders}
 
-/// The fixed import header of the production type static-parser module: exactly the
-/// features.grammar type-builders + core types the generated body references. An extra
-/// import is only an F9002 warning, but a MISSING one is a hard undefined-symbol error —
-/// keep this in lockstep with the build helpers avra_type_grammar's rules name
-/// (fold_type_union / mk_named_type / mk_paren_type / mk_fn_type + TyDyn/TyList inline
-/// builds via capval_* + mk_qualified_type) and the Tk/lookahead guards.
+/// The BANNER of this generated parser module — provenance comments only.
+/// The import header is no longer hand-kept: it derives from the emitted
+/// source itself (derived_import_lines, t-47hc.8 generator-owns-imports),
+/// so nothing here can drift from what the body references.
 export fn gen_type_parser_header() -> string {
     // RELATIVE imports (features.grammar / core), NOT the absolute `@std.avrac.` form
     // the emit-gen-check STANDALONE harness uses: this file is a globbed in-package

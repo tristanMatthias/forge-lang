@@ -131,6 +131,20 @@ spec "t-kd4y.3: generated import headers derive from the manifest" {
         derived_import_lines_for(src, binds, "features.grammar", "core")
             == "use features.grammar.{CapVal, PState}\nuse features.toy.{phantom_build}\nuse features.other.{zed_build}\n"
     }
+    then "a type referenced only via List<> annotation is imported (WhenArm, review find on #1240)" {
+        let src = "fn parse_toy(st: PState) -> CapVal {\n    mut a_list: List<WhenArm> = []\n    CapVal.Nil\n}\n"
+        derived_import_lines_for(src, no_binds(), "features.grammar", "core")
+            .contains("use core.{") && derived_import_lines_for(src, no_binds(), "features.grammar", "core").contains("WhenArm")
+    }
+    then "a name inside a diagnostic STRING is not a reference" {
+        let src = "fn parse_toy(st: PState) -> CapVal {\n    st.report(\"expected Variant here\")\n    CapVal.Nil\n}\n"
+        !derived_import_lines_for(src, no_binds(), "features.grammar", "core").contains("Variant")
+    }
+    then "a `.`-qualified member suffix is not a reference to the member's name" {
+        let src = "fn parse_toy(st: PState) -> CapVal {\n    let p = Pattern.Variant\n    CapVal.Nil\n}\n"
+        let lines = derived_import_lines_for(src, no_binds(), "features.grammar", "core")
+        lines.contains("Pattern") && !lines.contains("Variant")
+    }
     then "an empty manifest routes every call to the engine module" {
         let src = "fn parse_toy(st: PState) -> CapVal {\n    phantom_build(st, [a])\n}\n"
         derived_import_lines_for(src, no_binds(), "features.grammar", "core")
