@@ -32,7 +32,7 @@ use features.spec_test.{spec_feature, given_feature, then_feature}
 use features.struct_decl.{struct_lit_feature, field_access_feature, enum_ctor_feature, field_assign_feature, type_decl_feature, shape_decl_feature}
 use features.trait_decl.{trait_decl_feature}
 use features.tuples.{tuple_feature, tuple_index_feature}
-use features.while_stmt.{while_feature}
+use features.while_stmt.{while_lang}
 use features.with_expr.{with_expr_feature}
 use features.component_decl.{component_decl_feature}
 use core.{register}
@@ -112,7 +112,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
     for f in feats { register_lang(reg, f) }
     let binds = fold_builders(feats)
     register(reg, if_stmt_feature())
-    register(reg, while_feature())
     register(reg, for_feature())
     register(reg, for_in_feature())
     register(reg, let_destructure_feature())
@@ -171,7 +170,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,

@@ -1,0 +1,44 @@
+// The while LanguageFeature definition (features/while_stmt/mod.av): the
+// definition carries title/docs/snippet + the pass hooks, its keyword
+// DERIVES from the declared grammar, and the declared rule reaches the
+// composed statement + whole-program views through
+// feature_stmt_grammar_fragments — the t-47hc.8 flip's guard: ONE
+// definition in the feature file, zero spine copies. The lowering rides
+// the manifest's first `spanned` row (build_while), so the row's shape is
+// pinned here too.
+use @std.avrac.features.while_stmt.{while_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar}
+
+spec "while as a LanguageFeature" {
+    then "the keyword derives from the declared grammar" {
+        let kws = feature_keywords(while_lang())
+        kws.length == 1 && kws[0] == "while"
+    }
+    then "title, docs, and editor snippet are carried" {
+        let f = while_lang()
+        f.title.length > 0 && f.docs.contains("flow-narrows") && f.snippet.contains("while")
+    }
+    then "the declared rule reaches the composed statement view, spelling and all" {
+        // The DISPLAY render omits item markers (@onfail/@off/@require live
+        // only in rule_identity), so the pinned string is the marker-free
+        // head + the feature-owned lowering.
+        let rule = "while_stmt = \"while\" c:expression body:block -> build_while(c, body)"
+        render_grammar(feature_gram(while_lang())).contains(rule)
+            && render_grammar(avra_stmt_flip_grammar()).contains(rule)
+    }
+    then "the whole-program view lowers through the same builder" {
+        let prod = render_grammar(avra_program_grammar())
+        prod.contains("build_while(") && !prod.contains("-> While(")
+    }
+    then "build_while rides the manifest as the first SPANNED stmt row" {
+        // spanned: the generated parser stamps the While's SrcPos at the
+        // `while` keyword via the engine's mk_stamp_stmt_at wrap; the
+        // interpreter path stays span-free. The typed fn never sees the span.
+        mut row = ""
+        for b in feature_builders() {
+            if b.name == "build_while" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
+        }
+        row == "stmt/2/spanned/_gb_build_while"
+    }
+}

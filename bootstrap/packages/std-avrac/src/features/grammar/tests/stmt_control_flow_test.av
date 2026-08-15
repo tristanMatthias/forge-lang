@@ -33,7 +33,9 @@ fn cf_grammar_src() -> string {
     "  break_stmt    = \"break\" -> Break()\n" +
     "  continue_stmt = \"continue\" -> Continue()\n" +
     "  return_stmt   = \"return\" e:expression -> Return(e)\n" +
-    "  while_stmt    = \"while\" c:expression body:block -> While(c, body)\n" +
+    // build_while is the return feature's sibling: a MANIFEST lowering
+    // (resolved via the lazy parse_features() registry), not a central arm.
+    "  while_stmt    = \"while\" c:expression body:block -> build_while(c, body)\n" +
     "  if_stmt       = \"if\" c:expression t:block ( \"else\" e:else_target )? -> If(c, t, e)\n" +
     "  else_target   = block | if_stmt\n" +
     "  for_stmt      = \"for\" v:IDENT \"in\" lo:expression ( \"..\" hi:expression )? body:block -> ForLoop(v, lo, hi, body)\n" +

@@ -71,9 +71,15 @@ export fn feature_keywords(f: LanguageFeature) -> List<string> {
 ///   2. Every supplied builder is COHERENT with the grammar that carries it:
 ///      referenced at least once (an orphan is a lowering nothing can reach)
 ///      and arity-consistent with every reference.
-///   3. A supplied builder that shadows a central name must agree with
-///      `build_kind` about its result kind — the accumulator-typing
-///      classification emit relies on at grammar-analysis time.
+///   3. A supplied builder must NOT shadow a central build name — any
+///      collision is rejected, same-kind included. The two dispatchers
+///      deliberately consult in OPPOSITE orders (emit_call_build scans the
+///      manifest first; apply_build asks central_build_kind first, so engine
+///      builds never pay the manifest scan), which is only coherent while
+///      the name sets are DISJOINT — a shadow would make the generated
+///      parser lower through the feature adapter while the interpreter took
+///      the central arm. Migrating a central lowering means DELETING its
+///      central arms (the t-47hc.8 flip playbook), never shadowing them.
 export fn builder_validation_error(f: LanguageFeature) -> string {
     builder_validation_error_for(f.name, feature_gram(f), f.builders)
 }
@@ -102,9 +108,19 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
         if !builder_kind_supported(b.kind) {
             return "feature `${fname}`: builder `${b.name}` declares unknown kind `${b.kind}`"
         }
-        let central = central_build_kind(b.name)
-        if central != "" && central != b.kind {
-            return "feature `${fname}`: builder `${b.name}` declares kind `${b.kind}` but the engine classifies it `${central}`"
+        // Span stamping is a STATEMENT concern — the emit wrap is
+        // mk_stamp_stmt_at, which coerces its inner to a StmtId. A spanned
+        // non-stmt bind would silently coerce-fail mid-parse; reject it here.
+        if b.spanned && b.kind != "stmt" {
+            return "feature `${fname}`: builder `${b.name}` declares `spanned` with kind `${b.kind}` — span stamping applies to `stmt` builders only"
+        }
+        // ANY central-name shadow is rejected — same-kind included (contract
+        // 3 above). The historical check rejected only a KIND mismatch,
+        // which left a same-kind shadow validating clean while the two
+        // engines' opposite consult orders picked different implementations
+        // for it (CodeRabbit find on #1242).
+        if central_build_kind(b.name) != "" {
+            return "feature `${fname}`: builder `${b.name}` shadows an engine central build — migrate the lowering by deleting its central arms (the flip playbook), never by shadowing"
         }
     }
     for r in refs {
