@@ -6402,8 +6402,31 @@ int64_t avra_mem_soft_wait_parse(const char* e) {
 // crosses it within a few 100 ms samples. A trough that has BOTTOMED
 // (siblings peaked, avail flat or recovering) never trips this — that is
 // the t-d91l shape the back-off exists to ride.
-int64_t avra_mem_hold_is_safe(int64_t high_water_kb, int64_t avail_kb) {
-    return avail_kb >= high_water_kb - 256 * 1024;
+int64_t avra_mem_hold_is_safe(int64_t high_water_kb, int64_t avail_kb, int64_t margin_kb) {
+    return avail_kb >= high_water_kb - margin_kb;
+}
+
+// The valve margin (KiB): 256 MiB unless AVRA_MEM_HOLD_MARGIN_MB overrides
+// it — same strict complete-parse policy as the wait knob (a typo must not
+// silently move a safety boundary). The override exists for the spec that
+// pins the BUDGET exit: on a shared box a neighbour's allocations can fall
+// past any fixed margin mid-wait, so the deterministic way to test "held
+// the whole configured wait" is to set the margin unreachably high; the
+// valve's own decision stays pinned pure at the default margin.
+static int64_t avra_mem_hold_margin_kb(void) {
+    static _Atomic int64_t cached = -1;
+    int64_t c = atomic_load(&cached);
+    if (c >= 0) return c;
+    int64_t v = 256 * 1024;
+    const char* e = getenv("AVRA_MEM_HOLD_MARGIN_MB");
+    if (e && *e) {
+        char* end = NULL;
+        errno = 0;
+        long long m = strtoll(e, &end, 10);
+        if (errno == 0 && end != e && *end == '\0' && m > 0) v = (int64_t)m * 1024;
+    }
+    atomic_store(&cached, v);
+    return v;
 }
 
 static int64_t avra_mem_soft_wait_ms(void) {
@@ -6555,7 +6578,10 @@ static void avra_mem_poll(void) {
             // pre-back-off code did, instead of feeding the kernel
             // OOM-killer a runner-sized victim.
             if (avail_kb > high_water_kb) high_water_kb = avail_kb;
-            if (!avra_mem_hold_is_safe(high_water_kb, avail_kb)) { deepened = 1; break; }
+            if (!avra_mem_hold_is_safe(high_water_kb, avail_kb, avra_mem_hold_margin_kb())) {
+                deepened = 1;
+                break;
+            }
         }
     }
     // Latch: the first thread to cross reports; others fall through to _exit.

@@ -141,7 +141,14 @@ use @std.avrac.test_runner.{write_fixture}
 fn soft_trip_status(floor_mb: string, wait_ms: string, log: string) -> int {
     // env -u guards: the suite's own pool exports a budget and tests may run
     // under an explicit limit; both would repoint the path under test.
-    avra_shell_exec_status("env -u AVRA_MEM_LIMIT_MB AVRA_MEM_BUDGET_MB=150 AVRA_MEM_SLACK_FLOOR_MB=${floor_mb} AVRA_MEM_SOFT_WAIT_MS=${wait_ms} timeout 60 ./build/bs2 check '${BIG_FILE}' > '${log}' 2>&1")
+    // AVRA_MEM_HOLD_MARGIN_MB=999999 disables the RELEASE VALVE for these
+    // legs: on a shared box a NEIGHBOUR's allocations can legitimately fall
+    // past the default margin mid-wait, flipping the trip to the DEEPENING
+    // exit (observed on CI: the trip leg's 'pressure never lifted' assertion
+    // failed because a sibling shard was allocating during the 300 ms
+    // window). The budget exit is only deterministic with the valve out of
+    // reach; the valve's own boundary is pinned pure above.
+    avra_shell_exec_status("env -u AVRA_MEM_LIMIT_MB AVRA_MEM_BUDGET_MB=150 AVRA_MEM_SLACK_FLOOR_MB=${floor_mb} AVRA_MEM_SOFT_WAIT_MS=${wait_ms} AVRA_MEM_HOLD_MARGIN_MB=999999 timeout 60 ./build/bs2 check '${BIG_FILE}' > '${log}' 2>&1")
 }
 
 fn backoff_log(tag: string) -> string {
@@ -215,15 +222,17 @@ extern fn avra_mem_soft_wait_parse(s: string) -> int
 /// the 256 MiB jitter margin means a neighbour is allocating into the hole
 /// and the borrower must yield NOW — the pre-back-off release valve,
 /// restored inside the wait loop.
-extern fn avra_mem_hold_is_safe(high_water_kb: int, avail_kb: int) -> int
+extern fn avra_mem_hold_is_safe(high_water_kb: int, avail_kb: int, margin_kb: int) -> int
+
+const VALVE_MARGIN_KB: int = 262144
 
 spec "t-d91l: the back-off holds only while the box is not deteriorating (the release valve)" {
     then "steady or recovering availability keeps the hold legitimate" {
         // Flat, above, and within-jitter readings all hold: the trough has
         // bottomed — the exact t-d91l shape the back-off exists to ride.
-        avra_mem_hold_is_safe(1536000, 1536000) == 1
-            && avra_mem_hold_is_safe(1536000, 1800000) == 1
-            && avra_mem_hold_is_safe(1536000, 1536000 - 262144) == 1
+        avra_mem_hold_is_safe(1536000, 1536000, VALVE_MARGIN_KB) == 1
+            && avra_mem_hold_is_safe(1536000, 1800000, VALVE_MARGIN_KB) == 1
+            && avra_mem_hold_is_safe(1536000, 1536000 - 262144, VALVE_MARGIN_KB) == 1
     }
     then "a net fall past the jitter margin yields — the neighbour is still allocating" {
         // One KiB past the 256 MiB margin flips it: the valve is a boundary,
@@ -231,8 +240,8 @@ spec "t-d91l: the back-off holds only while the box is not deteriorating (the re
         // the prebuild still climbing), the fall crosses this within a few
         // 100 ms samples — the borrower dies an attributable F4014 instead
         // of the runner dying an unattributable exit 143.
-        avra_mem_hold_is_safe(1536000, 1536000 - 262145) == 0
-            && avra_mem_hold_is_safe(1536000, 500000) == 0
+        avra_mem_hold_is_safe(1536000, 1536000 - 262145, VALVE_MARGIN_KB) == 0
+            && avra_mem_hold_is_safe(1536000, 500000, VALVE_MARGIN_KB) == 0
     }
 }
 
