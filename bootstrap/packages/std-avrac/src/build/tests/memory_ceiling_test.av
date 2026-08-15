@@ -111,6 +111,53 @@ spec "the F4014 report separates in-phase growth from what preceded it" {
     }
 }
 
+// t-d91l — the SOFT-grant trip backs off before it fires. A soft trip's
+// pressure floor reads the NEIGHBOURS (a sibling shard peaking), and such
+// troughs routinely pass; killing a legitimate over-grant borrower at the
+// first sub-floor sample turned transient co-scheduling into deterministic
+// spec failure (the ~9.6 GiB whole-program fold fixture against an inherited
+// ~2 GiB shard grant — twice on one CI head). The borrower now HOLDS
+// allocation and re-samples for a bounded window, resuming on recovery.
+//
+// The trip-after-wait and instant-trip directions are end-to-end below. The
+// RECOVERY direction (condition clears mid-wait → resume, no trip) has no
+// end-to-end leg by the same reasoning as the pure-policy specs above: this
+// box cannot be made to recover on cue. Its decision point is
+// avra_mem_should_trip with fresh readings — already pinned pure — and the
+// loop's only new state is the bound, pinned by the wait-then-trip leg.
+fn soft_trip_out(floor_mb: string, wait_ms: string) -> string {
+    // env -u guards: the suite's own pool exports a budget and tests may run
+    // under an explicit limit; both would repoint the path under test.
+    avra_shell_exec("env -u AVRA_MEM_LIMIT_MB AVRA_MEM_BUDGET_MB=150 AVRA_MEM_SLACK_FLOOR_MB=${floor_mb} AVRA_MEM_SOFT_WAIT_MS=${wait_ms} timeout 300 ./build/bs2 check '${BIG_FILE}' 2>&1 || true")
+}
+
+spec "t-d91l: a soft grant under the pressure floor backs off before tripping" {
+    then "pressure that never lifts still trips F4014 — after the bounded back-off, saying so" {
+        // Floor forced astronomically high: the pressure condition is
+        // permanently true, so recovery is impossible and the bound is what
+        // fires. The report must carry the back-off line — the reader's tell
+        // between a transient trough and a genuine cliff.
+        let out = soft_trip_out("9999999", "300")
+        out.contains("F4014") && out.contains("backed off:") && out.contains("pressure never lifted")
+    }
+    then "AVRA_MEM_SOFT_WAIT_MS=0 keeps the instant trip — and no back-off line" {
+        let out = soft_trip_out("9999999", "0")
+        out.contains("F4014") && !out.contains("backed off:")
+    }
+    then "with slack above the floor an over-grant compile still just borrows — no trip, no wait" {
+        // The pre-existing borrowing semantics, as the control: floor forced
+        // to 1 MiB so availability always clears it.
+        let out = soft_trip_out("1", "300")
+        !out.contains("F4014")
+    }
+    then "a HARD explicit limit is untouched by the wait knob — instant, no back-off line" {
+        // The back-off must not give a runaway under a user-set quota a
+        // minute of grace; the hard path bypasses the loop entirely.
+        let out = avra_shell_exec("AVRA_MEM_LIMIT_MB=1 AVRA_MEM_SOFT_WAIT_MS=60000 timeout 300 ./build/bs2 check '${BIG_FILE}' 2>&1 || true")
+        out.contains("F4014") && !out.contains("backed off:")
+    }
+}
+
 /// The ceiling this process would enforce, in KiB (0 = disabled).
 extern fn avra_mem_limit_kb() -> int
 
