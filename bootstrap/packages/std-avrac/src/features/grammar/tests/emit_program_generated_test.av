@@ -74,13 +74,15 @@ spec "grammar emitter: renders the whole-program generated static parser" {
 
     then "the control-flow builds lower to the SHARED statement cores" {
         let src = emit_all()
-        // `while` / `if` are manifest-owned with `spanned` rows (t-47hc.8):
-        // the engine wraps the span-free adapter in mk_stamp_stmt_at at the
-        // rule's entry byte — the same add_leaf → record_pos order the
-        // central mk_while / mk_if cores performed.
+        // `while` / `if` / `for` are manifest-owned with `spanned` rows
+        // (t-47hc.8): the engine wraps the span-free adapter in
+        // mk_stamp_stmt_at at the rule's entry byte — the same add_leaf →
+        // record_pos order the central mk_* cores performed. The destructure
+        // form keeps its central core (mk_for_destructure).
         src.contains("mk_stamp_stmt_at(st, sp_start, _gb_build_while(st, [c, body]))") &&
         src.contains("mk_stamp_stmt_at(st, sp_start, _gb_build_if(st, [c, t, e]))") &&
-        src.contains("mk_for_loop(st, sp_start, v, lo, hi, body)")
+        src.contains("mk_stamp_stmt_at(st, sp_start, _gb_build_for(st, [v, lo, hi, body]))") &&
+        src.contains("mk_for_destructure(st, sp_start, fb, coll, body)")
     }
 
     then "every form is native — let, quote, qualified types, return" {

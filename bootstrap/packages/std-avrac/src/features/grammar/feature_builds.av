@@ -37,6 +37,18 @@ export fn build_while(c: ExprId, body: StmtId) -> Stmt { Stmt.While(c, body) }
 /// adapter's unwrap), so this fn is the bare shape.
 export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
 
+/// `for v in lo ( ".." hi )? body` — ONE rule, TWO statements: a present
+/// `..` picks the integer-range `Stmt.For`, an absent one the collection
+/// `Stmt.ForIn` (the retired mk_for_loop's exact split, keyed on the same
+/// Nil probe via capval_to_expr_opt). The destructure form
+/// (`for (a, b) in …`) keeps its central builds — MkForDestructure's
+/// desugar is mid-build arena choreography the typed rows don't express
+/// yet (the match precedent: flip what the rows cover, keep the rest
+/// central until the rows grow).
+export fn build_for(v: string, lo: ExprId, hi: ExprId?, body: StmtId) -> Stmt {
+    if hi == null { Stmt.ForIn(v, lo, body) } else { Stmt.For(v, lo, hi!, body) }
+}
+
 /// `return ( value )?` — an absent same-line value is a bare
 /// `Stmt.ReturnEmpty`; a present one is `Stmt.Return(value)`. The
 /// same-line/FIRST gating lives in the rule (feature-owned, return_stmt's
@@ -59,6 +71,15 @@ export fn _gb_build_while(st: PState, vals: List<CapVal>) -> CapVal {
 }
 export fn _gb_build_if(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_if(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1]), capval_to_stmt_opt(st, vals[2])))
+}
+export fn _gb_build_for(st: PState, vals: List<CapVal>) -> CapVal {
+    // Coercion ORDER mirrors the retired mk_for_loop exactly — var, lo,
+    // BODY, then the optional hi (which mk_for_loop only touched inside its
+    // presence match) — so any coercion-time effect sequences identically.
+    let v = capval_tok_text(vals[0])
+    let lo = capval_to_expr(st, vals[1])
+    let body = capval_to_stmt(st, vals[3])
+    capval_stmt_val(st, build_for(v, lo, capval_to_expr_opt(st, vals[2]), body))
 }
 
 // ── match/when (t-kd4y.3 match slice) — the arms whose central helpers
@@ -121,4 +142,11 @@ export fn if_builds() -> List<BuilderBind> {
     [BuilderBind { name: "build_if", kind: "stmt", arity: 3, spanned: true,
                    module: "features.grammar", export_name: "_gb_build_if",
                    build: _gb_build_if }]
+}
+export fn for_builds() -> List<BuilderBind> {
+    // spanned — the stamp lands at the `for` keyword, mk_for_loop's
+    // add_stmt_at anchor (both the For and ForIn shapes).
+    [BuilderBind { name: "build_for", kind: "stmt", arity: 4, spanned: true,
+                   module: "features.grammar", export_name: "_gb_build_for",
+                   build: _gb_build_for }]
 }

@@ -2,7 +2,6 @@
 
 use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_grammars, compose_fragments}
 use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_grammar, avra_match_table_grammar}
-use features.for_stmt.{avra_for_grammar}
 // t-47hc.8 — the statement-family registry: every feature whose gram declares
 // `gram_family = "stmt"`, in registration order. The statement views fold it
 // in below, so a statement keyword's rules live ONLY in its feature file.
@@ -900,12 +899,13 @@ export fn avra_expr_dispatch_grammar() -> Grammar {
 }
 
 
-/// The statement-family tail every statement view composes — the match/for
+/// The statement-family tail every statement view composes — the match
 /// fragments plus the feature registry, written ONCE. A view adds only what
 /// distinguishes it (the flip view: the expr/decl/type/pat rule sets its
-/// interpreter needs defined locally; the dispatch view: nothing).
+/// interpreter needs defined locally; the dispatch view: nothing). The for
+/// rules ride the registry now (for_lang's gram, t-47hc.8).
 fn stmt_family_fragments() -> List<Grammar> {
-    mut fr: List<Grammar> = [avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar(), avra_for_grammar()]
+    mut fr: List<Grammar> = [avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]
     for g in feature_stmt_grammar_fragments() { fr.push(g) }
     fr
 }
