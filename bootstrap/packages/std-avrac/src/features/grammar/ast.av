@@ -859,7 +859,7 @@ export fn central_build_kind(bn: string) -> string {
             or "MkEnumCtorSuffix" or "MkOptMethodCall" or "MkForceUnwrap" or "MkCallArg" or "MkStructLit"
             or "MkGrammarBlock" or "MkTaggedTemplate" or "MkTableHeader" or "MkTableRow" or "MkTableLit"
             or "MkPrimaryFail" -> "expr"
-        "Break" or "Continue" or "ReturnEmpty" or "Return" or "MkReturn"
+        "Break" or "Continue" or "ReturnEmpty" or "Return"
             or "ExprStmt" or "Block" or "While"
             or "If" or "ForLoop" or "MkForDestructure" or "MkMatch" or "MkMatchTable"
             or "MkWhenStmt" or "MkIfLetStmt" -> "stmt"

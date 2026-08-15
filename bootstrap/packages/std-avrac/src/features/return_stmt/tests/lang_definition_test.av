@@ -1,0 +1,33 @@
+// The return LanguageFeature definition (features/return_stmt/mod.av): the
+// definition carries title/docs/snippet, its keyword DERIVES from the
+// declared grammar, and the declared rule reaches the composed statement +
+// whole-program views through feature_stmt_grammar_fragments — the t-47hc.8
+// flip's guard: ONE definition in the feature file, zero spine copies.
+use @std.avrac.features.return_stmt.{return_lang}
+use @std.avrac.features.{feature_keywords, feature_gram}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar}
+
+spec "return as a LanguageFeature" {
+    then "the keyword derives from the declared grammar" {
+        let kws = feature_keywords(return_lang())
+        kws.length == 1 && kws[0] == "return"
+    }
+    then "title, docs, and editor snippet are carried" {
+        let f = return_lang()
+        f.title.length > 0 && f.docs.contains("SAME LINE") && f.snippet.contains("return")
+    }
+    then "the declared rule reaches the composed statement view, spelling and all" {
+        // The lowering is the feature's typed fn (build_return) — the flip's
+        // spelling lockstep: a spine copy left on the old central MkReturn
+        // name fails here. The DISPLAY render omits item markers (@gate /
+        // @onfail(bail) live only in rule_identity), so the pinned string is
+        // the marker-free form.
+        let rule = "return_stmt = \"return\" ( @peek(return_value) e:expression )? -> build_return(e)"
+        render_grammar(feature_gram(return_lang())).contains(rule)
+            && render_grammar(avra_stmt_flip_grammar()).contains(rule)
+    }
+    then "the whole-program view lowers through the same builder" {
+        let prod = render_grammar(avra_program_grammar())
+        prod.contains("build_return(") && !prod.contains("MkReturn(")
+    }
+}

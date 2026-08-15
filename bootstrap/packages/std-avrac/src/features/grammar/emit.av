@@ -2546,9 +2546,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "Continue" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))"
         "ReturnEmpty" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))"
         "Return" -> "CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, ${args[0]}))))"
-        // `return ^( value )?` — the conditional Return/ReturnEmpty core, shared with
-        // apply_build's MkReturn arm so interpreter + generated parser stay in lockstep.
-        "MkReturn" -> "mk_return_opt(st, ${args[0]})"
+        // `return ( value )?` (Return/ReturnEmpty fold) is feature-owned:
+        // build_return in the manifest (t-47hc.8 flip) — both engines
+        // resolve it through the BuilderBind row, no central arm.
         // A statement-position expression that FAILED (st.had_error set by
         // parse_expression's report/error_node) recovers as a bare Stmt.Error (the
         // whole-program loop then synchronises via parse_declaration's

@@ -5,7 +5,7 @@
 // parse/tests/gen_decl_parser_regen_test.av asserts it equals emit_decl_parser_file()
 // so a grammar edit that isn't regenerated fails the suite.
 
-use features.grammar.{CapVal, PState, Token, _gb_build_defer, _gb_build_errdefer, _gb_build_when_arm, _gb_build_when_default, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_list, capval_tok_text, capval_tok_texts, error_stmt_of, gensym_token, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_arm, mk_arm_return, mk_assoc_type, mk_assoc_type_def, mk_block, mk_children_slot_g, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_g, mk_comp_config_list, mk_comp_config_pair_g, mk_comp_field_g, mk_component_block_g, mk_component_def_g, mk_component_paren_def_g, mk_const_binding_g, mk_doc_annotated, mk_enum_decl_g, mk_evariant, mk_export_decl, mk_extern_fn, mk_field, mk_fn_decl_where_g, mk_for_binding, mk_for_destructure, mk_for_loop, mk_given_block_g, mk_if, mk_if_let_stmt, mk_impl, mk_let_binding_g, mk_let_destructure_g, mk_match, mk_match_table, mk_match_table_expr, mk_method, mk_method_shorthand_g, mk_module, mk_module_doc, mk_parallel_g, mk_plain_name, mk_raw_component_block_g, mk_return_opt, mk_select_arm_g, mk_select_g, mk_shape_decl, mk_spec_block_g, mk_splice_arm, mk_splice_name, mk_stamp_stmt_at, mk_then_block_g, mk_trait_decl, mk_trait_list, mk_trait_method, mk_type_decl_any, mk_type_param, mk_use, mk_use_pkg, mk_when, mk_where_param, mk_while, modes_with_flag_off, rawbrace_scan, text_is_word, tok_starts_expr_leaf, tok_starts_pattern, tok_starts_type}
+use features.grammar.{CapVal, PState, Token, _gb_build_defer, _gb_build_errdefer, _gb_build_return, _gb_build_when_arm, _gb_build_when_default, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_list, capval_tok_text, capval_tok_texts, error_stmt_of, gensym_token, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_arm, mk_arm_return, mk_assoc_type, mk_assoc_type_def, mk_block, mk_children_slot_g, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_g, mk_comp_config_list, mk_comp_config_pair_g, mk_comp_field_g, mk_component_block_g, mk_component_def_g, mk_component_paren_def_g, mk_const_binding_g, mk_doc_annotated, mk_enum_decl_g, mk_evariant, mk_export_decl, mk_extern_fn, mk_field, mk_fn_decl_where_g, mk_for_binding, mk_for_destructure, mk_for_loop, mk_given_block_g, mk_if, mk_if_let_stmt, mk_impl, mk_let_binding_g, mk_let_destructure_g, mk_match, mk_match_table, mk_match_table_expr, mk_method, mk_method_shorthand_g, mk_module, mk_module_doc, mk_parallel_g, mk_plain_name, mk_raw_component_block_g, mk_select_arm_g, mk_select_g, mk_shape_decl, mk_spec_block_g, mk_splice_arm, mk_splice_name, mk_stamp_stmt_at, mk_then_block_g, mk_trait_decl, mk_trait_list, mk_trait_method, mk_type_decl_any, mk_type_param, mk_use, mk_use_pkg, mk_when, mk_where_param, mk_while, modes_with_flag_off, rawbrace_scan, text_is_word, tok_starts_expr_leaf, tok_starts_pattern, tok_starts_type}
 use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, MatchArm, ParamEntry, PatId, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeParamEntry, Variant, WhenArm}
 
 // generated recursive-descent parser for grammar `grammar`
@@ -3589,22 +3589,6 @@ fn parse_while_stmt(st: PState) -> CapVal {
     mk_while(st, sp_start, c, body)
 }
 
-fn parse_return_stmt(st: PState) -> CapVal {
-    mut e: CapVal = CapVal.Nil
-    let _ = st.advance()
-    if lookahead_ok("return_value", st) {
-        st.set_abort_prop(false)
-        let __bdiag0 = st.diags.length
-        let __bres0 = parse_expression(st)
-        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        e = __bres0
-    }
-    mk_return_opt(st, e)
-}
-
 fn parse_iflet_stmt(st: PState) -> CapVal {
     mut e: CapVal = CapVal.Nil
     let _ = st.advance()
@@ -3946,5 +3930,21 @@ fn parse_errdefer_stmt(st: PState) -> CapVal {
     let _ = st.advance()
     let e = parse_expression(st)
     _gb_build_errdefer(st, [e])
+}
+
+fn parse_return_stmt(st: PState) -> CapVal {
+    mut e: CapVal = CapVal.Nil
+    let _ = st.advance()
+    if lookahead_ok("return_value", st) {
+        st.set_abort_prop(false)
+        let __bdiag0 = st.diags.length
+        let __bres0 = parse_expression(st)
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        e = __bres0
+    }
+    _gb_build_return(st, [e])
 }
 

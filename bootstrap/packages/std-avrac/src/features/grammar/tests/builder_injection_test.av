@@ -95,19 +95,21 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
         err.contains("1 arg(s)") && err.contains("arity 2")
     }
     then "shadowing a central name with a different kind is rejected" {
-        // MkReturn: still a central "stmt" row. (MkDefer was the original
-        // fixture name here until the t-kd4y.3 flip removed its central row —
-        // a manifest-owned name cannot stage a central-shadow conflict.)
+        // MkMatch: a durable central "stmt" row — spine-only, no feature gram
+        // references it, so it stays central (feature_builds.av documents
+        // why). (MkDefer was the original fixture name until its t-kd4y.3
+        // flip removed the central row, then MkReturn until ITS flip — a
+        // manifest-owned name cannot stage a central-shadow conflict.)
         let g = grammar {
-            top  = a:leaf -> MkReturn(a)
+            top  = a:leaf -> MkMatch(a)
             leaf = "ztok" -> Zed()
         }
         let shadow = [
-            bind("MkReturn", "expr", 1, "features.toy", "return_build"),
+            bind("MkMatch", "expr", 1, "features.toy", "match_build"),
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ]
         let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
-        err.contains("MkReturn") && err.contains("`expr`") && err.contains("`stmt`")
+        err.contains("MkMatch") && err.contains("`expr`") && err.contains("`stmt`")
     }
 }
 

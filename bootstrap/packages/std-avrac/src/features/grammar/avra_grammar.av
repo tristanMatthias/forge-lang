@@ -953,11 +953,11 @@ fn avra_stmt_common_grammar() -> Grammar {
                   @expect("{", "expected `{` after while condition", F0010) -> While(c, body)
   // match_stmt / match_when_arm / match_arm live with their owning feature
   // (avra_match_stmt_grammar / avra_match_arm_grammar, features/match) and
-  // defer_stmt / errdefer_stmt ride the feature_stmt_grammar_fragments
-  // registry (t-47hc.8) — the `statement` alternation above names them and
-  // the reference binds against the composed rule set. ONE definition each,
-  // in the feature's own file; the views only choose dispatch order.
-  return_stmt   = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> MkReturn(e)
+  // defer_stmt / errdefer_stmt / return_stmt ride the
+  // feature_stmt_grammar_fragments registry (t-47hc.8) — the `statement`
+  // alternation above names them and the reference binds against the
+  // composed rule set. ONE definition each, in the feature's own file; the
+  // views only choose dispatch order.
   // STATEMENT-position `if let` — not its
   // expression twin. Routing this to `expression` (which reaches `if_expr`) parsed the
   // form correctly but lowered it to the WRONG SHAPE: an `ExprStmt(Block-expr)` holding

@@ -30,8 +30,10 @@ ps3t.6.5.12 generalises. Adding a case is: an `is_stmt_hand` name, a
 | **`@pkg::T` qualified types** | `parse_type_atom`'s `@` branch | A package-qualified type name (`@std::core::Foo`, + generic / nullable suffixes) has no pure-grammar production (`named_type` is a bare IDENT); `::` paths interact with the enum-ctor-vs-method disambiguation | `@hand(qualified_type)` via **`run_hand_type`** — the TYPE analogue of `run_hand_stmt`: delegates a type ATOM to `parse_type_atom`, returns a `TypeExpr` VALUE (no arena → no store-sharing), routed to `CapVal.TExpr`. Composes as one `type_atom` alternative, so it nests inside pure-grammar generics and stacks with `>>`-split | #842 |
 | **`~` prefix (splice vs bitnot)** | `parse_unary` (`quote_depth`-gated) + `parse_quote` | `~` is overloaded on a parser MODE: inside a `quote { … }` body (`quote_depth > 0`) a leading `~` is `Expr.Splice` (greedy), else bitwise-NOT. A stateless token-grammar has no `quote_depth` counter. The bitnot side is already PURE grammar; the splice side is reachable only inside a quote, and `quote { … }` is itself parser-mode-stateful | `@hand(quote_expr)` via **`run_hand_expr`** — the EXPRESSION analogue of `run_hand_stmt`: delegates the whole `quote` construct to `parse_quote` (which bumps `quote_depth`), SHARING the store, returns an `ExprId` routed to `CapVal.Node`. The inner `~`→Splice falls out by construction. Composes as one `primary` alternative | this slice |
 
-Note: the pure-DSL `MkReturn(re?)` build (ps3t.6.5.4) already handles `return` /
-`return expr` where the boundary is `}` / EOF (FIRST-set rejects those tokens);
+Note: the pure-DSL optional-operand return build (ps3t.6.5.4 as `MkReturn`,
+feature-owned as `build_return` since the t-47hc.8 flip) already handles
+`return` / `return expr` where the boundary is `}` / EOF (FIRST-set rejects
+those tokens);
 `@hand(return_stmt)` is the escape for the residual `return\n<expr>` split. The
 `>>`-split is NOT `@hand` — it's a token-level fix in the executor's terminal
 matcher (the interpreter/emitter both apply it), so nested generics parse purely

@@ -2253,7 +2253,8 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     }
     // `return_value` — does a RETURN VALUE follow the `return` keyword? The whole
     // guard, as one cond: `current_kind in [RightBrace, Eof] || current_line != prev_line`,
-    // negated (features/return_stmt/parser.av).
+    // negated (the retired hand parser's test; the rule lives in
+    // features/return_stmt/mod.av now).
     //
     // It has to be a `@gate` cond rather than the optional group's own FIRST, because the
     // two answer different questions. The FIRST asks "can an expression START here", and
@@ -4160,14 +4161,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "Continue" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))
         "ReturnEmpty" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
         "Return" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, env.get(args[0])))))
-        // `return` with an OPTIONAL operand: absent ⇒ ReturnEmpty, present ⇒
-        // Return(e). A bare `return` before `}` / EOF simply doesn't match the
-        // optional expression (its FIRST-set rejects those tokens), so it folds
-        // to ReturnEmpty with no newline info needed. The remaining
-        // newline-sensitive case — `return\n<expr>` where the value sits on the
-        // NEXT line (the hand parser's `current_line != prev_line` guard) — is a
-        // lexer-mode disambiguation for the gnarly-5% catalogue (ps3t.6.5.10).
-        "MkReturn" if args.length == 1 -> mk_return_opt(st, env.get(args[0]))
+        // `return` with an OPTIONAL operand (absent ⇒ ReturnEmpty) is
+        // feature-owned now: build_return in the manifest (t-47hc.8 flip).
         // A statement-position expression that FAILED recovers as a bare `Stmt.Error`,
         // the twin of the hand parser's `parse_expression()?` yielding `.Err` — the
         // enclosing list-parser then synchronises identically. Without it a failed
@@ -5269,14 +5264,6 @@ export fn mk_for_destructure(st: PState, sp_start: int, binding_cv: CapVal, coll
     add_stmt_at(st, Stmt.ForIn(tmp_tok.text, capval_to_expr(st, coll_cv), block_id), sp_start)
 }
 
-/// `return ^( value )?` (the `MkReturn` build's core). An ABSENT same-line value
-/// (`val_cv == Nil`) is a bare `Stmt.ReturnEmpty`; a PRESENT value is
-/// `Stmt.Return(value)`. The `^`-gated optional (same-line) + its FIRST guard
-/// (which rejects `}` / Eof — not expression starts) together reproduce the hand
-/// parser's `current_kind in [RightBrace, Eof] || current_line != prev_line` test.
-/// Uses a fresh `add_leaf` (no interning, no sp_start) to match the hand's
-/// `alloc_stmt_leaf`. The SHARED core so apply_build (interpreter) and the
-/// generated static parser build byte-identical trees.
 /// `-> return v` / `-> return` as a match ARM body (the `MkArmReturn` build's core).
 ///
 /// `MatchArm.body_id` is an ExprId and `return` is a STATEMENT, so the hand bridges the
@@ -5306,14 +5293,6 @@ export fn mk_arm_return(st: PState, sp_start: int, val_cv: CapVal) -> CapVal {
     }
     let body: List<StmtId> = [ret_id]
     CapVal.Node(st.store.exprs.add_leaf(Expr.Block(body)))
-}
-
-export fn mk_return_opt(st: PState, val_cv: CapVal) -> CapVal {
-    if capval_present(val_cv) {
-        CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, val_cv))))
-    } else {
-        CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
-    }
 }
 
 /// `fn name ( params? ) ( "->" ret )? { body }` (the `MkFnDecl` build's core,

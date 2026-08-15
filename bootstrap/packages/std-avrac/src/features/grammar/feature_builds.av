@@ -22,16 +22,27 @@
 // the SEMANTIC hooks (emit/resolve/check) and references these builds by
 // name in its gram — the reference is still the registration.
 use core.{Stmt, ExprId, WhenArm}
-use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt}
 
 export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
 export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
+
+/// `return ( value )?` — an absent same-line value is a bare
+/// `Stmt.ReturnEmpty`; a present one is `Stmt.Return(value)`. The
+/// same-line/FIRST gating lives in the rule (feature-owned, return_stmt's
+/// gram); this build only folds presence.
+export fn build_return(e: ExprId?) -> Stmt {
+    if e == null { Stmt.ReturnEmpty } else { Stmt.Return(e!) }
+}
 
 export fn _gb_build_defer(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_defer(capval_to_expr(st, vals[0])))
 }
 export fn _gb_build_errdefer(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_errdefer(capval_to_expr(st, vals[0])))
+}
+export fn _gb_build_return(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_return(capval_to_expr_opt(st, vals[0])))
 }
 
 // ── match/when (t-kd4y.3 match slice) — the arms whose central helpers
@@ -74,4 +85,9 @@ export fn errdefer_builds() -> List<BuilderBind> {
     [BuilderBind { name: "build_errdefer", kind: "stmt", arity: 1,
                    module: "features.grammar", export_name: "_gb_build_errdefer",
                    build: _gb_build_errdefer }]
+}
+export fn return_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_return", kind: "stmt", arity: 1,
+                   module: "features.grammar", export_name: "_gb_build_return",
+                   build: _gb_build_return }]
 }
