@@ -21,11 +21,16 @@
 // these rows and the pass cannot double-apply. The feature's mod.av keeps
 // the SEMANTIC hooks (emit/resolve/check) and references these builds by
 // name in its gram — the reference is still the registration.
-use core.{Stmt, ExprId, WhenArm}
-use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt}
+use core.{Stmt, ExprId, StmtId, WhenArm}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt}
 
 export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
 export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
+
+/// `while cond { body }`. Pure shape — the SrcPos stamp at the `while`
+/// keyword rides the bind's `spanned` row (the engine wraps the emitted
+/// call in mk_stamp_stmt_at), never this fn.
+export fn build_while(c: ExprId, body: StmtId) -> Stmt { Stmt.While(c, body) }
 
 /// `return ( value )?` — an absent same-line value is a bare
 /// `Stmt.ReturnEmpty`; a present one is `Stmt.Return(value)`. The
@@ -43,6 +48,9 @@ export fn _gb_build_errdefer(st: PState, vals: List<CapVal>) -> CapVal {
 }
 export fn _gb_build_return(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_return(capval_to_expr_opt(st, vals[0])))
+}
+export fn _gb_build_while(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_while(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1])))
 }
 
 // ── match/when (t-kd4y.3 match slice) — the arms whose central helpers
@@ -68,26 +76,34 @@ export fn _gb_build_when_default(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn when_arm_builds() -> List<BuilderBind> {
-    [BuilderBind { name: "build_when_arm", kind: "warm", arity: 2,
+    [BuilderBind { name: "build_when_arm", kind: "warm", arity: 2, spanned: false,
                    module: "features.grammar", export_name: "_gb_build_when_arm",
                    build: _gb_build_when_arm },
-     BuilderBind { name: "build_when_default", kind: "warm", arity: 1,
+     BuilderBind { name: "build_when_default", kind: "warm", arity: 1, spanned: false,
                    module: "features.grammar", export_name: "_gb_build_when_default",
                    build: _gb_build_when_default }]
 }
 
 export fn defer_builds() -> List<BuilderBind> {
-    [BuilderBind { name: "build_defer", kind: "stmt", arity: 1,
+    [BuilderBind { name: "build_defer", kind: "stmt", arity: 1, spanned: false,
                    module: "features.grammar", export_name: "_gb_build_defer",
                    build: _gb_build_defer }]
 }
 export fn errdefer_builds() -> List<BuilderBind> {
-    [BuilderBind { name: "build_errdefer", kind: "stmt", arity: 1,
+    [BuilderBind { name: "build_errdefer", kind: "stmt", arity: 1, spanned: false,
                    module: "features.grammar", export_name: "_gb_build_errdefer",
                    build: _gb_build_errdefer }]
 }
 export fn return_builds() -> List<BuilderBind> {
-    [BuilderBind { name: "build_return", kind: "stmt", arity: 1,
+    [BuilderBind { name: "build_return", kind: "stmt", arity: 1, spanned: false,
                    module: "features.grammar", export_name: "_gb_build_return",
                    build: _gb_build_return }]
+}
+export fn while_builds() -> List<BuilderBind> {
+    // spanned: the generated parser stamps the While at the `while` keyword
+    // (rule entry), byte-identical to the retired central mk_while core; the
+    // interpreter path stays span-free like its central arm was.
+    [BuilderBind { name: "build_while", kind: "stmt", arity: 2, spanned: true,
+                   module: "features.grammar", export_name: "_gb_build_while",
+                   build: _gb_build_while }]
 }

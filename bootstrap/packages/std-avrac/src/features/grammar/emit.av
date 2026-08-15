@@ -521,6 +521,13 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
 /// fold_binary (→Pratt, sp_start captured in the loop) and the span-free
 /// fold_postfix / mk_is / etc. are excluded.
 fn build_uses_sp_start(name: string) -> bool {
+    // Manifest names answer from their row — consult order mirrors
+    // emit_call_build. A `spanned` bind's owning rule captures sp_start at
+    // entry (for the mk_stamp_stmt_at wrap); span-free binds say no exactly
+    // like the central names absent from the list below.
+    for b in feature_builders() {
+        if b.name == name { return b.spanned }
+    }
     // `-> return v` in a match arm stamps the SYNTHESIZED return row at the `return`
     // keyword — the rule's entry byte. The hand snapshots that position before parsing
     // the value for the same reason: stamping after the parse points the row at the
@@ -568,9 +575,10 @@ fn build_uses_sp_start(name: string) -> bool {
         // in every emitted control-flow body. Measured against the hand:
         //     hand = 2:5 4:9 3:5 6:5
         //     emit = 2:5 4:9 3:18 3:5 6:5      <-- 3:18 is the `{`
-        // The While/If/ForLoop entries stay: their rule entry IS the statement start, so
-        // the stamp agrees with the list loop's rather than adding a row.
-        name == "While" || name == "If" || name == "ForLoop" ||
+        // The If/ForLoop entries stay: their rule entry IS the statement start, so
+        // the stamp agrees with the list loop's rather than adding a row. (`While`
+        // moved to the manifest — build_while's `spanned` row answers above.)
+        name == "If" || name == "ForLoop" ||
         name == "MkForDestructure" ||
         // A `with { … }` suffix spans sp_start = the `with` byte (t-47hc.17): its owning
         // with_suffix rule enters there, and rebind_with reads the partial node's `.hi`
@@ -2457,6 +2465,15 @@ fn join_sorted(names: List<string>) -> string {
 fn emit_call_build(name: string, args: List<string>) -> string {
     for b in feature_builders() {
         if b.name == name && args.length == b.arity {
+            // A `spanned` bind stamps at the owning rule's entry byte via the
+            // engine's mk_stamp_stmt_at — the adapter itself stays span-free
+            // (identical add_leaf → record_pos order to the central
+            // add_stmt_at cores, so IR is byte-identical). The executor needs
+            // no twin: its central arms pass `0 - 1` for these builds, which
+            // a bare adapter call already reproduces.
+            if b.spanned {
+                return "mk_stamp_stmt_at(st, sp_start, ${b.export_name}(st, [${join_args(args)}]))"
+            }
             return "${b.export_name}(st, [${join_args(args)}])"
         }
     }
@@ -2594,7 +2611,6 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         // `0 - 1` (span-free) — the SAME argument the interpreter passes, and the
         // hand's unstamped `alloc_stmt_leaf`. See the `Block` note in build_uses_sp_start.
         "Block" -> "mk_block(st, 0 - 1, ${args[0]}_list)"
-        "While" -> "mk_while(st, sp_start, ${args[0]}, ${args[1]})"
         "If" -> "mk_if(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
         "ForLoop" -> "mk_for_loop(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]})"
         "MkForBinding" -> "mk_for_binding(${args[0]}, CapVal.Toks(${args[1]}_list))"

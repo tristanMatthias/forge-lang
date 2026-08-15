@@ -949,11 +949,9 @@ fn avra_stmt_common_grammar() -> Grammar {
   // failed condition ends the rule and the missing block is never reported. `while return
   // 2` is the shape — one F0040, and without the bail the native rule went on
   // to report about the `{` too.
-  while_stmt    = "while" @onfail(bail) @off(allow_struct_lit) c:expression @require body:block
-                  @expect("{", "expected `{` after while condition", F0010) -> While(c, body)
   // match_stmt / match_when_arm / match_arm live with their owning feature
   // (avra_match_stmt_grammar / avra_match_arm_grammar, features/match) and
-  // defer_stmt / errdefer_stmt / return_stmt ride the
+  // defer_stmt / errdefer_stmt / return_stmt / while_stmt ride the
   // feature_stmt_grammar_fragments registry (t-47hc.8) — the `statement`
   // alternation above names them and the reference binds against the
   // composed rule set. ONE definition each, in the feature's own file; the

@@ -31,7 +31,7 @@
 /// branch answer, so one misclassified feature rule can flip a whole family's
 /// accumulator typing. A narrow row (not BuilderBind) because that type carries
 /// executor values (PState/CapVal) this AST hub must not depend on.
-export type BuildKindRow = { name: string, kind: string }
+export type BuildKindRow = { name: string, kind: string, spanned: bool }
 
 export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr, builder_kinds: List<BuildKindRow> }
 
@@ -860,7 +860,7 @@ export fn central_build_kind(bn: string) -> string {
             or "MkGrammarBlock" or "MkTaggedTemplate" or "MkTableHeader" or "MkTableRow" or "MkTableLit"
             or "MkPrimaryFail" -> "expr"
         "Break" or "Continue" or "ReturnEmpty" or "Return"
-            or "ExprStmt" or "Block" or "While"
+            or "ExprStmt" or "Block"
             or "If" or "ForLoop" or "MkForDestructure" or "MkMatch" or "MkMatchTable"
             or "MkWhenStmt" or "MkIfLetStmt" -> "stmt"
         "MkArmReturn" -> "expr"

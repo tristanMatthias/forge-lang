@@ -1,7 +1,7 @@
 // t-47hc.13 S1 — grammar-native `while`, as an ENGINE differential.
 //
-// while_stmt = "while" @off(allow_struct_lit) c:expression body:braced_block
-//              -> While(c, body)
+// while_stmt = "while" @off(allow_struct_lit) c:expression body:block
+//              -> build_while(c, body)     (feature-owned, features/while_stmt)
 //
 // THIS FILE WAS VACUOUS AND IS FIXED HERE (t-47hc.37). Its header described a FLIP
 // path vs a HAND path, and its `hand_stmt` helper had at some point been rewritten to

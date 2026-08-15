@@ -1,11 +1,16 @@
-// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
-// surface flat at `features.while_stmt.{...}`.
+// while — conditional loop (spec Axis 28). The definition carries the
+// feature whole: syntax, docs, editor surface, hooks, and the grammar rule
+// the statement views compose (gram_family = "stmt", t-47hc.8). The
+// lowering (build_while) is feature-owned via the builder manifest with a
+// `spanned` row — the engine stamps the statement's SrcPos at the `while`
+// keyword; the typed fn never sees the span.
+// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling (emit_while).
 use core.{vtype_render_full, vtype_eq, vtype_is_unknown}
 use features.eval.{error_result}
 use features.eval.{execute_while}
-use core.{feature_new, Feature}
 use resolve.{resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_true_branch}
+use features.grammar.{parse_grammar, while_builds}
 
 /// Resolver hook for `while`. Resolves the condition first, then
 /// the body in the post-condition scope so any names bound in the
@@ -60,15 +65,40 @@ fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
     }
 }
 
-/// Register the `while` loop feature. Wires up parser, resolver,
-/// type-checker, codegen, and eval hooks via the feature registry.
-export fn while_feature() -> Feature {
-    feature_new("while") with {
-        stmt_tag: Stmt.While(ExprId(0), StmtId(0)),
-        stmt_keyword: "kw_while",
-        emit_stmt: emit_while,
-        resolve_stmt: while_resolve,
-        check_stmt: while_check,
-        eval_stmt: while_eval,
+export fn while_lang() -> LanguageFeature {
+    LanguageFeature while_def {
+        name = "while",
+        title = "while — loop while a condition holds",
+        docs = """
+`while cond { body }` re-evaluates `cond` before every iteration and runs
+the body while it is true. The condition must be `bool` (a bare `int` is
+accepted for legacy compatibility); the body must be a `{ }` block —
+`while x break` is rejected (F0010), matching every other control-flow
+header.
+
+Struct literals are disabled in the condition, so `while foo { }` reads
+`foo` as the condition and `{ }` as the body, never as a struct literal
+`foo { }`. Exit early with `break`, skip to the next test with
+`continue`. A `while x != none { … }` condition flow-narrows `x` to its
+present type inside the body.
+""",
+        // TWO @expect keys, ONE message: `@require body:block` is keyed by
+        // block's single-literal FIRST (`{`) once the fragment composes into
+        // the full grammar — that key is what the emitted abort looks up. But
+        // the fragment validates STANDALONE (register_lang), where `block` is
+        // a spine rule it cannot resolve, so the validator demands the
+        // rule-name key instead. Declaring both (same wording, same F0010)
+        // satisfies the standalone check and keeps the composed emit
+        // byte-identical to the spine-era rule.
+        gram = grammar { while_stmt = "while" @onfail(bail) @off(allow_struct_lit) c:expression @require body:block @expect("{", "expected `{` after while condition", F0010) @expect("block", "expected `{` after while condition", F0010) -> build_while(c, body) },
+        builders = while_builds(),
+        snippet = r"while ${1:cond} {\n    ${2:body}\n}",
+        stmt_tag = Stmt.While(ExprId(0), StmtId(0)),
+        emit_stmt = emit_while,
+        resolve_stmt = while_resolve,
+        check_stmt = while_check,
+        eval_stmt = while_eval,
+        gram_family = "stmt",
     }
+    while_def
 }

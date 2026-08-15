@@ -23,7 +23,7 @@ use @std.avrac.features.{builder_validation_error_for, feature_builders}
 fn nil_build(st: PState, vals: List<CapVal>) -> CapVal { CapVal.Nil }
 
 fn bind(name: string, kind: string, arity: int, module: string, export_name: string) -> BuilderBind {
-    BuilderBind { name: name, kind: kind, arity: arity, module: module, export_name: export_name, build: nil_build }
+    BuilderBind { name: name, kind: kind, arity: arity, spanned: false, module: module, export_name: export_name, build: nil_build }
 }
 
 /// Two rules, a one-arg build over a captured rule ref and a nullary one.
@@ -93,6 +93,22 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
         ]
         let err = builder_validation_error_for("toy", toy_gram(), drifted)
         err.contains("1 arg(s)") && err.contains("arity 2")
+    }
+    then "a `spanned` builder of a non-stmt kind is rejected" {
+        // Span stamping composes mk_stamp_stmt_at around the adapter — a
+        // statement-typed wrap. A spanned "expr" row would coerce-fail
+        // mid-parse; the registry gate names it instead.
+        let g = grammar {
+            top  = a:leaf -> Spanny(a)
+            leaf = "ztok" -> Zed()
+        }
+        let spanny = [
+            BuilderBind { name: "Spanny", kind: "expr", arity: 1, spanned: true,
+                          module: "features.toy", export_name: "spanny_build", build: nil_build },
+            bind("Zed", "expr", 0, "features.toy", "zed_build"),
+        ]
+        let err = builder_validation_error_for("toy", grammar_checked(g), spanny)
+        err.contains("Spanny") && err.contains("spanned") && err.contains("stmt")
     }
     then "shadowing a central name with a different kind is rejected" {
         // MkMatch: a durable central "stmt" row — spine-only, no feature gram

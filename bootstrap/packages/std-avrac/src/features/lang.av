@@ -102,6 +102,12 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
         if !builder_kind_supported(b.kind) {
             return "feature `${fname}`: builder `${b.name}` declares unknown kind `${b.kind}`"
         }
+        // Span stamping is a STATEMENT concern — the emit wrap is
+        // mk_stamp_stmt_at, which coerces its inner to a StmtId. A spanned
+        // non-stmt bind would silently coerce-fail mid-parse; reject it here.
+        if b.spanned && b.kind != "stmt" {
+            return "feature `${fname}`: builder `${b.name}` declares `spanned` with kind `${b.kind}` — span stamping applies to `stmt` builders only"
+        }
         let central = central_build_kind(b.name)
         if central != "" && central != b.kind {
             return "feature `${fname}`: builder `${b.name}` declares kind `${b.kind}` but the engine classifies it `${central}`"
