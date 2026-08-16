@@ -251,10 +251,12 @@ spec "t-d91l: the wait knob parses completely or falls back to the default" {
             && avra_mem_soft_wait_parse("0") == 0
             && avra_mem_soft_wait_parse("-5") == 0
     }
-    then "a prefix parse or a typo falls back to the 60 s default — never a silent other value" {
+    then "a prefix parse, a typo, or an out-of-range value falls back to the 60 s default — never a silent other value" {
+        // The last case is one past INT64_MAX: strtoll's ERANGE branch.
         avra_mem_soft_wait_parse("300ms") == 60000
             && avra_mem_soft_wait_parse("oops") == 60000
             && avra_mem_soft_wait_parse("") == 60000
+            && avra_mem_soft_wait_parse("9223372036854775808") == 60000
     }
 }
 

@@ -6423,7 +6423,12 @@ static int64_t avra_mem_hold_margin_kb(void) {
         char* end = NULL;
         errno = 0;
         long long m = strtoll(e, &end, 10);
-        if (errno == 0 && end != e && *end == '\0' && m > 0) v = (int64_t)m * 1024;
+        // The MiB→KiB conversion bounds the accepted range: past
+        // INT64_MAX/1024 the multiply is signed overflow (UB) and the
+        // margin it produced would be garbage — keep the default instead.
+        if (errno == 0 && end != e && *end == '\0' && m > 0 && m <= INT64_MAX / 1024) {
+            v = (int64_t)m * 1024;
+        }
     }
     atomic_store(&cached, v);
     return v;
@@ -6566,7 +6571,11 @@ static void avra_mem_poll(void) {
             int64_t slice_ms = budget_ms - waited_ms;
             if (slice_ms > 100) slice_ms = 100;
             struct timespec ts = { slice_ms / 1000, (slice_ms % 1000) * 1000000L };
-            nanosleep(&ts, NULL);
+            // Retry interrupted sleeps with the REMAINDER before charging the
+            // slice: charging unslept time overstates the reported duration
+            // and, in a signal-heavy tree, drains the budget early.
+            struct timespec rem = { 0, 0 };
+            while (nanosleep(&ts, &rem) == -1 && errno == EINTR) ts = rem;
             waited_ms += slice_ms;
             rss = avra_mem_rss_kb();
             avail_kb = avra_mem_available_kb();
