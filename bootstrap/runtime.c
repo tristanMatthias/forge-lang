@@ -6353,12 +6353,103 @@ void avra_mem_phase_set(const char* label) {
 
 int64_t avra_mem_peak_mb(void) { return atomic_load(&avra_mem_peak_kb) / 1024; }
 
+// How long a SOFT-grant borrower may BACK OFF under the pressure floor before
+// its trip fires, in ms (t-d91l). The floor is a reading of the NEIGHBOURS —
+// a sibling shard peaking, page cache not yet reclaimed — and such troughs
+// routinely pass within seconds; the pre-budget world completed its heaviest
+// fixtures at sub-floor availability as a matter of course (see the slack-floor
+// derivation above). Killing a legitimate over-grant borrower at the first
+// sub-floor SAMPLE therefore turned transient co-scheduling into deterministic
+// spec failure: the fold fixture's ~9.6 GiB whole-program child inherits the
+// shard pool's ~2 GiB grant, crosses it by design, and died the instant the
+// suite's own trough touched the floor (t-d91l, twice on CI on one head).
+// Waiting is the same answer the compile slot gate already gives pressure —
+// hold, re-sample, resume on recovery — applied at the trip site. The bound
+// keeps the ceiling's purpose intact: a box whose pressure NEVER lifts (a
+// genuine cliff — resident sets alone exceeding RAM) still trips, just late.
+// 0 restores the instant trip (tests that pin the trip itself use it).
+//
+// The parse policy is PURE and separately callable (the avra_mem_ceiling_for
+// pattern): the COMPLETE value must be a valid integer. A prefix parse
+// ("300ms" → 300) or a non-numeric value ("oops" → 0) must not silently
+// become some other wait — 0 in particular would disable the back-off on a
+// typo, reopening the exact first-sample kill this knob exists to fix. Any
+// incomplete/out-of-range value falls back to the default; a NEGATIVE value
+// is a complete parse and clamps to 0 (an explicit instant-trip request).
+int64_t avra_mem_soft_wait_parse(const char* e) {
+    if (!e || !*e) return 60000;
+    char* end = NULL;
+    errno = 0;
+    long long v = strtoll(e, &end, 10);
+    if (errno != 0 || end == e || *end != '\0') return 60000;
+    if (v < 0) return 0;
+    return (int64_t)v;
+}
+
+// The back-off's RELEASE-VALVE guard, pure for spec-pinning: may a borrower
+// keep holding at this fresh reading, given the highest MemAvailable seen
+// since the hold began? Holding is only safe while the box is NOT
+// deteriorating — under the old instant-trip code the borrowers' F4014s
+// were, functionally, the box's pressure-release valve, and back-off v1
+// removed it: three consecutive rc-strict runs died as runner-level OOM
+// evictions at the same suite phase (the ~7 GiB @std prebuild still
+// climbing while two over-grant shards HELD ~4.6 GiB under the floor —
+// avail 1536 MiB and falling, dead 48 s later). A net fall of more than
+// 256 MiB from the hold's high-water mark means a neighbour is still
+// allocating into the hole; the borrower must yield NOW and give the
+// memory back, exactly as the pre-back-off code did. The margin tolerates
+// meminfo jitter and kernel reclaim churn; a genuinely climbing build
+// crosses it within a few 100 ms samples. A trough that has BOTTOMED
+// (siblings peaked, avail flat or recovering) never trips this — that is
+// the t-d91l shape the back-off exists to ride.
+int64_t avra_mem_hold_is_safe(int64_t high_water_kb, int64_t avail_kb, int64_t margin_kb) {
+    return avail_kb >= high_water_kb - margin_kb;
+}
+
+// The valve margin (KiB): 256 MiB unless AVRA_MEM_HOLD_MARGIN_MB overrides
+// it — same strict complete-parse policy as the wait knob (a typo must not
+// silently move a safety boundary). The override exists for the spec that
+// pins the BUDGET exit: on a shared box a neighbour's allocations can fall
+// past any fixed margin mid-wait, so the deterministic way to test "held
+// the whole configured wait" is to set the margin unreachably high; the
+// valve's own decision stays pinned pure at the default margin.
+static int64_t avra_mem_hold_margin_kb(void) {
+    static _Atomic int64_t cached = -1;
+    int64_t c = atomic_load(&cached);
+    if (c >= 0) return c;
+    int64_t v = 256 * 1024;
+    const char* e = getenv("AVRA_MEM_HOLD_MARGIN_MB");
+    if (e && *e) {
+        char* end = NULL;
+        errno = 0;
+        long long m = strtoll(e, &end, 10);
+        // The MiB→KiB conversion bounds the accepted range: past
+        // INT64_MAX/1024 the multiply is signed overflow (UB) and the
+        // margin it produced would be garbage — keep the default instead.
+        if (errno == 0 && end != e && *end == '\0' && m > 0 && m <= INT64_MAX / 1024) {
+            v = (int64_t)m * 1024;
+        }
+    }
+    atomic_store(&cached, v);
+    return v;
+}
+
+static int64_t avra_mem_soft_wait_ms(void) {
+    static _Atomic int64_t cached = -1;
+    int64_t c = atomic_load(&cached);
+    if (c >= 0) return c;
+    int64_t v = avra_mem_soft_wait_parse(getenv("AVRA_MEM_SOFT_WAIT_MS"));
+    atomic_store(&cached, v);
+    return v;
+}
+
 // Report and terminate. Rendered in the same shape as a CompileError header so
 // it reads like every other compiler diagnostic (ZERO RAW ERRORS policy) — the
 // runtime cannot construct a DiagnosticBag from an arbitrary allocation site,
 // but it can and does speak the same language.
 static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb,
-                                    int soft, int64_t avail_kb, int64_t floor_kb) {
+                                    int soft, int64_t avail_kb, int64_t floor_kb,
+                                    int64_t waited_ms, int deepened) {
     const char* phase = atomic_load_explicit(&avra_mem_phase, memory_order_relaxed);
     fflush(stdout);
     fprintf(stderr,
@@ -6397,6 +6488,23 @@ static void avra_mem_ceiling_report(int64_t rss_kb, int64_t limit_kb,
             "  budget: soft grant exceeded while the box is under pressure "
             "(%lld MiB available < %lld MiB floor)\n",
             (long long)(avail_kb / 1024), (long long)(floor_kb / 1024));
+        // The back-off line is the reader's tell between three shapes: a
+        // transient trough (no trip at all — no report), a genuine cliff
+        // (held the whole budget, pressure never lifted), and a DEEPENING
+        // collapse (yielded early so a still-allocating neighbour survives —
+        // the release valve, avra_mem_hold_is_safe).
+        if (waited_ms > 0 && deepened) {
+            fprintf(stderr,
+                "  backed off: held allocation %lld ms, then yielded — pressure kept "
+                "DEEPENING (a neighbour is still allocating; holding would feed the "
+                "OS OOM-killer a bigger victim)\n",
+                (long long)waited_ms);
+        } else if (waited_ms > 0) {
+            fprintf(stderr,
+                "  backed off: held allocation %lld ms waiting for the box to recover "
+                "(AVRA_MEM_SOFT_WAIT_MS) — pressure never lifted\n",
+                (long long)waited_ms);
+        }
     }
     fprintf(stderr,
         "  help: this is the compiler stopping itself before the OS OOM-killer does.\n"
@@ -6441,9 +6549,53 @@ static void avra_mem_poll(void) {
     int64_t avail_kb = soft ? avra_mem_available_kb() : 0;
     int64_t floor_kb = soft ? avra_mem_slack_floor_kb() : 0;
     if (!avra_mem_should_trip(rss, limit_kb, soft, avail_kb, floor_kb)) return;
+    // SOFT BACK-OFF (t-d91l): a soft trip means "over the inherited grant
+    // while the box is under the pressure floor" — and the floor reading is
+    // about the NEIGHBOURS, not this process. Hold allocation here (we are
+    // inside the allocator poll, so sleeping IS back-pressure), re-sample,
+    // and resume the moment either side of the condition clears; trip only
+    // if pressure holds for the whole bounded window. Hard ceilings (an
+    // explicit AVRA_MEM_LIMIT_MB, the box-wide derivation) keep the instant
+    // trip: they measure THIS process, and a runaway must not get a minute
+    // of grace to push the box over. avra_mem_should_trip stays the one
+    // trip decision — this loop only re-asks it with fresh readings.
+    int64_t waited_ms = 0;
+    int deepened = 0;
+    if (soft) {
+        int64_t budget_ms = avra_mem_soft_wait_ms();
+        int64_t high_water_kb = avail_kb;
+        while (waited_ms < budget_ms) {
+            // Sleep the REMAINDER when under one quantum, so the total wait
+            // lands exactly on the budget (never past it) and the report's
+            // duration is the configured bound, not a rounded-up one.
+            int64_t slice_ms = budget_ms - waited_ms;
+            if (slice_ms > 100) slice_ms = 100;
+            struct timespec ts = { slice_ms / 1000, (slice_ms % 1000) * 1000000L };
+            // Retry interrupted sleeps with the REMAINDER before charging the
+            // slice: charging unslept time overstates the reported duration
+            // and, in a signal-heavy tree, drains the budget early.
+            struct timespec rem = { 0, 0 };
+            while (nanosleep(&ts, &rem) == -1 && errno == EINTR) ts = rem;
+            waited_ms += slice_ms;
+            rss = avra_mem_rss_kb();
+            avail_kb = avra_mem_available_kb();
+            if (!avra_mem_should_trip(rss, limit_kb, soft, avail_kb, floor_kb)) return;
+            // The release valve (avra_mem_hold_is_safe): holding is only
+            // legitimate while the box holds steady or recovers. Still
+            // falling past the margin = a neighbour is allocating into the
+            // hole we are sitting on — yield the memory NOW, exactly as the
+            // pre-back-off code did, instead of feeding the kernel
+            // OOM-killer a runner-sized victim.
+            if (avail_kb > high_water_kb) high_water_kb = avail_kb;
+            if (!avra_mem_hold_is_safe(high_water_kb, avail_kb, avra_mem_hold_margin_kb())) {
+                deepened = 1;
+                break;
+            }
+        }
+    }
     // Latch: the first thread to cross reports; others fall through to _exit.
     if (atomic_exchange_explicit(&avra_mem_tripped, 1, memory_order_relaxed)) return;
-    avra_mem_ceiling_report(rss, limit_kb, soft, avail_kb, floor_kb);
+    avra_mem_ceiling_report(rss, limit_kb, soft, avail_kb, floor_kb, waited_ms, deepened);
 }
 
 // Per-`while`-loop iteration ceiling for comptime execution. A comptime loop
