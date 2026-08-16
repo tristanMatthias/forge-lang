@@ -43,10 +43,19 @@ export fn gen_parser_header() -> string {
     "// emit_parser_file() so a grammar edit that isn't regenerated fails the suite.\n\n"
 }
 
+/// The emitted SOURCE of THE grammar, sans banner/imports — the one emission
+/// every emit-shape test greps (the same text emit_parser_file wraps). Tests
+/// used to emit pruned per-family dispatch views instead, whose cross-family
+/// refs leaned on emit.av's hand-declared FIRST table; emitting full() needs
+/// no declared FIRSTs, which is what let that table die.
+export fn emitted_full_source() -> string {
+    emit_parser_source_ex(assemble_language().full(), true)
+}
+
 /// The complete text of parse/gen_parser.av: banner + the DERIVED import
 /// header + every parse fn of the language, emitted once from the one
 /// composed grammar. Both the regenerator and the guard read from HERE.
 export fn emit_parser_file() -> string {
-    let src = emit_parser_source_ex(assemble_language().full(), true)
+    let src = emitted_full_source()
     gen_parser_header() + derived_import_lines(src, "features.grammar", "core") + "\n" + src
 }

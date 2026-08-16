@@ -20,8 +20,8 @@
 // `MkExport` has the identical gap and is still executor-only. It is what the `export`
 // WRAPPING increment will spend, so it needs the same treatment then.
 
-use @std.avrac.features.grammar.{emitted_rule_body}
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source, avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{emitted_rule_body, emitted_full_source}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source, emitted_full_source}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
@@ -91,7 +91,7 @@ spec "t-47hc slice 10.6: `extern fn` is native, in BOTH engines" {
 // Sixteen malformed forms across the four keywords are in the invalid corpus
 // (error_recovery_differential_test), F-code and recovery-TREE both.
 fn decl_src() -> string {
-    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+    emitted_full_source()
 }
 
 spec "t-47hc slice 10.13: `fn` and `extern` are routed onto the production path" {

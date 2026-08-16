@@ -20,7 +20,7 @@
 
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_ids}
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_parser_source}
+use @std.avrac.features.grammar.{emitted_full_source}
 
 /// The rendered whole-program tree under one parser mode — the same shape
 /// error_recovery_differential's `rtree` uses.
@@ -148,10 +148,10 @@ spec "t-bwjg: the block-bodied quote kinds are grammar-native" {
 // @peek(quote_special) and must come FIRST, with the unguarded native branch after it.
 spec "t-bwjg: the emitted dispatch routes quote correctly" {
     then "the native rule fn is emitted at all" {
-        emit_parser_source(avra_expr_dispatch_grammar()).contains("fn parse_quote_expr(")
+        emitted_full_source().contains("fn parse_quote_expr(")
     }
     then "the native rule bumps and RESTORES the counter around the body" {
-        let src = emit_parser_source(avra_expr_dispatch_grammar())
+        let src = emitted_full_source()
         src.contains("modes_with_counter_bumped(st.modes, \"quote_depth\")") &&
         src.contains("mk_quote(st, sp_start,")
     }
@@ -161,7 +161,7 @@ spec "t-bwjg: the emitted dispatch routes quote correctly" {
         // `parse_quote_expr` catch-all — otherwise the plain branch consumes `quote` first
         // and the two special kinds become dead code with no diagnostic (the #1028 failure
         // mode). Asserted on the EMITTED SOURCE rather than inferred from the grammar text.
-        let src = emit_parser_source(avra_expr_dispatch_grammar())
+        let src = emitted_full_source()
         let arm_gate = src.index_of("lookahead_ok(\"quote_arm\", st)")
         let type_gate = src.index_of("lookahead_ok(\"quote_type\", st)")
         let native = src.index_of("parse_quote_expr(st)")
@@ -169,7 +169,7 @@ spec "t-bwjg: the emitted dispatch routes quote correctly" {
         arm_gate < native && type_gate < native
     }
     then "both non-block kinds lower to their own native rules, not to a hand leaf" {
-        let src = emit_parser_source(avra_expr_dispatch_grammar())
+        let src = emitted_full_source()
         src.contains("fn parse_quote_type_expr(") && src.contains("mk_quote_type(st, sp_start,") &&
         src.contains("fn parse_quote_arm_expr(") && src.contains("mk_quote_arm(st, sp_start,")
     }

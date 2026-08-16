@@ -24,12 +24,12 @@
 // invisible on VALID input by construction, so a wrapper absent from the invalid corpus
 // would be routed on no evidence at all.
 
-use @std.avrac.features.grammar.{emitted_rule_body}
-use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{emitted_rule_body, emitted_full_source}
+use @std.avrac.features.grammar.{emitted_full_source}
 use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
-    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+    emitted_full_source()
 }
 
 // Status-plus-log, same shape as the use/mod flip's probe: the exit code is half the

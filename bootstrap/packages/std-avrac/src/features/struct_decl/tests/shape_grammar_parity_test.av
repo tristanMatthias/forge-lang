@@ -14,12 +14,12 @@
 // MkExport in 10.6, the generic decl arms in 10.2) — so it was added as one shared core
 // with an emit assertion, not just an executor arm that the interpreter would vouch for.
 
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source, avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emit_parser_source, emitted_full_source}
 
 // The PRODUCTION declaration parser source — the dispatch view the checked-in
 // gen_decl_parser.av is rendered from, which is not the whole-program view used above.
 fn decl_src() -> string {
-    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+    emitted_full_source()
 }
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}

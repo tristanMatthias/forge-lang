@@ -21,8 +21,8 @@
 // `tparam` lives in features/generics, not here: fn / type / enum / trait / impl all take
 // the same `<T, U: Bound>` list, so it is shared sub-structure the way `field` is.
 
-use @std.avrac.features.grammar.{emitted_rule_body}
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{emitted_rule_body, emitted_full_source}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, emitted_full_source}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
@@ -85,7 +85,7 @@ spec "t-47hc slice 10.3: DOC comments between variants are skipped, as the hand 
 // AFTER the decl_hand gate is dead code that produces correct output and no diagnostic,
 // which is the failure mode #1028 was caught on.
 fn decl_src() -> string {
-    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+    emitted_full_source()
 }
 
 spec "t-47hc slice 10.11: `enum` is routed onto the production path, COMMITTED" {

@@ -24,11 +24,11 @@
 // (the routed-keyword blocks, both specs); this file owns dispatch, scaffold and
 // acceptance-frontier structure, and the valid forms the compiler's own source uses.
 
-use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex, emitted_rule_body, emitted_rule_speculates}
+use @std.avrac.features.grammar.{emitted_rule_body, emitted_rule_speculates, emitted_full_source}
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
-    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+    emitted_full_source()
 }
 
 // Same status-plus-log shape as decl_flip_use_mod_native_test: the exit code is half

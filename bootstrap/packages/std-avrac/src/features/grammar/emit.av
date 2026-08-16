@@ -3030,88 +3030,27 @@ fn rule_first_cond(g: Grammar, name: string, visited: List<string>) -> string {
     v2.push(name)
     let r = emit_lookup_rule(g, name)
     if r.name == "" {
-        // Dispatch-only production grammars intentionally leave `expression`
-        // external so the checked-in declaration parser calls the separately
-        // generated expression parser. Its FIRST set is nevertheless required
-        // when that reference is optional/repeated (for example the same-line
-        // optional operand of native `return`). Keep this on the shared leaf
-        // predicate used by the expression dispatch itself.
-        if name == "expression" { return "tok_starts_expr_leaf(st.cur())" }
-        if name == "pattern_or" { return "tok_starts_pattern(st.cur())" }
-        // The shared match-ARM fragment (features/match.av) is DEFINED in the
-        // declaration dispatch view and referenced from the expression view's `match_expr`.
-        // Both generated parsers live in the `parse/` module namespace, which MERGES — so
-        // the expression parser calls the declaration parser's parse_match_arm directly,
-        // exactly as it already calls parse_pattern_or. Defining the rules in both views
-        // instead would emit two `parse_match_when_arm` functions into one namespace and
-        // fail the build with a duplicate-function FATAL. What crossing that boundary needs
-        // is a DECLARED FIRST, which is what these two lines are (t-47hc.25).
-        // t-47hc.4.3 — the declared FIRST must include the quote-splice `~`, because
-        // `match_arm` now has a `@when(in_quote_body) "~" …` branch. A DECLARED first is a
-        // hand-maintained copy of the rule's real one, so adding a branch to the rule
-        // silently leaves this stale: the expression view's arms LOOP kept
-        // `while tok_starts_pattern(...)`, never entered on `~`, and `~arms` inside
-        // `let r = match v { … }` died at the closer with "expected `}` after match arms"
-        // — while the DECLARATION view, which computes the FIRST from the rule itself, had
-        // it right. That asymmetry is the whole hazard of a declared FIRST.
-        if name == "match_arm" { return "(st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_pattern(st.cur()))" }
-        if name == "match_when_arm" { return "(st.cur().text == \"_\" || tok_starts_expr_leaf(st.cur()))" }
-        // t-47hc.29, the match-table flip, crossing the boundary the other way: `table_cell`
-        // is DEFINED in the expression view (it is hand `parse_primary`, whose alternatives
-        // are all local there) and CALLED from `match_table_stmt` in the declaration view.
-        // Its FIRST is parse_primary's own — the shared expression-leaf predicate. `pattern`
-        // is the row-pattern reference from the same rule, and is the pattern family's
-        // predicate, exactly as `pattern_or` above.
-        if name == "table_cell" { return "tok_starts_expr_leaf(st.cur())" }
-        // t-47hc slice 10.9 — routing the decl keywords makes `field`\'s `ftype:type_expr`
-        // reachable from the declaration view, where the TYPE family is deliberately not
-        // composed (dispatch-only) so the generated declaration parser calls the
-        // separately generated type parser. Same crossing as `expression` above, same fix.
-        // t-47hc.4.3 — widened for the quote-splice `~`, exactly as `match_arm` above and
-        // for the same reason: `type_atom` now leads with a `@when(in_quote_body)`
-        // `splice_type` branch, and a DECLARED first is a hand-maintained copy that does
-        // not follow the rule. Left stale, `fn helper(x: ~name_arg)` inside a quote never
-        // entered `type_expr` and died on the caller's "expected parameter type after `:`".
+        // An EXTERNAL rule reference has no computable FIRST, and falling back to
+        // `false` here would be SILENT and destructive: `( r )*` emits `while false`
+        // and never loops, `( r )?` is never taken, and the generated parser DROPS
+        // the whole construct while still compiling and reporting no error. (Caught
+        // red-handed adding subjectless `match { … }` when the pruned statement
+        // dispatch view left `when_arm` external.)
         //
-        // The widening is MODE-GUARDED rather than folded into `tok_starts_type`, which
-        // takes a bare Token and so cannot see `quote_depth`. Outside a quote the FIRST is
-        // byte-identical to before, which is what keeps `~` in type position the same
-        // parse error as before.
-        if name == "type_expr" { return "(st.modes.quote_depth > 0 && st.cur().tk == Tk.Tilde || tok_starts_type(st.cur()))" }
-        // `match_table_expr` is DEFINED in the declaration view (beside match_table_stmt, so
-        // the `{#cols}` stays in a string fragment) and CALLED from the expression view's
-        // `match_expr` — the same crossing match_arm makes, so it needs a declared FIRST.
-        if name == "match_table_expr" { return "(st.cur().text == \"match\")" }
-        if name == "pattern" { return "tok_starts_pattern(st.cur())" }
-        // t-47hc slice 10.13 — routing `fn` / `extern` / `trait` / `impl` makes their
-        // parameter lists reachable from the declaration view, and `param` is defined in
-        // the EXPRESSION view (it is paren_expr's typed-lambda parameter, shared rather
-        // than duplicated). Same crossing as `expression` and `type_expr` above. Its FIRST
-        // is a bare IDENT: `param = pname:IDENT ( ":" pt:type_expr )?`.
-        // Delegated to `named_tk_guard` rather than spelled inline: that is the ONE place
-        // mapping the `IDENT` terminal to `Tk.Identifier`, and the neighbouring declared
-        // FIRSTs all route through a shared predicate too. Output is byte-identical.
-        if name == "param" { return named_tk_guard("IDENT") }
-        // t-47hc Phase 4 — routing the `@annotation` wrapper makes its arg list
-        // reachable from the declaration view, and `call_arg` is defined in the
-        // EXPRESSION view (it is the call-suffix argument, shared rather than
-        // duplicated). Its FIRST is `expression`'s own leaf predicate — a call_arg is
-        // `@on(allow_dot_postfix) e:expression`.
-        if name == "call_arg" { return "tok_starts_expr_leaf(st.cur())" }
-        // Any OTHER external rule has no declared FIRST, and falling back to `false`
-        // here is SILENT and destructive: `( r )*` emits `while false` and never loops,
-        // `( r )?` is never taken, and the generated parser DROPS the whole construct
-        // while still compiling and reporting no error. (Caught red-handed adding
-        // subjectless `match { … }`: `when_arm` is an expression-family rule, so the
-        // statement dispatch emitted `while false { a_list.push(…) }` — every arm
-        // dropped, `bs2 check` still said `ok`, and the match feature suite stayed
-        // green because nothing covered that form.)
+        // Emit an UNDEFINED call instead, so regen -> build fails loudly and names
+        // the rule. This branch is unreachable from every production and harness
+        // emission now — they all emit THE grammar (Language.full()), where every
+        // rule is defined — so it fires only for a fragment or toy grammar that
+        // references a rule it does not define.
         //
-        // Emit an UNDEFINED call instead, so regen -> build fails loudly and names the
-        // rule. No production grammar reaches this today (no generated parser contains
-        // a `false` guard), so every checked-in parser regenerates byte-identically —
-        // this only fires the moment someone adds a cross-family reference and forgets
-        // to declare its FIRST above.
+        // HISTORY (t-47hc.8): a hand-maintained DECLARED-FIRST table used to sit
+        // here, mapping ~10 cross-family rule names to approximation predicates
+        // (tok_starts_expr_leaf / tok_starts_type / tok_starts_pattern, …) so the
+        // pruned per-family dispatch views could emit across family boundaries.
+        // A declared FIRST is a hand copy of the rule's real one, and it went
+        // stale twice (the quote-splice `~` incidents — a rule grew a branch, the
+        // copy didn't, and the form silently never entered). One-grammar emission
+        // made every entry dead; the table is deleted, not exempted.
         return "avra_grammar_external_first_undeclared_${name}(st.cur())"
     }
     node_first_guard(g, r.body, v2)

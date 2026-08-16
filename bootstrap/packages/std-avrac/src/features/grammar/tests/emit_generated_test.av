@@ -15,13 +15,13 @@
 // mode (a full nested compile+run, too heavy for every `bs2 test`).
 
 use @std.avrac.core.{avra_selfhost_read_file}
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_parser_source, emit_rule_fn, Grammar, Rule, GNode}
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar, Rule, GNode, emitted_full_source}
 
 // The canonical §2 expression grammar is the SOURCE-OF-TRUTH `grammar { }`
 // block dogfooded into compiler src/ (avra_grammar.av, ps3t.6.5.11); the
 // emitter lowers each of its rules to a static parse fn.
 fn emit_all() -> string {
-    emit_parser_source(avra_expr_dispatch_grammar())
+    emitted_full_source()
 }
 
 fn rule_named(g: Grammar, name: string) -> Rule {

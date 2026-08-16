@@ -7,12 +7,12 @@
 // had it — including the missing-name diagnostics the corpus work added to the
 // hand (spec_test/tests/spec_block_missing_name_test.av pins that fix itself).
 
-use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
-use @std.avrac.features.grammar.{emitted_rule_speculates}
+use @std.avrac.features.grammar.{emitted_full_source}
+use @std.avrac.features.grammar.{emitted_rule_speculates, emitted_full_source}
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
-    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+    emitted_full_source()
 }
 
 fn check_out(name: string, env: string, src: string) -> string {

@@ -23,7 +23,7 @@
 // every split (TokEdit) so restore_to un-splits at/after its rollback point and
 // the shared runners un-split everything on an errored exit.
 
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{emitted_full_source}
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file}
 
 // The d3-class fixture: `>>` in the header, `<`-speculation in the body, no
@@ -98,7 +98,7 @@ spec "t-47hc Phase 4: the emitted repeat loop breaks BEFORE coercing a declined 
         // (`push(coerce(parse(...)))` then break) is exactly what reported on a
         // declined iteration, and a regeneration that silently reverts to it
         // passes every valid-input spec via the interpreter fallback.
-        let src = emit_parser_source_ex(avra_expr_dispatch_grammar(), true)
+        let src = emitted_full_source()
         src.contains("let __rep_cv = parse_postfix_suffix(st)") &&
             src.contains("p_list.push(capval_to_expr(st, __rep_cv))") &&
             !src.contains("p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))")
