@@ -19,8 +19,8 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
-use @std.avrac.features.grammar.{avra_program_grammar, Grammar, GNode, GAnnot, avra_decl_dispatch_grammar, avra_expr_grammar, emitted_full_source}
-use @std.avrac.features.grammar.{emit_lookup_rule, rule_body_has_cut, emitted_full_source}
+use @std.avrac.features.grammar.{avra_program_grammar, Grammar, GNode, GAnnot, avra_decl_dispatch_grammar, avra_expr_grammar, checked_in_parser_source}
+use @std.avrac.features.grammar.{emit_lookup_rule, rule_body_has_cut, checked_in_parser_source}
 
 fn flip_decl(src: string) -> string {
     mut p = parser_new(src)
@@ -377,7 +377,7 @@ spec "t-myz7: a rule-name-keyed @expect reaches the EMITTED parser" {
         // the grammar on both sides could never see it. This one reads the EMITTED
         // source, so it can.
         let declared = declared_expect("trait_member", "trait_member")
-        let src = emitted_full_source()
+        let src = checked_in_parser_source()
         declared != "" &&
             src.contains(declared) &&
             !src.contains("expected trait_member")

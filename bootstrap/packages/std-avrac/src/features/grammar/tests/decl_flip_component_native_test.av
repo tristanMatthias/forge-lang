@@ -10,12 +10,12 @@
 // instantiation forms stay hand-owned (slices B/C): they must fail the native
 // header and fall back byte-for-byte.
 
-use @std.avrac.features.grammar.{emitted_full_source}
-use @std.avrac.features.grammar.{emitted_rule_body, emitted_full_source}
+use @std.avrac.features.grammar.{checked_in_parser_source}
+use @std.avrac.features.grammar.{emitted_rule_body, checked_in_parser_source}
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
-    emitted_full_source()
+    checked_in_parser_source()
 }
 
 fn check_out(name: string, env: string, src: string) -> string {

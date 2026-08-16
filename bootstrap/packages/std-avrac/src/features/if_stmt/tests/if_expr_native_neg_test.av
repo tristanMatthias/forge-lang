@@ -19,10 +19,10 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
 
-use @std.avrac.features.grammar.{emitted_full_source}
+use @std.avrac.features.grammar.{checked_in_parser_source}
 
 /// The emitted expression-family parser source — where if_expr's own diagnostic lives.
-fn generated_if_expr_source() -> string { emitted_full_source() }
+fn generated_if_expr_source() -> string { checked_in_parser_source() }
 
 fn check_out(env: string, source: string) -> string {
     let path = "/tmp/avra_if_expr_neg.av"

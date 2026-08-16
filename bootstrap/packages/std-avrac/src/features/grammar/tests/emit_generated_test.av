@@ -15,13 +15,13 @@
 // mode (a full nested compile+run, too heavy for every `bs2 test`).
 
 use @std.avrac.core.{avra_selfhost_read_file}
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar, Rule, GNode, emitted_full_source}
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar, Rule, GNode, checked_in_parser_source}
 
 // The canonical §2 expression grammar is the SOURCE-OF-TRUTH `grammar { }`
 // block dogfooded into compiler src/ (avra_grammar.av, ps3t.6.5.11); the
 // emitter lowers each of its rules to a static parse fn.
 fn emit_all() -> string {
-    emitted_full_source()
+    checked_in_parser_source()
 }
 
 fn rule_named(g: Grammar, name: string) -> Rule {
@@ -302,7 +302,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // chain instead of being swallowed by the repetition, which is what let
         // `a with { x: 2` (unclosed) report at all — it previously built `(let b a)` with
         // ZERO diagnostics.
-        src.contains("        while starts_with_suffix(st) {\n            let __bdiag0 = st.diags.length\n            let __bres0 = parse_with_suffix(st)\n            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {\n                return CapVal.Node(st.error_node_silent())\n            }\n            s_list.push(capval_to_expr(st, __bres0))\n        }") &&
+        src.contains("        while starts_with_suffix(st) {\n            let __bdiag0 = st.diags.length\n            let __bres0 = parse_with_suffix(st)\n            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {\n                st.set_abort_prop(true)\n                return CapVal.Node(st.error_node_silent())\n            }\n            s_list.push(capval_to_expr(st, __bres0))\n        }") &&
         src.contains("fn starts_with_suffix(st: PState) -> bool {\n    st.cur().text == \"with\"\n}") &&
         // t-47hc.17: `with_suffix` is GRAMMAR-NATIVE now (hand parse_with_suffix deleted),
         // so its delegate rule must no longer route through run_hand_expr — it parses the

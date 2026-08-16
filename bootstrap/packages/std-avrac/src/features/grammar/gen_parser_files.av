@@ -29,6 +29,7 @@
 // @derive/@expand type (F4012).
 
 use features.grammar.{assemble_language, emit_parser_source_ex, derived_import_lines}
+use core.{avra_selfhost_read_file}
 
 /// The BANNER — provenance comments only. The import header is not
 /// hand-kept: it derives from the emitted source itself
@@ -43,19 +44,26 @@ export fn gen_parser_header() -> string {
     "// emit_parser_file() so a grammar edit that isn't regenerated fails the suite.\n\n"
 }
 
-/// The emitted SOURCE of THE grammar, sans banner/imports — the one emission
-/// every emit-shape test greps (the same text emit_parser_file wraps). Tests
-/// used to emit pruned per-family dispatch views instead, whose cross-family
-/// refs leaned on emit.av's hand-declared FIRST table; emitting full() needs
-/// no declared FIRSTs, which is what let that table die.
-export fn emitted_full_source() -> string {
-    emit_parser_source_ex(assemble_language().full(), true)
+/// The production static parser's TEXT, for emit-shape tests to grep — read
+/// from the CHECKED-IN parse/gen_parser.av (cwd = bootstrap root, the test
+/// convention gen_parser_regen_test documents), NOT re-emitted. The file is a
+/// derived artifact with a byte-equality freshness proof (the regen guard
+/// asserts file == emit_parser_file()), so reading it is exact — and a fresh
+/// emission per spec is what it replaces: tests used to emit pruned per-family
+/// dispatch views (whose cross-family refs leaned on emit.av's now-deleted
+/// declared-FIRST table); re-emitting the FULL grammar per then-block instead
+/// stalled whole shards. If the grammar changed without a regen, the guard
+/// reds the suite — these greps never see silently-stale text unflagged.
+export fn checked_in_parser_source() -> string {
+    avra_selfhost_read_file("packages/std-avrac/src/parse/gen_parser.av")
 }
 
 /// The complete text of parse/gen_parser.av: banner + the DERIVED import
-/// header + every parse fn of the language, emitted once from the one
-/// composed grammar. Both the regenerator and the guard read from HERE.
+/// header + every parse fn of the language, EMITTED FRESH from the one
+/// composed grammar — never read back from disk, or the regen guard's
+/// file == emit_parser_file() comparison would be vacuous. Both the
+/// regenerator and the guard read from HERE.
 export fn emit_parser_file() -> string {
-    let src = emitted_full_source()
+    let src = emit_parser_source_ex(assemble_language().full(), true)
     gen_parser_header() + derived_import_lines(src, "features.grammar", "core") + "\n" + src
 }
