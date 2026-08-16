@@ -1,0 +1,27 @@
+// t-d91l — the no-metadata fixture runner must NOT pass the shard tree's
+// admission grant down to its child. A `_no_metadata` child is by definition
+// a whole-program @std compile (~9.6 GiB peak on the comptime-fold fixture);
+// the inherited ~2 GiB shard grant made it a soft-grant borrower whose fate
+// under the pressure floor tracked the suite's minute-to-minute troughs —
+// the fold specs failed 3-of-3, then 2, then 1 across otherwise-identical
+// CI runs, as an F4014 inside the captured `out` where the shard classifier
+// cannot see it. The command template is the chokepoint, so the template is
+// what these specs pin (the gen_*_parser header pattern: derived text,
+// pinned verbatim where it is load-bearing).
+
+use @std.avrac.test_runner.{fixture_run_cmd, fixture_run_no_metadata_cmd}
+
+spec "t-d91l: the no-metadata runner strips the shard admission grant from its child" {
+    then "the whole-program child runs without AVRA_MEM_BUDGET_MB — sized as the standalone compile it is" {
+        let cmd = fixture_run_no_metadata_cmd("/tmp/x.av")
+        cmd.contains("-u AVRA_MEM_BUDGET_MB")
+            && cmd.contains("-u AVRA_USE_METADATA")
+            && cmd.contains("-u AVRA_LIB_OBJS")
+    }
+    then "the ordinary metadata-path runner keeps the grant — its children ARE shard-tree members" {
+        // The contrast leg, so the unset cannot creep onto the lightweight
+        // path where the admission grant is the correct ceiling.
+        let cmd = fixture_run_cmd("/tmp/x.av")
+        !cmd.contains("AVRA_MEM_BUDGET_MB")
+    }
+}
