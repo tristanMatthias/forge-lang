@@ -6,16 +6,15 @@
 // never enters the production compiler graph (mod.av imports the GENERATED file,
 // which pulls only the grammar builders, not the emitter).
 //
-// `emit_decl_parser_file()` returns the COMPLETE module text: a fixed import header
+// `emit_decl_parser_file()` returns the COMPLETE module text: a derived import header
 // (the grammar builders the generated body calls) +
-// `emit_parser_source_ex(avra_decl_flip_grammar(), true)` (the exported static parser
-// fns: parse_declaration / parse_statement + the composed statement + expression
-// ladder). Editing the §2 grammars (avra_grammar.av) changes
+// `emit_parser_source_ex(assemble_language().decl_dispatch(), true)` (the exported
+// static parser fns: parse_declaration / parse_statement + the composed statement +
+// expression ladder). Editing the §2 grammars (avra_grammar.av) changes
 // this text — run `bash scripts/diagnose.sh --emit-regen-decl` to rewrite the
 // checked-in file, then commit it; the guard test fails until you do.
 
-use features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex, derived_import_lines, grammar_with_builder_kinds, builder_kind_rows}
-use features.{feature_builders}
+use features.grammar.{assemble_language, emit_parser_source_ex, derived_import_lines}
 
 /// The BANNER of the production declaration static-parser module — provenance
 /// comments only. The import header is no longer hand-kept: it derives from
@@ -39,11 +38,9 @@ export fn gen_decl_parser_header() -> string {
 /// + the exported generated body. Both the regenerator and the guard read
 /// from HERE.
 export fn emit_decl_parser_file() -> string {
-    let g = avra_decl_dispatch_grammar()
-    // ONE manifest fetch feeds both the derived import header and the kind
-    // rows the emit-side analysis reads (feature builders classify by their
-    // registration — build_defer -> "stmt" — not the lenient "expr" default).
-    let binds = feature_builders()
-    let src = emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    // The LANGUAGE PIPELINE (language.av): load → compose → build, one
+    // call; the declaration dispatch view arrives stamped with the
+    // manifest's kind rows.
+    let src = emit_parser_source_ex(assemble_language().decl_dispatch(), true)
     gen_decl_parser_header() + derived_import_lines(src, "features.grammar", "core") + "\n" + src
 }

@@ -14,9 +14,7 @@
 // `bash scripts/diagnose.sh --emit-regen-pat` to rewrite the checked-in file, then
 // commit it; the guard test fails until you do.
 
-use features.match.{avra_pat_grammar}
-use features.grammar.{emit_parser_source_ex, derived_import_lines, grammar_with_builder_kinds, builder_kind_rows}
-use features.{feature_builders}
+use features.grammar.{assemble_language, emit_parser_source_ex, derived_import_lines}
 
 /// The BANNER of this generated parser module — provenance comments only.
 /// The import header is no longer hand-kept: it derives from the emitted
@@ -38,8 +36,9 @@ export fn gen_pat_parser_header() -> string {
 /// The complete text of parse/gen_pat_parser.av: header + the exported generated body.
 /// Both the regenerator and the guard read from HERE.
 export fn emit_pat_parser_file() -> string {
-    let g = avra_pat_grammar()
-    let binds = feature_builders()
-    let src = emit_parser_source_ex(grammar_with_builder_kinds(g, builder_kind_rows(binds)), true)
+    // The LANGUAGE PIPELINE (language.av): load → compose → build, one
+    // call; the pattern view (the match feature's fragment) arrives
+    // stamped with the manifest's kind rows.
+    let src = emit_parser_source_ex(assemble_language().pats(), true)
     gen_pat_parser_header() + derived_import_lines(src, "features.grammar", "core") + "\n" + src
 }
