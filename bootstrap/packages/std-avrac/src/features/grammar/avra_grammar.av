@@ -889,7 +889,7 @@ export fn avra_expr_grammar() -> Grammar {
 }
 
 /// The DISPATCH-only expression grammar the STATIC production parser is EMITTED from
-/// (gen_expr_file.emit_expr_parser_file): == avra_expr_core, so `type_expr` in paren_expr's
+/// (gen_parser_files.emit_expr_parser_file): == avra_expr_core, so `type_expr` in paren_expr's
 /// `param` and block-expression `declaration` stay EXTERNAL references → the emitted parser
 /// calls parse_type_expr / parse_declaration from the other generated files in the same flat
 /// `parse` module instead of re-emitting either family. The emit twin of
@@ -1009,7 +1009,7 @@ export fn avra_stmt_dispatch_grammar() -> Grammar {
 /// avra_decl_flip_grammar): `declaration` = the native declaration arms + a `statement`
 /// tail, composed
 /// with the dispatch-only statement grammar (expression EXTERNAL). This is what
-/// gen_decl_file emits the checked-in production declaration static parser from.
+/// gen_parser_files emits the checked-in production declaration static parser from.
 export fn avra_decl_dispatch_grammar() -> Grammar {
     compose_grammars(avra_decl_edge_grammar(), avra_stmt_dispatch_grammar())
 }

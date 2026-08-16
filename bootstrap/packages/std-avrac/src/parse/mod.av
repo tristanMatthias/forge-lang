@@ -872,7 +872,7 @@ impl Parser {
         mut dsl = if self.decl_static {
             run_static_decl(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, modes, d)
         } else {
-            run_dsl_decl_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.decls(), modes, d)
+            run_dsl_decl_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.full(), modes, d)
         }
         // t-47hc.4.3 — a successful DSL parse is final; there is no re-parse fallback.
         if !dsl.had_error {
@@ -1052,7 +1052,7 @@ impl Parser {
         // error_message on the error path exactly like its siblings, so it
         // needs the same per-item clear.
         d.begin_delegate_item()
-        let dsl = run_dsl_stmt_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.stmts(), modes, d)
+        let dsl = run_dsl_stmt_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.full(), modes, d)
         if !dsl.had_error {
             // Forward-advance the delegate to the statement's true end (past any
             // trailing structural tokens the DSL itself consumed), then adopt
@@ -1119,7 +1119,7 @@ impl Parser {
         // Both share the token stream, modes, host delegate, and resync below —
         // they differ only in HOW they drive the identical builders.
         let dsl = if self.expr_flip {
-            run_dsl_expr_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.exprs(), modes, d)
+            run_dsl_expr_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.full(), modes, d)
         } else {
             run_static_expr(self.grammar_tokens(), self.current_start, self.source, self.file, self.store, modes, d)
         }
@@ -1973,7 +1973,7 @@ impl Parser {
             let dsl = if self.type_static {
                 run_static_type(self.grammar_tokens(), self.current_start, self.source, self.store)
             } else {
-                run_dsl_type_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.store, self.lang.program())
+                run_dsl_type_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.store, self.lang.full())
             }
             if !dsl.had_error {
                 while self.current_start < dsl.stop_byte && !self.check(Tk.Eof) {

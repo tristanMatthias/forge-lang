@@ -2285,7 +2285,7 @@ mode_run() { run_fg "$1"; }
 # (packages/std-avrac/src/parse/gen_expr_parser.av) from the §2 grammar. Run this
 # after editing the expression grammar (avra_grammar.av); the guard test
 # parse/tests/gen_expr_parser_regen_test.av fails until the file is regenerated
-# and committed. Single source of truth: emit_expr_parser_file (gen_expr_file.av).
+# and committed. Single source of truth: emit_expr_parser_file (gen_parser_files.av).
 mode_emit_regen_expr() {
   cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
   local dir="$BUILD_DIR/emit_gen"
@@ -2314,7 +2314,7 @@ AVEOF
 # Run this after editing the declaration/statement dispatch grammar (avra_grammar.av);
 # the guard test parse/tests/gen_decl_parser_regen_test.av fails until the file is
 # regenerated and committed. Single source of truth: emit_decl_parser_file
-# (gen_decl_file.av). Sibling of --emit-regen-expr.
+# (gen_parser_files.av). Sibling of --emit-regen-expr.
 mode_emit_regen_decl() {
   cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
   local dir="$BUILD_DIR/emit_gen"
@@ -2342,7 +2342,7 @@ AVEOF
 # (packages/std-avrac/src/parse/gen_type_parser.av) from avra_type_flip_grammar().
 # Run this after editing the type grammar (avra_grammar.av); the guard test
 # parse/tests/gen_type_parser_regen_test.av fails until the file is regenerated and
-# committed. Single source of truth: emit_type_parser_file (gen_type_file.av).
+# committed. Single source of truth: emit_type_parser_file (gen_parser_files.av).
 # Sibling of --emit-regen-expr / --emit-regen-decl.
 mode_emit_regen_type() {
   cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"
@@ -2371,7 +2371,7 @@ AVEOF
 # static parser (packages/std-avrac/src/parse/gen_pat_parser.av) from avra_pat_grammar().
 # Run this after editing the pattern grammar (features/match.av); the guard
 # test parse/tests/gen_pat_parser_regen_test.av fails until the file is regenerated and
-# committed. Single source of truth: emit_pat_parser_file (gen_pat_file.av). Sibling of
+# committed. Single source of truth: emit_pat_parser_file (gen_parser_files.av). Sibling of
 # --emit-regen-expr / --emit-regen-decl / --emit-regen-type.
 mode_emit_regen_pat() {
   cd "$BOOTSTRAP_DIR" || die "cannot cd to $BOOTSTRAP_DIR"

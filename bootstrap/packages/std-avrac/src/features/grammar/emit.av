@@ -2259,7 +2259,7 @@ fn join_args(args: List<string>) -> string {
 /// extra import can't exist because the header is recomputed per emit.
 /// `grammar_mod`/`core_mod` are the module spellings — relative
 /// ("features.grammar"/"core") for the checked-in in-package parsers (an
-/// absolute self-import double-expands derives, F4012 — see gen_decl_file),
+/// absolute self-import double-expands derives, F4012 — see gen_parser_files),
 /// absolute ("@std.avrac.features.grammar"/"@std.avrac.core") for the
 /// standalone gen-check harness.
 export fn derived_import_lines(src: string, grammar_mod: string, core_mod: string) -> string {
@@ -2837,7 +2837,7 @@ fn named_tk_guard(tok: string) -> string {
     // The one terminal that is NOT a `tk_to_grammar_kind` kind string: the field-name
     // set `consume_field_name` accepts. Spelled inline as the Tk disjunction rather
     // than as a call to `tk_is_field_name` because the generated file's import header
-    // (gen_expr_file.av) is fixed and a guard is emitted into FIRST chains where a
+    // (gen_parser_files.av) is fixed and a guard is emitted into FIRST chains where a
     // bare comparison composes; the executor's `named_tok_matches` reads the shared
     // predicate, and reserved_kw_field_test asserts the two stay the same set.
     if tok == "FIELDNAME" { return "(st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved)" }

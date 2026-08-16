@@ -4,7 +4,7 @@
 // Kept as a THIN, separate module so parse/mod.av imports ONE clearly-named runner
 // (`run_static_decl`) instead of the generated module's free `parse_declaration`,
 // which would shadow the Parser method of the same name. This is the only place the
-// generated declaration module is imported, so the emitter (emit.av / gen_decl_file)
+// generated declaration module is imported, so the emitter (emit.av / gen_parser_files)
 // stays out of the production graph entirely — mod.av → static_decl_entry →
 // gen_decl_parser → grammar builders (+ gen_expr_parser's parse_expression for the
 // expr-stmt fall-through), never → emit.av.
