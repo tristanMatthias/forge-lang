@@ -2500,7 +2500,7 @@ fn grammar_core_imports() -> string {
 
 fn imports_block() -> string {
     grammar_core_imports() +
-    "use @std.avrac.parse.{parse_expression_native_probe}\n" +
+    "use @std.avrac.parse.{parser_new}\n" +
     "use @std.avrac.core.{Expr, ExprId, NodeStore, pattern_optional_present, pattern_optional_absent}\n\n"
 }
 
@@ -2511,9 +2511,15 @@ fn harness_block() -> string {
     "    dump_expr(st.store, root)\n" +
     "}\n\n" +
     "fn hand_tree(src: string) -> string {\n" +
-    "    let probe = parse_expression_native_probe(src)\n" +
-    "    if probe.had_error != 0 { return \"<parse error>\" }\n" +
-    "    dump_expr(probe.store, probe.root)\n" +
+    "    mut p = parser_new(src)\n" +
+    "    // ORACLE PIN (t-47hc.8): the interpreter engine (expr_flip) — the expr\n" +
+    "    // seam defaults to the checked-in generated parser, so the old probe\n" +
+    "    // compared emitted against emitted. Same pin as the stmt/type oracles.\n" +
+    "    p.expr_flip = true\n" +
+    "    match p.parse_expression() {\n" +
+    "        .Ok(id) -> dump_expr(p.store, id)\n" +
+    "        .Err(_) -> \"<parse error>\"\n" +
+    "    }\n" +
     "}\n\n" +
     "fn agree(src: string) -> bool {\n" +
     "    let g = gen_tree(src)\n" +
@@ -2549,6 +2555,11 @@ fn stmt_harness_block() -> string {
     "}\n\n" +
     "fn hand_stmt(src: string) -> string {\n" +
     "    mut p = parser_new(src)\n" +
+    "    // ORACLE PIN (t-47hc.8): the interpreter engine, explicitly — the seam\n" +
+    "    // defaults to the CHECKED-IN generated parser now, and an unpinned oracle\n" +
+    "    // would compare emitted code against emitted code (a shared emitter\n" +
+    "    // defect GENPASSes). Same pin as the type/expr oracles.\n" +
+    "    p.stmt_static = false\n" +
     "    match p.parse_statement() {\n" +
     "        .Ok(id) -> render_stmt_id(p.store, id)\n" +
     "        .Err(_) -> \"<parse error>\"\n" +
@@ -2625,6 +2636,10 @@ fn type_harness_block() -> string {
     "}\n\n" +
     "fn hand_type(src: string) -> string {\n" +
     "    mut p = parser_new(src)\n" +
+    "    // ORACLE PIN (t-47hc.8): the interpreter engine — the type seam has\n" +
+    "    // defaulted to the checked-in generated parser since its promotion, so\n" +
+    "    // this leg silently compared emitted against emitted until pinned.\n" +
+    "    p.type_static = false\n" +
     "    match p.parse_type_expr(\"expected type\") {\n" +
     "        .Ok(te) -> {\n" +
     "            let tid = p.store.types.add_leaf(type_expr_to_vtype(te))\n" +
@@ -2658,6 +2673,13 @@ fn program_imports_block() -> string {
 }
 
 fn program_harness_block() -> string {
+    // NOTE (t-47hc.8): unlike the four family legs above — whose oracles pin
+    // the INTERPRETER engine explicitly (a genuine two-engine differential) —
+    // this leg's oracle is parse_program_source, the PRODUCTION pipeline,
+    // which routes to the checked-in generated parser. Its value is
+    // pipeline CONSISTENCY: the freshly-emitted whole-program parser must
+    // behave like the shipped one end-to-end (lex-once cache, resync, spans).
+    // The engine differential for whole programs is --parser-probe/--parser-tree.
     "fn gen_prog(src: string) -> string {\n" +
     "    let st = new_pstate(src)\n" +
     "    let root = capval_to_stmt(st, parse_program(st))\n" +
