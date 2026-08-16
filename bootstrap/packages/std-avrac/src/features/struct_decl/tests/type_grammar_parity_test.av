@@ -17,8 +17,7 @@
 // `parse_variant_list` skips `Tk.DocComment` and the fragment had to learn to — the hand's
 // field list has no such skip, so there is nothing to match.
 
-use @std.avrac.features.grammar.{emitted_rule_body, checked_in_parser_source}
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt, checked_in_parser_source}
+use @std.avrac.features.grammar.{emitted_rule_body, checked_in_parser_source, avra_program_grammar, run_grammar_stmt}
 use @std.avrac.parse.{parse_program_source}
 use @std.avrac.core.{render_stmt_ids, Stmt}
 
@@ -145,10 +144,13 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" 
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {
         let src = decl_src()
-        let tail_at = src.index_of("    parse_statement(st)\n}")
         // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
         // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
-        tail_at >= 0
+        // t-47hc.8: sliced to parse_declaration's OWN body — the source is the whole
+        // checked-in parser now, and several emitted rules end in a delegating tail,
+        // so a whole-file index proves nothing about THIS dispatcher (CodeRabbit).
+        let body = emitted_rule_body(src, "fn parse_declaration(st: PState) -> CapVal")
+        body != "" && body.ends_with("\n    parse_statement(st)")
     }
 }
 
