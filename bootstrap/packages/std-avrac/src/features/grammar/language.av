@@ -20,7 +20,8 @@
 // parser's entry point is just which function you call — and the parser
 // GENERATOR emits this same grammar once into the one checked-in static
 // parser (gen_parser_files.av → parse/gen_parser.av), whose per-family
-// entries are just exported fns entered by name.
+// entries are module-private fns entered by name from the same-module
+// static-entry boundaries.
 //
 // The record is LAZY (the one composition happens on the first ask and is
 // shared by every seam — the ps3t.6.5.12 lex-once cost profile); the

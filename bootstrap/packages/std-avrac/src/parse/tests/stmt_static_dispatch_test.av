@@ -1,0 +1,74 @@
+// t-47hc.8 — the statement-family ENGINE differential, the sibling of
+// type_flip_dispatch_test (types) and the decl/expr flip guards.
+//
+// Parser.parse_statement was the LAST production seam that ran only the
+// Grammar-tree interpreter (run_dsl_stmt_at_shared). It now routes to the
+// CHECKED-IN generated parser's parse_statement (run_static_stmt, through the
+// same snode runner as declarations) when `stmt_static` — the default — with
+// `AVRA_PARSER_STMT_STATIC=0` selecting the interpreter engine. Both drive the
+// identical builders over the identical grammar rule ("statement"), so the
+// StmtId tree must be byte-identical.
+//
+// Equivalence = same rendered tree, and the valid forms must render NON-error
+// on the interpreter side first — bare equality would pass on a mutual error
+// sentinel (the vacuity CodeRabbit caught on PR #1221's statement sibling).
+use @std.avrac.parse.{parser_new}
+use @std.avrac.core.{render_stmt_id}
+
+/// The INTERPRETER engine (stmt_static off) — pinned, not ambient.
+fn interp_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    p.stmt_static = false
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<interp parse error>"
+    }
+}
+
+/// The GENERATED engine (stmt_static on) — pinned, not ambient, so the two
+/// sides cannot collapse onto one engine.
+fn static_stmt(src: string) -> string {
+    mut p = parser_new(src)
+    p.stmt_static = true
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> "<static parse error>"
+    }
+}
+
+fn agree(src: string) -> bool {
+    let interp = interp_stmt(src)
+    interp != "<interp parse error>" && interp == static_stmt(src)
+}
+
+spec "t-47hc.8: parse_statement — interpreter engine == generated engine" {
+    given "the statement-rule forms the component-body seam actually parses" {
+        // Parser.parse_statement's production callers are the component_decl
+        // body parser's not-a-component fallbacks, so its live traffic is the
+        // `statement` RULE's forms: expression statements, assignments, and
+        // control flow. (Bindings are `declaration`-family — parse_declaration's
+        // seam — and are deliberately NOT in this corpus: both engines reject
+        // them here identically, which `agree`'s non-error requirement would
+        // read as failure.)
+        then "calls, assignments, pipes, and control flow agree" {
+            agree("emit(\"change\", value)") &&
+                agree("counter.increment(step)") &&
+                agree("x = y + 1") &&
+                agree("items |> render") &&
+                agree("if ready { emit(\"go\", 1) }") &&
+                agree("while n > 0 { n = n - 1 }")
+        }
+        then "returns, loops, and match agree" {
+            agree("return combined") &&
+                agree("for i in 0..10 { total.push(i) }") &&
+                agree("match v { 1 -> a()  _ -> b() }") &&
+                agree("defer close(handle)")
+        }
+    }
+    given "both engines reject the same malformed statement" {
+        then "the error surfaces on both paths (no silent engine)" {
+            interp_stmt(") stray") == "<interp parse error>"
+                && static_stmt(") stray") == "<static parse error>"
+        }
+    }
+}

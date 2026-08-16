@@ -360,12 +360,13 @@ one grammar run by two ENGINES:
 
 | env | which engine |
 |---|---|
-| `AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1` | the grammar EXECUTOR (tree interpreter) — still PRODUCTION for the type family |
-| *(none)* | **production**: the EMIT-generated static parser |
+| `AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1 AVRA_PARSER_STMT_STATIC=0 AVRA_PARSER_TYPE_STATIC=0` | the grammar EXECUTOR (tree interpreter) — every family |
+| *(none)* | **production**: the EMIT-generated static parser (`parse/gen_parser.av` — ONE file, every family: decl, stmt, expr, type, pat) |
 
-- **The executor is a production parser, not a test harness.** The TYPE family
-  routes through `exec_rule` over `avra_program_grammar()` (executor.av
-  `run_dsl_type_at_shared`), so any behavioural change to `exec_*` changes
+- **The executor is still a production parser, not a test harness.** No family
+  seam defaults to it any more (t-47hc.8 flipped the last one, statements), but
+  user `grammar{}` blocks, quote bodies, and the host-delegate's nested parses
+  run `exec_rule` in production, so behavioural changes to `exec_*` still change
   emitted IR. Build new engine behaviour beside it and swap deliberately
   (`intended-ir-change`), never by mutating the shared executor in place.
 - **When you delete a parser, delete the switch that selected it in the same

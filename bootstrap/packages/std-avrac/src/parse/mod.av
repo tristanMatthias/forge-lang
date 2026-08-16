@@ -24,7 +24,7 @@ use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // already cycles the same way).
 use features.grammar.{Language, language_for, word_excluded_as_instance_name, run_dsl_type_at_shared, DslTypeResult, Token, lex_real, lex_real_full, LexDiag, Grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, run_dsl_stmt_at_shared, DslStmtResult, run_dsl_decl_at_shared}
 use parse.static_expr_entry.{run_static_expr, run_static_expr_cell}
-use parse.static_decl_entry.{run_static_decl}
+use parse.static_decl_entry.{run_static_decl, run_static_stmt}
 use parse.static_type_entry.{run_static_type}
 // The GENERATED exact-match keyword recogniser (compiled from keyword_rules());
 // p_keyword_kind is now a thin string wrapper over it.
@@ -260,6 +260,11 @@ export type Parser = {
     mut expr_flip: bool,
     // ps3t.6.7 Phase 2 — the STATIC declaration parser: when set,
     mut decl_static: bool,
+    // t-47hc.8 — the STATIC statement parser (run_static_stmt, the generated
+    // parse_statement through the same snode runner as decl): default-ON, the
+    // last family seam to leave the interpreter in production;
+    // `AVRA_PARSER_STMT_STATIC=0` selects the interpreter engine instead.
+    mut stmt_static: bool,
     mut host: Parser?,
 }
 
@@ -690,6 +695,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // fall back to; see the field comment.
         expr_flip: avra_process_env_get("AVRA_PARSER_EXPR_FLIP") == "1",
         decl_static: avra_process_env_get("AVRA_PARSER_DECL_STATIC") != "0",
+        stmt_static: avra_process_env_get("AVRA_PARSER_STMT_STATIC") != "0",
         // The host Parser handle — built lazily (ensure_host).
         host: null,
     }
@@ -1026,6 +1032,7 @@ impl Parser {
             d.expr_flip = false
             d.decl_static = false
             d.type_static = false
+            d.stmt_static = false
             // Every entry above clears a `*_static`/`*_flip`
             // toggle, which picks the INTERPRETER over the generated parser for the
             // same grammar — an ENGINE choice, never a different parser: there is
@@ -1052,7 +1059,16 @@ impl Parser {
         // error_message on the error path exactly like its siblings, so it
         // needs the same per-item clear.
         d.begin_delegate_item()
-        let dsl = run_dsl_stmt_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.full(), modes, d)
+        // t-47hc.8: the STATIC generated parser (run_static_stmt) when
+        // stmt_static, else the Grammar-tree interpreter (run_dsl_stmt_at_shared)
+        // — the same engine pair as the decl/expr/type seams, over the same
+        // grammar rule ("statement"). Both share the token stream, modes, host
+        // delegate, store, and the error path below.
+        let dsl = if self.stmt_static {
+            run_static_stmt(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, modes, d)
+        } else {
+            run_dsl_stmt_at_shared(self.grammar_lex_diagnostics(), self.grammar_tokens(), self.current_start, self.source, self.file, self.store, self.lang.full(), modes, d)
+        }
         if !dsl.had_error {
             // Forward-advance the delegate to the statement's true end (past any
             // trailing structural tokens the DSL itself consumed), then adopt
@@ -1966,8 +1982,9 @@ impl Parser {
     fn parse_type_expr(self, message: string) -> Result<TypeExpr, string> {
         {
             // t-47hc.4.4 Phase 3d, now UNCONDITIONAL: the STATIC generated type parser
-            // (run_static_type) when type_static, else the Grammar-tree interpreter
-            // (run_dsl_type_at_shared) — which is still PRODUCTION for this family.
+            // (run_static_type) when type_static (the default), else the Grammar-tree
+            // interpreter (run_dsl_type_at_shared) — the same engine pair as the
+            // decl/stmt/expr seams.
             // Both share the token stream + store + resync below — they differ only in HOW
             // they drive the identical type-builders, so the DslTypeResult is byte-identical.
             let dsl = if self.type_static {

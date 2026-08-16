@@ -2,14 +2,16 @@
 // the ONE checked-in production static parser, parse/gen_parser.av.
 //
 // One grammar → one generated file. Every rule of the language is emitted
-// exactly once (each family's production entry — parse_declaration /
+// exactly once. Each family's production entry — parse_declaration /
 // parse_statement / parse_expression / parse_type_expr / parse_pattern_or —
-// is just an exported fn in the module, entered by name the way the
-// interpreter enters the same grammar by rule name). The historical four
-// files (gen_{decl,expr,pat,type}_parser.av) existed only because the
-// families flipped to generated code in different months; the per-family
-// "dispatch" emit subsets existed only so those four files would not emit
-// the same functions twice. One file needs neither.
+// is a MODULE-PRIVATE fn entered by name the way the interpreter enters the
+// same grammar by rule name: the static-entry boundary modules live in the
+// same flat `parse` module, so nothing needs `export` (only the start rule,
+// parse_program, is exported — tighter than the historical per-file exports).
+// The historical four files (gen_{decl,expr,pat,type}_parser.av) existed only
+// because the families flipped to generated code in different months; the
+// per-family "dispatch" emit subsets existed only so those four files would
+// not emit the same functions twice. One file needs neither.
 //
 // NON-PRODUCTION: imported ONLY by the regenerator (diagnose.sh
 // --emit-regen-parsers) and the regen guard (parse/tests/

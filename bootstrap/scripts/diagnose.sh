@@ -5652,13 +5652,17 @@ dt_run_equiv_check() {
 #     merely pinned ON, precisely so this row could not be resurrected.
 #
 # What remains is a genuine pair. EMIT is the checked-in generated static parser
-# (production). EXEC is the grammar tree interpreter, still the production parser for
-# the TYPE family. They are compiled from one grammar and CAN drift — the executor's
-# missing `cell_mode` guard on its binary ladder was found exactly this way, by the
-# recovery corpus once it started comparing these two instead of a deleted third.
-PARSER_MODE_EMIT="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_PROD="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_FLIP=0"
-PARSER_MODE_EXEC="AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1"
+# (production — every family: decl, stmt, expr, type, pat). EXEC is the grammar tree
+# interpreter, the SAME grammar's second engine (production for user `grammar{}`
+# blocks + quote bodies). They CAN drift — the executor's missing `cell_mode` guard
+# on its binary ladder was found exactly this way, by the recovery corpus once it
+# started comparing these two instead of a deleted third. Every per-family engine
+# toggle is pinned in BOTH directions (t-47hc.8: STMT/TYPE joined DECL/EXPR when
+# their seams gained the static default), so a probe can never measure a path
+# against itself because the ambient environment leaked in.
+PARSER_MODE_EMIT="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_FLIP=0 AVRA_PARSER_STMT_STATIC=1 AVRA_PARSER_TYPE_STATIC=1"
+PARSER_MODE_PROD="AVRA_PARSER_DECL_STATIC=1 AVRA_PARSER_EXPR_FLIP=0 AVRA_PARSER_STMT_STATIC=1 AVRA_PARSER_TYPE_STATIC=1"
+PARSER_MODE_EXEC="AVRA_PARSER_DECL_STATIC=0 AVRA_PARSER_EXPR_FLIP=1 AVRA_PARSER_STMT_STATIC=0 AVRA_PARSER_TYPE_STATIC=0"
 
 # Resolve the probe's input to a file: `-f <path>` uses it directly, otherwise
 # the argument IS the source text.
