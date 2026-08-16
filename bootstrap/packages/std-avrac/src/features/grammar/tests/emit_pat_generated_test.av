@@ -27,9 +27,12 @@ spec "grammar emitter: renders the pattern family's generated static parser" {
         let src = emit_all()
         // ps3t.6.7 perf: the `.` (variant) guard dispatches on the Tk enum (tk_guard);
         // the STRING named terminal now dispatches on the Tk enum too (t-47hc.4.1.9).
-        src.contains("if st.cur().tk == Tk.Dot {") &&
+        // t-47hc.8 one-file dedup: the dispatch site calls the rule's shared FIRST
+        // predicate; the Tk test lives in the predicate body — both pinned.
+        src.contains("if starts_variant_pat(st) {") &&
         src.contains("return parse_variant_pat(st)") &&
-        src.contains("if st.cur().tk == Tk.String {")
+        src.contains("fn starts_variant_pat(st: PState) -> bool {\n    st.cur().tk == Tk.Dot\n}") &&
+        src.contains("fn starts_str_pat(st: PState) -> bool {\n    st.cur().tk == Tk.String\n}")
     }
 
     then "the or-pattern is a conditional build over the optional right side" {
@@ -49,17 +52,21 @@ spec "grammar emitter: renders the pattern family's generated static parser" {
     then "variant_pat dispatches its nested-alternation payload (binds | subs)" {
         let src = emit_all()
         // A structural (multi-branch) group becomes an if/else-if on each
-        // branch's FIRST, then the MkVariant conditional build on the sub-list.
-        src.contains("} else if st.cur().tk == Tk.Dot {") &&
+        // branch's FIRST (the shared predicate), then the MkVariant conditional
+        // build on the sub-list.
+        src.contains("} else if starts_variant_pat(st) {") &&
         src.contains("if subs_list.length > 0 { CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(")
     }
 
     then "the optional-match arm surface lowers to the SHARED reducer cores" {
         let src = emit_all()
         // `let <name>` → .Some(name); `none`/`null` → .None (spec Axis 10.4).
-        src.contains("if st.cur().text == \"let\" {") &&
+        // Dispatch via the shared FIRST predicates; keyword tests in their bodies.
+        src.contains("if starts_opt_present(st) {") &&
+        src.contains("fn starts_opt_present(st: PState) -> bool {\n    st.cur().text == \"let\"\n}") &&
         src.contains("CapVal.PNode(st.store.pats.add_leaf(pattern_optional_present(capval_tok_text(name))))") &&
-        src.contains("if st.cur().text == \"none\" || st.cur().text == \"null\" {") &&
+        src.contains("if starts_opt_absent(st) {") &&
+        src.contains("fn starts_opt_absent(st: PState) -> bool {\n    st.cur().text == \"none\" || st.cur().text == \"null\"\n}") &&
         src.contains("CapVal.PNode(st.store.pats.add_leaf(pattern_optional_absent()))")
     }
 

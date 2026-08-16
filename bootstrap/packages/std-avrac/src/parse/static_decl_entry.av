@@ -1,15 +1,14 @@
 // WHY: ps3t.6.7 Phase 2 — the production boundary binding the CHECKED-IN generated
-// declaration static parser (parse.gen_decl_parser's `parse_declaration`) to the
-// shared-token runner (run_static_snode_at_shared). Sibling of static_expr_entry.av.
+// static parser (parse.gen_parser's `parse_declaration`) to the shared-token
+// runner (run_static_snode_at_shared). Sibling of static_expr_entry.av.
 // Kept as a THIN, separate module so parse/mod.av imports ONE clearly-named runner
 // (`run_static_decl`) instead of the generated module's free `parse_declaration`,
-// which would shadow the Parser method of the same name. This is the only place the
-// generated declaration module is imported, so the emitter (emit.av / gen_parser_files)
-// stays out of the production graph entirely — mod.av → static_decl_entry →
-// gen_decl_parser → grammar builders (+ gen_expr_parser's parse_expression for the
-// expr-stmt fall-through), never → emit.av.
+// which would shadow the Parser method of the same name. The static entries are
+// the only places the generated module is imported, so the emitter (emit.av /
+// gen_parser_files) stays out of the production graph entirely — mod.av →
+// static_decl_entry → gen_parser → grammar builders, never → emit.av.
 
-use parse.gen_decl_parser.{parse_declaration}
+use parse.gen_parser.{parse_declaration}
 use parse.{Parser}
 use features.grammar.{run_static_snode_at_shared, Token, PState, CapVal, ExprModes, DslStmtResult, LexDiag}
 use core.{NodeStore}

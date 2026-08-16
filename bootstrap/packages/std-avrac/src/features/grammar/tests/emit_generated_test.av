@@ -258,7 +258,12 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // `!` and `?` carry the same mode+same-line guard shape and their FIRST tokens are
         // disjoint, so the order between them is free; the head is pinned here only to
         // keep the assertion specific rather than to fix a required order.
-        src.contains("while st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line))") &&
+        // t-47hc.8 one-file dedup: the loop SITE now calls the shared FIRST
+        // predicate (emitted once), and the union text lives in ITS body — both
+        // halves pinned, so the dedup can't silently drop the site guard or the
+        // union content.
+        src.contains("while starts_postfix_suffix(st) {") &&
+        src.contains("fn starts_postfix_suffix(st: PState) -> bool {\n    st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line))") &&
         // The `@hand` tail's raw postfix-op set USED to close this union, and this
         // assertion pinned it. t-47hc.33.2 deleted the delegate, so that disjunct is
         // gone with it — what remains is the union of the NATIVE branches' FIRSTs, and
@@ -297,7 +302,8 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // chain instead of being swallowed by the repetition, which is what let
         // `a with { x: 2` (unclosed) report at all — it previously built `(let b a)` with
         // ZERO diagnostics.
-        src.contains("        while st.cur().text == \"with\" {\n            let __bdiag0 = st.diags.length\n            let __bres0 = parse_with_suffix(st)\n            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {\n                return CapVal.Node(st.error_node_silent())\n            }\n            s_list.push(capval_to_expr(st, __bres0))\n        }") &&
+        src.contains("        while starts_with_suffix(st) {\n            let __bdiag0 = st.diags.length\n            let __bres0 = parse_with_suffix(st)\n            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {\n                return CapVal.Node(st.error_node_silent())\n            }\n            s_list.push(capval_to_expr(st, __bres0))\n        }") &&
+        src.contains("fn starts_with_suffix(st: PState) -> bool {\n    st.cur().text == \"with\"\n}") &&
         // t-47hc.17: `with_suffix` is GRAMMAR-NATIVE now (hand parse_with_suffix deleted),
         // so its delegate rule must no longer route through run_hand_expr — it parses the
         // field list itself and folds it via mk_with_suffix. Assert the absence too, so a

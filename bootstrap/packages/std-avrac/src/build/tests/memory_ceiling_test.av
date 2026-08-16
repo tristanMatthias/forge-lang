@@ -26,8 +26,8 @@ extern fn avra_process_env_get(name: string) -> string
 extern fn avra_parse_int(s: string) -> int
 
 /// A checked-in source file large enough that parsing it costs well over
-/// 100 MiB — the compiler's generated expression parser.
-const BIG_FILE: string = "packages/std-avrac/src/parse/gen_expr_parser.av"
+/// 100 MiB — the compiler's generated parser.
+const BIG_FILE: string = "packages/std-avrac/src/parse/gen_parser.av"
 /// A trivially small one, for the no-false-trip direction.
 const SMALL_FILE: string = "packages/std-avrac/src/parse/gen_keyword_scanner.av"
 
@@ -55,7 +55,7 @@ spec "t-drl0: the compiler bounds its own memory instead of being OOM-killed" {
         // what parsing this file reaches, so the trip is attributable to the
         // input rather than to start-up — and names the file being read.
         let out = check_with_mem_limit("150", BIG_FILE)
-        out.contains("phase: parse ") && out.contains("gen_expr_parser.av")
+        out.contains("phase: parse ") && out.contains("gen_parser.av")
     }
     then "the report states the ceiling it enforced, so it can be raised" {
         let out = check_with_mem_limit("1", BIG_FILE)

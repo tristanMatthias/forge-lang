@@ -2,13 +2,12 @@
 // the one object consumers ask for the composed grammar or the dispatch
 // registry: Parser holds one per NodeStore (production), the regen driver
 // assembles one fresh. Since the one-grammar consolidation the surface is
-// TWO accessors: `full()` — every rule of the language, stamped, shared by
-// all four interpreter seams which differ only by the start rule they name
-// — and `emit(family)` — the per-file subsets the parser generator
-// materializes, where foreign families stay external calls. These specs pin
-// that contract; BYTE-level equivalence with the emitted parsers stays
-// pinned by the four gen_*_parser_regen_test guards, which route through
-// `emit(family)`.
+// ONE accessor: `full()` — every rule of the language, stamped with the
+// builder manifest, shared by all four interpreter seams (which differ only
+// by the start-rule name they enter at) AND by the parser generator (which
+// emits it once into the one checked-in static parser). These specs pin
+// that contract; BYTE-level equivalence with the emitted parser stays
+// pinned by gen_parser_regen_test, which routes through the same record.
 
 use @std.avrac.features.grammar.{assemble_language, language_for, Language, Grammar}
 use @std.avrac.features.{feature_builders}
@@ -58,37 +57,6 @@ spec "t-47hc.8: full() is LAZY — composed on first ask, memoised after" {
             before_null && after_set
                 && first.rules.length == second.rules.length
                 && first.builder_kinds.length == second.builder_kinds.length
-        }
-    }
-}
-
-spec "t-47hc.8: emit(family) is the generator's SUBSET view — foreign families stay external" {
-    given "the four per-file emit views beside the full grammar" {
-        let lang = assemble_language()
-        let full_len = lang.full().rules.length
-        let decl = lang.emit("decl")
-        let expr = lang.emit("expr")
-        let ty = lang.emit("type")
-        let pat = lang.emit("pat")
-
-        then "every family view is non-empty, stamped with the full manifest" {
-            decl.rules.length > 0 && expr.rules.length > 0
-                && ty.rules.length > 0 && pat.rules.length > 0
-                && decl.builder_kinds.length == lang.kind_rows.length
-                && expr.builder_kinds.length == lang.kind_rows.length
-        }
-
-        then "each subset is strictly smaller than the whole language — the external-seam fact" {
-            decl.rules.length < full_len
-                && expr.rules.length < full_len
-                && ty.rules.length < full_len
-                && pat.rules.length < full_len
-        }
-
-        then "the expr view keeps declarations external while decl keeps them local" {
-            // The generated expression parser CALLS parse_declaration from
-            // the generated declaration file instead of re-emitting it.
-            !has_rule(expr, "declaration") && has_rule(decl, "declaration")
         }
     }
 }

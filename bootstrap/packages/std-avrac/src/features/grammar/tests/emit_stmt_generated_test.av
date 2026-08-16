@@ -27,13 +27,18 @@ spec "grammar emitter: renders the statement family's generated static parser" {
     }
 
     then "the statement dispatch guards keyword forms and delegates" {
+        // t-47hc.8 one-file dedup: dispatch sites call each rule's shared FIRST
+        // predicate; the keyword test lives in the predicate body — both pinned.
         let src = emit_all()
-        src.contains("if st.cur().text == \"break\" {") &&
+        src.contains("if starts_break_stmt(st) {") &&
         src.contains("return parse_break_stmt(st)") &&
-        src.contains("if st.cur().text == \"continue\" {") &&
+        src.contains("fn starts_break_stmt(st: PState) -> bool {\n    st.cur().text == \"break\"\n}") &&
+        src.contains("if starts_continue_stmt(st) {") &&
         src.contains("return parse_continue_stmt(st)") &&
-        src.contains("if st.cur().text == \"return\" {") &&
+        src.contains("fn starts_continue_stmt(st: PState) -> bool {\n    st.cur().text == \"continue\"\n}") &&
+        src.contains("if starts_return_stmt(st) {") &&
         src.contains("return parse_return_stmt(st)") &&
+        src.contains("fn starts_return_stmt(st: PState) -> bool {\n    st.cur().text == \"return\"\n}") &&
         // expr_stmt is the catch-all fallthrough tail (unguarded).
         src.contains("    parse_expr_stmt(st)\n")
     }

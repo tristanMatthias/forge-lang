@@ -157,8 +157,12 @@ spec "t-47hc.24: @require on a rule reference composes with @try on BOTH sides o
     then "a PRE-cut required rule emits its FIRST guard (it is no longer dropped)" {
         // The regression this pins: the flat emitter produced a bare `s_last = parse_blk(st)`
         // with no guard at all. The guard's presence is what makes the marker mean anything
-        // inside a speculative branch.
-        emitted(g_try_ref_precut()).contains("if !(st.cur().tk == Tk.LeftBrace) {")
+        // inside a speculative branch. t-47hc.8 one-file dedup: the gate now calls
+        // the rule's shared FIRST predicate; the token test lives in ITS body —
+        // both halves pinned.
+        let src = emitted(g_try_ref_precut())
+        src.contains("if !(starts_blk(st)) {") &&
+            src.contains("fn starts_blk(st: PState) -> bool {\n    st.cur().tk == Tk.LeftBrace\n}")
     }
     then "and it REPORTS rather than returning — the rollback is the abort pre-cut" {
         // Same rule the terminal form follows: an early `return` before the cut would jump
@@ -169,7 +173,7 @@ spec "t-47hc.24: @require on a rule reference composes with @try on BOTH sides o
     }
     then "a POST-cut required rule emits the s_cut-guarded abort" {
         let src = emitted(g_try_ref_postcut())
-        src.contains("if !(st.cur().tk == Tk.LeftBrace) {") &&
+        src.contains("if !(starts_blk(st)) {") &&
             src.contains("if s_cut {") && src.contains("error_node_silent")
     }
     then "EXECUTOR parity pre-cut: the branch rolls back to the sibling, no error survives" {

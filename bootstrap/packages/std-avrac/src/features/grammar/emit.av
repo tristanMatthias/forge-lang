@@ -220,7 +220,7 @@ export fn emit_parser_source_ex(g: Grammar, export_start: bool) -> string {
             out = out + pfx + emit_rule_fn_in(g, r) + "\n"
         }
     }
-    out
+    out + emit_first_predicates(g, out)
 }
 
 /// Render one rule as its `parse_<name>` function. Takes the grammar so a
@@ -2986,7 +2986,44 @@ fn seq_first_guard(g: Grammar, seq: GSeq, visited: List<string>) -> string {
     combine_pred_guard(preds, parts)
 }
 
+/// t-47hc.8 ONE-FILE DEDUP: a TOP-LEVEL FIRST query (empty `visited` — a
+/// parse-site guard, not a recursion step) against a rule the grammar DEFINES
+/// emits a CALL to the rule's shared `starts_<rule>` predicate instead of
+/// inlining the condition. Before this, FIRST(expression) was inlined at 35
+/// sites (~80KB of byte-identical text in the one-file production parser).
+/// The predicate fns are emitted once per referenced rule
+/// (emit_first_predicates); recursion steps and declared-FIRST fallbacks
+/// (external rules) inline exactly as before — the predicate BODY is the very
+/// text a site used to inline, so the parse decision is unchanged.
 fn rule_first_guard(g: Grammar, name: string, visited: List<string>) -> string {
+    if visited.length == 0 && emit_lookup_rule(g, name).name != "" {
+        return "${first_pred_name(name)}(st)"
+    }
+    rule_first_cond(g, name, visited)
+}
+
+fn first_pred_name(name: string) -> string { "starts_${name}" }
+
+/// The shared FIRST-predicate fns — one per grammar rule the emitted text
+/// actually queries (`starts_<rule>(st)`), in rule order so regen output is
+/// stable. Bodies are pure reads of `st` (cur / lookahead_ok / modes — never
+/// advancing), computed fresh per rule; they contain no `starts_` calls
+/// themselves, so one text scan of the assembled parser finds every predicate
+/// this file needs.
+fn emit_first_predicates(g: Grammar, body: string) -> string {
+    mut out = ""
+    for r in g.rules {
+        if body.contains("${first_pred_name(r.name)}(st)") {
+            out = out + "fn ${first_pred_name(r.name)}(st: PState) -> bool {\n    ${rule_first_cond(g, r.name, [])}\n}\n\n"
+        }
+    }
+    if out == "" { return "" }
+    "// ── FIRST predicates — the referenced rules' start conditions, shared by every site ──\n" + out
+}
+
+/// The rule's FIRST condition, INLINED — the shared predicate's body, and the
+/// recursion path behind rule_first_guard's call-form shortcut.
+fn rule_first_cond(g: Grammar, name: string, visited: List<string>) -> string {
     if str_in(visited, name) { return "false" }
     mut v2: List<string> = []
     for x in visited { v2.push(x) }

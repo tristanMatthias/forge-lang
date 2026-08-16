@@ -17,11 +17,10 @@
 // once, deduped by rule_identity). WHERE parsing starts is not a property of
 // the grammar: each interpreter entry names its start rule ("declaration",
 // "statement", "expression", "type_expr" — executor.av), the way a hand
-// parser's entry point is just which function you call. The per-family EMIT
-// subsets (`emit(family)`) exist only for the parser GENERATOR: each
-// generated file emits its own family's rules and calls the other generated
-// files for the rest, so the same functions are not emitted four times.
-// Production parsing never touches them.
+// parser's entry point is just which function you call — and the parser
+// GENERATOR emits this same grammar once into the one checked-in static
+// parser (gen_parser_files.av → parse/gen_parser.av), whose per-family
+// entries are just exported fns entered by name.
 //
 // The record is LAZY (the one composition happens on the first ask and is
 // shared by every seam — the ps3t.6.5.12 lex-once cost profile); the
@@ -29,9 +28,7 @@
 // `language_for(reg)` wraps the cached one and `assemble_language()` builds
 // fresh (regen drivers, tools).
 use core.{Registry, build_registry}
-use features.grammar.{Grammar, BuildKindRow, grammar_with_builder_kinds, builder_kind_rows, grammar_startup_fail}
-use features.grammar.{avra_program_grammar, avra_decl_dispatch_grammar, avra_expr_dispatch_grammar, avra_type_grammar}
-use features.match.{avra_pat_grammar}
+use features.grammar.{Grammar, BuildKindRow, grammar_with_builder_kinds, builder_kind_rows, avra_program_grammar}
 
 export type Language = {
     // Stage 3's dispatch product: tag→hook tables + the builder manifest.
@@ -69,23 +66,4 @@ impl Language {
         self.full_v ?? avra_program_grammar()
     }
 
-    /// The per-family EMIT subset — what the parser generator materializes
-    /// into one checked-in file. A subset keeps foreign families EXTERNAL:
-    /// the generated declaration parser calls parse_type_expr from the
-    /// generated type parser instead of re-emitting the type rules. Regen
-    /// drivers only (one-shot per regen), so no caching; an unknown family
-    /// is a startup failure, never a silent default.
-    fn emit(self, family: string) -> Grammar {
-        let g = match family {
-            "decl" -> avra_decl_dispatch_grammar()
-            "expr" -> avra_expr_dispatch_grammar()
-            "type" -> avra_type_grammar()
-            "pat" -> avra_pat_grammar()
-            _ -> {
-                grammar_startup_fail("Language.emit: unknown family `${family}` (decl|expr|type|pat)")
-                avra_program_grammar()
-            }
-        }
-        grammar_with_builder_kinds(g, self.kind_rows)
-    }
 }

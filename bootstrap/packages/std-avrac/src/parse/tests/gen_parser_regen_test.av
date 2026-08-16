@@ -1,0 +1,38 @@
+// WHY: t-47hc.8 — the REGEN GUARD for the ONE checked-in production static
+// parser (parse/gen_parser.av). That file MUST always equal emit_parser_file()
+// = the banner + the DERIVED import header + emit_parser_source_ex(
+// assemble_language().full(), true) — every rule of the language, emitted once
+// from THE grammar. Editing ANY grammar (avra_grammar.av or a feature's gram)
+// without running `bash scripts/diagnose.sh --emit-regen-parsers` leaves the
+// checked-in parser stale (silently parsing the OLD grammar in production) —
+// and this test fails until it's regenerated + committed.
+//
+// Fast + in-process: the emitter is already linked via the import, so no nested
+// compile. Reads the file from the bootstrap root — the repo's test cwd, as the
+// source lints (codegen/tests/layout_boundary_lint_test.av) rely on.
+//
+// Textual equality is the guard; the BEHAVIOURAL proof that the emitted text
+// parses byte-equivalent to the interpreter over the same grammar is
+// diagnose.sh --emit-gen-check / --parser-probe / --parser-tree, plus the
+// full-selfhost differential (diff-test).
+
+use @std.avrac.features.grammar.{emit_parser_file}
+use @std.avrac.core.{avra_selfhost_read_file}
+
+spec "the checked-in production static parser stays current with THE grammar" {
+    then "parse/gen_parser.av == emit_parser_file() (else run --emit-regen-parsers)" {
+        let on_disk = avra_selfhost_read_file("packages/std-avrac/src/parse/gen_parser.av")
+        let expected = emit_parser_file()
+        on_disk == expected
+    }
+
+    then "the generated file uses RELATIVE imports (no absolute `@std.avrac.` self-reference)" {
+        // A globbed in-package compiler-src module MUST import relatively: an
+        // absolute `@std.avrac.` self-import of the package being built makes the
+        // metadata lib build's module graph process the whole package a SECOND
+        // time — every @derive/@expand type double-expands (F4012), which the plain
+        // compile + diff-test + emit-gen-check all pass right through. This guards
+        // the derived-import header (gen_parser_files.av) directly.
+        !emit_parser_file().contains("use @std.avrac.")
+    }
+}
