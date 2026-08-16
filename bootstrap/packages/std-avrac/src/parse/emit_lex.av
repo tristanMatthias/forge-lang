@@ -13,7 +13,7 @@
 // byte reads go through the allocation-free `byte_at`; a byte past the end reads -1
 // and matches no branch, so a lead at EOF correctly yields its single-char form.
 //
-// This module is NON-PRODUCTION (like gen_expr_file.av): imported ONLY by the
+// This module is NON-PRODUCTION (like gen_parser_files.av): imported ONLY by the
 // regenerator (diagnose.sh --emit-regen-lex) and the guard test
 // (gen_operator_scanner_regen_test.av). The GENERATED file it produces
 // (parse/gen_operator_scanner.av) is what production consumes. RELATIVE imports:

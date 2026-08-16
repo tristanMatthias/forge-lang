@@ -1,66 +1,62 @@
 // WHY: t-47hc.8 — the LANGUAGE PIPELINE record (language.av). Language is
-// the one object consumers ask for a composed+stamped grammar view or the
-// dispatch registry: Parser holds one per NodeStore (production), the four
-// regen drivers assemble one fresh. These specs pin the record's contract —
-// every view composes, every view is STAMPED with the full builder manifest,
-// views are lazy (memoised on first ask), and the wrap-vs-fresh constructors
-// agree. BYTE-level equivalence with the emitted parsers is pinned by the
-// four gen_*_parser_regen_test guards, which now route through this record.
+// the one object consumers ask for the composed grammar or the dispatch
+// registry: Parser holds one per NodeStore (production), the regen driver
+// assembles one fresh. Since the one-grammar consolidation the surface is
+// ONE accessor: `full()` — every rule of the language, stamped with the
+// builder manifest, shared by all four interpreter seams (which differ only
+// by the start-rule name they enter at) AND by the parser generator (which
+// emits it once into the one checked-in static parser). These specs pin
+// that contract; BYTE-level equivalence with the emitted parser stays
+// pinned by gen_parser_regen_test, which routes through the same record.
 
-use @std.avrac.features.grammar.{assemble_language, language_for, Language}
+use @std.avrac.features.grammar.{assemble_language, language_for, Language, Grammar}
 use @std.avrac.features.{feature_builders}
 use @std.avrac.core.{build_registry}
 
-spec "t-47hc.8: the Language record composes every view, stamped" {
+fn has_rule(g: Grammar, name: string) -> bool {
+    for r in g.rules {
+        if r.name == name { return true }
+    }
+    false
+}
+
+spec "t-47hc.8: ONE grammar — every production entry resolves in full()" {
     given "one assembled pipeline record" {
         let lang = assemble_language()
-        let manifest_len = feature_builders().length
+        let g = lang.full()
 
-        then "all eight views compose to non-empty rule sets" {
-            lang.program().rules.length > 0
-                && lang.decls().rules.length > 0
-                && lang.decl_dispatch().rules.length > 0
-                && lang.stmts().rules.length > 0
-                && lang.exprs().rules.length > 0
-                && lang.expr_dispatch().rules.length > 0
-                && lang.types().rules.length > 0
-                && lang.pats().rules.length > 0
+        then "the four seam start rules and the whole-program start all resolve by name" {
+            // The seams enter by NAME (executor.av: "declaration",
+            // "statement", "expression", "type_expr"); pattern_or is the
+            // generated pattern entry. This is the exact property that lets
+            // one grammar serve every entry.
+            has_rule(g, "program")
+                && has_rule(g, "declaration")
+                && has_rule(g, "statement")
+                && has_rule(g, "expression")
+                && has_rule(g, "type_expr")
+                && has_rule(g, "pattern_or")
         }
 
-        then "every view carries the FULL manifest projection — one stamping, no per-view subsetting" {
-            lang.kind_rows.length == manifest_len
-                && lang.stmts().builder_kinds.length == manifest_len
-                && lang.decl_dispatch().builder_kinds.length == manifest_len
-                && lang.types().builder_kinds.length == manifest_len
-                && lang.pats().builder_kinds.length == manifest_len
-        }
-
-        then "the stamped rows carry the feature-owned kinds (spot: build_while is a spanned stmt row)" {
-            mut seen = false
-            for r in lang.stmts().builder_kinds {
-                if r.name == "build_while" && r.kind == "stmt" && r.spanned { seen = true }
-            }
-            seen
+        then "full() carries the FULL manifest projection — one stamping" {
+            lang.kind_rows.length == feature_builders().length
+                && g.builder_kinds.length == feature_builders().length
         }
     }
 }
 
-spec "t-47hc.8: views are LAZY — composed on first ask, memoised after" {
-    given "a fresh record, one view asked twice" {
+spec "t-47hc.8: full() is LAZY — composed on first ask, memoised after" {
+    given "a fresh record, the grammar asked twice" {
         let lang = assemble_language()
-        let before_null = lang.stmt_flip_v == null
-        let first = lang.stmts()
-        let after_set = lang.stmt_flip_v != null
-        let second = lang.stmts()
+        let before_null = lang.full_v == null
+        let first = lang.full()
+        let after_set = lang.full_v != null
+        let second = lang.full()
 
         then "the slot fills exactly at the first ask and the second ask agrees" {
             before_null && after_set
                 && first.rules.length == second.rules.length
                 && first.builder_kinds.length == second.builder_kinds.length
-        }
-
-        then "unasked slots stay null — no eager whole-surface composition" {
-            lang.expr_v == null && lang.type_v == null && lang.pat_v == null
         }
     }
 }
@@ -75,9 +71,9 @@ spec "t-47hc.8: language_for wraps a caller-owned registry; assemble_language bu
             wrapped.kind_rows.length == reg.builder_binds.length
         }
 
-        then "wrap and fresh agree on the projection and on a composed view" {
+        then "wrap and fresh agree on the projection and on the composed grammar" {
             wrapped.kind_rows.length == fresh.kind_rows.length
-                && wrapped.decls().rules.length == fresh.decls().rules.length
+                && wrapped.full().rules.length == fresh.full().rules.length
         }
     }
 }

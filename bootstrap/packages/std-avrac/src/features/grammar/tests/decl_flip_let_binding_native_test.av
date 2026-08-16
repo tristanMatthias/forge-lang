@@ -136,11 +136,14 @@ spec "t-47hc Phase 4: the bindings are emitted as native rules" {
         let let_at = src.index_of("parse_let_decl(st)")
         // The gate is emitted at the DISPATCH SITE, not inside the rule: a leading
         // `@peek` is the branch's FIRST guard, so emit hoists it to the caller and the
-        // rule fn body starts at the `let`. Asserted as the exact guarded dispatch, so
-        // a regeneration that drops the lookahead (leaving a bare `text == "let"` that
-        // swallows every binding) fails here rather than only in the recovery corpus.
+        // rule fn body starts at the `let`. t-47hc.8 one-file dedup: the site calls
+        // the rule's shared FIRST predicate, whose body carries the lookahead — both
+        // halves asserted, so a regeneration that drops the lookahead (leaving a bare
+        // `text == "let"` that swallows every binding) fails here rather than only in
+        // the recovery corpus.
         src.contains("fn parse_letdes_decl(st: PState) -> CapVal") &&
-            src.contains("if lookahead_ok(\"let_destructure\", st) && (st.cur().text == \"let\") {\n        return parse_letdes_decl(st)") &&
+            src.contains("if starts_letdes_decl(st) {\n        return parse_letdes_decl(st)") &&
+            src.contains("fn starts_letdes_decl(st: PState) -> bool {\n    lookahead_ok(\"let_destructure\", st) && (st.cur().text == \"let\")\n}") &&
             des_at >= 0 && let_at >= 0 &&
             des_at < let_at
     }

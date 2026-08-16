@@ -130,7 +130,10 @@ spec "t-47hc.24: the native if expression reports its own block diagnostic" {
         // hand's `DiagCode.ExpectedBlock` and the statement view's twin. The uncoded
         // spelling rendered F0001, which only became visible once `let` routed and
         // stopped handing `let v = if { 1 }` back to the hand.
-        gen.contains("if !(st.cur().tk == Tk.LeftBrace) {\n            st.report_coded(\"F0010\", \"expected `{` after if condition\")")
+        // t-47hc.8 one-file dedup: the gate calls block_expr's shared FIRST
+        // predicate; the LeftBrace test lives in its body — both halves pinned.
+        gen.contains("if !(starts_block_expr(st)) {\n            st.report_coded(\"F0010\", \"expected `{` after if condition\")") &&
+            gen.contains("fn starts_block_expr(st: PState) -> bool {\n    st.cur().tk == Tk.LeftBrace\n}")
     }
 }
 

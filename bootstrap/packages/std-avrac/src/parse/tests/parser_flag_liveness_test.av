@@ -67,12 +67,12 @@ spec "parser routing flags: every pinned flag is one the compiler reads" {
     // about, reproduced inside its own guard.
     //
     // `mutant_tree` therefore builds `<tmp>/bootstrap/{scripts,packages/std-avrac/src}`,
-    // and seeds live reads for the three flags diagnose.sh itself pins — without them
+    // and seeds live reads for the four flags diagnose.sh itself pins — without them
     // the copied script's own PARSER_MODE_* lines read as dead and every row fails for
     // yet another wrong reason.
     fn mutant_tree(tmp: string, extra_live: string, pin_src: string) {
         let _ = avra_shell_exec("rm -rf '${tmp}' && mkdir -p '${tmp}/bootstrap/packages/std-avrac/src/x/tests' '${tmp}/bootstrap/scripts'")
-        let _ = avra_shell_exec("printf 'fn r() {\\n avra_process_env_get(\"AVRA_PARSER_DECL_STATIC\")\\n avra_process_env_get(\"AVRA_PARSER_EXPR_FLIP\")\\n avra_process_env_get(\"AVRA_PARSER_TYPE_STATIC\")\\n${extra_live}\\n}\\n' > '${tmp}/bootstrap/packages/std-avrac/src/x/live.av'")
+        let _ = avra_shell_exec("printf 'fn r() {\\n avra_process_env_get(\"AVRA_PARSER_DECL_STATIC\")\\n avra_process_env_get(\"AVRA_PARSER_EXPR_FLIP\")\\n avra_process_env_get(\"AVRA_PARSER_TYPE_STATIC\")\\n avra_process_env_get(\"AVRA_PARSER_STMT_STATIC\")\\n${extra_live}\\n}\\n' > '${tmp}/bootstrap/packages/std-avrac/src/x/live.av'")
         let _ = avra_shell_exec("printf '%s\\n' '${pin_src}' > '${tmp}/bootstrap/packages/std-avrac/src/x/tests/m_test.av'")
         let _ = avra_shell_exec("cp scripts/diagnose.sh '${tmp}/bootstrap/scripts/diagnose.sh'")
     }

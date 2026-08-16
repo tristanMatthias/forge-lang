@@ -49,11 +49,16 @@ spec "a failing `&&` arm names the conjunct that was false" {
             "        1 == 1 && (2 == 2 && 3 == 4)\n" +
             "    }\n" +
             "}")
-        // Rejects the whole inner conjunction too, not just "group": reporting
-        // `2 == 2 && 3 == 4` verbatim would contain "3 == 4" and pass a
-        // presence-only check (raised in review of #1146).
+        // Rejects the whole inner conjunction too, not just the group node:
+        // reporting `2 == 2 && 3 == 4` verbatim would contain "3 == 4" and pass
+        // a presence-only check (raised in review of #1146). The group probe is
+        // `(group` — the renderer's literal opening — NOT the bare word "group",
+        // which the admission banner's `scope=cgroup` satisfies on any box whose
+        // resource scope resolves to the cgroup reader (the captured output is
+        // the child's WHOLE stderr, banner included; this spec failed locally on
+        // exactly that while passing on CI, whose scope label differs).
         out.contains("false:") && out.contains("3 == 4")
-            && !out.contains("2 == 2 && 3 == 4") && !out.contains("group")
+            && !out.contains("2 == 2 && 3 == 4") && !out.contains("(group")
     }
 
     // Short-circuit is the load-bearing part: `x != null && x!.f == 1` CRASHES
