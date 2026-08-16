@@ -561,12 +561,27 @@ export fn probe_ok(fixture_label: string, name: string, out: string) -> bool {
 /// The two --run command shapes, defined once — cached_fixture_run*
 /// (path-only) and write_fixture_and_run* (write-through) must invoke
 /// byte-identical commands or their captures would diverge.
-fn fixture_run_cmd(fixture_path: string) -> string {
+export fn fixture_run_cmd(fixture_path: string) -> string {
     "bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true"
 }
 
-fn fixture_run_no_metadata_cmd(fixture_path: string) -> string {
-    "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true"
+export fn fixture_run_no_metadata_cmd(fixture_path: string) -> string {
+    // `-u AVRA_MEM_BUDGET_MB` (t-d91l): a no-metadata fixture child is BY
+    // DEFINITION a whole-program @std compile (~9.6 GiB peak measured on the
+    // comptime-fold fixture) — not a member of the shard tree whose ~2 GiB
+    // admission grant this env var carries. Inheriting the grant made the
+    // child a soft-grant borrower whose fate under the pressure floor was
+    // decided by the suite's minute-to-minute troughs: the fold specs failed
+    // 3/2/1-of-3 across otherwise-identical CI runs, in `out` as an F4014
+    // the shard classifier cannot see. Unset, the child sizes like the
+    // standalone compile it is — the box-wide derived ceiling (75% of
+    // MemTotal floors it at ~12 GiB on a 16 GiB runner, clearing the peak)
+    // with no soft-floor path — restoring the pre-admission behaviour this
+    // fixture ran green under. The compile slot gate still bounds it
+    // box-wide under pressure, and fixture_env_fp's cache-key doc already
+    // promises the budget "affects scheduling, not what a fixture prints";
+    // this makes that true for the one class where it didn't.
+    "env -u AVRA_USE_METADATA -u AVRA_LIB_OBJS -u AVRA_MEM_BUDGET_MB bash scripts/diagnose.sh --run ${fixture_path} 2>&1 || true"
 }
 
 /// Same content-keyed cache, but runs `./build/bs2 expand <path>`
