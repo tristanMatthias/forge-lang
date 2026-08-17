@@ -18,7 +18,7 @@
 // feature suite (features/quote_expr/tests/*) is part of this slice's gate rather than an
 // afterthought.
 
-use @std.avrac.parse.{mode_parse, rendered}
+use @std.avrac.parse.{mode_parse, rendered, ModeRun}
 use @std.avrac.features.grammar.{checked_in_parser_source}
 
 /// Both engines build the SAME tree, and the source is valid under both.
@@ -41,18 +41,31 @@ fn agree(source: string) -> bool {
     sr == xr
 }
 
-/// An invalid quote form must REPORT on both paths, the same number of
-/// times, and recover to the same tree — two parsers agreeing on SILENCE is
-/// the one outcome a differential oracle cannot interpret (t-6u9b). Tree and
-/// diag counts come from the SAME pair of parses on one shared store.
+/// The ordered diagnostic MESSAGES of one leg, joined — the message-level
+/// twin of the differential's `msgs_agree_bad`, in-process (no shell-out):
+/// count equality falls out of string equality, and message equality closes
+/// the hole where both paths report the same NUMBER of different errors.
+fn msgs(m: ModeRun) -> string {
+    mut out = ""
+    for d in m.r.bag.diagnostics { out = out + d.message + "|" }
+    out
+}
+
+/// An invalid quote form must REPORT on both paths, with the SAME MESSAGES
+/// in the same order, and recover to the same tree — two parsers agreeing on
+/// SILENCE is the one outcome a differential oracle cannot interpret
+/// (t-6u9b). Messages and tree come from the SAME pair of parses on one
+/// shared store.
 fn agree_bad(source: string) -> bool {
     let e = mode_parse("emit", source, null)
     let x = mode_parse("exec", source, e.r.store)
-    let a = e.r.bag.diagnostics.length
-    let b = x.r.bag.diagnostics.length
-    if a == 0 || b == 0 || a != b {
-        println("quote recovery divergence emit=${string(a)} exec=${string(b)}")
+    let em = msgs(e)
+    let xm = msgs(x)
+    if em == "" || em != xm {
+        println("quote recovery MESSAGE divergence")
         println(source)
+        println("emit=" + em)
+        println("exec=" + xm)
     }
     let sr = rendered(e.r)
     let xr = rendered(x.r)
@@ -62,7 +75,7 @@ fn agree_bad(source: string) -> bool {
         println(sr)
         println(xr)
     }
-    a > 0 && a == b && sr == xr
+    em != "" && em == xm && sr == xr
 }
 
 fn wrap(body: string) -> string { "fn f() -> int {\n let q = ${body}\n return 0\n}\n" }
@@ -154,6 +167,15 @@ spec "t-bwjg: the block-bodied quote kinds are grammar-native" {
             // aligned-behavior control while diagnosing).
             agree_bad(wrap("spawn")) &&
             agree_bad(wrap("isolated"))
+        }
+        then "the gates report their PRECISE @expect text, not a cascade" {
+            // agree_bad proves both engines say the same thing; this pins
+            // WHAT they say — the gate's own message at the truncation, not
+            // the outer `expected `}` after function body` cascade that was
+            // the only survivor pre-t-rd44.
+            msgs(mode_parse("emit", wrap("quote"), null)).contains("expected `{` to open the quote body") &&
+            msgs(mode_parse("emit", wrap("quote stmt"), null)).contains("expected `{` to open the quote body") &&
+            msgs(mode_parse("emit", wrap("isolated"), null)).contains("expected `{` after isolated")
         }
     }
 }
