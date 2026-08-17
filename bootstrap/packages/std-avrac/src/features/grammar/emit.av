@@ -2320,7 +2320,18 @@ export fn derived_import_lines_for(src: string, binds: List<BuilderBind>, gramma
             if fm == m { names.push(foreign_names[i]) }
             i = i + 1
         }
-        out = out + "use ${m}.{${join_sorted(names)}}\n"
+        // Manifest modules are recorded in the in-package RELATIVE spelling
+        // ("features.modules.lowering"). When the caller asked for ABSOLUTE
+        // module spellings (the standalone gen-check harness — grammar_mod
+        // starts with "@"), re-root the foreign module under the same
+        // package prefix; the checked-in in-package parsers keep the
+        // relative spelling verbatim (an absolute self-import F4012s).
+        mut spelled = m
+        if grammar_mod.starts_with("@") {
+            let root = grammar_mod.substring(0, grammar_mod.length - "features.grammar".length)
+            spelled = root + m
+        }
+        out = out + "use ${spelled}.{${join_sorted(names)}}\n"
     }
     out
 }

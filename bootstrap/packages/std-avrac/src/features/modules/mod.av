@@ -5,9 +5,9 @@
 // graph_build.av + dir_module.av auto-load as siblings, surface flat
 // at `features.modules.{...}`.
 use features.eval.{ok_result, value_null}
-use core.{Stmt, StmtId, ExprId, Annotation, ValueType}
+use core.{Stmt, StmtId}
 use resolve.{resolve_stmt_ids}
-use features.grammar.{PState, CapVal, Token, capval_tok_list, capval_tok_text, param_entries_from_toks, modules_builds}
+use features.modules.lowering.{modules_builds}
 use features.{composed}
 
 /// Resolver hook for `mod`. Recursively resolves the body — name
@@ -38,45 +38,6 @@ fn use_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// Register the `mod` declaration feature. Wires up the parser,
 /// resolver, and eval hooks. Codegen is provided implicitly by
 /// the codegen pipeline emitting `__init_<name>()` per module.
-// ── ABI lowerings (t-kd4y.3 Batch A) — moved from the executor's central
-// arms; each folds BOTH engines' unpacking (the executor's env reads and
-// the generated parser's raw accumulators arrive identically as CapVals —
-// list captures wrapped by manifest_arg_spelling, capval_tok_list unwraps
-// singleton-preserving). The engine's checked-in `_gb_` wrappers import
-// these back (the import-closure invariant's one-line residue).
-
-/// `use seg ( . seg )* { names }` — the bare-path import (`MkUseBare`).
-export fn use_bare_build(st: PState, vals: List<CapVal>) -> CapVal {
-    use_stmt_of(st, false, capval_tok_list(vals[0]), capval_tok_list(vals[1]))
-}
-
-/// `use @pkg.seg… { names }` (`MkUsePkg`) — the package SCOPE is a separate
-/// capture from the path segments (a label bound by two `.One` items is
-/// REPLACED, not accumulated, by the executor's bind; joining here keeps
-/// the engine divergence impossible rather than merely untested).
-export fn use_pkg_build(st: PState, vals: List<CapVal>) -> CapVal {
-    mut all: List<Token> = []
-    for t in capval_tok_list(vals[0]) { all.push(t) }
-    for t in capval_tok_list(vals[1]) { all.push(t) }
-    use_stmt_of(st, true, all, capval_tok_list(vals[2]))
-}
-
-/// The shared `use` core: dot-joined path (leading `@` for a package
-/// path); the names reuse the bare-name ParamEntry list.
-fn use_stmt_of(st: PState, at_present: bool, segs: List<Token>, names: List<Token>) -> CapVal {
-    mut path = ""
-    for t in segs { path = if path == "" { t.text } else { path + "." + t.text } }
-    if at_present { path = "@" + path }
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(CapVal.Toks(names), ValueType.Unknown))))
-}
-
-/// `mod name` — a module STUB (`MkModule`); the resolver fills the body
-/// from the `.av` file later.
-export fn module_build(st: PState, vals: List<CapVal>) -> CapVal {
-    let empty_body: List<StmtId> = []
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Module(capval_tok_text(vals[0]), empty_body)))
-}
-
 export fn mod_lang() -> LanguageFeature {
     let empty_body: List<StmtId> = []
     LanguageFeature mod_def {

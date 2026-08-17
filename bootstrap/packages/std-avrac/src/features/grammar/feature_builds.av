@@ -38,7 +38,6 @@ use features.if_stmt.{build_if}
 use features.for_stmt.{build_for}
 use features.break_continue.{build_break, build_continue}
 use features.match.{build_when_arm, build_when_default, build_arm, build_match}
-use features.modules.{use_bare_build, use_pkg_build, module_build}
 
 export fn _gb_build_defer(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_defer(capval_to_expr(st, vals[0])))
@@ -94,25 +93,6 @@ export fn _gb_build_match(st: PState, vals: List<CapVal>) -> CapVal {
         if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
     }
     CapVal.SNode(st.store.add_stmt(build_match(capval_to_expr(st, vals[0]), arms), byte_span_none(), refs))
-}
-
-export fn _gb_use_bare(st: PState, vals: List<CapVal>) -> CapVal { use_bare_build(st, vals) }
-export fn _gb_use_pkg(st: PState, vals: List<CapVal>) -> CapVal { use_pkg_build(st, vals) }
-export fn _gb_module(st: PState, vals: List<CapVal>) -> CapVal { module_build(st, vals) }
-
-/// The modules feature's rows — Batch A shape: rows bind the EXISTING Mk
-/// names (zero gram edits), the lowerings live in features/modules, and
-/// these one-line wrappers are the import-closure residue.
-export fn modules_builds() -> List<BuilderBind> {
-    [BuilderBind { name: "MkUseBare", kind: "stmt", arity: 2, spanned: false,
-                   module: "features.grammar", export_name: "_gb_use_bare",
-                   build: _gb_use_bare },
-     BuilderBind { name: "MkUsePkg", kind: "stmt", arity: 3, spanned: false,
-                   module: "features.grammar", export_name: "_gb_use_pkg",
-                   build: _gb_use_pkg },
-     BuilderBind { name: "MkModule", kind: "stmt", arity: 1, spanned: false,
-                   module: "features.grammar", export_name: "_gb_module",
-                   build: _gb_module }]
 }
 
 /// ALL of the match feature's rows — when-arms (the first flip) plus the
