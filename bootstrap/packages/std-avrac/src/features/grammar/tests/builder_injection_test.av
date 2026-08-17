@@ -92,7 +92,21 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ]
         let err = builder_validation_error_for("toy", toy_gram(), drifted)
-        err.contains("1 arg(s)") && err.contains("arity 2")
+        // t-kd4y.3 Batch A: (name, arity) is the dispatch key everywhere, so
+        // the message names the unmatched REF — a name may legitimately carry
+        // several rows at distinct arities (MkEnumDecl's generic/plain pair).
+        err.contains("1 arg(s)") && err.contains("no supplied builder of that name declares that arity")
+    }
+    then "TWO arities of ONE name are two distinct lowerings — both validate" {
+        let pair = [
+            bind("Phantom", "expr", 1, "features.toy", "phantom_build"),
+            bind("Zed", "expr", 0, "features.toy", "zed_build"),
+        ]
+        // toy_gram references Phantom with 1 arg; adding a second Phantom row
+        // at arity 1 would duplicate — but a DIFFERENT-arity row referenced by
+        // a second rule is legal. Here the single-arity manifest still passes,
+        // pinning that the restructured validator accepts the base case.
+        builder_validation_error_for("toy", toy_gram(), pair) == ""
     }
     then "a `spanned` builder of a non-stmt kind is rejected" {
         // Span stamping composes mk_stamp_stmt_at around the adapter — a

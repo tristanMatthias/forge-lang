@@ -186,8 +186,13 @@ fn fold_builders(feats: List<LanguageFeature>) -> List<BuilderBind> {
     for f in feats {
         for b in f.builders {
             for seen in all {
-                if seen.name == b.name {
-                    grammar_startup_fail("build `${b.name}` is supplied by two features — one lowering, one owner")
+                // (name, arity) is the dispatch key — the executor consult and
+                // emit both guard on arity, so two arities of one name are two
+                // distinct lowerings (MkEnumDecl's generic/plain pair, Batch A).
+                // The SAME (name, arity) twice is still two features claiming
+                // one lowering: hard-fail.
+                if seen.name == b.name && seen.arity == b.arity {
+                    grammar_startup_fail("build `${b.name}`/${string(b.arity)} is supplied by two features — one lowering, one owner")
                     return all
                 }
             }
