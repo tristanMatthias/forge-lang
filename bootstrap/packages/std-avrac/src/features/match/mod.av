@@ -8,20 +8,31 @@ use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, St
 use core.{Pattern, MatchArm, ParamEntry, Expr, Stmt, WhenArm, PatId, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types, type_short_name, vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding, VarBinding, variant_lookup, ExprId}
 use resolve.{resolve_expr, Resolver, enter_resolve_scope, exit_resolve_scope, declare_params, declare_name, define_name}
 use typeck.{check_expr, tc_er, EnumTypeReg, ExprResult, TC, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_exit, tc_gate_unthreaded_lambda, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
-use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments, when_arm_builds}
+use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments, match_builds}
 
-// ── when-arm typed lowerings, home in the feature file (t-47hc.8
-// dissolution) — the arms whose central helpers were already PURE over
-// unwrapped values (mk_when_arm/mk_when_default constructed records, no
-// arena, no span threading). MkMatch/MkArm and the rest stay central: MkArm
-// reads the boxed Pattern back from the arena and the others thread
-// sp_start spans — both need marshalling rows the tables don't carry yet.
-// The engine's checked-in `_gb_` adapters import these back.
+// ── typed lowerings, home in the feature file (t-47hc.8 dissolution /
+// t-kd4y.3 match flip) — pure over unwrapped values; the engine's
+// checked-in `_gb_` adapters import these back and absorb the marshalling
+// (build_arm's boxed-Pattern read is the ADAPTER's `st.store.pats.get`,
+// so the typed fn stays arena-free). Still central: MkWhenStmt (its span
+// lands on the When EXPR node's ByteSpan — an expr-span row the manifest
+// doesn't carry) and MkArmReturn (interior stamp: the span belongs to the
+// synthesized inner Return row, not the result — same gap, recorded on
+// t-kd4y.3).
 export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
     WhenArm { cond_id: c, body_id: b }
 }
 export fn build_when_default(b: ExprId) -> WhenArm {
     WhenArm { cond_id: none, body_id: b }
+}
+/// One `pattern (if guard)? -> body` arm. Carries the boxed Pattern AND its
+/// id (render_match_arm renders the box; passes re-resolve by id).
+export fn build_arm(pattern: Pattern, pattern_id: PatId, guard: ExprId?, body: ExprId) -> MatchArm {
+    MatchArm { pattern: pattern, pattern_id: pattern_id, guard_id: guard, body_id: body }
+}
+/// `match subject { arm* }`, statement position.
+export fn build_match(subject: ExprId, arms: List<MatchArm>) -> Stmt {
+    Stmt.Match(subject, arms)
 }
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use features.union_type.{emit_union_tag, emit_union_extract}
@@ -81,7 +92,7 @@ export fn avra_match_arm_grammar() -> Grammar {
   // leading `~` is not an arm at all and must fall through to `pattern_or`, which reports.
   // The trailing `","?` is the hand's too — it consumes a separator after the splice.
   match_arm     = @when(in_quote_body) "~" t:unary ( "," )? -> MkSpliceArm(t)
-                | p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:arm_body -> MkArm(p, g, b)
+                | p:pattern_or ( "if" g:expression )? "->" @off(allow_dot_postfix) b:arm_body -> build_arm(p, g, b)
   // `MatchArm.body_id` is an ExprId and `return` is a STATEMENT, so the hand bridges the
   // two by wrapping: `Expr.Block([Stmt.Return(v)])`. With the body as `expression` alone,
   // every `-> return v` in the compiler fell through to `@hand(decl_hand)` — 17 of the 22
@@ -118,7 +129,7 @@ export fn avra_match_stmt_grammar() -> Grammar {
     let gp = grammar {
   match_stmt    = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhenStmt(a)
                 | @peek(match_table) match_table_stmt
-                | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatch(subj, arms)
+                | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> build_match(subj, arms)
     }
     grammar_checked(gp)
 }
@@ -210,8 +221,14 @@ variants earns a lint. `match` is also an expression — the arms' bodies
 unify to the result type. The row-oriented `match … table { }` form
 desugars into ordinary arms.
 """,
-        gram = composed([avra_pat_grammar(), avra_match_arm_grammar()]),
-        builders = when_arm_builds(),
+        // The stmt fragment joined at the t-kd4y.3 core flip: build_match's
+        // referencing rule lives there, and the no-orphans validator reads
+        // THIS gram. gram_family stays "" — the spine composes the three
+        // match fragments explicitly by name, so this is validation/docs
+        // surface, never a second composition. The table fragment joins
+        // when ITS builders flip.
+        gram = composed([avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar()]),
+        builders = match_builds(),
         snippet = r"match ${1:subject} { ${2:pattern} -> ${3:body} }",
         diags = [DiagSpec {
             code: "F9001",

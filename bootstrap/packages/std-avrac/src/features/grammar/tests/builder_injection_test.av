@@ -111,21 +111,22 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
         err.contains("Spanny") && err.contains("spanned") && err.contains("stmt")
     }
     then "shadowing a central name is rejected — different kind" {
-        // MkMatch: a durable central "stmt" row — spine-only, no feature gram
-        // references it, so it stays central (feature_builds.av documents
-        // why). (MkDefer was the original fixture name until its t-kd4y.3
-        // flip removed the central row, then MkReturn until ITS flip — a
-        // manifest-owned name cannot stage a central-shadow conflict.)
+        // Block: the ENGINE-CORE central "stmt" row — a block is engine
+        // structure, not a feature, so no flip can ever de-centralize it.
+        // (The fixture name has churned with every migration wave — MkDefer,
+        // then MkReturn, then MkMatch, each flipped out from under the spec;
+        // a manifest-owned name cannot stage a central-shadow conflict, so
+        // the spec must ride a name the migration can never touch.)
         let g = grammar {
-            top  = a:leaf -> MkMatch(a)
+            top  = a:leaf -> Block(a)
             leaf = "ztok" -> Zed()
         }
         let shadow = [
-            bind("MkMatch", "expr", 1, "features.toy", "match_build"),
+            bind("Block", "expr", 1, "features.toy", "block_build"),
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ]
         let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
-        err.contains("MkMatch") && err.contains("shadows")
+        err.contains("Block") && err.contains("shadows")
     }
     then "shadowing a central name is rejected — SAME kind and arity too" {
         // The dangerous shape (CodeRabbit find on #1242): a same-kind shadow
@@ -133,20 +134,19 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
         // opposite orders — emit_call_build would lower the name through the
         // feature adapter while apply_build took the central arm. Disjoint
         // name sets are what make the opposite orders coherent; this pins
-        // the gate that enforces them. MkMatch: the durable central "stmt"
-        // fixture (spine-only, stays central — the diff-kind spec above uses
-        // it too; `If`/`While` served here until their own flips
-        // de-centralized them).
+        // the gate that enforces them. Block: the engine-core central "stmt"
+        // fixture (the diff-kind spec above uses it too; `If`/`While` and
+        // then `MkMatch` served here until their flips de-centralized them).
         let g = grammar {
-            top  = a:leaf -> MkMatch(a)
+            top  = a:leaf -> Block(a)
             leaf = "ztok" -> Zed()
         }
         let shadow = [
-            bind("MkMatch", "stmt", 1, "features.toy", "match_build"),
+            bind("Block", "stmt", 1, "features.toy", "block_build"),
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ]
         let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
-        err.contains("MkMatch") && err.contains("shadows") && err.contains("central")
+        err.contains("Block") && err.contains("shadows") && err.contains("central")
     }
 }
 

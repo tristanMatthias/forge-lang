@@ -909,7 +909,7 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq, track_spec: bool) -> string
     match b.build {
         .None -> out = out + "            return s_last\n"
         .Var(name) -> out = out + "            return ${name}\n"
-        .Call(name, args) -> out = out + "            return ${emit_call_build(name, args)}\n"
+        .Call(name, args) -> out = out + "            return ${emit_call_build(g, b, name, args)}\n"
     }
     out = out + "        }\n"
     out = out + "        st.store.truncate_to_mark(s_mark)\n"
@@ -2236,7 +2236,7 @@ fn emit_seq_result(g: Grammar, seq: GSeq) -> string {
     match seq.build {
         .None -> "CapVal.Nil"
         .Var(name) -> name
-        .Call(name, args) -> emit_call_build(name, args)
+        .Call(name, args) -> emit_call_build(g, seq, name, args)
     }
 }
 
@@ -2462,9 +2462,14 @@ fn join_sorted(names: List<string>) -> string {
 /// import derived into the module header (derived_import_lines), then the
 /// central arms. Scalar captures are their CapVal vars; a `_list` suffix
 /// names an accumulated arg (only call_suffix's, which takes the whole list).
-fn emit_call_build(name: string, args: List<string>) -> string {
+fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> string {
     for b in feature_builders() {
         if b.name == name && args.length == b.arity {
+            // Manifest args are spelled from the OWNING SEQ's capture shapes
+            // (repetitions wrap their typed accumulators); central templates
+            // below keep receiving raw labels and their own baked spellings.
+            mut spelled: List<string> = []
+            for a in args { spelled.push(manifest_arg_spelling(g, seq, a)) }
             // A `spanned` bind stamps at the owning rule's entry byte via the
             // engine's mk_stamp_stmt_at — the adapter itself stays span-free
             // (identical add_leaf → record_pos order to the central
@@ -2472,9 +2477,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
             // no twin: its central arms pass `0 - 1` for these builds, which
             // a bare adapter call already reproduces.
             if b.spanned {
-                return "mk_stamp_stmt_at(st, sp_start, ${b.export_name}(st, [${join_args(args)}]))"
+                return "mk_stamp_stmt_at(st, sp_start, ${b.export_name}(st, [${join_args(spelled)}]))"
             }
-            return "${b.export_name}(st, [${join_args(args)}])"
+            return "${b.export_name}(st, [${join_args(spelled)}])"
         }
     }
     match name {
@@ -2655,8 +2660,9 @@ fn emit_call_build(name: string, args: List<string>) -> string {
         "MkCatchSuffix" -> "CapVal.Node(mk_catch_suffix(st, ${args[0]}, ${args[1]}, CapVal.SNodes(${args[2]}_list)))"
         "MkArmReturn" -> "mk_arm_return(st, sp_start, ${args[0]})"
         "MkSpliceArm" -> "mk_splice_arm(st, ${args[0]})"
-        "MkArm" -> "mk_arm(st, ${args[0]}, ${args[1]}, ${args[2]})"
-        "MkMatch" -> "mk_match(st, ${args[0]}, CapVal.Arms(${args[1]}_list))"
+        // `MkArm` / `MkMatch` — feature-owned (build_arm / build_match): the
+        // manifest branch above renders their adapter calls, arm-list capture
+        // wrapped by manifest_arg_spelling.
         // t-47hc.29 — every table capture is a LIST: the value-column headers (`Toks`),
         // the row patterns (`PNodes`), and the flattened cells (`Nodes`). The builder
         // re-chunks the cells by the header count, so the generated call passes the three
@@ -3254,6 +3260,43 @@ fn kind_coerce(kind: string) -> string {
     if kind == "cslot" { return "capval_to_children_slot" }
     if kind == "ann" { return "capval_to_ann" }
     "capval_to_expr"
+}
+
+/// The CapVal LIST constructor for a repetition capture's element kind — the
+/// manifest-ABI twin of the central templates' hand-spelled wraps
+/// (`CapVal.Arms(${x}_list)`). The adapter's capval_to_*_list unwraps it,
+/// singleton-preserving, exactly like the executor's env value. "" = the
+/// kind has no CapVal list form yet; the caller emits a loud undefined
+/// marker so regen -> build fails naming the gap (the declared-FIRST
+/// discipline — never silent garbage).
+fn kind_list_ctor(kind: string) -> string {
+    if kind == "arm" { return "CapVal.Arms" }
+    if kind == "warm" { return "CapVal.WArms" }
+    if kind == "pat" { return "CapVal.PNodes" }
+    if kind == "stmt" { return "CapVal.SNodes" }
+    if kind == "finit" { return "CapVal.FInits" }
+    if kind == "pentry" { return "CapVal.PEntries" }
+    if kind == "expr" { return "CapVal.Nodes" }
+    ""
+}
+
+/// Manifest-ABI arg spelling (t-kd4y.3 match flip): a REPETITION capture's
+/// arg is its typed accumulator wrapped in the kind's CapVal list ctor; a
+/// scalar or optional capture stays its bare CapVal var (the
+/// `_gb_build_if(st, [c, t, e])` shape). Terminal repetitions wrap Toks.
+fn manifest_arg_spelling(g: Grammar, seq: GSeq, label: string) -> string {
+    if !str_in(list_labels_of(seq), label) { return label }
+    let ctor = match find_label_prim_seq(seq, label) {
+        .Ref(name) -> kind_list_ctor(rule_result_kind(g, name))
+        _ -> "CapVal.Toks"
+    }
+    if ctor == "" {
+        // Same loudness class as the undeclared external FIRST: the generated
+        // parser fails to build, naming the capture, instead of marshalling
+        // a shape the adapter cannot read.
+        return "avra_grammar_manifest_list_kind_unmapped_${label}"
+    }
+    "${ctor}(${label}_list)"
 }
 
 /// The id/value type of a node kind's list element.

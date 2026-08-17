@@ -4276,21 +4276,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // ── Match statement builds (target: Stmt, ps3t.6.5.4) ──
         "MkArmReturn" if args.length == 1 -> mk_arm_return(st, 0 - 1, env.get(args[0]))
         "MkSpliceArm" if args.length == 1 -> mk_splice_arm(st, env.get(args[0]))
-        "MkArm" if args.length == 3 -> {
-            // `pattern ( "if" guard )? "->" body` — one match arm. MatchArm carries
-            // the boxed Pattern (read back from the arena — render_match_arm renders
-            // it) AND its PatId; the guard is nullable (absent ⇒ none).
-            let pat_id = capval_to_pat(st, env.get(args[0]))
-            mut guard: ExprId? = none
-            if capval_present(env.get(args[1])) { guard = capval_to_expr(st, env.get(args[1])) }
-            CapVal.Arm(MatchArm { pattern: st.store.pats.get(pat_id), pattern_id: pat_id, guard_id: guard, body_id: capval_to_expr(st, env.get(args[2])) })
-        }
+        // `MkArm` / `MkMatch` are feature-owned now (build_arm / build_match,
+        // features/match — t-kd4y.3): the manifest dispatches them, the
+        // adapters marshal (the boxed-Pattern read moved into _gb_build_arm).
         "MkMatchTable" if args.length == 4 -> mk_match_table(st, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
         "MkMatchTableExpr" if args.length == 4 -> mk_match_table_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
-        "MkMatch" if args.length == 2 -> {
-            // `match subject { arm* }` — statement-position match.
-            CapVal.SNode(st.store.stmts.add_leaf(Stmt.Match(capval_to_expr(st, env.get(args[0])), capval_to_arm_list(env.get(args[1])))))
-        }
         // ── Declaration builds (target: Stmt, ps3t.6.5.7) — the non-generic
         //    arms delegate to SHARED constructor cores (mk_param / mk_fn_decl /
         //    mk_field / mk_type_decl / … / mk_impl), so apply_build and the
@@ -5810,12 +5800,6 @@ export fn mk_splice_arm(st: PState, target_cv: CapVal) -> CapVal {
     CapVal.Arm(MatchArm { pattern: sentinel_pat, pattern_id: pat_id, guard_id: none, body_id: splice_id })
 }
 
-export fn mk_arm(st: PState, pat_cv: CapVal, guard_cv: CapVal, body_cv: CapVal) -> CapVal {
-    let pat_id = capval_to_pat(st, pat_cv)
-    let guard = if capval_present(guard_cv) { capval_to_expr(st, guard_cv) } else { null }
-    CapVal.Arm(MatchArm { pattern: st.store.pats.get(pat_id), pattern_id: pat_id, guard_id: guard, body_id: capval_to_expr(st, body_cv) })
-}
-
 /// The EXPRESSION twin of `mk_match` (t-47hc.25). Same arms, same child refs — only
 /// the node kind and the span differ.
 ///
@@ -5924,16 +5908,6 @@ export fn mk_if_let_stmt(st: PState, tmp_cv: CapVal, bind_cv: CapVal, subj_cv: C
         capval_to_stmt(st, then_cv),
         else_opt
     ))
-}
-
-/// Generated-parser twin of the `MkMatch` executor build.
-export fn mk_match(st: PState, subject_cv: CapVal, arms_cv: CapVal) -> CapVal {
-    let arms = capval_to_arm_list(arms_cv)
-    mut refs: List<NodeRef> = []
-    for arm in arms {
-        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
-    }
-    CapVal.SNode(st.store.add_stmt(Stmt.Match(capval_to_expr(st, subject_cv), arms), byte_span_none(), refs))
 }
 
 /// t-47hc.29 — the match TABLE's arms, desugared exactly as the hand
