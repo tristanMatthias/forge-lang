@@ -931,12 +931,20 @@ export fn central_build_kind(bn: string) -> string {
 export fn build_kind_with(rows: List<BuildKindRow>, bn: string, arity: int) -> string {
     let k = central_build_kind(bn)
     if k != "" { return k }
-    // (name, arity) — the manifest dispatch key everywhere (executor consult,
-    // emit_call_build, fold_builders' dedup). A name may carry rows at several
-    // arities with distinct kinds; matching by name alone would classify every
-    // call by whichever row folded first.
-    for r in rows { if r.name == bn && r.arity == arity { return r.kind } }
+    let r = manifest_row(rows, bn, arity)
+    if r != null { return r!.kind }
     "expr"
+}
+
+/// THE manifest lookup. (name, arity) is the dispatch key everywhere — the
+/// executor consult, emit_call_build, span capture, kind analysis, and
+/// fold_builders' dedup — and every consult resolves through here, so the
+/// key exists in exactly one place. A name may carry rows at several arities
+/// (MkEnumDecl's generic/plain pair was the design case); matching by name
+/// alone would answer every call from whichever row folded first.
+export fn manifest_row(rows: List<BuildKindRow>, name: string, arity: int) -> BuildKindRow? {
+    for r in rows { if r.name == name && r.arity == arity { return r } }
+    null
 }
 
 /// The manifest-free view — callers with no composed grammar in hand

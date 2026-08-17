@@ -6,7 +6,7 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt, ExprId, StmtId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, capval_stmt_val, capval_to_expr, capval_to_stmt, capval_to_stmt_opt}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, capval_to_stmt_opt}
 
 export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
 
@@ -15,5 +15,5 @@ export fn build_if_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn if_builds() -> List<BuilderBind> {
-    [bind_row("features.if_stmt.lowering", "build_if", "stmt", 3, true, "build_if_abi", build_if_abi)]
+    bind_rows("features.if_stmt.lowering", [bind_row("build_if", "stmt", 3, true, "build_if_abi", build_if_abi)])
 }

@@ -7,7 +7,7 @@ use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, r
 use features.grammar.{ExpectHit, expect_for, rule_own_expect_msg, rule_first_expect_msg, rule_first_expect_msg_leaf, gated_ref_of, node_has_onfail}
 use features.grammar.{grammar_has_gate, rule_body_has_gate, rule_first_is_ident}
 use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule}
-use features.grammar.{grammar_build_refs, BuildRef, BuilderBind}
+use features.grammar.{grammar_build_refs, BuildRef, BuilderBind, BuildKindRow, manifest_row}
 use features.{feature_builders}
 
 // ── Pratt collapse of the uniform binary-operator ladder (ps3t.6.7 Step G, slice 1) ──
@@ -529,14 +529,13 @@ fn emit_fold_build(g: Grammar, build: GBuild, seed_label: string, inner: GSeq) -
 /// fold_binary (→Pratt, sp_start captured in the loop) and the span-free
 /// fold_postfix / mk_is / etc. are excluded.
 fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
-    // Manifest names answer from the STAMPED rows — consult keys (name, arity)
-    // exactly as emit_call_build does, so the sp_start prelude and the call it
-    // feeds always agree on which row's `spanned` applies. Reading the grammar
+    // Manifest names answer from the STAMPED rows via the one (name, arity)
+    // lookup, so the sp_start prelude and the emit_call_build call it feeds
+    // always agree on which row's `spanned` applies. Reading the grammar
     // (not feature_builders(), which re-runs every factory) keeps emission
     // allocation-flat.
-    for b in g.builder_kinds {
-        if b.name == name && b.arity == arity { return b.spanned }
-    }
+    let row = manifest_row(g.builder_kinds, name, arity)
+    if row != null { return row!.spanned }
     // `-> return v` in a match arm stamps the SYNTHESIZED return row at the `return`
     // keyword — the rule's entry byte. The hand snapshots that position before parsing
     // the value for the same reason: stamping after the parse points the row at the
@@ -2480,24 +2479,24 @@ fn join_sorted(names: List<string>) -> string {
 /// central arms. Scalar captures are their CapVal vars; a `_list` suffix
 /// names an accumulated arg (only call_suffix's, which takes the whole list).
 fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> string {
-    for b in g.builder_kinds {
-        if b.name == name && args.length == b.arity {
-            // Manifest args are spelled from the OWNING SEQ's capture shapes
-            // (repetitions wrap their typed accumulators); central templates
-            // below keep receiving raw labels and their own baked spellings.
-            mut spelled: List<string> = []
-            for a in args { spelled.push(manifest_arg_spelling(g, seq, a)) }
-            // A `spanned` bind stamps at the owning rule's entry byte via the
-            // engine's mk_stamp_stmt_at — the adapter itself stays span-free
-            // (identical add_leaf → record_pos order to the central
-            // add_stmt_at cores, so IR is byte-identical). The executor needs
-            // no twin: its central arms pass `0 - 1` for these builds, which
-            // a bare adapter call already reproduces.
-            if b.spanned {
-                return "mk_stamp_stmt_at(st, sp_start, ${b.export_name}(st, [${join_args(spelled)}]))"
-            }
-            return "${b.export_name}(st, [${join_args(spelled)}])"
+    let row = manifest_row(g.builder_kinds, name, args.length)
+    if row != null {
+        let b = row!
+        // Manifest args are spelled from the OWNING SEQ's capture shapes
+        // (repetitions wrap their typed accumulators); central templates
+        // below keep receiving raw labels and their own baked spellings.
+        mut spelled: List<string> = []
+        for a in args { spelled.push(manifest_arg_spelling(g, seq, a)) }
+        // A `spanned` bind stamps at the owning rule's entry byte via the
+        // engine's mk_stamp_stmt_at — the adapter itself stays span-free
+        // (identical add_leaf → record_pos order to the central
+        // add_stmt_at cores, so IR is byte-identical). The executor needs
+        // no twin: its central arms pass `0 - 1` for these builds, which
+        // a bare adapter call already reproduces.
+        if b.spanned {
+            return "mk_stamp_stmt_at(st, sp_start, ${b.export_name}(st, [${join_args(spelled)}]))"
         }
+        return "${b.export_name}(st, [${join_args(spelled)}])"
     }
     match name {
         // ── Expression builds (target: Expr) ──

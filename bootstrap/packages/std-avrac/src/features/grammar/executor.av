@@ -575,10 +575,18 @@ export type BuilderBind = {
 /// executor values). Stamped onto composed grammars via
 /// grammar_with_builder_kinds at the seams that hold the manifest.
 /// One manifest row, one line (t-kd4y.3 Batch A): every lowering module
-/// spells rows through this — `module` and the fn travel together, and the
-/// verbose record ceremony lives HERE once.
-export fn bind_row(module: string, name: string, kind: string, arity: int, spanned: bool, export_name: string, build: fn(PState, List<CapVal>) -> CapVal) -> BuilderBind {
-    BuilderBind { name: name, kind: kind, arity: arity, spanned: spanned, module: module, export_name: export_name, build: build }
+/// spells rows through this — the verbose record ceremony lives HERE once.
+/// `module` is stamped by `bind_rows`, so a lowering module names its module
+/// path exactly once, not once per row.
+export fn bind_row(name: string, kind: string, arity: int, spanned: bool, export_name: string, build: fn(PState, List<CapVal>) -> CapVal) -> BuilderBind {
+    BuilderBind { name: name, kind: kind, arity: arity, spanned: spanned, module: "", export_name: export_name, build: build }
+}
+
+/// A lowering module's whole manifest: its module path stamped across its rows.
+export fn bind_rows(module: string, rows: List<BuilderBind>) -> List<BuilderBind> {
+    mut out: List<BuilderBind> = []
+    for r in rows { out.push(r with { module: module }) }
+    out
 }
 
 export fn builder_kind_rows(binds: List<BuilderBind>) -> List<BuildKindRow> {

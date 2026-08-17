@@ -13,3 +13,14 @@ bootstrap/seed/seed.ll -diff merge=binary
 # raced: artifacts are immutable and content-pinned, so resolution is
 # mechanical — take the HIGHER version line (diagnose.sh --seed-merge
 # automates the full regenerate path when the union needs restaging).
+
+# Checked-in GENERATED sources — emitted by the toolchain and verified
+# byte-exact by the regen guards (emit-gen-check, gen_run_scanner_regen_test,
+# emit_generated/emit_stmt_generated/emit_program_generated tests). Marked
+# generated so review tools collapse them by default: the guards are the
+# reviewer for these files, and a multi-thousand-line mechanical regen should
+# not drown the hand-written part of a diff.
+bootstrap/packages/std-avrac/src/parse/gen_parser.av linguist-generated=true
+bootstrap/packages/std-avrac/src/parse/gen_keyword_scanner.av linguist-generated=true
+bootstrap/packages/std-avrac/src/parse/gen_operator_scanner.av linguist-generated=true
+bootstrap/packages/std-avrac/src/parse/gen_run_scanner.av linguist-generated=true
