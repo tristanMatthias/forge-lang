@@ -45,7 +45,7 @@ Three forces converge on one API:
 
 ## The three layers
 
-```
+```text
 L-edges   arena NodeRef graph (exists)         children_of / all_children_spanned
 L-sel     THIS DESIGN — pure selection values   ast(store, ids) -> Sel, chainable
 L-db      L6 named queries (exists, grows)      memoized indexes: parents, fn-by-name,
@@ -59,7 +59,7 @@ cost lives (indexes, memoization, invalidation by store fingerprint); L-sel is w
 
 ## The Sel value
 
-```
+```text
 type Sel = { store: NodeStore, refs: List<NodeRef>, desc: string }
 fn ast(store: NodeStore, ids: List<StmtId>) -> Sel      // a program selection
 ```
@@ -69,12 +69,14 @@ breadcrumb: every combinator appends its own step (`fns() -> named("parse_unary"
 so failure messages name the query, not the internals.
 
 ### Navigation
+
 - `children()` / `descendants()` — one step / transitive, pre-order, cross-type
 - `stmts()` / `exprs()` / `pats()` — kind filters over the current selection
 - `nth(i)` / `first()` — positional
 - `ancestors()` — **L-db backed** (see below); absent until its first consumer lands
 
 ### Declaration views (typed)
+
 - `fns() -> List<FnView>` / `fn_decl(name) -> FnView` — annotation wrappers peeled
 - `FnView = { name, params, ret, body: Sel, id }` with accessors; `types()` / `enums()`
   follow the same pattern when a consumer needs them
@@ -82,6 +84,7 @@ so failure messages name the query, not the internals.
   underneath for everything else
 
 ### Extraction
+
 - `callees() -> List<string>` — every named call under the selection, document order
   (Ident + QualifiedIdent callees; computed callees record nothing)
 - `locals() -> List<string>` — `let`/`mut` binding names, document order
@@ -90,6 +93,7 @@ so failure messages name the query, not the internals.
   for LSP-scale use; a linear scan version serves tests immediately)
 
 ### Predicates & the anti-vacuity discipline
+
 - `exists()` / `count()` — explicit gates
 - `must() -> Sel` — **panics on an empty selection**, message = the desc breadcrumb.
   A spec test that asserts through `must()` crashes loudly on a renamed fn instead of
