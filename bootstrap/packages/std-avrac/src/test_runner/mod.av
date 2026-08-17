@@ -23,8 +23,8 @@ use features.modules.{
     resolve_module_files, modules_dirname, find_packages_dir,
     dedup_modules,
 }
-use parse.{parse_program_source_shared, byte_at_str}
-use core.{NodeStore, StmtId}
+use parse.{parse_program_source_shared, parse_program_source, byte_at_str}
+use core.{NodeStore, StmtId, Sel, ast}
 use diagnostics.{bag_has_errors, render_bag}
 use pathutil.{path_tail_slug}
 use build.{llvm_prefix_dir}
@@ -624,6 +624,20 @@ export fn cached_fixture_expand(fixture_path: string) -> string {
 /// rather than made unlikely. Pinned by `write_fixture_roundtrip_test`,
 /// which still covers the shell-hazard characters so that reintroducing a
 /// shell-mediated writer goes red.
+/// Parse `src` and select its program — the emit-shape tests' one-call entry
+/// into the Sel vocabulary (core/sel.av, t-6iee): typically
+/// `sel_of_source(checked_in_parser_source())`. Lives here rather than in
+/// core because it parses (test_runner already imports parse; core cannot).
+/// An unparsable src answers an EMPTY selection, which every downstream
+/// Sel/FnView verb treats as failure (sentinel returns, must() panic) —
+/// never a vacuous pass.
+export fn sel_of_source(src: string) -> Sel {
+    let p = parse_program_source(src)
+    if p.had_error != 0 { return ast(p.store, []) }
+    if p.ids == null { return ast(p.store, []) }
+    ast(p.store, p.ids!)
+}
+
 export fn write_fixture(path: string, source: string) {
     let _ = avra_selfhost_write_file(path, source)
 }

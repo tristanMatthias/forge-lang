@@ -1,0 +1,141 @@
+// Sel — the AST selection API (t-6iee; design: docs/2026_08_17_AST_SEL_API_DESIGN.md).
+//
+// THE THIN SLICE ONLY (the RFC's closing section): declaration views and
+// direct-field verbs for the emit-shape tests. Chainable, pure, query-shaped
+// (store + refs), so every composition can lift into an L6 Db family later.
+//
+// DELIBERATELY ABSENT — subtree verbs (callees/locals/descendants): on the
+// B-final id-native enums there is NO generic id-crossing traversal yet.
+// The derive_walker classifier treats id fields as leaves, so both the
+// value walker and the arena's stored edges cover only INLINE children
+// (ValueType and friends) — the faithfulness oracle holds at zero — and
+// every id-crossing consumer today (render_*, fingerprints) is per-variant
+// code. Measured here: children_of on a parsed fn body's Stmt.Expr rows is
+// EMPTY while the calls are plainly reachable by direct field reads.
+// Hand-rolling the recursion in this module would be walker #13 (the AST
+// epic's named disease), and a subtree verb built on the partial edges
+// would answer false-because-blind — the exact vacuous-guard failure this
+// module exists to kill. Those verbs arrive when the traversal substrate
+// does (the deferred design session's first work item; see the RFC).
+
+use core.{NodeStore, NodeRef, Stmt, StmtId, ExprId, ParamEntry, ValueType, stmt_unwrap}
+
+/// A selection: a store plus the refs currently selected, with a breadcrumb
+/// of the combinator steps that produced it (`desc` — what must() reports,
+/// so a failing query names itself, not its internals).
+export type Sel = { store: NodeStore, refs: List<NodeRef>, desc: string }
+
+/// Entry point: select a program's top-level statements.
+export fn ast(store: NodeStore, ids: List<StmtId>) -> Sel {
+    mut refs: List<NodeRef> = []
+    for id in ids { refs.push(NodeRef.StmtRef(id)) }
+    Sel { store: store, refs: refs, desc: "ast" }
+}
+
+/// A typed view of one `fn` declaration. `found` gates every accessor:
+/// a not-found view answers with values no equality can satisfy ("" / empty),
+/// and `must()` panics with the originating query's breadcrumb — the loud
+/// path spec tests chain through (the t-bw9s anti-vacuity discipline).
+export type FnView = {
+    store: NodeStore,
+    id: StmtId,
+    found: bool,
+    fn_name: string,
+    params: List<ParamEntry>,
+    ret: ValueType,
+    body_ids: List<StmtId>,
+    desc: string,
+}
+
+impl Sel {
+    // ── predicates / gates ──
+
+    fn count(self) -> int { self.refs.length }
+    fn exists(self) -> bool { self.refs.length > 0 }
+
+    /// The loud gate: an empty selection is a PANIC naming the query, so an
+    /// assertion chained through must() fails the spec instead of passing
+    /// vacuously. Test-surface only — tool paths gate on exists().
+    fn must(self) -> Sel {
+        if self.refs.length == 0 { panic("Sel.must(): empty selection after ${self.desc}") }
+        self
+    }
+
+    // ── declaration views ──
+
+    /// Every `fn` declaration in the selection (annotation wrappers peeled),
+    /// selection order.
+    fn fns(self) -> List<FnView> {
+        mut out: List<FnView> = []
+        for r in self.refs {
+            match r {
+                .StmtRef(id) -> {
+                    match stmt_unwrap(self.store, self.store.stmts.get(id)) {
+                        .Function(n, _, ps, ret, body) ->
+                            out.push(FnView { store: self.store, id: id, found: true, fn_name: n, params: ps, ret: ret, body_ids: body, desc: self.desc + " -> fn ${n}" })
+                        _ -> {}
+                    }
+                }
+                _ -> {}
+            }
+        }
+        out
+    }
+
+    /// The one `fn` named `name`, or a not-found view (gate with .must() or
+    /// .found — its accessors answer "" / empty otherwise).
+    fn fn_decl(self, name: string) -> FnView {
+        for f in self.fns() {
+            if f.fn_name == name { return f }
+        }
+        FnView { store: self.store, id: StmtId(0), found: false, fn_name: "", params: [], ret: ValueType.Unknown, body_ids: [], desc: self.desc + " -> fn_decl(\"${name}\") [NOT FOUND]" }
+    }
+
+}
+
+impl FnView {
+    fn name(self) -> string { self.fn_name }
+
+    /// The body as a selection — the bridge back into Sel's vocabulary.
+    fn body(self) -> Sel {
+        mut refs: List<NodeRef> = []
+        for id in self.body_ids { refs.push(NodeRef.StmtRef(id)) }
+        Sel { store: self.store, refs: refs, desc: self.desc + " -> body()" }
+    }
+
+    fn must(self) -> FnView {
+        if !self.found { panic("FnView.must(): ${self.desc}") }
+        self
+    }
+
+    /// The callee name of the fn's TAIL — its body's last statement when that
+    /// statement is a bare named call (the emitted alternation-tail shape).
+    /// "" for an empty body, a non-call tail, or a not-found fn: every
+    /// wrong shape fails an equality instead of satisfying one.
+    fn tail_callee(self) -> string {
+        if !self.found || self.body_ids.length == 0 { return "" }
+        match stmt_unwrap(self.store, self.store.stmts.get(self.body_ids.get(self.body_ids.length - 1))) {
+            .Expr(e) -> sel_callee_name(self.store, e)
+            _ -> ""
+        }
+    }
+}
+
+// ── direct-read plumbing (module-private) ──
+
+/// The name of an Ident/QualifiedIdent expression, "" otherwise.
+fn sel_ident_name(store: NodeStore, id: ExprId) -> string {
+    match store.exprs.get(id) {
+        .Ident(n) -> n
+        .QualifiedIdent(p) -> p
+        _ -> ""
+    }
+}
+
+/// The named callee of a bare call expression, "" otherwise.
+fn sel_callee_name(store: NodeStore, e: ExprId) -> string {
+    match store.exprs.get(e) {
+        .Call(callee, _) -> sel_ident_name(store, callee)
+        _ -> ""
+    }
+}
