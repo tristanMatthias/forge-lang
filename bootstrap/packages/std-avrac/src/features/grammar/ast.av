@@ -888,8 +888,8 @@ export fn central_build_kind(bn: string) -> string {
         // except the component CapVals (MkParam → PEntry, MkField → Field,
         // MkEVariant → Var).
         "MkFnDecl" or "MkExtern" or "MkShapeDecl" or "MkExport" or "MkTypeDecl"
-            or "MkTypeDeclAny" or "MkEnumDecl" or "MkTraitDecl" or "MkImpl" or "MkUse"
-            or "MkUseBare" or "MkUsePkg" or "MkModule" or "MkAssocType" or "MkAssocTypeDef"
+            or "MkTypeDeclAny" or "MkEnumDecl" or "MkTraitDecl" or "MkImpl"
+            or "MkAssocType" or "MkAssocTypeDef"
             or "MkTraitMethod" or "MkMethod" or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
             or "MkLetBinding" or "MkMutBinding" or "MkConstBinding" or "MkDestructure" or "MkParallel"
             or "MkSelect" or "MkSpecBlock" or "MkGivenBlock" or "MkThenBlock" or "MkComponentDef"

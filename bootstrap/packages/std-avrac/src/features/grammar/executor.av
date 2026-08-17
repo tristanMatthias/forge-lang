@@ -4308,10 +4308,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // Generic enum: `enum Name < tparams > { variant* }` — the type-param list
         // (args[1]) is stored + rendered `<…>`. Shares mk_enum_decl_g with emit.
         "MkEnumDecl" if args.length == 3 -> mk_enum_decl_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_var_list(env.get(args[2])))
-        "MkUse" if args.length == 3 -> mk_use(st, capval_present(env.get(args[0])), capval_tok_list(env.get(args[1])), capval_tok_list(env.get(args[2])))
-        "MkUseBare" if args.length == 2 -> mk_use(st, false, capval_tok_list(env.get(args[0])), capval_tok_list(env.get(args[1])))
-        "MkUsePkg" if args.length == 3 -> mk_use_pkg(st, capval_tok_list(env.get(args[0])), capval_tok_list(env.get(args[1])), capval_tok_list(env.get(args[2])))
-        "MkModule" if args.length == 1 -> mk_module(st, capval_tok_text(env.get(args[0])))
+        // `MkUseBare` / `MkUsePkg` / `MkModule` are feature-owned (features/
+        // modules, t-kd4y.3 Batch A); `MkUse` (arity 3) was DEAD — no grammar
+        // referenced it (the at-form goes through MkUsePkg).
         // ── Trait declaration builds (target: Stmt, ps3t.6.5.7) ──
         "MkAssocType" if args.length == 1 -> mk_assoc_type(st, capval_tok_text(env.get(args[0])))
         "MkAssocTypeDef" if args.length == 2 -> mk_assoc_type_def(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
@@ -5673,13 +5672,6 @@ export fn mk_trait_decl(st: PState, name: string, members: List<StmtId>) -> CapV
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.TraitDecl(name, members)))
 }
 
-/// `mod name` — a module STUB (the `MkModule` build's core); the resolver fills
-/// the body from the `.av` file later.
-export fn mk_module(st: PState, name: string) -> CapVal {
-    let empty_body: List<StmtId> = []
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Module(name, empty_body)))
-}
-
 /// `name : type` — a struct/variant field (the `MkField` build's core).
 export fn mk_field(st: PState, name: string, ftype: CapVal) -> CapVal {
     CapVal.Field(FieldEntry { name: name, resolved: type_expr_to_vtype(capval_to_texpr(st, ftype)) })
@@ -5756,28 +5748,6 @@ export fn mk_impl(st: PState, header: string, for_cv: CapVal, has_for: bool, met
         }
     }
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.Impl(impl_name, mangled_ids)))
-}
-
-/// `use ( "@" )? seg ( "." seg )* { names }` — an import (the `MkUse` build's
-/// core). The path is dot-joined (leading `@` for a package path); the names
-/// reuse the bare-name ParamEntry list.
-export fn mk_use(st: PState, at_present: bool, segs: List<Token>, names: List<Token>) -> CapVal {
-    mut path = ""
-    for t in segs { path = if path == "" { t.text } else { path + "." + t.text } }
-    if at_present { path = "@" + path }
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Use(path, param_entries_from_toks(CapVal.Toks(names), ValueType.Unknown))))
-}
-
-/// The `@pkg`-prefixed `use` (the `MkUsePkg` build's core). The package SCOPE is a
-/// separate capture from the path segments — not another `useg` — because a label
-/// bound by two `.One` items is REPLACED, not accumulated, by the executor's `bind`
-/// (emit declares one `_list` and pushes at both sites, so the two engines would
-/// disagree). Joining here keeps the divergence impossible rather than merely untested.
-export fn mk_use_pkg(st: PState, pkg: List<Token>, segs: List<Token>, names: List<Token>) -> CapVal {
-    mut all: List<Token> = []
-    for t in pkg { all.push(t) }
-    for t in segs { all.push(t) }
-    mk_use(st, true, all, names)
 }
 
 /// Generated-parser twin of the `MkArm` executor build.
@@ -7067,7 +7037,7 @@ export fn capval_toks(v: CapVal) -> List<Token> {
 }
 
 /// A capture as a token list, single OR many: `.Toks` for ≥2, a scalar `.Tok`
-/// for exactly 1 (mk_use's dot-path segments and import names, where a
+/// for exactly 1 (the use-import dot-path segments and names, where a
 /// one-segment `use @std {…}` captures a single `.Tok`), `Nil`/other → empty.
 /// Distinct from capval_toks (which only unwraps the ≥2 `.Toks`, for the
 /// always-repeated expr-fold operator accumulator).
