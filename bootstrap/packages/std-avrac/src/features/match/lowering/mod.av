@@ -6,7 +6,7 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, byte_span_none}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, capval_warm_val, capval_arm_val, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list}
 
 export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
     WhenArm { cond_id: c, body_id: b }
@@ -50,8 +50,8 @@ export fn build_match_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// ALL of the match feature's rows — one list per feature.
 export fn match_builds() -> List<BuilderBind> {
-    [bind_row("features.match.lowering", "build_when_arm", "warm", 2, false, "build_when_arm_abi", build_when_arm_abi),
-     bind_row("features.match.lowering", "build_when_default", "warm", 1, false, "build_when_default_abi", build_when_default_abi),
-     bind_row("features.match.lowering", "build_arm", "arm", 3, false, "build_arm_abi", build_arm_abi),
-     bind_row("features.match.lowering", "build_match", "stmt", 2, false, "build_match_abi", build_match_abi)]
+    bind_rows("features.match.lowering", [bind_row("build_when_arm", "warm", 2, false, "build_when_arm_abi", build_when_arm_abi),
+     bind_row("build_when_default", "warm", 1, false, "build_when_default_abi", build_when_default_abi),
+     bind_row("build_arm", "arm", 3, false, "build_arm_abi", build_arm_abi),
+     bind_row("build_match", "stmt", 2, false, "build_match_abi", build_match_abi)])
 }

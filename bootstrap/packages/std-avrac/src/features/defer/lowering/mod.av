@@ -6,7 +6,7 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt, ExprId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, capval_stmt_val, capval_to_expr}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr}
 
 /// Run `e` when the enclosing scope exits (`defer` / `errdefer`).
 export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
@@ -20,8 +20,8 @@ export fn build_errdefer_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn defer_builds() -> List<BuilderBind> {
-    [bind_row("features.defer.lowering", "build_defer", "stmt", 1, false, "build_defer_abi", build_defer_abi)]
+    bind_rows("features.defer.lowering", [bind_row("build_defer", "stmt", 1, false, "build_defer_abi", build_defer_abi)])
 }
 export fn errdefer_builds() -> List<BuilderBind> {
-    [bind_row("features.defer.lowering", "build_errdefer", "stmt", 1, false, "build_errdefer_abi", build_errdefer_abi)]
+    bind_rows("features.defer.lowering", [bind_row("build_errdefer", "stmt", 1, false, "build_errdefer_abi", build_errdefer_abi)])
 }

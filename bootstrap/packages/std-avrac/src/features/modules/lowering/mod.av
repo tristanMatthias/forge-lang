@@ -15,7 +15,7 @@
 // capval_tok_list unwrapping singleton-preserving).
 
 use core.{Stmt, StmtId, ValueType}
-use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, capval_tok_list, capval_tok_text, param_entries_from_toks}
+use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, capval_tok_list, capval_tok_text, param_entries_from_toks}
 
 /// `use seg ( . seg )* { names }` — the bare-path import (`MkUseBare`).
 export fn use_bare_build(st: PState, vals: List<CapVal>) -> CapVal {
@@ -53,7 +53,7 @@ export fn module_build(st: PState, vals: List<CapVal>) -> CapVal {
 /// names (zero gram edits) to fns in THIS module, which the generated
 /// parser imports directly.
 export fn modules_builds() -> List<BuilderBind> {
-    [bind_row("features.modules.lowering", "MkUseBare", "stmt", 2, false, "use_bare_build", use_bare_build),
-     bind_row("features.modules.lowering", "MkUsePkg", "stmt", 3, false, "use_pkg_build", use_pkg_build),
-     bind_row("features.modules.lowering", "MkModule", "stmt", 1, false, "module_build", module_build)]
+    bind_rows("features.modules.lowering", [bind_row("MkUseBare", "stmt", 2, false, "use_bare_build", use_bare_build),
+     bind_row("MkUsePkg", "stmt", 3, false, "use_pkg_build", use_pkg_build),
+     bind_row("MkModule", "stmt", 1, false, "module_build", module_build)])
 }
