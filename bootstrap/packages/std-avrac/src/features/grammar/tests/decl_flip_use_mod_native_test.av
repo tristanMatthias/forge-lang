@@ -26,11 +26,11 @@
 // extern are), so slice 9's fragment already accepted the whole language for them.
 // The forms below are the ones the compiler's own source uses.
 
-use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, emit_parser_source_ex}
+use @std.avrac.features.grammar.{emitted_rule_body, checked_in_parser_source}
 use @std.avrac.core.{avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_read_file}
 
 fn decl_src() -> string {
-    emit_parser_source_ex(avra_decl_dispatch_grammar(), true)
+    checked_in_parser_source()
 }
 
 // Same status-plus-log shape as match_table_native_test: the exit code is half the
@@ -82,10 +82,13 @@ spec "t-47hc slice 10.1: `use` and `mod` are emitted as native rules" {
         // remain `parse_statement(st)`; a future increment that deletes decl_hand
         // has to keep it that way.
         let src = decl_src()
-        let tail_at = src.index_of("    parse_statement(st)\n}")
         // t-47hc.4.3: the gate this used to sit after is deleted, so the claim is now
         // simply that the tail IS `parse_statement(st)` and NO hand leaf survives.
-        tail_at >= 0
+        // t-47hc.8: sliced to parse_declaration's OWN body — the source is the whole
+        // checked-in parser now, and several emitted rules end in a delegating tail,
+        // so a whole-file index proves nothing about THIS dispatcher (CodeRabbit).
+        let body = emitted_rule_body(src, "fn parse_declaration(st: PState) -> CapVal")
+        body != "" && body.ends_with("\n    parse_statement(st)")
     }
 }
 
