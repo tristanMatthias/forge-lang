@@ -19,10 +19,10 @@
 //
 // Oracle: run the DSL expression parser (with `@hand(quote_expr)` as a primary
 // alternative and a pure `~`/`-`/`!` unary rule) AND the hand parser
-// (parse_expression_native_probe), and assert identical Exprs via the TOTAL
+// (parse_expression_generated_probe), and assert identical Exprs via the TOTAL
 // render_expr_id (which models Quote/Splice/Block — dump_expr does not).
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
-use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.parse.{parse_expression_generated_probe}
 use @std.avrac.core.{render_expr_id}
 
 fn expr_grammar_src() -> string {
@@ -52,13 +52,13 @@ fn dsl_expr(src: string) -> string {
     render_expr_id(r.store, r.root)
 }
 
-fn hand_expr(src: string) -> string {
-    let probe = parse_expression_native_probe(src)
+fn generated_expr(src: string) -> string {
+    let probe = parse_expression_generated_probe(src)
     if probe.had_error != 0 { return "<parse error>" }
     render_expr_id(probe.store, probe.root)
 }
 
-fn agree(src: string) -> bool { dsl_expr(src) == hand_expr(src) }
+fn agree(src: string) -> bool { dsl_expr(src) == generated_expr(src) }
 
 spec "grammar-DSL: ~ splice-vs-bitnot == production parser (ps3t.6.5.10)" {
     given "`~` OUTSIDE a quote is bitwise-NOT (pure grammar, no false splice)" {

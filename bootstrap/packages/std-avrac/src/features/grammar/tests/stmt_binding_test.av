@@ -6,7 +6,7 @@
 // type_expr_to_vtype), and its initializer through the expression family —
 // exactly as the hand parser threads parse_type_expr + parse_expression.
 //
-// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// Oracle: run the DSL-generated parser AND the PINNED generated parser (the hand parser is deleted; the pin is what keeps this side's engine fixed)
 // over a binding corpus and assert identical ASTs via render_stmt_id. The
 // hand probe is parse_declaration() — `let`/`mut`/`const` are decl_keyword
 // parsers (dispatched there, not in parse_statement), and parse_declaration
@@ -67,8 +67,12 @@ fn dsl_stmt(src: string) -> string {
 
 // The hand-written parser's tree for `src`, rendered the SAME way — via
 // parse_declaration (the layer where let/mut/const dispatch).
-fn hand_stmt(src: string) -> string {
+fn generated_stmt(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.decl_static = true
     match p.parse_declaration() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<parse error>"
@@ -76,7 +80,7 @@ fn hand_stmt(src: string) -> string {
 }
 
 fn agree(src: string) -> bool {
-    dsl_stmt(src) == hand_stmt(src)
+    dsl_stmt(src) == generated_stmt(src)
 }
 
 spec "grammar-DSL statement family: bindings == hand-written parser (ps3t.6.5.4)" {

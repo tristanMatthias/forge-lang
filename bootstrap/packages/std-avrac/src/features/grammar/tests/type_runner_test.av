@@ -32,10 +32,9 @@ fn dsl_at_type(src: string) -> string {
     render_type_id(p.store, tid)
 }
 
-// The hand-written parser's ValueType for `src`, rendered the SAME way.
-fn hand_type(src: string) -> string {
+// The oracle side's ValueType for `src`, rendered the SAME way.
+fn oracle_type(src: string) -> string {
     mut p = parser_new(src)
-    // make the "== hand parser" oracle tautological. Pin the hand parser.
     // t-47hc.37 — was `parse_type_expr_hand`, which is DELETED (the last of the three ITEM-LEVEL
     // hand tails). The oracle half is the INTERPRETER engine now: `type_static = false`
     // selects run_dsl_type_at_shared over the generated run_static_type. Two engines,
@@ -51,9 +50,9 @@ fn hand_type(src: string) -> string {
     }
 }
 
-// True when the inverse runner and the hand parser agree on the type tree.
+// True when the inverse runner and the pinned interpreter oracle agree on the type tree.
 fn agree(src: string) -> bool {
-    dsl_at_type(src) == hand_type(src)
+    dsl_at_type(src) == oracle_type(src)
 }
 
 spec "run_dsl_type_at: the type-family runner builds the same tree as parse_type_expr" {

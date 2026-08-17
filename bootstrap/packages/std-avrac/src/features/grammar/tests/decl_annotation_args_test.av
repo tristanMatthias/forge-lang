@@ -12,7 +12,7 @@
 // EXPRESSION match the hand parser directly. Args here are idents / numbers
 // (Expr.Ident / Expr.Number) — no string-quote handling to differ on.
 //
-// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// Oracle: run the DSL-generated parser AND the PINNED generated parser (the hand parser is deleted; the pin is what keeps this side's engine fixed)
 // (parser_new(src).parse_declaration()) over a corpus and assert identical
 // ASTs via render_stmt_id, plus the direct arg checks.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
@@ -64,8 +64,12 @@ fn dsl_stmt(src: string) -> string {
     render_stmt_id(r.store, r.root)
 }
 
-fn hand_stmt(src: string) -> string {
+fn generated_stmt(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.decl_static = true
     match p.parse_declaration() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<parse error>"
@@ -73,7 +77,7 @@ fn hand_stmt(src: string) -> string {
 }
 
 fn agree(src: string) -> bool {
-    dsl_stmt(src) == hand_stmt(src)
+    dsl_stmt(src) == generated_stmt(src)
 }
 
 // First annotation's arg count — reaches past the (arg-dropping) render.
@@ -106,6 +110,10 @@ fn dsl_argc(src: string) -> int {
 }
 fn hand_argc(src: string) -> int {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.decl_static = true
     match p.parse_declaration() {
         .Ok(id) -> first_ann_argc(p.store, id)
         .Err(_) -> -3
@@ -119,6 +127,10 @@ fn dsl_arg0(src: string) -> string {
 }
 fn hand_arg0(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.decl_static = true
     match p.parse_declaration() {
         .Ok(id) -> first_ann_first_arg(p.store, id)
         .Err(_) -> "<parse error>"

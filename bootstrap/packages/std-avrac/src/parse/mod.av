@@ -592,19 +592,27 @@ export fn desugar_template_store(store: NodeStore, raw: string) -> Result<ExprId
 }
 
 /// B1 probe: parse `source` as a single expression through the id-returning
-/// chain and surface the parser's NATIVE store + root id, so spec tests can
-/// run the faithfulness oracle (`store_expr_subtree_faithful`) over real
-/// parses. Probe surface only — the compile path enters through
-/// `parse_program_source`, whose store `parse_or_fail` serves directly.
-export type NativeParseProbe = { root: ExprId, store: NodeStore, had_error: int }
+/// chain and surface the parser's own store + root id, so spec tests can
+/// run oracles (`store_expr_subtree_faithful`, differential dumps) over real
+/// parses. The engine is PINNED to the production STATIC generated parser —
+/// `expr_flip` forced off, whatever the environment says — because every
+/// consumer is a differential whose other side runs the grammar EXECUTOR,
+/// and an env-inherited engine would let `AVRA_PARSER_EXPR_FLIP=1` collapse
+/// those comparisons to executor-vs-executor: green, measuring nothing
+/// (t-bw9s — the same self-comparison shape the dead-switch deletions
+/// buried). A test that wants the executor side builds it explicitly via
+/// `run_grammar_expr`/`parser_new`. Probe surface only — the compile path
+/// enters through `parse_program_source`.
+export type ExprParseProbe = { root: ExprId, store: NodeStore, had_error: int }
 
-/// See `NativeParseProbe`. On a parse error `root` is a dummy id — check
+/// See `ExprParseProbe`. On a parse error `root` is a dummy id — check
 /// `had_error` before touching the store.
-export fn parse_expression_native_probe(source: string) -> NativeParseProbe {
+export fn parse_expression_generated_probe(source: string) -> ExprParseProbe {
     mut p = parser_new(source)
+    p.expr_flip = false
     match p.parse_expression() {
-        .Ok(id) -> NativeParseProbe { root: id, store: p.store, had_error: 0 }
-        .Err(_) -> NativeParseProbe { root: ExprId(0), store: p.store, had_error: 1 }
+        .Ok(id) -> ExprParseProbe { root: id, store: p.store, had_error: 0 }
+        .Err(_) -> ExprParseProbe { root: ExprId(0), store: p.store, had_error: 1 }
     }
 }
 

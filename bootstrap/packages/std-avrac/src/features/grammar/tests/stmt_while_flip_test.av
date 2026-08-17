@@ -28,6 +28,14 @@ use @std.avrac.core.{render_stmt_id}
 /// compare two recoveries and call it agreement. Raised in review on PR #1221.
 fn flip_stmt(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the INTERPRETER, explicitly — the SECOND time
+    // this file has had to be de-vacuated (the header's t-47hc.37 note is
+    // episode one). The stmt seam grew `stmt_static` (default: generated)
+    // after that fix, so an unpinned parse_statement here quietly became
+    // the same generated engine gen_stmt reaches through parse_declaration,
+    // and every assertion compared an engine against itself again. An
+    // engine-differential file must pin BOTH sides; defaults are not pins.
+    p.stmt_static = false
     match p.parse_statement() {
         .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"

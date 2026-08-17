@@ -1,21 +1,20 @@
-// ps3t.6.7 Step G slice 4b — the DECLARATION / whole-program-family FLIP dispatch
-// (parse_declaration → grammar-DSL run_dsl_decl_at_shared).
+// ps3t.6.7 Step G slice 4b — the DECLARATION-family ENGINE differential.
 //
-// parse_declaration routes through run_dsl_decl_at_shared (the inverse-@hand
-// declaration runner over avra_decl_flip_grammar's `declaration` rule:
-// `@hand(decl_hand) | statement`) when the parser's `decl_flip` field is set,
-// falling back to the hand parser (parse_declaration_hand) on a DSL error. The
-// field is read once from AVRA_PARSER_DECL_FLIP at construction but is a plain
-// `mut bool` a test can set directly (the full-selfhost flip proof is memory-
-// heavy and lives in the promotion step; this pins the dispatch + fallback +
-// both arms — decl_hand for real declarations / wrapping / IDENT, and the
-// statement arm for a top-level non-declaration item).
+// HISTORY REWRITTEN TWICE (t-47hc.8): this header used to describe the
+// `decl_flip` field, `run_dsl_decl_at_shared`'s `@hand(decl_hand) | statement`
+// rule, and the `parse_declaration_hand` fallback — all deleted with the hand
+// parser. From those deletions until the pins below landed, `flip_decl` and
+// `plain_decl` were BYTE-IDENTICAL helpers (same seam, same env-inherited
+// engine): every parity spec compared a parse against itself (t-bw9s). The two
+// engines that exist today are pinned explicitly:
 //
-// Parity = same tree AND same accept/reject: for every VALID form the flip path
-// (DSL) and the hand path (parse_declaration_hand — called explicitly so it
-// stays a real hand baseline under an eventual promoted default) build the same
-// Stmt; both render through the same TOTAL render_stmt_id, so equal trees ⇒
-// equal strings (no golden strings).
+//   flip_decl  — the grammar EXECUTOR (decl_static=false, the tree interpreter
+//                over THE grammar's `declaration` rule)
+//   plain_decl — the CHECKED-IN generated static parser (decl_static=true)
+//
+// Parity = same tree AND same accept/reject: for every VALID form both engines
+// build the same Stmt; both render through the same TOTAL render_stmt_id, so
+// equal trees ⇒ equal strings (no golden strings).
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
@@ -24,6 +23,8 @@ use @std.avrac.features.grammar.{emit_lookup_rule, rule_body_has_cut, checked_in
 
 fn flip_decl(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the EXECUTOR side — see the header.
+    p.decl_static = false
     match p.parse_declaration() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<err>"
@@ -37,6 +38,10 @@ fn flip_decl(src: string) -> string {
 // hand-vs-DSL parity this file was built to measure ended with the oracle.
 fn plain_decl(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.decl_static = true
     match p.parse_declaration() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<err>"

@@ -8,7 +8,7 @@
 // RHS, so the vtype (and its render) come from the shared type_expr_to_vtype /
 // vtype_render_full.
 //
-// Oracle: run the DSL-generated parser AND the shipping hand-written parser
+// Oracle: run the DSL-generated parser AND the PINNED generated parser (the hand parser is deleted; the pin is what keeps this side's engine fixed)
 // (parser_new(src).parse_declaration()) over a corpus and assert identical
 // ASTs via render_stmt_id.
 //
@@ -41,8 +41,12 @@ fn dsl_stmt(src: string) -> string {
     render_stmt_id(r.store, r.root)
 }
 
-fn hand_stmt(src: string) -> string {
+fn generated_stmt(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.decl_static = true
     match p.parse_declaration() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<parse error>"
@@ -50,7 +54,7 @@ fn hand_stmt(src: string) -> string {
 }
 
 fn agree(src: string) -> bool {
-    dsl_stmt(src) == hand_stmt(src)
+    dsl_stmt(src) == generated_stmt(src)
 }
 
 spec "grammar-DSL declaration family: newtype + union-alias == hand-written parser (ps3t.6.5.7)" {

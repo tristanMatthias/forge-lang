@@ -7,7 +7,7 @@
 // rule-family — expressions are the first family, proven equivalent.
 
 use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr, dump_expr}
-use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.parse.{parse_expression_generated_probe}
 
 // Avra's full binary-operator precedence, mirrored from the hand-written
 // parser (parse_or → and → equality → bitor → bitxor → bitand →
@@ -25,8 +25,8 @@ fn grammar_tree(src: string) -> string {
 
 // The hand-written parser's tree for `src`, dumped the SAME way (dump_expr
 // walks any Expr, whichever parser built it).
-fn handwritten_tree(src: string) -> string {
-    let probe = parse_expression_native_probe(src)
+fn generated_tree(src: string) -> string {
+    let probe = parse_expression_generated_probe(src)
     if probe.had_error != 0 { return "<parse error>" }
     dump_expr(probe.store, probe.root)
 }
@@ -37,7 +37,7 @@ fn handwritten_tree(src: string) -> string {
 // side so an unhandled Expr variant can't silently compare equal.
 fn agree(src: string) -> bool {
     let g = grammar_tree(src)
-    let h = handwritten_tree(src)
+    let h = generated_tree(src)
     g == h && !g.contains("<unmodelled-variant>") && !h.contains("<unmodelled-variant>")
 }
 

@@ -12,7 +12,7 @@
 // Each `then` asserts the DISTINCTNESS the fix restored, plus the invariance
 // that must survive it (same content, different spans → still equal).
 
-use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
+use @std.avrac.parse.{parse_program_source, parse_expression_generated_probe}
 use @std.avrac.core.{stmt_content_hash, expr_content_hash}
 
 /// Content hash of the first top-level stmt of a parsed program.
@@ -24,7 +24,7 @@ fn first_stmt_hash(source: string) -> int {
 
 /// Content hash of a parsed expression.
 fn expr_hash(source: string) -> int {
-    let probe = parse_expression_native_probe(source)
+    let probe = parse_expression_generated_probe(source)
     if probe.had_error != 0 { return 0 }
     expr_content_hash(probe.store, probe.root)
 }

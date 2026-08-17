@@ -7,17 +7,17 @@
 // every compiled program from this store, so a regression here is a defect
 // on the live compile path, not a probe failure.
 
-use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.parse.{parse_expression_generated_probe}
 use @std.avrac.core.{store_expr_subtree_faithful, render_expr}
 
 fn faithful(source: string) -> bool {
-    let probe = parse_expression_native_probe(source)
+    let probe = parse_expression_generated_probe(source)
     if probe.had_error != 0 { return false }
     store_expr_subtree_faithful(probe.store, probe.root)
 }
 
 fn root_render(source: string) -> string {
-    let probe = parse_expression_native_probe(source)
+    let probe = parse_expression_generated_probe(source)
     if probe.had_error != 0 { return "<parse error>" }
     render_expr(probe.store, probe.store.exprs.get(probe.root))
 }
@@ -197,11 +197,11 @@ spec "B1 native chain: frontier productions" {
 spec "B1 native chain: parse errors surface through the id chain" {
     given "malformed expressions" {
         then "an incomplete binary expression reports had_error" {
-            let probe = parse_expression_native_probe("1 +")
+            let probe = parse_expression_generated_probe("1 +")
             probe.had_error == 1
         }
         then "an unclosed call reports had_error" {
-            let probe = parse_expression_native_probe("f(1, 2")
+            let probe = parse_expression_generated_probe("f(1, 2")
             probe.had_error == 1
         }
     }

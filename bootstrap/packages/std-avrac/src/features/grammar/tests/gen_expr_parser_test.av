@@ -20,7 +20,7 @@
 // corpus and compare the canonical dump_expr trees (the same acceptance path
 // parser_equivalence_test.av's interpreter already passes).
 use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, fold_binary_expr, fold_logical_expr, unary_expr, fold_postfix_expr, dump_expr}
-use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.parse.{parse_expression_generated_probe}
 use @std.avrac.core.{Expr, ExprId, NodeStore}
 
 // ── The generated static parser (one fn per rule) ──
@@ -214,15 +214,15 @@ fn gen_tree(src: string) -> string {
     dump_expr(st.store, root)
 }
 
-fn hand_tree(src: string) -> string {
-    let probe = parse_expression_native_probe(src)
+fn generated_tree(src: string) -> string {
+    let probe = parse_expression_generated_probe(src)
     if probe.had_error != 0 { return "<parse error>" }
     dump_expr(probe.store, probe.root)
 }
 
 fn agree(src: string) -> bool {
     let g = gen_tree(src)
-    let h = hand_tree(src)
+    let h = generated_tree(src)
     g == h && !g.contains("<unmodelled-variant>") && !h.contains("<unmodelled-variant>")
 }
 
