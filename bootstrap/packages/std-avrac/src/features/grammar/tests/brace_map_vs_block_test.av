@@ -5,7 +5,7 @@
 
 use @std.avrac.features.grammar.{run_grammar_expr}
 use @std.avrac.features.grammar.{avra_expr_grammar}
-use @std.avrac.parse.{parser_new}
+use @std.avrac.parse.{oracle_expr}
 use @std.avrac.core.{render_expr_id}
 
 fn dsl_brace(src: string) -> string {
@@ -21,17 +21,7 @@ fn dsl_brace(src: string) -> string {
 // the vacuous native-against-native shape, because the two are separate code paths
 // compiled from the same grammar.
 fn prod_brace(src: string) -> string {
-    mut p = parser_new(src)
-    // PIN the engine. `parser_new` reads `expr_flip` from the environment, so under
-    // AVRA_PARSER_EXPR_FLIP=1 `parse_expression` routes into `run_dsl_expr_at_shared` —
-    // the SAME interpreter `dsl_brace` drives — and the comparison becomes one engine
-    // against itself. Raised in review on PR #1220; `rtree_at` in the recovery
-    // differential already pins every routing field for exactly this reason.
-    p.expr_flip = false
-    match p.parse_expression() {
-        .Ok(id) -> render_expr_id(p.store, id)
-        .Err(_) -> "<err>"
-    }
+    oracle_expr(src) ?? "<err>"
 }
 
 fn agree(src: string) -> bool {

@@ -17,7 +17,7 @@
 // strips the newlines the hand parser also accepts as separators — the
 // real-lexer wiring, 6.5.8); bodies stay within the proven expression grammar.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
-use @std.avrac.parse.{parser_new}
+use @std.avrac.parse.{oracle_stmt}
 use @std.avrac.core.{render_stmt_id}
 
 fn match_grammar_src() -> string {
@@ -53,15 +53,7 @@ fn dsl_stmt(src: string) -> string {
 }
 
 fn generated_stmt(src: string) -> string {
-    mut p = parser_new(src)
-    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
-    // env-inherited engine lets the executor lane collapse this
-    // differential to same-vs-same (t-bw9s).
-    p.stmt_static = true
-    match p.parse_statement() {
-        .Ok(id) -> render_stmt_id(p.store, id)
-        .Err(_) -> "<parse error>"
-    }
+    oracle_stmt(src) ?? "<parse error>"
 }
 
 fn agree(src: string) -> bool {

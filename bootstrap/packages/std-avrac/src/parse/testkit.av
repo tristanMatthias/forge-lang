@@ -1,0 +1,78 @@
+// WHY: the ONE home for engine-pinned test parsing (t-bw9s's recurring class).
+// The Parser routes each family independently (decl_static / stmt_static /
+// type_static / expr_flip, every one env-defaulted), so a differential that
+// pins only "the field distinguishing its mode" silently inherits the rest
+// from the environment — and the two sides can collapse onto one engine while
+// the comparison stays green. That vacuity has been re-fixed at least three
+// times file-by-file (t-47hc.37, t-bw9s twice); this module pins EVERY field
+// in one place so a new routing field is a one-file change, not a ~30-file
+// audit. Helpers construct on a caller-supplied shared store where pairing
+// matters: under AVRA_RC_STRICT a fresh store per engine leg re-runs every
+// feature factory into never-reused memory (the 11GB rc-strict shard,
+// t-kd4y.3 Batch A) — pair legs share one registry build instead.
+use parse.{Parser, parser_new, parser_new_shared, ProgramParseResult}
+use core.{NodeStore, render_stmt_id, render_expr_id, render_stmt_ids}
+
+/// One whole-program parse plus the store's stmt watermark BEFORE it ran —
+/// on a shared store the earlier leg's rows precede this parse's, so
+/// per-leg row reads slice [start, count) instead of walking the store.
+export type ModeRun = { r: ProgramParseResult, start: int }
+
+/// A Parser with EVERY routing field pinned for `mode` — "emit" (the
+/// checked-in generated parser, production) or "exec" (the grammar-tree
+/// interpreter, the second implementation). `shared` reuses a prior leg's
+/// store and therefore its registry; null builds a fresh one.
+export fn pinned_parser(mode: string, source: string, shared: NodeStore?) -> Parser {
+    mut p = if shared == null { parser_new(source) }
+            else { parser_new_shared(source, "<testkit>", shared!) }
+    let emit = mode == "emit"
+    p.decl_static = emit
+    p.stmt_static = emit
+    p.type_static = emit
+    p.expr_flip = !emit
+    p
+}
+
+/// One engine leg over a whole program. Pair legs share a store:
+///   let e = mode_parse("emit", src, null)
+///   let x = mode_parse("exec", src, e.r.store)
+export fn mode_parse(mode: string, source: string, shared: NodeStore?) -> ModeRun {
+    mut p = pinned_parser(mode, source, shared)
+    let start = p.store.stmts.count()
+    ModeRun { r: p.parse_file_program(), start: start }
+}
+
+/// The whole-program render both engine legs compare.
+export fn rendered(r: ProgramParseResult) -> string {
+    if r.ids == null { return "<null>" }
+    render_stmt_ids(r.store, r.ids!)
+}
+
+/// Family oracle legs — ONE pinned production-engine parse of a single
+/// family entry, rendered; null on parse failure so each caller keeps its
+/// own error sentinel. These are the "hand parser" side of the DSL
+/// differentials (the hand parsers are deleted; the pin is what keeps this
+/// side's engine fixed).
+export fn oracle_decl(src: string) -> string? {
+    mut p = pinned_parser("emit", src, null)
+    match p.parse_declaration() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> null
+    }
+}
+
+export fn oracle_stmt(src: string) -> string? {
+    mut p = pinned_parser("emit", src, null)
+    match p.parse_statement() {
+        .Ok(id) -> render_stmt_id(p.store, id)
+        .Err(_) -> null
+    }
+}
+
+export fn oracle_expr(src: string) -> string? {
+    mut p = pinned_parser("emit", src, null)
+    match p.parse_expression() {
+        .Ok(id) -> render_expr_id(p.store, id)
+        .Err(_) -> null
+    }
+}

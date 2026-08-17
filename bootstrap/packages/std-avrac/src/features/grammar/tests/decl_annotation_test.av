@@ -17,7 +17,7 @@
 // (parser_new(src).parse_declaration()) over a corpus and assert identical
 // ASTs via render_stmt_id.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
-use @std.avrac.parse.{parser_new}
+use @std.avrac.parse.{oracle_decl, pinned_parser}
 use @std.avrac.core.{render_stmt_id, NodeStore, StmtId}
 
 fn ann_grammar_src() -> string {
@@ -66,15 +66,7 @@ fn dsl_stmt(src: string) -> string {
 }
 
 fn generated_stmt(src: string) -> string {
-    mut p = parser_new(src)
-    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
-    // env-inherited engine lets the executor lane collapse this
-    // differential to same-vs-same (t-bw9s).
-    p.decl_static = true
-    match p.parse_declaration() {
-        .Ok(id) -> render_stmt_id(p.store, id)
-        .Err(_) -> "<parse error>"
-    }
+    oracle_decl(src) ?? "<parse error>"
 }
 
 fn agree(src: string) -> bool {
@@ -103,11 +95,7 @@ fn dsl_argc(src: string) -> int {
 }
 
 fn hand_argc(src: string) -> int {
-    mut p = parser_new(src)
-    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
-    // env-inherited engine lets the executor lane collapse this
-    // differential to same-vs-same (t-bw9s).
-    p.decl_static = true
+    mut p = pinned_parser("emit", src, null)
     match p.parse_declaration() {
         .Ok(id) -> first_ann_argc(p.store, id)
         .Err(_) -> -3
