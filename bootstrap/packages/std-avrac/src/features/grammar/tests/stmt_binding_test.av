@@ -20,7 +20,7 @@
 // own follow-ups. Initializers stay within the proven precedence-only
 // expression grammar (literals / arithmetic / comparison / idents / grouping).
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
-use @std.avrac.parse.{parser_new}
+use @std.avrac.parse.{oracle_decl}
 use @std.avrac.core.{render_stmt_id}
 
 // A binding-statement grammar composing the statement, type, and expression
@@ -68,15 +68,7 @@ fn dsl_stmt(src: string) -> string {
 // The hand-written parser's tree for `src`, rendered the SAME way — via
 // parse_declaration (the layer where let/mut/const dispatch).
 fn generated_stmt(src: string) -> string {
-    mut p = parser_new(src)
-    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
-    // env-inherited engine lets the executor lane collapse this
-    // differential to same-vs-same (t-bw9s).
-    p.decl_static = true
-    match p.parse_declaration() {
-        .Ok(id) -> render_stmt_id(p.store, id)
-        .Err(_) -> "<parse error>"
-    }
+    oracle_decl(src) ?? "<parse error>"
 }
 
 fn agree(src: string) -> bool {

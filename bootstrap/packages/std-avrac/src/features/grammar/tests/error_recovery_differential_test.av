@@ -27,8 +27,7 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
-use @std.avrac.parse.{parser_new, parser_new_shared, ProgramParseResult}
-use @std.avrac.core.{render_stmt_ids, NodeStore}
+use @std.avrac.parse.{mode_parse, ModeRun, rendered}
 
 // The occurrence-ordered F-code signature of `bs2 check <src>` under `env`.
 // Comparing the ORDERED list (duplicates preserved) captures both the error SET
@@ -794,70 +793,18 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == exec oracle (invalid co
 /// The whole-program tree under ONE parser ENGINE — the core `rtree` and
 /// `tree_agrees_everywhere` both read, so the engine selection lives in one place.
 /// `mode`: "emit" (the CHECKED-IN generated parser) | "exec" (the grammar EXECUTOR).
-/// Those are the two surviving implementations; production is "emit", so a comparison
-/// that omits "exec" cannot see an executor-only divergence — and the executor is still
-/// the production parser for the TYPE family, so it is not a museum piece.
-/// One mode's parse over `source`. `shared` reuses a prior leg's store — and
-/// therefore its REGISTRY: `parser_new` eagerly re-runs every feature factory
-/// and re-parses every definition gram per construction, and under
-/// `AVRA_RC_STRICT`'s no-reuse quarantine those builds are CUMULATIVE. This
-/// file makes ~500 engine-leg parses; per-leg fresh stores were the 10GB
-/// x8-shard F4014 on the rc-strict gate (the test-side twin of the compiler's
-/// own throwaway-registry fix that `parser_new_shared` documents). Pair legs
-/// share one store; `start` is the store's stmt watermark before the parse,
-/// so per-leg row reads (poslist) slice [start, count) instead of the store.
-type MRun = { r: ProgramParseResult, start: int }
-fn mode_parse(mode: string, source: string, shared: NodeStore?) -> MRun {
-    mut p = if shared == null { parser_new(source) }
-            else { parser_new_shared(source, "<differential>", shared!) }
-    // EVERY routing field is set explicitly, for BOTH modes. `parser_new` reads
-    // `decl_static` from the environment (`… != "0"`, so ON by default) and `expr_flip`
-    // independently of it, which means a helper that sets only the ONE field
-    // distinguishing its mode is silently ambient-dependent — and the two modes can
-    // collapse onto one engine while `tree_agrees_everywhere` passes comparing it
-    // against itself. That is the vacuity class this file exists to police: asserting
-    // two implementations agree while running one is worse than not asserting it.
-    let f = mode_flags(mode)
-    p.decl_static = f.decl_static
-    p.expr_flip = f.expr_flip
-    let start = p.store.stmts.count()
-    MRun { r: p.parse_file_program(), start: start }
-}
-
-fn rendered(r: ProgramParseResult) -> string {
-    if r.ids == null { return "<null>" }
-    render_stmt_ids(r.store, r.ids!)
-}
+/// Those are the two surviving implementations; production is "emit" for every family
+/// now (type_static was the last to promote default-ON), but the executor is no museum
+/// piece — user `grammar{}` blocks, quote bodies, and the host-delegate's nested parses
+/// run it in production, so a comparison that omits "exec" cannot see its divergences.
+/// Engine pinning, store sharing, and the [start, count) watermark all live
+/// in the parse testkit now (`mode_parse` / `ModeRun` / `rendered` — the one
+/// home for the t-bw9s vacuity class this file used to police locally, and
+/// for the shared-store pairing that killed the 10GB rc-strict shard).
 
 fn rtree_at(mode: string, source: string) -> string {
     rendered(mode_parse(mode, source, null).r)
 }
-
-/// The IN-PROCESS twin of `mode_env` — EVERY routing field for the named mode, so a
-/// helper cannot inherit one from `parser_new`'s defaults. Returned as VALUES rather
-/// than applied here because a plain fn's `p` is immutable; the decision is what needs
-/// centralizing, and each caller assigns onto its own `mut p`.
-///
-/// The expression field is pinned as well as the declaration one, and that is not
-/// optional: `expr_flip` is read independently of the decl flags, so a helper that sets
-/// only `decl_static` leaves the expression engine ambient and both "sides" can end up
-/// on the same one.
-///
-///   emit — the CHECKED-IN generated static parser (decl + expr)
-///   exec — the Grammar-tree interpreter (decl + expr)
-///
-/// There is no "hand" row: t-47hc.4.1 deleted the hand expression ladder, and the decl
-/// hand leaf went with `@hand(decl_hand)` before it. A mode name that selects neither is
-/// worse than no mode at all (t-bw9s), so it is gone rather than aliased onto "emit".
-type RouteFlags = { decl_static: bool, expr_flip: bool }
-
-fn mode_flags(mode: string) -> RouteFlags {
-    if mode == "emit" {
-        return RouteFlags { decl_static: true, expr_flip: false }
-    }
-    RouteFlags { decl_static: false, expr_flip: true }
-}
-
 
 fn rtree(static_raw: bool, source: string) -> string {
     // static-raw: the EMIT-generated parser. Otherwise the interpreter engine — the
@@ -1002,7 +949,7 @@ spec "t-47hc.4.1: emit and exec agree on the inputs that split the hand from the
 /// One leg's stamped positions, sliced to the rows THIS parse appended
 /// ([start, count)) — on a shared store the earlier leg's rows precede ours,
 /// and the whole-store walk this used to do would fold them in.
-fn poslist_from(m: MRun) -> string {
+fn poslist_from(m: ModeRun) -> string {
     if m.r.ids == null { return "<null>" }
     mut out = ""
     mut i = m.start

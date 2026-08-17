@@ -19,7 +19,7 @@
 // vacuous here — it belongs to ps3t.6.5.10 (the escape-hatch catalogue),
 // reached only once struct literals enter the DSL expression grammar.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
-use @std.avrac.parse.{parser_new}
+use @std.avrac.parse.{oracle_stmt}
 use @std.avrac.core.{render_stmt_id}
 
 // A control-flow statement grammar: blocks + while/if/for layered on the
@@ -65,15 +65,7 @@ fn dsl_stmt(src: string) -> string {
 
 // The hand-written parser's tree for `src`, rendered the SAME way.
 fn generated_stmt(src: string) -> string {
-    mut p = parser_new(src)
-    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
-    // env-inherited engine lets the executor lane collapse this
-    // differential to same-vs-same (t-bw9s).
-    p.stmt_static = true
-    match p.parse_statement() {
-        .Ok(id) -> render_stmt_id(p.store, id)
-        .Err(_) -> "<parse error>"
-    }
+    oracle_stmt(src) ?? "<parse error>"
 }
 
 // True when both parsers agree on the statement tree for `src`.

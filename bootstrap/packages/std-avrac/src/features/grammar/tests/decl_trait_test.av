@@ -20,7 +20,7 @@
 // method-level generics (skip_angle_brackets in the hand parser — they don't
 // reach the render) are a follow-up generics slice; `impl` is the next slice.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}
-use @std.avrac.parse.{parser_new}
+use @std.avrac.parse.{oracle_decl}
 use @std.avrac.core.{render_stmt_id}
 
 fn trait_grammar_src() -> string {
@@ -64,15 +64,7 @@ fn dsl_stmt(src: string) -> string {
 }
 
 fn generated_stmt(src: string) -> string {
-    mut p = parser_new(src)
-    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
-    // env-inherited engine lets the executor lane collapse this
-    // differential to same-vs-same (t-bw9s).
-    p.decl_static = true
-    match p.parse_declaration() {
-        .Ok(id) -> render_stmt_id(p.store, id)
-        .Err(_) -> "<parse error>"
-    }
+    oracle_decl(src) ?? "<parse error>"
 }
 
 fn agree(src: string) -> bool {
