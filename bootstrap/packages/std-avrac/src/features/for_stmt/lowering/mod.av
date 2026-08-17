@@ -6,7 +6,7 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt, ExprId, StmtId}
-use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_tok_text}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, capval_stmt_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_tok_text}
 
 export fn build_for(v: string, lo: ExprId, hi: ExprId?, body: StmtId) -> Stmt {
     if hi == null { Stmt.ForIn(v, lo, body) } else { Stmt.For(v, lo, hi!, body) }
@@ -25,7 +25,5 @@ export fn build_for_abi(st: PState, vals: List<CapVal>) -> CapVal {
 export fn for_builds() -> List<BuilderBind> {
     // spanned — the stamp lands at the `for` keyword, mk_for_loop's
     // add_stmt_at anchor (both the For and ForIn shapes).
-    [BuilderBind { name: "build_for", kind: "stmt", arity: 4, spanned: true,
-                   module: "features.for_stmt.lowering", export_name: "build_for_abi",
-                   build: build_for_abi }]
+    [bind_row("features.for_stmt.lowering", "build_for", "stmt", 4, true, "build_for_abi", build_for_abi)]
 }

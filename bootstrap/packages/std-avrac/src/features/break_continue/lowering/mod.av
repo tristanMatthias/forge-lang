@@ -6,7 +6,7 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt}
-use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, capval_stmt_val}
 
 export fn build_break() -> Stmt { Stmt.Break }
 export fn build_continue() -> Stmt { Stmt.Continue }
@@ -19,12 +19,8 @@ export fn build_continue_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn break_builds() -> List<BuilderBind> {
-    [BuilderBind { name: "build_break", kind: "stmt", arity: 0, spanned: false,
-                   module: "features.break_continue.lowering", export_name: "build_break_abi",
-                   build: build_break_abi }]
+    [bind_row("features.break_continue.lowering", "build_break", "stmt", 0, false, "build_break_abi", build_break_abi)]
 }
 export fn continue_builds() -> List<BuilderBind> {
-    [BuilderBind { name: "build_continue", kind: "stmt", arity: 0, spanned: false,
-                   module: "features.break_continue.lowering", export_name: "build_continue_abi",
-                   build: build_continue_abi }]
+    [bind_row("features.break_continue.lowering", "build_continue", "stmt", 0, false, "build_continue_abi", build_continue_abi)]
 }

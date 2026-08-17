@@ -422,7 +422,7 @@ fn emit_single_branch(g: Grammar, seq: GSeq) -> string {
     // General: emit the item statements, then the build as the (returned) tail.
     // A span-stamping build (mk_assign / fold_pipe / rebind_eq) captures the
     // rule-entry byte first — before any item (the leftmost operand) is parsed.
-    let sp_prelude = if seq_build_uses_sp_start(seq.build) { "    let sp_start = st.cur().pos\n" } else { "" }
+    let sp_prelude = if seq_build_uses_sp_start(g, seq.build) { "    let sp_start = st.cur().pos\n" } else { "" }
     sp_prelude + emit_seq_stmts(g, seq, "    ") + "    ${emit_seq_result(g, seq)}\n"
 }
 
@@ -464,7 +464,7 @@ fn emit_fold(g: Grammar, seq: GSeq) -> string {
     // Capture the rule-entry byte BEFORE the seed is parsed (the leftmost operand's
     // first token) when the fold build stamps spans — the operator-absent fast-path
     // below returns the seed unchanged and doesn't reference it.
-    mut out = if seq_build_uses_sp_start(seq.build) { "    let sp_start = st.cur().pos\n" } else { "" }
+    mut out = if seq_build_uses_sp_start(g, seq.build) { "    let sp_start = st.cur().pos\n" } else { "" }
     out = out + "    let ${seed.label} = ${emit_ref_call(seed.prim)}\n"
     // ps3t.6.7 Step G perf: fast-path the operator-ABSENT case (the common one for
     // every expression that isn't a `??`/`||`/`&&` chain) — return the seed directly
@@ -486,7 +486,7 @@ fn emit_fold(g: Grammar, seq: GSeq) -> string {
         out = out + emit_accumulate(it, "        ")
     }
     out = out + "    }\n"
-    out = out + "    ${emit_fold_build(seq.build, seed.label, inner)}\n"
+    out = out + "    ${emit_fold_build(g, seq.build, seed.label, inner)}\n"
     out
 }
 
@@ -506,7 +506,7 @@ fn emit_accumulate(it: GItem, ind: string) -> string {
 
 /// A fold's build call: the seed label maps to its scalar CapVal var, an
 /// accumulator label to CapVal.Toks(<l>s) / CapVal.Nodes(<l>s).
-fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
+fn emit_fold_build(g: Grammar, build: GBuild, seed_label: string, inner: GSeq) -> string {
     match build {
         .Call(name, args) -> {
             mut rendered: List<string> = []
@@ -515,7 +515,7 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
             }
             // fold_logical/fold_nullish take the rule-entry sp_start (emit_fold
             // captures it); fold_binary→Pratt and fold_postfix do not.
-            let sp_arg = if build_uses_sp_start(name) { "sp_start, " } else { "" }
+            let sp_arg = if build_uses_sp_start(g, name) { "sp_start, " } else { "" }
             "CapVal.Node(${build_fn(name)}(st, ${sp_arg}${join_commas(rendered)}))"
         }
         _ -> "CapVal.Node(st.error_node(\"fold rule without a build\"))"
@@ -528,12 +528,11 @@ fn emit_fold_build(build: GBuild, seed_label: string, inner: GSeq) -> string {
 /// emit `let sp_start = st.cur().pos` at fn entry (emit_fold / emit_single_branch);
 /// fold_binary (→Pratt, sp_start captured in the loop) and the span-free
 /// fold_postfix / mk_is / etc. are excluded.
-fn build_uses_sp_start(name: string) -> bool {
-    // Manifest names answer from their row — consult order mirrors
-    // emit_call_build. A `spanned` bind's owning rule captures sp_start at
-    // entry (for the mk_stamp_stmt_at wrap); span-free binds say no exactly
-    // like the central names absent from the list below.
-    for b in feature_builders() {
+fn build_uses_sp_start(g: Grammar, name: string) -> bool {
+    // Manifest names answer from the STAMPED rows — consult order mirrors
+    // emit_call_build, and reading the grammar (not feature_builders(),
+    // which re-runs every factory) keeps emission allocation-flat.
+    for b in g.builder_kinds {
         if b.name == name { return b.spanned }
     }
     // `-> return v` in a match arm stamps the SYNTHESIZED return row at the `return`
@@ -618,9 +617,9 @@ fn build_uses_sp_start(name: string) -> bool {
 }
 
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
-fn seq_build_uses_sp_start(build: GBuild) -> bool {
+fn seq_build_uses_sp_start(g: Grammar, build: GBuild) -> bool {
     match build {
-        .Call(name, _) -> build_uses_sp_start(name)
+        .Call(name, _) -> build_uses_sp_start(g, name)
         _ -> false
     }
 }
@@ -678,7 +677,7 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             // is what lets a rule whose alternatives are ALL native carry its
             // own message (`index_tail`'s two closing-`]` wordings) instead of
             // the alternation's generic "expected expression".
-            let fb_pre = if seq_build_uses_sp_start(b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
+            let fb_pre = if seq_build_uses_sp_start(g, b.build) { "    let sp_start = st.cur().pos\n" } else { "" }
             tail = fb_pre + emit_seq_stmts_from(g, b, "    ", 1) + "    ${emit_seq_result(g, b)}\n"
         } else {
             out = out + "    if ${seq_first_guard(g, b, [])} {\n"
@@ -687,7 +686,7 @@ fn emit_dispatch(g: Grammar, branches: List<GSeq>) -> string {
             // branch the guard is FALSE-when-not-taken (no token consumed), so the
             // branch entry byte == the rule entry byte, exactly as emit_single_branch /
             // emit_fold capture it for the single-branch case.
-            if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
+            if seq_build_uses_sp_start(g, b.build) { out = out + "        let sp_start = st.cur().pos\n" }
             out = out + emit_seq_stmts(g, b, "        ")
             out = out + "        return ${emit_seq_result(g, b)}\n"
             out = out + "    }\n"
@@ -843,7 +842,7 @@ fn emit_speculative_branch_rich(g: Grammar, b: GSeq, track_spec: bool) -> string
     out = out + "        let s_postfix = st.save_postfix_state()\n"
     // Same span prelude as the flat path / the non-speculative branch: a span-stamping
     // build reads `sp_start` = the rule-entry byte (guard matched but consumed nothing).
-    if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
+    if seq_build_uses_sp_start(g, b.build) { out = out + "        let sp_start = st.cur().pos\n" }
     // t-x2fb: a CUT-BEARING branch gets a `while true { … break }` scaffold so the cut
     // abort (`if !s_cut { break }`, emit_item) has somewhere to jump — straight to the
     // shared rollback below, skipping the provably-wasted remainder. Non-cut branches
@@ -900,7 +899,7 @@ fn emit_speculative_branch_flat(g: Grammar, b: GSeq, track_spec: bool) -> string
     // (the guard FIRST-matched but consumed nothing, so `st.cur().pos` == the rule
     // entry byte), BEFORE any item parses. A build that never spans (or a build-less
     // @try) omits it — byte-identical to the incumbent recognizer.
-    if seq_build_uses_sp_start(b.build) { out = out + "        let sp_start = st.cur().pos\n" }
+    if seq_build_uses_sp_start(g, b.build) { out = out + "        let sp_start = st.cur().pos\n" }
     mut idx = 0
     for item in b.items {
         // A `@when` predicate is zero-width — it neither consumes a token nor
@@ -2265,21 +2264,18 @@ fn join_args(args: List<string>) -> string {
 /// knows exactly what it emitted, so nothing hand-curated can drift: a name
 /// the scan misses fails the regen gate as F3000 undefined, and a stale
 /// extra import can't exist because the header is recomputed per emit.
-/// `grammar_mod`/`core_mod` are the module spellings — relative
-/// ("features.grammar"/"core") for the checked-in in-package parsers (an
-/// absolute self-import double-expands derives, F4012 — see gen_parser_files),
-/// absolute ("@std.avrac.features.grammar"/"@std.avrac.core") for the
-/// standalone gen-check harness.
-export fn derived_import_lines(src: string, grammar_mod: string, core_mod: string) -> string {
-    derived_import_lines_for(src, feature_builders(), grammar_mod, core_mod)
-}
-
-/// The manifest-parameterized core: a call name that is a feature builder's
-/// export lands under the builder's OWN module (today always the engine —
-/// a lowering submodule — the manifest is the authority, so a builder that
-/// moves home moves its import with it); the engine's spelling is the
-/// caller's `grammar_mod`, a foreign module renders verbatim.
-export fn derived_import_lines_for(src: string, binds: List<BuilderBind>, grammar_mod: string, core_mod: string) -> string {
+/// `binds` is the stamped grammar's manifest projection (`g.builder_kinds`
+/// — the SAME rows the emission read, so callers never re-run feature
+/// factories): a call name that is a feature builder's export lands under
+/// the builder's OWN module — the manifest is the authority, so a builder
+/// that moves home moves its import with it. `grammar_mod`/`core_mod` are
+/// the module spellings — relative ("features.grammar"/"core") for the
+/// checked-in in-package parsers (an absolute self-import double-expands
+/// derives, F4012 — see gen_parser_files), absolute
+/// ("@std.avrac.features.grammar"/"@std.avrac.core") for the standalone
+/// gen-check harness; a foreign module re-roots under the same package
+/// prefix in the absolute case.
+export fn derived_import_lines_for(src: string, binds: List<BuildKindRow>, grammar_mod: string, core_mod: string) -> string {
     // ONE pass collects calls and words, skipping comments and string
     // literals inline. No stripped intermediate: rebuilding a 160KB source
     // line-by-line is ~half a GB of arena churn per pass, and find-from-
@@ -2478,11 +2474,11 @@ fn join_sorted(names: List<string>) -> string {
 /// The build-name → emission map — executor.apply_build's one-to-one twin,
 /// including its consult order: feature-supplied lowerings first (t-kd4y.3),
 /// spelled as their normalized-ABI call (`export_name(st, [args…])`) with the
-/// import derived into the module header (derived_import_lines), then the
+/// import derived into the module header (derived_import_lines_for), then the
 /// central arms. Scalar captures are their CapVal vars; a `_list` suffix
 /// names an accumulated arg (only call_suffix's, which takes the whole list).
 fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> string {
-    for b in feature_builders() {
+    for b in g.builder_kinds {
         if b.name == name && args.length == b.arity {
             // Manifest args are spelled from the OWNING SEQ's capture shapes
             // (repetitions wrap their typed accumulators); central templates
@@ -2707,7 +2703,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "MkWhereParam" -> "mk_where_param(capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkTypeDeclAny" -> "mk_type_decl_any(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list, ${args[3]}, capval_present(${args[3]}), ${args[4]}, capval_present(${args[4]}), ${args[5]}_list)"
         "MkTypeDecl" if args.length == 3 -> "mk_type_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
-        "MkEnumDecl" if args.length == 3 -> "mk_enum_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
         "MkTypeParam" -> "mk_type_param(capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
         "MkExtern" -> "mk_extern_fn(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}))"
         "MkShapeDecl" -> "mk_shape_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
@@ -2752,13 +2747,12 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
-        "MkEnumDecl" -> "mk_enum_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkTraitDecl" -> "mk_trait_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkImpl" -> "mk_impl(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}), ${args[2]}_list)"
         // MkUseBare / MkUsePkg / MkModule — feature-owned (features/modules);
         // MkUse was dead (no grammar reference).
         "MkField" -> "mk_field(st, capval_tok_text(${args[0]}), ${args[1]})"
-        "MkEVariant" -> "mk_evariant(capval_tok_text(${args[0]}), ${args[1]}_list)"
+        // MkEnumDecl / MkEVariant — feature-owned (features/enum_decl).
         "MkParam" -> "mk_param(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
         "MkAssocType" -> "mk_assoc_type(st, capval_tok_text(${args[0]}))"
         "MkAssocTypeDef" -> "mk_assoc_type_def(st, capval_tok_text(${args[0]}), ${args[1]})"
@@ -3272,9 +3266,9 @@ fn kind_row(kind: string) -> KindRow {
     if kind == "stmt" { return KindRow { coerce: "capval_to_stmt", elem: "StmtId", list_ctor: "CapVal.SNodes" } }
     if kind == "type" { return KindRow { coerce: "capval_to_texpr", elem: "TypeExpr", list_ctor: "" } }
     if kind == "pentry" { return KindRow { coerce: "capval_to_pentry", elem: "ParamEntry", list_ctor: "CapVal.PEntries" } }
-    if kind == "tparam" { return KindRow { coerce: "capval_to_tparam", elem: "TypeParamEntry", list_ctor: "" } }
-    if kind == "field" { return KindRow { coerce: "capval_to_field", elem: "FieldEntry", list_ctor: "" } }
-    if kind == "variant" { return KindRow { coerce: "capval_to_variant", elem: "Variant", list_ctor: "" } }
+    if kind == "tparam" { return KindRow { coerce: "capval_to_tparam", elem: "TypeParamEntry", list_ctor: "CapVal.TParams" } }
+    if kind == "field" { return KindRow { coerce: "capval_to_field", elem: "FieldEntry", list_ctor: "CapVal.Fields" } }
+    if kind == "variant" { return KindRow { coerce: "capval_to_variant", elem: "Variant", list_ctor: "CapVal.Vars" } }
     if kind == "arm" { return KindRow { coerce: "capval_to_arm", elem: "MatchArm", list_ctor: "CapVal.Arms" } }
     if kind == "finit" { return KindRow { coerce: "capval_to_finit", elem: "FieldInit", list_ctor: "CapVal.FInits" } }
     if kind == "warm" { return KindRow { coerce: "capval_to_when_arm", elem: "WhenArm", list_ctor: "CapVal.WArms" } }

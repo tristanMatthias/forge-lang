@@ -6,7 +6,7 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt, ExprId}
-use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_to_expr_opt}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, capval_stmt_val, capval_to_expr_opt}
 
 export fn build_return(e: ExprId?) -> Stmt {
     if e == null { Stmt.ReturnEmpty } else { Stmt.Return(e!) }
@@ -17,7 +17,5 @@ export fn build_return_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn return_builds() -> List<BuilderBind> {
-    [BuilderBind { name: "build_return", kind: "stmt", arity: 1, spanned: false,
-                   module: "features.return_stmt.lowering", export_name: "build_return_abi",
-                   build: build_return_abi }]
+    [bind_row("features.return_stmt.lowering", "build_return", "stmt", 1, false, "build_return_abi", build_return_abi)]
 }

@@ -24,14 +24,18 @@
 /// instead of a linear scan of `rules` on every rule descent — see
 /// build_rule_index / rule_index_of below. Built ONCE at construction
 /// (the two Grammar constructors: parse_grammar_body + compose_grammars).
-/// One feature-supplied build name → result kind row, stamped onto a composed
-/// grammar (t-kd4y.3 flip). The kind ANALYSIS (seq_kind below) must classify a
-/// manifest-only build (`build_defer` → "stmt") by its registration, not the
-/// lenient "expr" default — `declaration`'s Alt-kind takes the first non-empty
-/// branch answer, so one misclassified feature rule can flip a whole family's
-/// accumulator typing. A narrow row (not BuilderBind) because that type carries
-/// executor values (PState/CapVal) this AST hub must not depend on.
-export type BuildKindRow = { name: string, kind: string, spanned: bool }
+/// One feature-supplied build row, stamped onto a composed grammar (t-kd4y.3).
+/// The kind ANALYSIS (seq_kind below) must classify a manifest-only build
+/// (`build_defer` → "stmt") by its registration, not the lenient "expr"
+/// default — `declaration`'s Alt-kind takes the first non-empty branch answer,
+/// so one misclassified feature rule can flip a whole family's accumulator
+/// typing. The row also carries the EMISSION-visible projection (arity /
+/// module / export_name) so a stamped grammar is self-sufficient for emit —
+/// re-running the feature factories per emitted call name was a measured
+/// arena-accumulation source (Batch A). A narrow row (not BuilderBind)
+/// because that type carries executor values (PState/CapVal) this AST hub
+/// must not depend on.
+export type BuildKindRow = { name: string, kind: string, spanned: bool, arity: int, module: string, export_name: string }
 
 export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr, builder_kinds: List<BuildKindRow> }
 
@@ -888,7 +892,7 @@ export fn central_build_kind(bn: string) -> string {
         // except the component CapVals (MkParam → PEntry, MkField → Field,
         // MkEVariant → Var).
         "MkFnDecl" or "MkExtern" or "MkShapeDecl" or "MkExport" or "MkTypeDecl"
-            or "MkTypeDeclAny" or "MkEnumDecl" or "MkTraitDecl" or "MkImpl"
+            or "MkTypeDeclAny" or "MkTraitDecl" or "MkImpl"
             or "MkAssocType" or "MkAssocTypeDef"
             or "MkTraitMethod" or "MkMethod" or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
             or "MkLetBinding" or "MkMutBinding" or "MkConstBinding" or "MkDestructure" or "MkParallel"
@@ -912,7 +916,6 @@ export fn central_build_kind(bn: string) -> string {
         "MkChildrenSlotList" -> "cslots"
         "MkTypeParam" or "MkWhereParam" -> "tparam"
         "MkField" -> "field"
-        "MkEVariant" -> "variant"
         "OrMaybe" or "IdentPat" or "MkVariant" or "PatBool" or "PatStr"
             or "PatNum" or "PatNegNum" or "OptPresent" or "OptAbsent" -> "pat"
         "TyUnion" or "MkFn" or "TyDyn" or "TyList" or "TyParen"

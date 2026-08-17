@@ -1,0 +1,24 @@
+// The enum_decl feature's LOWERINGS — ABI fns + manifest rows in the
+// closure-safe lowering submodule the generated parser imports directly
+// (t-kd4y.3 Batch A). Only features.grammar + core are imported, so the
+// F4012 import-closure invariant holds by construction.
+
+use core.{Stmt, Variant}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, capval_stmt_val, capval_tok_text, capval_to_tparam_list, capval_to_var_list, capval_to_field_list}
+
+/// `enum Name ( < tparam* > )? { variant* }` (`MkEnumDecl`, arity 3 — the
+/// one production arity; the historical 2-arg plain form died dead-code at
+/// this flip, every toy modernized to the optional-tparams group).
+export fn enum_decl_build(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, Stmt.EnumDecl(capval_tok_text(vals[0]), capval_to_tparam_list(vals[1]), capval_to_var_list(vals[2])))
+}
+
+/// `Name ( "(" field* ")" )?` — one enum variant (`MkEVariant`).
+export fn evariant_build(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Var(Variant { name: capval_tok_text(vals[0]), fields: capval_to_field_list(vals[1]) })
+}
+
+export fn enum_builds() -> List<BuilderBind> {
+    [bind_row("features.enum_decl.lowering", "MkEnumDecl", "stmt", 3, false, "enum_decl_build", enum_decl_build),
+     bind_row("features.enum_decl.lowering", "MkEVariant", "variant", 2, false, "evariant_build", evariant_build)]
+}

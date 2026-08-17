@@ -329,8 +329,14 @@ impl NodeStore {
     }
 }
 
-/// Construct + populate the Registry. Called once at compiler
-/// startup; downstream passes look up handlers from the result.
+/// Construct + populate the Registry — EXPENSIVE: init_features re-runs
+/// every LanguageFeature factory, and each definition's `grammar {}` block
+/// re-parses into the program arena, which never frees. ONE registry per
+/// program store is the contract (NodeStore.parse_features, lazy): every
+/// pass shares it. Batch A measured the violation — four pass constructors
+/// each built a FRESH registry, so every converted feature multiplied
+/// arena growth across every pass construction (the #1232 regression
+/// class); a 12GB+ F4014 on the GENPASS harness compile was the tell.
 export fn build_registry() -> Registry {
     mut reg = registry_new()
     reg.builder_binds = init_features(reg)

@@ -172,7 +172,7 @@ fn resolver_new(parse_store: NodeStore) -> Resolver {
         had_error: false,
         error_message: "",
         bag: bag_new(),
-        features: build_registry(),
+        features: parse_store.parse_features(),
         source_line: 0,
         source_col: 0,
         source_file: "",

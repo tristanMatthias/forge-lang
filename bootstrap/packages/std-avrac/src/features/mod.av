@@ -6,7 +6,7 @@
 // registers their factory functions.
 
 use features.closures.{closures_feature}
-use features.enum_decl.{enum_decl_feature}
+use features.enum_decl.{enum_lang}
 use features.extern_decl.{extern_decl_feature}
 use features.fn_decl.{fn_decl_feature}
 use features.for_stmt.{for_lang, for_in_lang}
@@ -142,7 +142,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 
     // ── Declarations (parse-only) ──
     register(reg, fn_decl_feature())
-    register(reg, enum_decl_feature())
     register(reg, impl_decl_feature())
     register(reg, extern_decl_feature())
     register(reg, trait_decl_feature())
@@ -166,7 +165,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), break_lang(), continue_lang(), mod_lang(), use_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,
