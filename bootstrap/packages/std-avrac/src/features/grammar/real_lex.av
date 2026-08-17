@@ -26,7 +26,7 @@
 // punctuation) is matched by TEXT, so its kind only has to avoid colliding
 // with a named-terminal kind — `KW` for keywords, `PUNCT` for operators.
 use core.{Tk, tk_keyword_str}
-use parse.{Parser, parser_new}
+use parse.{Parser, parser_new_lex_only}
 use features.grammar.{Token}
 use diagnostics.{Diagnostic, error_def}
 
@@ -102,14 +102,16 @@ fn lex_diag_at(at: int, d: Diagnostic) -> LexDiag {
 /// Tokenise `src` through the shipping streaming lexer and hand back the
 /// executor token stream — the drop-in replacement for `lex_expr`.
 export fn lex_real(src: string) -> List<Token> {
-    mut p = parser_new(src)
+    // Lex-only construction: no registry build per lex (lexing never
+    // consults features/lang — see parser_new_lex_only).
+    mut p = parser_new_lex_only(src)
     p.lex_all_grammar_tokens()
 }
 
 /// `lex_real` plus the positioned lexer diagnostics — what a PState is built from, so
 /// the native parser can flush each one at the point the hand would have reported it.
 export fn lex_real_full(src: string) -> LexedSource {
-    mut p = parser_new(src)
+    mut p = parser_new_lex_only(src)
     p.lex_all_grammar()
 }
 

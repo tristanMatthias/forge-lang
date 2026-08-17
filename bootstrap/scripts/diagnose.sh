@@ -2279,6 +2279,18 @@ mode_run() { run_fg "$1"; }
 # it lives here as an on-demand gate; the in-suite regression guard is the fast
 # structural emit_generated_test.av.
 #
+# On a <=16GB box run_fg's whole-program fixture compile is Killed (~13.6GB;
+# control-proven pre-existing) — but the gate IS locally runnable through the
+# metadata fast path once the test runner's producer objects are warm:
+#   AVRA_USE_METADATA=1 AVRA_LIB_OBJS="<colon-joined packages/*/build/cache/
+#     <fp-from-last/<pkg>.txt>/unit.realobj.o for std-avrac, std-process,
+#     std-crypto, std-json, std-lsp, std-test>" \
+#     bash scripts/diagnose.sh --run build/emit_gen/generated_parser.av
+# and assert GENPASS on stdout. The differential verdict is identical (only
+# how @std symbols resolve differs — inline vs producer object; both are
+# production paths). The gate itself stays whole-program so CI needs no
+# warm cache.
+#
 # Flow: a DRIVER program (below) parses the canonical §2 expression grammar,
 # runs emit.av over it, and writes <imports> + <emitted parse fns> + the
 # differential harness + a GENPASS/GENFAIL main to a generated module. We then

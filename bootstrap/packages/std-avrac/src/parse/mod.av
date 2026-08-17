@@ -12,9 +12,9 @@
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
 use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit, type_expr_to_vtype}
-use core.{Registry, build_registry, lookup_expr_parser}
+use core.{Registry, build_registry, registry_new, lookup_expr_parser}
 use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name, tk_is_field_name}
-use core.{NodeStore, StoreMark, new_node_store, build_line_index, share_arenas_keep_lines}
+use core.{NodeStore, StoreMark, new_node_store, build_line_index, store_with_lines}
 use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span, byte_span_none, expr_ref_id, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // ps3t.6.5.12 (parser swap-in): the parser delegates whole families
@@ -311,16 +311,13 @@ export fn parse_program_source_shared(source: string, file: string, store: NodeS
     // trips F4014 while parsing, the report says WHICH file it was reading —
     // the difference between "the build died" and a reproducible bug report.
     avra_mem_phase_set("parse ${file}")
-    mut parser = parser_new_with_file(source, file)
-    // Arenas from the entry parse, LineIndex from THIS file. A merged file's token
-    // offsets index into its own `source`; adopting the entry file's index would
-    // resolve every position here against the wrong text — including the `^`
-    // sameline gate. See `share_arenas_keep_lines`.
-    parser.store = share_arenas_keep_lines(store, parser.store)
-    // The ctor read its registry off the throwaway fresh store — re-sync to
-    // the ENTRY store's program-wide parse registry, or component names
-    // registered by earlier files are invisible here (t-kd4y).
-    parser.features = store.parse_features()
+    // Constructed ON the entry store: arenas + the program-wide parse
+    // registry (so component names registered by earlier files resolve here,
+    // t-kd4y) ride in from the first instruction, while the line index is
+    // THIS file's own — a merged file's token offsets index into its own
+    // `source`, and adopting the entry file's index would resolve every
+    // position against the wrong text, including the `^` sameline gate.
+    mut parser = parser_new_shared(source, file, store)
     parser.records_roots = 0
     parser.parse_file_program()
 }
@@ -483,11 +480,12 @@ fn template_split_format(s: string) -> FormatSplit {
 /// allocates live in the outer arena, so the desugared template re-parents
 /// them by id — no re-ingest at the template boundary.
 fn parse_template_expr(source: string, store: NodeStore) -> Result<ExprId, string> {
-    mut p = parser_new(source)
-    // Arenas from the caller, LineIndex from THIS fragment — `parser_new` already
-    // built the latter, and the fragment's token offsets index into `source`, not
-    // into the outer file. See `share_arenas_keep_lines`.
-    p.store = share_arenas_keep_lines(store, p.store)
+    // Constructed ON the caller's store — the fragment's token offsets index
+    // into `source`, so the line index is its own, and the shared registry
+    // makes user components visible inside templates exactly as they are in
+    // the surrounding file (the fresh-store shape built a full throwaway
+    // registry per template — the dominant term of the Batch A F4014).
+    mut p = parser_new_shared(source, "", store)
     p.parse_expression()
 }
 
@@ -648,6 +646,37 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
     parser_new_with_store(source, file, new_node_store(build_line_index(source)))
 }
 
+/// Construct a Parser over `source` whose store is the caller's `shared`
+/// store from the FIRST instruction — arenas, roots, side tables, and the
+/// already-built parse registry all ride along; only the line index is this
+/// source's own. The merged-file and template sub-parse entries use this.
+///
+/// WHY it exists (the Batch A F4014 regression, control-bisected): the old
+/// shape was `parser_new_with_file` (fresh store) followed by a store swap +
+/// `features` re-sync — but the ctor EAGERLY builds the fresh store's
+/// registry, so every merged module file and every string template paid a
+/// full `build_registry()` (every LanguageFeature factory re-run, every
+/// definition gram re-parsed into the never-freed program arena) whose
+/// product was immediately discarded. Each migrated family raised that
+/// per-build price ~1MB and the selfhost compile pays it hundreds of times:
+/// +997MiB at the modules migration alone. Constructing on the shared store
+/// makes the registry read a cache hit, and the throwaway build never happens.
+export fn parser_new_shared(source: string, file: string, shared: NodeStore) -> Parser {
+    parser_new_with_store(source, file, store_with_lines(shared, build_line_index(source)))
+}
+
+/// Construct a Parser used ONLY to drive the streaming lexer (`lex_real`,
+/// `lex_dump`, the DSL's token bridges). Lexing never consults `features` or
+/// `lang` — keywords are the generated trie, diagnostics go to the bag — so
+/// this ctor hands the record an EMPTY registry instead of building the
+/// program one (a full factory run per lex was the executor-entry slice of
+/// the same throwaway-registry regression `parser_new_shared` documents).
+/// Do NOT parse through a Parser built here: user components are invisible
+/// to it by construction.
+export fn parser_new_lex_only(source: string) -> Parser {
+    parser_ctor(source, "", new_node_store(build_line_index(source)), registry_new())
+}
+
 /// Construct a Parser over `source` that SHARES the caller's `store` instead of
 /// allocating a fresh one — the host-Parser materialisation (executor.av's
 /// `new_pstate` / `PState.delegate`) uses this,
@@ -657,6 +686,16 @@ export fn parser_new_with_file(source: string, file: string) -> Parser {
 /// O(source) rebuild is what OOM'd the expression flip; sharing the store (whose
 /// line index is already built) removes it (ps3t.6.7).
 export fn parser_new_with_store(source: string, file: string, store: NodeStore) -> Parser {
+    // ONE parse_features() ask per construction: a fresh store builds the
+    // program registry here (the entry parse — wanted, once); a shared store
+    // answers from its cache.
+    parser_ctor(source, file, store, store.parse_features())
+}
+
+/// The record core every ctor shape shares. `feats` is the parse registry the
+/// parser dispatches through; `lang` derives from it (a cheap projection —
+/// no factory runs).
+fn parser_ctor(source: string, file: string, store: NodeStore, feats: Registry) -> Parser {
     mut parser = Parser {
         source,
         source_len: source.length,
@@ -683,7 +722,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         postfix_sp_start: 0,
         gensym_seq: 0,
         bag: bag_new(),
-        features: store.parse_features(),
+        features: feats,
         store,
         records_roots: 1,
         type_static: avra_process_env_get("AVRA_PARSER_TYPE_STATIC") != "0",
@@ -696,7 +735,7 @@ export fn parser_new_with_store(source: string, file: string, store: NodeStore) 
         // does not read is the t-bw9s failure in its cheapest form); the
         // shared host Parser (ensure_host) is SINGLE-LEVEL so bodies do not
         // re-enter the DSL through it.
-        lang: language_for(store.parse_features()),
+        lang: language_for(feats),
         // Which GRAMMAR ENGINE runs the expression grammar: the tree interpreter
         // (opt-in, AVRA_PARSER_EXPR_FLIP=1) or the checked-in generated static parser
         // (default). Not a grammar-vs-hand switch — there is no hand ladder left to

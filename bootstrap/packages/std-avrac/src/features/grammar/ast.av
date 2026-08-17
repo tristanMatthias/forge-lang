@@ -889,8 +889,7 @@ export fn central_build_kind(bn: string) -> string {
         "MkCompConfigPair" -> "cpair"
         "MkChildrenSlot" -> "cslot"
         // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
-        // except the component CapVals (MkParam → PEntry, MkField → Field,
-        // MkEVariant → Var).
+        // except the component CapVals (MkParam → PEntry, MkField → Field).
         "MkFnDecl" or "MkExtern" or "MkShapeDecl" or "MkExport" or "MkTypeDecl"
             or "MkTypeDeclAny" or "MkTraitDecl" or "MkImpl"
             or "MkAssocType" or "MkAssocTypeDef"

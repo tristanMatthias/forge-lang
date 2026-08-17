@@ -770,7 +770,17 @@ export fn new_node_store(lines: LineIndex) -> NodeStore {
 /// the copy SHARES all of them: rows the sub-parse allocates are visible through
 /// the caller's handle, exactly as a direct assignment would give.
 export fn share_arenas_keep_lines(shared: NodeStore, own: NodeStore) -> NodeStore {
-    shared with { lines: own.lines }
+    store_with_lines(shared, own.lines)
+}
+
+/// The lines-only core of `share_arenas_keep_lines`, for callers that hold a
+/// LineIndex and no second store: a sub-parse store IS the shared store with
+/// this source's own line index — everything else (arenas, roots, side
+/// tables, the built parse registry) rides along by reference. Constructing a
+/// throwaway `new_node_store` just to donate its `lines` allocates a fresh
+/// arena set that is instantly garbage; this is the shape that avoids it.
+export fn store_with_lines(shared: NodeStore, lines: LineIndex) -> NodeStore {
+    shared with { lines: lines }
 }
 
 /// Store-boundary conversion for typed ids: a C-side map slot holds
