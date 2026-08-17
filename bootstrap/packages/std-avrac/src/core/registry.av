@@ -59,9 +59,7 @@ export type Feature = {
     name: string,
     expr_tag: Expr?,
     stmt_tag: Stmt?,
-    stmt_keyword: string,
     expr_keyword: string,
-    parse_stmt: fn(Parser) -> Result<StmtId, string>,
     parse_expr: fn(Parser, int) -> Result<ExprId, string>,
     emit_expr: int,
     emit_stmt: int,
@@ -106,8 +104,7 @@ export fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
 }
 /// Parser no-op — returns null so the parser falls back to the
 /// in-tree dispatch when no feature claims this keyword.
-fn noop_parse(p: Parser) -> Result<StmtId, string> { .Err("no parser registered") }
-/// Expression-parser no-op — mirror of `noop_parse` for `parse_expr`.
+/// Expression-parser no-op for the `parse_expr` default.
 export fn noop_parse_expr(p: Parser, start: int) -> Result<ExprId, string> { .Err("no expr parser registered") }
 
 /// Construct a Feature with no-op handlers. Each feature module
@@ -117,9 +114,7 @@ export fn feature_new(name: string) -> Feature {
         name,
         expr_tag: null,
         stmt_tag: null,
-        stmt_keyword: "",
         expr_keyword: "",
-        parse_stmt: noop_parse,
         parse_expr: noop_parse_expr,
         emit_expr: noop_emit_expr,
         emit_stmt: noop_emit_stmt,
@@ -201,9 +196,10 @@ export fn register(reg: Registry, f: Feature) {
         avra_intmap_set(reg.stmt_checkers, stag, f.check_stmt)
         avra_intmap_set(reg.stmt_evals, stag, f.eval_stmt)
     }
-    if f.stmt_keyword.length > 0 {
-        avra_map_set_cstr(reg.stmt_parsers, f.stmt_keyword, f.parse_stmt)
-    }
+    // stmt_keyword/parse_stmt died measured-unread (t-kd4y slice-1 evidence:
+    // these writes keyed kw_*-style names the token-text lookup could never
+    // match; the stmt_parsers map serves component names, written by
+    // register_component_name). Batch A deleted the fields.
     if f.expr_keyword.length > 0 {
         avra_map_set_cstr(reg.expr_parsers, f.expr_keyword, f.parse_expr)
     }

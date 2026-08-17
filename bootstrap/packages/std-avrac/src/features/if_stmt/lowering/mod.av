@@ -1,0 +1,21 @@
+// The if_stmt feature's LOWERINGS — typed build fns + their ABI adapters +
+// manifest rows, in a dedicated SUBMODULE so the generated parser imports
+// them directly (t-kd4y.3 Batch A, the wrapper-free shape). This module
+// imports ONLY features.grammar + core — both already in every generated
+// parser's closure — so the F4012 import-closure invariant holds by
+// construction; the feature's passes/hooks stay in ../mod.av.
+
+use core.{Stmt, ExprId, StmtId}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_to_expr, capval_to_stmt, capval_to_stmt_opt}
+
+export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
+
+export fn build_if_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_if(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1]), capval_to_stmt_opt(st, vals[2])))
+}
+
+export fn if_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_if", kind: "stmt", arity: 3, spanned: true,
+                   module: "features.if_stmt.lowering", export_name: "build_if_abi",
+                   build: build_if_abi }]
+}

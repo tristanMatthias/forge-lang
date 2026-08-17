@@ -1,0 +1,23 @@
+// The return_stmt feature's LOWERINGS — typed build fns + their ABI adapters +
+// manifest rows, in a dedicated SUBMODULE so the generated parser imports
+// them directly (t-kd4y.3 Batch A, the wrapper-free shape). This module
+// imports ONLY features.grammar + core — both already in every generated
+// parser's closure — so the F4012 import-closure invariant holds by
+// construction; the feature's passes/hooks stay in ../mod.av.
+
+use core.{Stmt, ExprId}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_to_expr_opt}
+
+export fn build_return(e: ExprId?) -> Stmt {
+    if e == null { Stmt.ReturnEmpty } else { Stmt.Return(e!) }
+}
+
+export fn build_return_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_return(capval_to_expr_opt(st, vals[0])))
+}
+
+export fn return_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_return", kind: "stmt", arity: 1, spanned: false,
+                   module: "features.return_stmt.lowering", export_name: "build_return_abi",
+                   build: build_return_abi }]
+}

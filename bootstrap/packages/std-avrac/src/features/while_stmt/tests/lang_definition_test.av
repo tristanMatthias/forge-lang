@@ -39,6 +39,6 @@ spec "while as a LanguageFeature" {
         for b in feature_builders() {
             if b.name == "build_while" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
         }
-        row == "stmt/2/spanned/_gb_build_while"
+        row == "stmt/2/spanned/build_while_abi"
     }
 }

@@ -1,0 +1,30 @@
+// The break_continue feature's LOWERINGS — typed build fns + their ABI adapters +
+// manifest rows, in a dedicated SUBMODULE so the generated parser imports
+// them directly (t-kd4y.3 Batch A, the wrapper-free shape). This module
+// imports ONLY features.grammar + core — both already in every generated
+// parser's closure — so the F4012 import-closure invariant holds by
+// construction; the feature's passes/hooks stay in ../mod.av.
+
+use core.{Stmt}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val}
+
+export fn build_break() -> Stmt { Stmt.Break }
+export fn build_continue() -> Stmt { Stmt.Continue }
+
+export fn build_break_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_break())
+}
+export fn build_continue_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_continue())
+}
+
+export fn break_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_break", kind: "stmt", arity: 0, spanned: false,
+                   module: "features.break_continue.lowering", export_name: "build_break_abi",
+                   build: build_break_abi }]
+}
+export fn continue_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_continue", kind: "stmt", arity: 0, spanned: false,
+                   module: "features.break_continue.lowering", export_name: "build_continue_abi",
+                   build: build_continue_abi }]
+}

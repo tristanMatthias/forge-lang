@@ -8,7 +8,8 @@ use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, St
 use core.{Pattern, MatchArm, ParamEntry, Expr, Stmt, WhenArm, PatId, Variant, ValueType, FieldEntry, TypeArg, TypeParamEntry, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types, type_short_name, vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding, VarBinding, variant_lookup, ExprId}
 use resolve.{resolve_expr, Resolver, enter_resolve_scope, exit_resolve_scope, declare_params, declare_name, define_name}
 use typeck.{check_expr, tc_er, EnumTypeReg, ExprResult, TC, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_exit, tc_gate_unthreaded_lambda, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
-use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments, match_builds}
+use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments}
+use features.match.lowering.{match_builds}
 
 // ── typed lowerings, home in the feature file (t-47hc.8 dissolution /
 // t-kd4y.3 match flip) — pure over unwrapped values; the engine's
@@ -19,21 +20,6 @@ use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments
 // doesn't carry) and MkArmReturn (interior stamp: the span belongs to the
 // synthesized inner Return row, not the result — same gap, recorded on
 // t-kd4y.3).
-export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
-    WhenArm { cond_id: c, body_id: b }
-}
-export fn build_when_default(b: ExprId) -> WhenArm {
-    WhenArm { cond_id: none, body_id: b }
-}
-/// One `pattern (if guard)? -> body` arm. Carries the boxed Pattern AND its
-/// id (render_match_arm renders the box; passes re-resolve by id).
-export fn build_arm(pattern: Pattern, pattern_id: PatId, guard: ExprId?, body: ExprId) -> MatchArm {
-    MatchArm { pattern: pattern, pattern_id: pattern_id, guard_id: guard, body_id: body }
-}
-/// `match subject { arm* }`, statement position.
-export fn build_match(subject: ExprId, arms: List<MatchArm>) -> Stmt {
-    Stmt.Match(subject, arms)
-}
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use features.union_type.{emit_union_tag, emit_union_extract}
 use features.{DiagSpec, composed}

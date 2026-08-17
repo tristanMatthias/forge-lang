@@ -119,8 +119,8 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         let src = emit_all()
         src.contains("fn parse_when_expr(st: PState) -> CapVal {") &&
         src.contains("fn parse_when_arm(st: PState) -> CapVal {") &&
-        src.contains("_gb_build_when_arm(st, [cond, body])") &&
-        src.contains("_gb_build_when_default(st, [body])") &&
+        src.contains("build_when_arm_abi(st, [cond, body])") &&
+        src.contains("build_when_default_abi(st, [body])") &&
         src.contains("mk_when(st, sp_start, CapVal.WArms(a_list))")
     }
 

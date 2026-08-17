@@ -18,8 +18,12 @@ spec "match as a LanguageFeature" {
         let w = when_lang()
         w.name == "match_when" && w.snippet.contains("when") && w.gram.grammar.rules.length == 0
     }
-    then "the fragment fold DEFINES the pattern + arm rules (by rule index, not rendered text)" {
-        let g = compose_fragments(feature_grammar_fragments())
+    then "the DEFINITION's gram DEFINES the pattern + arm rules (by rule index, not rendered text)" {
+        // Batch A: the registry fold is composition-owned only, and match's
+        // multi-family set rides the explicit stmt_family_fragments wiring —
+        // so the ownership claim is asserted on the definition's OWN gram,
+        // which is exactly what the no-orphans validator reads.
+        let g = match_lang().gram.grammar
         rule_index_of(g, "pattern_or") >= 0 && rule_index_of(g, "match_arm") >= 0
             && rule_index_of(g, "match_when_arm") >= 0 && rule_index_of(g, "variant_pat") >= 0
     }

@@ -219,7 +219,7 @@ spec "t-kd4y.3: defer resolves through the manifest — the flip's registration 
             if b.name == "build_defer" { d = "${b.kind}/${string(b.arity)}/${b.export_name}" }
             if b.name == "build_errdefer" { ed = "${b.kind}/${string(b.arity)}/${b.export_name}" }
         }
-        d == "stmt/1/_gb_build_defer" && ed == "stmt/1/_gb_build_errdefer"
+        d == "stmt/1/build_defer_abi" && ed == "stmt/1/build_errdefer_abi"
     }
 }
 

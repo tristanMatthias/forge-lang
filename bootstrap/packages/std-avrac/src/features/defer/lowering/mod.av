@@ -1,0 +1,31 @@
+// The defer feature's LOWERINGS — typed build fns + their ABI adapters +
+// manifest rows, in a dedicated SUBMODULE so the generated parser imports
+// them directly (t-kd4y.3 Batch A, the wrapper-free shape). This module
+// imports ONLY features.grammar + core — both already in every generated
+// parser's closure — so the F4012 import-closure invariant holds by
+// construction; the feature's passes/hooks stay in ../mod.av.
+
+use core.{Stmt, ExprId}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_to_expr}
+
+/// Run `e` when the enclosing scope exits (`defer` / `errdefer`).
+export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
+export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
+
+export fn build_defer_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_defer(capval_to_expr(st, vals[0])))
+}
+export fn build_errdefer_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, build_errdefer(capval_to_expr(st, vals[0])))
+}
+
+export fn defer_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_defer", kind: "stmt", arity: 1, spanned: false,
+                   module: "features.defer.lowering", export_name: "build_defer_abi",
+                   build: build_defer_abi }]
+}
+export fn errdefer_builds() -> List<BuilderBind> {
+    [BuilderBind { name: "build_errdefer", kind: "stmt", arity: 1, spanned: false,
+                   module: "features.defer.lowering", export_name: "build_errdefer_abi",
+                   build: build_errdefer_abi }]
+}

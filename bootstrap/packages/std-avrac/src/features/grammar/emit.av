@@ -203,7 +203,15 @@ export fn emit_parser_source(g: Grammar) -> string {
 /// `parse_<start>` to its boundary runner (static_expr_entry.av); every other
 /// rule stays module-private. `emit_parser_source(g)` is the unchanged
 /// `export_start = false` form used by the emit tests + emit-gen-check.
-export fn emit_parser_source_ex(g: Grammar, export_start: bool) -> string {
+export fn emit_parser_source_ex(g_in: Grammar, export_start: bool) -> string {
+    // SELF-STAMP (t-kd4y.3 Batch A): kind analysis on an UNSTAMPED grammar
+    // defaults manifest-owned builds to "expr", which silently flips a
+    // rule's kind as central rows migrate (the #1236 footgun — caught live
+    // when the modules rows left central_build_kind and `declaration`'s
+    // stmt-list recovery loop stopped emitting for the raw stmt view).
+    // Stamping is the EMITTER's job, not every caller's: a grammar already
+    // stamped keeps its rows (composed pipelines stamp richer sets).
+    let g = if g_in.builder_kinds.length > 0 { g_in } else { grammar_with_builder_kinds(g_in, builder_kind_rows(feature_builders())) }
     let chain = binary_fold_chain(g)
     let start = if g.rules.length > 0 { g.rules[0].name } else { "" }
     mut out = "// generated recursive-descent parser for grammar `${g.name}`\n"
@@ -2268,7 +2276,7 @@ export fn derived_import_lines(src: string, grammar_mod: string, core_mod: strin
 
 /// The manifest-parameterized core: a call name that is a feature builder's
 /// export lands under the builder's OWN module (today always the engine —
-/// feature_builds.av — but the manifest is the authority, so a builder that
+/// a lowering submodule — the manifest is the authority, so a builder that
 /// moves home moves its import with it); the engine's spelling is the
 /// caller's `grammar_mod`, a foreign module renders verbatim.
 export fn derived_import_lines_for(src: string, binds: List<BuilderBind>, grammar_mod: string, core_mod: string) -> string {
@@ -3251,48 +3259,42 @@ fn rule_self_validates(g: Grammar, name: string, visited: List<string>) -> bool 
 
 
 
-/// The capture-coercion fn for a node kind (`capval_to_expr` / `_pat` / …).
-fn kind_coerce(kind: string) -> string {
-    if kind == "pat" { return "capval_to_pat" }
-    if kind == "stmt" { return "capval_to_stmt" }
-    if kind == "type" { return "capval_to_texpr" }
-    if kind == "pentry" { return "capval_to_pentry" }
-    if kind == "tparam" { return "capval_to_tparam" }
-    if kind == "field" { return "capval_to_field" }
-    if kind == "variant" { return "capval_to_variant" }
-    if kind == "arm" { return "capval_to_arm" }
-    if kind == "finit" { return "capval_to_finit" }
-    if kind == "warm" { return "capval_to_when_arm" }
-    if kind == "sarm" { return "capval_to_select_arm" }
-    if kind == "ccfg" { return "capval_to_comp_config" }
-    if kind == "cpair" { return "capval_to_comp_config_pair" }
-    if kind == "cslot" { return "capval_to_children_slot" }
-    if kind == "ann" { return "capval_to_ann" }
-    "capval_to_expr"
+/// ONE row per capture kind — the coercion fn, the accumulator element
+/// type, and the CapVal LIST constructor for repetition wraps (t-kd4y.3
+/// Batch A: three parallel kind maps collapsed; a kind's whole emission
+/// vocabulary now lives on one line). list_ctor "" = the kind has no
+/// CapVal list form yet — manifest_arg_spelling emits the loud undefined
+/// marker (the declared-FIRST discipline), never silent garbage.
+type KindRow = { coerce: string, elem: string, list_ctor: string }
+
+fn kind_row(kind: string) -> KindRow {
+    if kind == "pat" { return KindRow { coerce: "capval_to_pat", elem: "PatId", list_ctor: "CapVal.PNodes" } }
+    if kind == "stmt" { return KindRow { coerce: "capval_to_stmt", elem: "StmtId", list_ctor: "CapVal.SNodes" } }
+    if kind == "type" { return KindRow { coerce: "capval_to_texpr", elem: "TypeExpr", list_ctor: "" } }
+    if kind == "pentry" { return KindRow { coerce: "capval_to_pentry", elem: "ParamEntry", list_ctor: "CapVal.PEntries" } }
+    if kind == "tparam" { return KindRow { coerce: "capval_to_tparam", elem: "TypeParamEntry", list_ctor: "" } }
+    if kind == "field" { return KindRow { coerce: "capval_to_field", elem: "FieldEntry", list_ctor: "" } }
+    if kind == "variant" { return KindRow { coerce: "capval_to_variant", elem: "Variant", list_ctor: "" } }
+    if kind == "arm" { return KindRow { coerce: "capval_to_arm", elem: "MatchArm", list_ctor: "CapVal.Arms" } }
+    if kind == "finit" { return KindRow { coerce: "capval_to_finit", elem: "FieldInit", list_ctor: "CapVal.FInits" } }
+    if kind == "warm" { return KindRow { coerce: "capval_to_when_arm", elem: "WhenArm", list_ctor: "CapVal.WArms" } }
+    if kind == "sarm" { return KindRow { coerce: "capval_to_select_arm", elem: "SelectArm", list_ctor: "" } }
+    if kind == "ccfg" { return KindRow { coerce: "capval_to_comp_config", elem: "CompConfig", list_ctor: "" } }
+    if kind == "cpair" { return KindRow { coerce: "capval_to_comp_config_pair", elem: "CompConfigPair", list_ctor: "" } }
+    if kind == "cslot" { return KindRow { coerce: "capval_to_children_slot", elem: "ChildrenSlot", list_ctor: "" } }
+    if kind == "ann" { return KindRow { coerce: "capval_to_ann", elem: "Annotation", list_ctor: "" } }
+    KindRow { coerce: "capval_to_expr", elem: "ExprId", list_ctor: "CapVal.Nodes" }
 }
 
-/// The CapVal LIST constructor for a repetition capture's element kind — the
-/// manifest-ABI twin of the central templates' hand-spelled wraps
-/// (`CapVal.Arms(${x}_list)`). The adapter's capval_to_*_list unwraps it,
-/// singleton-preserving, exactly like the executor's env value. "" = the
-/// kind has no CapVal list form yet; the caller emits a loud undefined
-/// marker so regen -> build fails naming the gap (the declared-FIRST
-/// discipline — never silent garbage).
-fn kind_list_ctor(kind: string) -> string {
-    if kind == "arm" { return "CapVal.Arms" }
-    if kind == "warm" { return "CapVal.WArms" }
-    if kind == "pat" { return "CapVal.PNodes" }
-    if kind == "stmt" { return "CapVal.SNodes" }
-    if kind == "finit" { return "CapVal.FInits" }
-    if kind == "pentry" { return "CapVal.PEntries" }
-    if kind == "expr" { return "CapVal.Nodes" }
-    ""
-}
+fn kind_coerce(kind: string) -> string { kind_row(kind).coerce }
+fn kind_elem_type(kind: string) -> string { kind_row(kind).elem }
+fn kind_list_ctor(kind: string) -> string { kind_row(kind).list_ctor }
 
 /// Manifest-ABI arg spelling (t-kd4y.3 match flip): a REPETITION capture's
-/// arg is its typed accumulator wrapped in the kind's CapVal list ctor; a
-/// scalar or optional capture stays its bare CapVal var (the
-/// `_gb_build_if(st, [c, t, e])` shape). Terminal repetitions wrap Toks.
+/// arg is its typed accumulator wrapped in the kind's CapVal list ctor —
+/// the adapter's capval_to_*_list unwraps it (singleton-preserving, like
+/// the executor's env value). Scalars and optionals stay bare CapVal vars
+/// (_gb_build_if's `[c, t, e]` shape). Terminal repetitions wrap Toks.
 fn manifest_arg_spelling(g: Grammar, seq: GSeq, label: string) -> string {
     if !str_in(list_labels_of(seq), label) { return label }
     let ctor = match find_label_prim_seq(seq, label) {
@@ -3306,26 +3308,6 @@ fn manifest_arg_spelling(g: Grammar, seq: GSeq, label: string) -> string {
         return "avra_grammar_manifest_list_kind_unmapped_${label}"
     }
     "${ctor}(${label}_list)"
-}
-
-/// The id/value type of a node kind's list element.
-fn kind_elem_type(kind: string) -> string {
-    if kind == "pat" { return "PatId" }
-    if kind == "stmt" { return "StmtId" }
-    if kind == "type" { return "TypeExpr" }
-    if kind == "pentry" { return "ParamEntry" }
-    if kind == "tparam" { return "TypeParamEntry" }
-    if kind == "field" { return "FieldEntry" }
-    if kind == "variant" { return "Variant" }
-    if kind == "arm" { return "MatchArm" }
-    if kind == "finit" { return "FieldInit" }
-    if kind == "warm" { return "WhenArm" }
-    if kind == "sarm" { return "SelectArm" }
-    if kind == "ccfg" { return "CompConfig" }
-    if kind == "cpair" { return "CompConfigPair" }
-    if kind == "cslot" { return "ChildrenSlot" }
-    if kind == "ann" { return "Annotation" }
-    "ExprId"
 }
 
 /// The declared element type of a label's accumulator list: a terminal label

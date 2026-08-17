@@ -202,19 +202,22 @@ fn fold_builders(feats: List<LanguageFeature>) -> List<BuilderBind> {
     all
 }
 
-/// The per-feature grammar fragments, folded straight out of the feature
-/// DEFINITIONS: every LanguageFeature's non-empty `gram`, in registration
-/// order, plus the decl-keyword fragments (collected in
-/// features/grammar/avra_grammar.av — the one list the whole-program grammar
-/// composes from, so the two views cannot drift).
-/// Rule-disjointness is guarded by `fragment_rule_conflicts` in the specs.
+/// The COMPOSITION-OWNED per-feature grammar fragments: every definition
+/// whose gram declares a family (the registry composes those into the
+/// views), plus the decl-keyword fragments. A family-"" gram is
+/// validation/docs surface for rules composed ELSEWHERE (the schema's own
+/// contract — match's multi-family set, modules' decl rules) and folding
+/// it here double-counted every such rule against the explicit
+/// compositions (caught by the disjointness specs at the Batch A modules
+/// conversion). Rule-disjointness is guarded by `fragment_rule_conflicts`
+/// in the specs.
 export fn feature_grammar_fragments() -> List<Grammar> {
     mut all: List<Grammar> = []
     for f in language_features() {
         // Validate FIRST — a malformed gram must F9999 here, never be
-        // silently dropped by the empty-rules filter below.
+        // silently dropped by the family filter below.
         let g = feature_gram(f)
-        if g.rules.length > 0 { all.push(g) }
+        if f.gram_family != "" && g.rules.length > 0 { all.push(g) }
     }
     for g in feature_decl_grammar_fragments() {
         all.push(g)

@@ -15,15 +15,14 @@ use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_erro
 use features.eval.{eval_expr, execute_stmt}
 use resolve.{resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_er, tc_report, tc_gate_unthreaded_lambda, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if, generic_args_layout_conflict}
-use features.grammar.{parse_grammar, if_builds}
+use features.grammar.{parse_grammar}
+use features.if_stmt.lowering.{if_builds}
 
 /// `if cond { then } ( else stmt )?`. Same spanned discipline as
 /// build_while; the absent-else fold lives in capval_to_stmt_opt (the
 /// adapter's unwrap), so this fn is the bare shape. Home in the feature
 /// file (t-47hc.8 dissolution) — the engine's checked-in `_gb_` adapter
 /// imports it back.
-export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
-
 export fn if_lang() -> LanguageFeature {
     LanguageFeature if_def {
         name = "if",
