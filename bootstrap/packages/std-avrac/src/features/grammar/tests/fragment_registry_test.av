@@ -96,11 +96,17 @@ spec "t-47hc.9: the DECL keywords are feature-owned fragments, not central rules
 }
 
 spec "t-47hc.8: feature grammar-fragment registry assembles cleanly" {
-    then "the feature-fragment collector is non-empty (the match feature owns patterns)" {
+    then "the feature-fragment collector is non-empty (the family-tagged features)" {
         feature_grammar_fragments().length >= 1
     }
-    then "the collector exposes the pattern fragment (pattern_or reachable)" {
-        has_rule(feature_grammar_fragments(), "pattern_or")
+    then "the collector is COMPOSITION-OWNED only — family-\"\" grams stay out" {
+        // Batch A: a family-"" gram is validation/docs surface for rules
+        // composed ELSEWHERE (match's multi-family set rides the explicit
+        // stmt_family_fragments wiring; modules' decl rules ride the decl
+        // view). Folding them here double-counted every such rule against
+        // the explicit compositions. pattern_or therefore does NOT appear
+        // in this fold — it reaches the views through match's wiring.
+        !has_rule(feature_grammar_fragments(), "pattern_or")
     }
     then "feature fragments are rule-disjoint from each other and the shared base" {
         fragment_rule_conflicts(shared_plus_features()).length == 0

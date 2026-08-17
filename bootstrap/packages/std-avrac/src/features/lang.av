@@ -89,18 +89,31 @@ export fn builder_validation_error(f: LanguageFeature) -> string {
 /// cross-package, but it can build these values.
 export fn builder_validation_error_for(fname: string, gram: Grammar, builders: List<BuilderBind>) -> string {
     let refs = grammar_build_refs(gram)
+    // A name may carry SEVERAL rows at distinct arities (MkEnumDecl's
+    // generic/plain pair — the dispatch key is (name, arity) everywhere:
+    // the executor consult, emit, and the fold's dedup). So: a ROW is
+    // referenced when some ref matches its (name, arity); a REF whose name
+    // has rows but no arity match is the real arity error.
+    for r in refs {
+        mut name_known = false
+        mut arity_ok = false
+        for b in builders {
+            if b.name == r.name {
+                name_known = true
+                if b.arity == r.argc { arity_ok = true }
+            }
+        }
+        if name_known && !arity_ok {
+            return "feature `${fname}`: rule `${r.rule}` calls `${r.name}` with ${string(r.argc)} arg(s) but no supplied builder of that name declares that arity"
+        }
+    }
     for b in builders {
         mut referenced = false
         for r in refs {
-            if r.name == b.name {
-                referenced = true
-                if r.argc != b.arity {
-                    return "feature `${fname}`: rule `${r.rule}` calls `${b.name}` with ${r.argc} arg(s) but its builder declares arity ${b.arity}"
-                }
-            }
+            if r.name == b.name && r.argc == b.arity { referenced = true }
         }
         if !referenced {
-            return "feature `${fname}`: builder `${b.name}` is supplied but no rule in its gram references it"
+            return "feature `${fname}`: builder `${b.name}`/${string(b.arity)} is supplied but no rule in its gram references it"
         }
         // central_build_kind, not build_kind: the analysis wrapper defaults
         // unknown names to "expr", which would both hide unresolved

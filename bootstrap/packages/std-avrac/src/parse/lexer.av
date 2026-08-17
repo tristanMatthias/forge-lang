@@ -842,7 +842,7 @@ export fn lex_escape(s: string) -> string {
 /// and total — `parser_new` primes the first token, so the loop reads it
 /// immediately and ends after emitting `Eof`.
 export fn lex_dump(source: string) -> string {
-    mut p = parser_new(source)
+    mut p = parser_new_lex_only(source)
     mut out = ""
     mut done = false
     while !done {

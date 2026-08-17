@@ -1,0 +1,57 @@
+// The match feature's LOWERINGS — typed build fns + their ABI adapters +
+// manifest rows, in a dedicated SUBMODULE so the generated parser imports
+// them directly (t-kd4y.3 Batch A, the wrapper-free shape). This module
+// imports ONLY features.grammar + core — both already in every generated
+// parser's closure — so the F4012 import-closure invariant holds by
+// construction; the feature's passes/hooks stay in ../mod.av.
+
+use core.{Stmt, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, byte_span_none}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, capval_warm_val, capval_arm_val, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list}
+
+export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
+    WhenArm { cond_id: c, body_id: b }
+}
+export fn build_when_default(b: ExprId) -> WhenArm {
+    WhenArm { cond_id: none, body_id: b }
+}
+/// One `pattern (if guard)? -> body` arm. Carries the boxed Pattern AND its
+/// id (render_match_arm renders the box; passes re-resolve by id).
+export fn build_arm(pattern: Pattern, pattern_id: PatId, guard: ExprId?, body: ExprId) -> MatchArm {
+    MatchArm { pattern: pattern, pattern_id: pattern_id, guard_id: guard, body_id: body }
+}
+/// `match subject { arm* }`, statement position.
+export fn build_match(subject: ExprId, arms: List<MatchArm>) -> Stmt {
+    Stmt.Match(subject, arms)
+}
+
+export fn build_when_arm_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_warm_val(st, build_when_arm(capval_to_expr(st, vals[0]), capval_to_expr(st, vals[1])))
+}
+export fn build_when_default_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_warm_val(st, build_when_default(capval_to_expr(st, vals[0])))
+}
+export fn build_arm_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    // The boxed-Pattern read lives HERE, not in the typed fn — adapters are
+    // the marshalling layer, and the arena is marshalling.
+    let pid = capval_to_pat(st, vals[0])
+    capval_arm_val(st, build_arm(st.store.pats.get(pid), pid, capval_to_expr_opt(st, vals[1]), capval_to_expr(st, vals[2])))
+}
+export fn build_match_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    // The arms' PatRef EDGES are part of the production row (the retired
+    // emit-side mk_match recorded them; the faithfulness oracle reads them
+    // back) — edges are arena marshalling, so they live in the adapter.
+    let arms = capval_to_arm_list(vals[1])
+    mut refs: List<NodeRef> = []
+    for arm in arms {
+        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
+    }
+    CapVal.SNode(st.store.add_stmt(build_match(capval_to_expr(st, vals[0]), arms), byte_span_none(), refs))
+}
+
+/// ALL of the match feature's rows — one list per feature.
+export fn match_builds() -> List<BuilderBind> {
+    [bind_row("features.match.lowering", "build_when_arm", "warm", 2, false, "build_when_arm_abi", build_when_arm_abi),
+     bind_row("features.match.lowering", "build_when_default", "warm", 1, false, "build_when_default_abi", build_when_default_abi),
+     bind_row("features.match.lowering", "build_arm", "arm", 3, false, "build_arm_abi", build_arm_abi),
+     bind_row("features.match.lowering", "build_match", "stmt", 2, false, "build_match_abi", build_match_abi)]
+}

@@ -798,7 +798,7 @@ fn tc_new(type_reg: TypeRegistry, macro_origins: List<MacroFnOrigin>, store: Nod
         traits: trait_registry_new(),
         trait_impls: empty_impls,
         assoc_type_defs: empty_assoc,
-        features: build_registry(),
+        features: store.parse_features(),
         type_reg,
         macro_origins,
         nodes: store,

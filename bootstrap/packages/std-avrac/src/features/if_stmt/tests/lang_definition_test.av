@@ -54,6 +54,6 @@ spec "if as a LanguageFeature" {
         for b in feature_builders() {
             if b.name == "build_if" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
         }
-        row == "stmt/3/spanned/_gb_build_if"
+        row == "stmt/3/spanned/build_if_abi"
     }
 }

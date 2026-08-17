@@ -2279,6 +2279,18 @@ mode_run() { run_fg "$1"; }
 # it lives here as an on-demand gate; the in-suite regression guard is the fast
 # structural emit_generated_test.av.
 #
+# On a <=16GB box run_fg's whole-program fixture compile is Killed (~13.6GB;
+# control-proven pre-existing) — but the gate IS locally runnable through the
+# metadata fast path once the test runner's producer objects are warm:
+#   AVRA_USE_METADATA=1 AVRA_LIB_OBJS="<colon-joined packages/*/build/cache/
+#     <fp-from-last/<pkg>.txt>/unit.realobj.o for std-avrac, std-process,
+#     std-crypto, std-json, std-lsp, std-test>" \
+#     bash scripts/diagnose.sh --run build/emit_gen/generated_parser.av
+# and assert GENPASS on stdout. The differential verdict is identical (only
+# how @std symbols resolve differs — inline vs producer object; both are
+# production paths). The gate itself stays whole-program so CI needs no
+# warm cache.
+#
 # Flow: a DRIVER program (below) parses the canonical §2 expression grammar,
 # runs emit.av over it, and writes <imports> + <emitted parse fns> + the
 # differential harness + a GENPASS/GENFAIL main to a generated module. We then
@@ -2482,7 +2494,7 @@ mode_emit_gen_check() {
 // writes ONE runnable module: the emitted parse fns + all five family
 // differential harnesses (expression, statement, pattern, type,
 // whole-program), each comparing the generated engine's tree to its oracle.
-use @std.avrac.features.grammar.{assemble_language, emit_parser_source, derived_import_lines}
+use @std.avrac.features.grammar.{Grammar, assemble_language, emit_parser_source, derived_import_lines_for}
 use @std.avrac.core.{avra_selfhost_write_file}
 
 // ONE fixed import block: the union of every family harness's needs. The
@@ -2728,20 +2740,23 @@ fn combined_main_block() -> string {
     "}\n"
 }
 
-fn assemble(fixed: string, parser: string, harness: string) -> string {
+fn assemble(fixed: string, g: Grammar, parser: string, harness: string) -> string {
     // GENERATOR-OWNS-IMPORTS (t-47hc.8): the parser's import surface derives
     // from its own emitted source; the fixed block carries only the HARNESS's
     // needs. Overlap between the two is a tolerated re-import, never an error.
-    fixed + derived_import_lines(parser, "@std.avrac.features.grammar", "@std.avrac.core") + parser + "\n" + harness
+    // The stamped grammar's manifest rows classify builder homes — the same
+    // rows the emission itself read, no factory re-run.
+    fixed + derived_import_lines_for(parser, g.builder_kinds, "@std.avrac.features.grammar", "@std.avrac.core") + parser + "\n" + harness
 }
 
 fn main() {
     // ONE emission of THE grammar — already builder-stamped by Language.full()
     // — shared by all five family harnesses in one module.
-    let parser = emit_parser_source(assemble_language().full())
+    let g = assemble_language().full()
+    let parser = emit_parser_source(g)
     let harness = harness_block() + stmt_harness_block() + pat_harness_block() +
         type_harness_block() + program_harness_block() + combined_main_block()
-    let _ = avra_selfhost_write_file("build/emit_gen/generated_parser.av", assemble(imports_block(), parser, harness))
+    let _ = avra_selfhost_write_file("build/emit_gen/generated_parser.av", assemble(imports_block(), g, parser, harness))
     println("wrote the one full-grammar generated parser (all five family harnesses)")
 }
 AVEOF

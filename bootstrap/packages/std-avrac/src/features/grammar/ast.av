@@ -24,14 +24,18 @@
 /// instead of a linear scan of `rules` on every rule descent — see
 /// build_rule_index / rule_index_of below. Built ONCE at construction
 /// (the two Grammar constructors: parse_grammar_body + compose_grammars).
-/// One feature-supplied build name → result kind row, stamped onto a composed
-/// grammar (t-kd4y.3 flip). The kind ANALYSIS (seq_kind below) must classify a
-/// manifest-only build (`build_defer` → "stmt") by its registration, not the
-/// lenient "expr" default — `declaration`'s Alt-kind takes the first non-empty
-/// branch answer, so one misclassified feature rule can flip a whole family's
-/// accumulator typing. A narrow row (not BuilderBind) because that type carries
-/// executor values (PState/CapVal) this AST hub must not depend on.
-export type BuildKindRow = { name: string, kind: string, spanned: bool }
+/// One feature-supplied build row, stamped onto a composed grammar (t-kd4y.3).
+/// The kind ANALYSIS (seq_kind below) must classify a manifest-only build
+/// (`build_defer` → "stmt") by its registration, not the lenient "expr"
+/// default — `declaration`'s Alt-kind takes the first non-empty branch answer,
+/// so one misclassified feature rule can flip a whole family's accumulator
+/// typing. The row also carries the EMISSION-visible projection (arity /
+/// module / export_name) so a stamped grammar is self-sufficient for emit —
+/// re-running the feature factories per emitted call name was a measured
+/// arena-accumulation source (Batch A). A narrow row (not BuilderBind)
+/// because that type carries executor values (PState/CapVal) this AST hub
+/// must not depend on.
+export type BuildKindRow = { name: string, kind: string, spanned: bool, arity: int, module: string, export_name: string }
 
 export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr, builder_kinds: List<BuildKindRow> }
 
@@ -786,7 +790,7 @@ export fn node_kind(g: Grammar, node: GNode, visited: List<string>) -> string {
 
 export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
     match seq.build {
-        .Call(bn, _) -> build_kind_with(g.builder_kinds, bn)
+        .Call(bn, bargs) -> build_kind_with(g.builder_kinds, bn, bargs.length)
         // A PASSTHROUGH build (`-> n`) has the kind of whatever `n` captured. Left
         // unresolved this defaults the rule to "expr", and the mistyping CASCADES:
         // `use_decl = "use" ut:use_tail -> ut` made `declaration` non-statement, which
@@ -885,11 +889,10 @@ export fn central_build_kind(bn: string) -> string {
         "MkCompConfigPair" -> "cpair"
         "MkChildrenSlot" -> "cslot"
         // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
-        // except the component CapVals (MkParam → PEntry, MkField → Field,
-        // MkEVariant → Var).
+        // except the component CapVals (MkParam → PEntry, MkField → Field).
         "MkFnDecl" or "MkExtern" or "MkShapeDecl" or "MkExport" or "MkTypeDecl"
-            or "MkTypeDeclAny" or "MkEnumDecl" or "MkTraitDecl" or "MkImpl" or "MkUse"
-            or "MkUseBare" or "MkUsePkg" or "MkModule" or "MkAssocType" or "MkAssocTypeDef"
+            or "MkTypeDeclAny" or "MkTraitDecl" or "MkImpl"
+            or "MkAssocType" or "MkAssocTypeDef"
             or "MkTraitMethod" or "MkMethod" or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
             or "MkLetBinding" or "MkMutBinding" or "MkConstBinding" or "MkDestructure" or "MkParallel"
             or "MkSelect" or "MkSpecBlock" or "MkGivenBlock" or "MkThenBlock" or "MkComponentDef"
@@ -912,7 +915,6 @@ export fn central_build_kind(bn: string) -> string {
         "MkChildrenSlotList" -> "cslots"
         "MkTypeParam" or "MkWhereParam" -> "tparam"
         "MkField" -> "field"
-        "MkEVariant" -> "variant"
         "OrMaybe" or "IdentPat" or "MkVariant" or "PatBool" or "PatStr"
             or "PatNum" or "PatNegNum" or "OptPresent" or "OptAbsent" -> "pat"
         "TyUnion" or "MkFn" or "TyDyn" or "TyList" or "TyParen"
@@ -926,10 +928,14 @@ export fn central_build_kind(bn: string) -> string {
 /// "expr". Grammar analysis (accumulator typing, alternation kind
 /// inference) keeps this leniency; exact membership questions go to
 /// `central_build_kind`, manifest validation to features/lang.av.
-export fn build_kind_with(rows: List<BuildKindRow>, bn: string) -> string {
+export fn build_kind_with(rows: List<BuildKindRow>, bn: string, arity: int) -> string {
     let k = central_build_kind(bn)
     if k != "" { return k }
-    for r in rows { if r.name == bn { return r.kind } }
+    // (name, arity) — the manifest dispatch key everywhere (executor consult,
+    // emit_call_build, fold_builders' dedup). A name may carry rows at several
+    // arities with distinct kinds; matching by name alone would classify every
+    // call by whichever row folded first.
+    for r in rows { if r.name == bn && r.arity == arity { return r.kind } }
     "expr"
 }
 
@@ -937,7 +943,7 @@ export fn build_kind_with(rows: List<BuildKindRow>, bn: string) -> string {
 /// (validation preambles, specs pinning the central table alone).
 export fn build_kind(bn: string) -> string {
     let empty: List<BuildKindRow> = []
-    build_kind_with(empty, bn)
+    build_kind_with(empty, bn, 0)
 }
 
 /// True iff the primary is a zero-width predicate (emit side) — `@when(flag)` mode read

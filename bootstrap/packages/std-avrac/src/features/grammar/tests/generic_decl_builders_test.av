@@ -42,7 +42,7 @@ spec "t-47hc slice 10: the generic decl builders exist in BOTH engines" {
             "g = \"enum\" n:IDENT \"<\" ( tp:tparam )* \">\" \"{\" ( v:variant )* \"}\" -> MkEnumDecl(n, tp, v)\n" +
             "tparam = tn:IDENT ( \":\" tb:IDENT )? -> MkTypeParam(tn, tb)\n" +
             "variant = vn:IDENT -> MkEVariant(vn, vf)\n")
-        src.contains("mk_enum_decl_g(st, capval_tok_text(") && !src.contains("mk_enum_decl(st, capval_tok_text(")
+        src.contains("enum_decl_build(st, [") && !src.contains("mk_enum_decl(st, capval_tok_text(")
     }
 
     then "the type-param accumulator is typed TypeParamEntry, not ExprId" {

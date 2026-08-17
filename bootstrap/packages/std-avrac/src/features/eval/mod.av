@@ -460,7 +460,7 @@ export fn runtime_new(store: NodeStore) -> Runtime {
         bindings: [],
         functions: [],
         depth: 0,
-        features: build_registry(),
+        features: store.parse_features(),
         nodes: store,
     }
 }

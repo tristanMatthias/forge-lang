@@ -5,8 +5,10 @@
 // graph_build.av + dir_module.av auto-load as siblings, surface flat
 // at `features.modules.{...}`.
 use features.eval.{ok_result, value_null}
-use core.{feature_new, Feature}
+use core.{Stmt, StmtId}
 use resolve.{resolve_stmt_ids}
+use features.modules.lowering.{modules_builds}
+use features.{composed}
 
 /// Resolver hook for `mod`. Recursively resolves the body — name
 /// resolution within the module is local to its scope.
@@ -36,21 +38,38 @@ fn use_eval(rt: Runtime, stmt: Stmt) -> StepResult {
 /// Register the `mod` declaration feature. Wires up the parser,
 /// resolver, and eval hooks. Codegen is provided implicitly by
 /// the codegen pipeline emitting `__init_<name>()` per module.
-export fn mod_feature() -> Feature {
+export fn mod_lang() -> LanguageFeature {
     let empty_body: List<StmtId> = []
-    feature_new("mod") with {
-        stmt_tag: Stmt.Module("", empty_body),
-        resolve_stmt: mod_resolve,
-        eval_stmt: mod_eval,
+    LanguageFeature mod_def {
+        name = "mod",
+        title = "mod — declare a directory-backed module",
+        docs = """
+`mod name` declares a module stub; the resolver fills its body from the
+sibling `.av` file or directory of the same name (dir-as-module). Names
+inside resolve locally to the module's scope.
+""",
+        snippet = r"mod ${1:name}",
+        stmt_tag = Stmt.Module("", empty_body),
+        resolve_stmt = mod_resolve,
+        eval_stmt = mod_eval,
     }
+    mod_def
 }
 
-/// Register the `use` import feature. Routes to the parser's
-/// `parse_use_declaration`. Resolution / linking happens in the
-/// resolver's name-rewriting pass.
-export fn use_feature() -> Feature {
-    feature_new("use") with {
-        stmt_tag: Stmt.Use("", []),
-        eval_stmt: use_eval,
+export fn use_lang() -> LanguageFeature {
+    LanguageFeature use_def {
+        name = "use",
+        title = "use — import names from a module or package",
+        docs = """
+`use path.to.module.{ names }` imports names into scope; a leading `@pkg`
+segment addresses a package. Path segments may be keywords (a directory
+may be named `defer`); the imported names themselves stay identifiers.
+""",
+        gram = composed([avra_modules_grammar()]),
+        builders = modules_builds(),
+        snippet = r"use ${1:path}.{${2:names}}",
+        stmt_tag = Stmt.Use("", []),
+        eval_stmt = use_eval,
     }
+    use_def
 }

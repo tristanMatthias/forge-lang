@@ -457,7 +457,7 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
         defers: empty_defers,
         rc_cleanup: empty_rc,
         rc_releasable: empty_releasable,
-        features: build_registry(),
+        features: store.parse_features(),
         trait_decls,
         newtypes: cg_newtypes,
         union_aliases: cg_union_aliases,

@@ -50,11 +50,11 @@ spec "grammar emitter: renders the statement family's generated static parser" {
         // derived adapter's ABI form, not a central SNode construction.
         // (The bare Break()/Continue() engine builds survive as toy-grammar
         // vocabulary but no longer appear in PRODUCTION emitted output.)
-        src.contains("_gb_build_break(st, [])") &&
-        src.contains("_gb_build_continue(st, [])") &&
-        src.contains("_gb_build_defer(st, [e])") &&
-        src.contains("_gb_build_errdefer(st, [e])") &&
-        src.contains("_gb_build_return(st, [e])") &&
+        src.contains("build_break_abi(st, [])") &&
+        src.contains("build_continue_abi(st, [])") &&
+        src.contains("build_defer_abi(st, [e])") &&
+        src.contains("build_errdefer_abi(st, [e])") &&
+        src.contains("build_return_abi(st, [e])") &&
         src.contains("CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, e))))")
     }
 
@@ -65,6 +65,6 @@ spec "grammar emitter: renders the statement family's generated static parser" {
                      "    let _ = st.advance()\n") &&
         src.contains("st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line") &&
         src.contains("e = parse_expression(st)\n") &&
-        src.contains("_gb_build_return(st, [e])")
+        src.contains("build_return_abi(st, [e])")
     }
 }

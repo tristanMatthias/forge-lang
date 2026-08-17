@@ -15,7 +15,7 @@
 
 // parse_grammar: the `grammar { }` expression desugars to it — required in
 // scope wherever a block appears, same as fragment_compose_test.
-use @std.avrac.features.grammar.{grammar_build_refs, derived_import_lines_for, grammar_checked, parse_grammar, Grammar, BuilderBind, PState, CapVal}
+use @std.avrac.features.grammar.{grammar_build_refs, derived_import_lines_for, builder_kind_rows, grammar_checked, parse_grammar, Grammar, BuilderBind, PState, CapVal}
 use @std.avrac.features.{builder_validation_error_for, feature_builders}
 
 /// ABI-shaped no-op — never invoked; these specs exercise validation and
@@ -92,7 +92,25 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ]
         let err = builder_validation_error_for("toy", toy_gram(), drifted)
-        err.contains("1 arg(s)") && err.contains("arity 2")
+        // t-kd4y.3 Batch A: (name, arity) is the dispatch key everywhere, so
+        // the message names the unmatched REF — a name may legitimately carry
+        // several rows at distinct arities (MkEnumDecl's generic/plain pair).
+        err.contains("1 arg(s)") && err.contains("no supplied builder of that name declares that arity")
+    }
+    then "TWO arities of ONE name are two distinct lowerings — both validate" {
+        // A gram that genuinely calls Phantom at BOTH arities, and a manifest
+        // supplying a row per arity: every ref resolves, every row is
+        // referenced, and the same-name pair is NOT a duplicate — the
+        // MkEnumDecl generic/plain shape, distilled.
+        let g = grammar {
+            top  = a:leaf b:leaf -> Phantom(a, b)
+            leaf = z:"ztok" -> Phantom(z)
+        }
+        let pair = [
+            bind("Phantom", "expr", 2, "features.toy", "phantom_pair_build"),
+            bind("Phantom", "expr", 1, "features.toy", "phantom_build"),
+        ]
+        builder_validation_error_for("toy", grammar_checked(g), pair) == ""
     }
     then "a `spanned` builder of a non-stmt kind is rejected" {
         // Span stamping composes mk_stamp_stmt_at around the adapter — a
@@ -158,7 +176,9 @@ spec "t-kd4y.3: generated import headers derive from the manifest" {
             bind("Unused", "expr", 0, "features.other", "unused_build"),
         ]
         let src = "fn parse_toy(st: PState) -> CapVal {\n    phantom_build(st, [a])\n    zed_build(st, [])\n}\n"
-        derived_import_lines_for(src, binds, "features.grammar", "core")
+        // The kind-row projection is what emission threads (g.builder_kinds)
+        // — derivation reads rows, never live BuilderBind fns.
+        derived_import_lines_for(src, builder_kind_rows(binds), "features.grammar", "core")
             == "use features.grammar.{CapVal, PState}\nuse features.toy.{phantom_build, zed_build}\n"
     }
     then "two owning modules derive two lines" {
@@ -167,26 +187,26 @@ spec "t-kd4y.3: generated import headers derive from the manifest" {
             bind("Zed", "expr", 0, "features.other", "zed_build"),
         ]
         let src = "fn parse_toy(st: PState) -> CapVal {\n    phantom_build(st, [a])\n    zed_build(st, [])\n}\n"
-        derived_import_lines_for(src, binds, "features.grammar", "core")
+        derived_import_lines_for(src, builder_kind_rows(binds), "features.grammar", "core")
             == "use features.grammar.{CapVal, PState}\nuse features.toy.{phantom_build}\nuse features.other.{zed_build}\n"
     }
     then "a type referenced only via List<> annotation is imported (WhenArm, review find on #1240)" {
         let src = "fn parse_toy(st: PState) -> CapVal {\n    mut a_list: List<WhenArm> = []\n    CapVal.Nil\n}\n"
-        derived_import_lines_for(src, no_binds(), "features.grammar", "core")
-            .contains("use core.{") && derived_import_lines_for(src, no_binds(), "features.grammar", "core").contains("WhenArm")
+        derived_import_lines_for(src, builder_kind_rows(no_binds()), "features.grammar", "core")
+            .contains("use core.{") && derived_import_lines_for(src, builder_kind_rows(no_binds()), "features.grammar", "core").contains("WhenArm")
     }
     then "a name inside a diagnostic STRING is not a reference" {
         let src = "fn parse_toy(st: PState) -> CapVal {\n    st.report(\"expected Variant here\")\n    CapVal.Nil\n}\n"
-        !derived_import_lines_for(src, no_binds(), "features.grammar", "core").contains("Variant")
+        !derived_import_lines_for(src, builder_kind_rows(no_binds()), "features.grammar", "core").contains("Variant")
     }
     then "a `.`-qualified member suffix is not a reference to the member's name" {
         let src = "fn parse_toy(st: PState) -> CapVal {\n    let p = Pattern.Variant\n    CapVal.Nil\n}\n"
-        let lines = derived_import_lines_for(src, no_binds(), "features.grammar", "core")
+        let lines = derived_import_lines_for(src, builder_kind_rows(no_binds()), "features.grammar", "core")
         lines.contains("Pattern") && !lines.contains("Variant")
     }
     then "an empty manifest routes every call to the engine module" {
         let src = "fn parse_toy(st: PState) -> CapVal {\n    phantom_build(st, [a])\n}\n"
-        derived_import_lines_for(src, no_binds(), "features.grammar", "core")
+        derived_import_lines_for(src, builder_kind_rows(no_binds()), "features.grammar", "core")
             == "use features.grammar.{CapVal, PState, phantom_build}\n"
     }
 }
@@ -205,19 +225,22 @@ spec "t-kd4y.3: defer resolves through the manifest — the flip's registration 
             if b.name == "build_defer" { d = "${b.kind}/${string(b.arity)}/${b.export_name}" }
             if b.name == "build_errdefer" { ed = "${b.kind}/${string(b.arity)}/${b.export_name}" }
         }
-        d == "stmt/1/_gb_build_defer" && ed == "stmt/1/_gb_build_errdefer"
+        d == "stmt/1/build_defer_abi" && ed == "stmt/1/build_errdefer_abi"
     }
 }
 
 spec "t-kd4y.3: the production manifest is duplicate-free" {
-    then "no build name is supplied by two features" {
+    then "no (name, arity) pair is supplied by two features" {
+        // (name, arity) is the dispatch key — same-name rows at DIFFERENT
+        // arities are two legitimate lowerings (fold_builders' contract), so
+        // only an exact pair collision is a duplicate here.
         let binds = feature_builders()
         mut clean = true
         mut i = 0
         while i < binds.length {
             mut j = i + 1
             while j < binds.length {
-                if binds[i].name == binds[j].name { clean = false }
+                if binds[i].name == binds[j].name && binds[i].arity == binds[j].arity { clean = false }
                 j = j + 1
             }
             i = i + 1

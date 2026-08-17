@@ -504,7 +504,7 @@ fn bind_literal(store: NodeStore, sig: FnSig, mod_path: string) -> ExprId {
         // typed fn signature (features own the AST shape, the engine owns
         // the SrcPos side-table), so external programs get the unstamped
         // path. A spanned row is a hand-authored engine decision
-        // (feature_builds.av) until an annotation earns the surface.
+        // (the features' lowering/ submodules) until an annotation earns the surface.
         FieldInit { name: "spanned", value_id: store.exprs.add_leaf(Expr.Bool("false")) },
         FieldInit { name: "module", value_id: str_lit(store, mod_path) },
         FieldInit { name: "export_name", value_id: str_lit(store, adapter_name(sig.name)) },

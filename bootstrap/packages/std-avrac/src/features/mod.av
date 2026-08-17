@@ -6,7 +6,7 @@
 // registers their factory functions.
 
 use features.closures.{closures_feature}
-use features.enum_decl.{enum_decl_feature}
+use features.enum_decl.{enum_lang}
 use features.extern_decl.{extern_decl_feature}
 use features.fn_decl.{fn_decl_feature}
 use features.for_stmt.{for_lang, for_in_lang}
@@ -19,7 +19,7 @@ use features.let_stmt.{let_destructure_feature, let_keyword_feature, const_keywo
 use features.list_comp.{list_comp_feature}
 use features.list_lit.{list_lit_feature}
 use features.map_lit.{map_lit_feature}
-use features.modules.{mod_feature, use_feature}
+use features.modules.{mod_lang, use_lang}
 use features.null_safety.{null_coalesce_feature, optional_chain_feature, optional_method_call_feature, try_feature, catch_feature}
 use features.parallel_stmt.{parallel_feature}
 use features.spawn_expr.{spawn_expr_feature}
@@ -142,7 +142,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 
     // ── Declarations (parse-only) ──
     register(reg, fn_decl_feature())
-    register(reg, enum_decl_feature())
     register(reg, impl_decl_feature())
     register(reg, extern_decl_feature())
     register(reg, trait_decl_feature())
@@ -156,8 +155,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
     register(reg, then_feature())
 
     // ── Infrastructure ──
-    register(reg, mod_feature())
-    register(reg, use_feature())
     register(reg, component_decl_feature())
     register(reg, grammar_feature())
     binds
@@ -168,7 +165,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), break_lang(), continue_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,
@@ -188,8 +185,13 @@ fn fold_builders(feats: List<LanguageFeature>) -> List<BuilderBind> {
     for f in feats {
         for b in f.builders {
             for seen in all {
-                if seen.name == b.name {
-                    grammar_startup_fail("build `${b.name}` is supplied by two features — one lowering, one owner")
+                // (name, arity) is the dispatch key — the executor consult and
+                // emit both guard on arity, so two arities of one name are two
+                // distinct lowerings (MkEnumDecl's generic/plain pair, Batch A).
+                // The SAME (name, arity) twice is still two features claiming
+                // one lowering: hard-fail.
+                if seen.name == b.name && seen.arity == b.arity {
+                    grammar_startup_fail("build `${b.name}`/${string(b.arity)} is supplied by two features — one lowering, one owner")
                     return all
                 }
             }
@@ -199,19 +201,22 @@ fn fold_builders(feats: List<LanguageFeature>) -> List<BuilderBind> {
     all
 }
 
-/// The per-feature grammar fragments, folded straight out of the feature
-/// DEFINITIONS: every LanguageFeature's non-empty `gram`, in registration
-/// order, plus the decl-keyword fragments (collected in
-/// features/grammar/avra_grammar.av — the one list the whole-program grammar
-/// composes from, so the two views cannot drift).
-/// Rule-disjointness is guarded by `fragment_rule_conflicts` in the specs.
+/// The COMPOSITION-OWNED per-feature grammar fragments: every definition
+/// whose gram declares a family (the registry composes those into the
+/// views), plus the decl-keyword fragments. A family-"" gram is
+/// validation/docs surface for rules composed ELSEWHERE (the schema's own
+/// contract — match's multi-family set, modules' decl rules) and folding
+/// it here double-counted every such rule against the explicit
+/// compositions (caught by the disjointness specs at the Batch A modules
+/// conversion). Rule-disjointness is guarded by `fragment_rule_conflicts`
+/// in the specs.
 export fn feature_grammar_fragments() -> List<Grammar> {
     mut all: List<Grammar> = []
     for f in language_features() {
         // Validate FIRST — a malformed gram must F9999 here, never be
-        // silently dropped by the empty-rules filter below.
+        // silently dropped by the family filter below.
         let g = feature_gram(f)
-        if g.rules.length > 0 { all.push(g) }
+        if f.gram_family != "" && g.rules.length > 0 { all.push(g) }
     }
     for g in feature_decl_grammar_fragments() {
         all.push(g)

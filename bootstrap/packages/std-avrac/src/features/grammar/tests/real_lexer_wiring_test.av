@@ -26,8 +26,9 @@ fn decl_grammar_src() -> string {
     "  decl          = fn_decl | type_decl | enum_decl\n" +
     "  fn_decl       = \"fn\" fname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, params, ret, body)\n" +
     "  type_decl     = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, fields)\n" +
-    "  enum_decl     = \"enum\" edname:IDENT \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(edname, vars)\n" +
+    "  enum_decl     = \"enum\" edname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(edname, tparams, vars)\n" +
     "  field         = fldname:IDENT \":\" ftype:type_expr -> MkField(fldname, ftype)\n" +
+    "  tparam        = tpname:IDENT ( \":\" bound:IDENT )? -> MkTypeParam(tpname, bound)\n" +
     "  variant       = vname:IDENT ( \"(\" ( vfields:field \",\"? )* \")\" )? -> MkEVariant(vname, vfields)\n" +
     "  param         = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
     "  statement     = break_stmt | return_stmt | expr_stmt\n" +
@@ -103,6 +104,7 @@ spec "grammar-DSL real-lexer wiring: run_grammar_*_toks over real tokens == hand
             agree("fn add(a: int, b: int) -> int { return a + b }") &&
             agree("type Point = { x: int, y: int }") &&
             agree("enum Color { Red, Green, Blue }") &&
+            agree("enum Pair<T, U: Show> { Both(left: T, right: U) }") &&
             agree("fn use_dyn(d: dyn Show) { }") &&
             agree("fn pipeline(xs: [int]) -> [int] { }")
         }

@@ -55,6 +55,6 @@ spec "for as a LanguageFeature (partial flip: build_for owned, destructure centr
         for b in feature_builders() {
             if b.name == "build_for" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
         }
-        row == "stmt/4/spanned/_gb_build_for"
+        row == "stmt/4/spanned/build_for_abi"
     }
 }

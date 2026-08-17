@@ -135,7 +135,7 @@ spec "t-47hc slice 10.11: `enum` is routed onto the production path, COMMITTED" 
         // over a non-matching CapVal, and an aborted sub-parse hands back exactly that.
         // The coercion is still the assertion's point; what moved is where the result
         // comes from, so the SHARED-core check is unchanged in substance.
-        src.contains("mk_evariant(capval_tok_text(vname), vfields_list)") &&
+        src.contains("evariant_build(st, [vname, CapVal.Fields(vfields_list)])") &&
             src.contains("let __gres0 = parse_variant(st)") &&
             src.contains("vars_list.push(capval_to_variant(st, __gres0))")
     }

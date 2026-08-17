@@ -6,17 +6,15 @@ use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
 use features.eval.{ok_result, value_null}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_gate_unthreaded_lambda}
-use features.grammar.{parse_grammar, defer_builds, errdefer_builds}
+use features.grammar.{parse_grammar}
+use features.defer.lowering.{defer_builds, errdefer_builds}
 use list_ops.{list_push_copy}
 
 /// The typed LOWERINGS, home at last (t-47hc.8 dissolution): the grams'
 /// `-> build_defer(e)` / `-> build_errdefer(e)` resolve to THESE fns; the
-/// engine's checked-in `_gb_` adapters (feature_builds.av) import them back
+/// lowerings + rows live in lowering/ (the wrapper-free Batch A shape)
 /// — the features.grammar → features.defer edge the statement-view
 /// composition already proved safe.
-export fn build_defer(e: ExprId) -> Stmt { Stmt.Defer(e) }
-export fn build_errdefer(e: ExprId) -> Stmt { Stmt.Errdefer(e) }
-
 /// Push one DeferStack entry — the body emits later, at each scope exit.
 fn stack_entry(ctx: Ctx, env: List<VarBinding>, entry: DeferEntry) -> Result<StmtResult, string> {
     ok_sr(ctx with { defers: list_push_copy(ctx.defers, entry) }, env)

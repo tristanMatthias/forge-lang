@@ -5,7 +5,8 @@
 // name` builds Stmt.Module(name, []) — a stub whose body the resolver fills
 // from the `.av` file later (parse_module_declaration takes no inline body).
 // The seam needs no new capture kind: the path/name segments are plain Toks,
-// and MkUse/MkModule assemble them.
+// and MkUseBare/MkUsePkg/MkModule assemble them (the production pair — the
+// historical 3-arg MkUse died dead-code at the Batch A modules flip).
 //
 // Oracle: run the DSL-generated parser AND the PINNED generated parser (the hand parser is deleted; the pin is what keeps this side's engine fixed)
 // (parser_new(src).parse_declaration()) over a corpus and assert identical
@@ -25,7 +26,9 @@ use @std.avrac.core.{render_stmt_id}
 fn use_mod_grammar_src() -> string {
     "grammar Decl {\n" +
     "  declaration = use_decl | mod_decl\n" +
-    "  use_decl    = \"use\" ( at:\"@\" )? seg:IDENT ( \".\" seg:IDENT )* \"{\" ( unames:IDENT \",\"? )* \"}\" -> MkUse(at, seg, unames)\n" +
+    "  use_decl    = \"use\" ut:use_tail -> ut\n" +
+    "  use_tail    = \"@\" upkg:IDENT \".\" useg:IDENT ( \".\" useg:IDENT )* \"{\" ( unames:IDENT \",\"? )* \"}\" -> MkUsePkg(upkg, useg, unames)\n" +
+    "              | useg:IDENT ( \".\" useg:IDENT )* \"{\" ( unames:IDENT \",\"? )* \"}\" -> MkUseBare(useg, unames)\n" +
     "  mod_decl    = \"mod\" mname:IDENT -> MkModule(mname)\n" +
     "}"
 }
