@@ -24,8 +24,8 @@
 // and the pass cannot double-apply. The eventual endpoint (recorded on
 // t-47hc.8) is regen-time INLINING of the pure typed fns into the
 // generated parsers, which deletes this file entirely.
-use core.{Stmt, ExprId, StmtId, WhenArm}
-use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_to_stmt_opt, capval_tok_text}
+use core.{Stmt, ExprId, StmtId, WhenArm, NodeRef, byte_span_none}
+use features.grammar.{PState, CapVal, BuilderBind, capval_stmt_val, capval_warm_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_to_stmt_opt, capval_tok_text, capval_to_pat, capval_to_arm_list, capval_arm_val}
 // The typed fns live in their FEATURE FILES (t-47hc.8 dissolution, slice
 // b): this surface imports them back. The features.grammar → features.X
 // file-level edges (with each feature file importing features.grammar in
@@ -37,7 +37,7 @@ use features.while_stmt.{build_while}
 use features.if_stmt.{build_if}
 use features.for_stmt.{build_for}
 use features.break_continue.{build_break, build_continue}
-use features.match.{build_when_arm, build_when_default}
+use features.match.{build_when_arm, build_when_default, build_arm, build_match}
 
 export fn _gb_build_defer(st: PState, vals: List<CapVal>) -> CapVal {
     capval_stmt_val(st, build_defer(capval_to_expr(st, vals[0])))
@@ -77,13 +77,39 @@ export fn _gb_build_when_default(st: PState, vals: List<CapVal>) -> CapVal {
     capval_warm_val(st, build_when_default(capval_to_expr(st, vals[0])))
 }
 
-export fn when_arm_builds() -> List<BuilderBind> {
+export fn _gb_build_arm(st: PState, vals: List<CapVal>) -> CapVal {
+    // The boxed-Pattern read lives HERE, not in the typed fn — adapters are
+    // the marshalling layer, and the arena is marshalling (t-kd4y.3).
+    let pid = capval_to_pat(st, vals[0])
+    capval_arm_val(st, build_arm(st.store.pats.get(pid), pid, capval_to_expr_opt(st, vals[1]), capval_to_expr(st, vals[2])))
+}
+export fn _gb_build_match(st: PState, vals: List<CapVal>) -> CapVal {
+    // The arms' PatRef EDGES are part of the production row (the retired
+    // emit-side mk_match recorded them; the faithfulness oracle reads them
+    // back) — edges are arena marshalling, so they live in the adapter.
+    let arms = capval_to_arm_list(vals[1])
+    mut refs: List<NodeRef> = []
+    for arm in arms {
+        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
+    }
+    CapVal.SNode(st.store.add_stmt(build_match(capval_to_expr(st, vals[0]), arms), byte_span_none(), refs))
+}
+
+/// ALL of the match feature's rows — when-arms (the first flip) plus the
+/// t-kd4y.3 core pair. One list per feature.
+export fn match_builds() -> List<BuilderBind> {
     [BuilderBind { name: "build_when_arm", kind: "warm", arity: 2, spanned: false,
                    module: "features.grammar", export_name: "_gb_build_when_arm",
                    build: _gb_build_when_arm },
      BuilderBind { name: "build_when_default", kind: "warm", arity: 1, spanned: false,
                    module: "features.grammar", export_name: "_gb_build_when_default",
-                   build: _gb_build_when_default }]
+                   build: _gb_build_when_default },
+     BuilderBind { name: "build_arm", kind: "arm", arity: 3, spanned: false,
+                   module: "features.grammar", export_name: "_gb_build_arm",
+                   build: _gb_build_arm },
+     BuilderBind { name: "build_match", kind: "stmt", arity: 2, spanned: false,
+                   module: "features.grammar", export_name: "_gb_build_match",
+                   build: _gb_build_match }]
 }
 
 export fn defer_builds() -> List<BuilderBind> {

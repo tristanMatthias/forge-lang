@@ -861,7 +861,7 @@ export fn central_build_kind(bn: string) -> string {
             or "MkPrimaryFail" -> "expr"
         "Break" or "Continue" or "ReturnEmpty" or "Return"
             or "ExprStmt" or "Block"
-            or "MkForDestructure" or "MkMatch" or "MkMatchTable"
+            or "MkForDestructure" or "MkMatchTable"
             or "MkWhenStmt" or "MkIfLetStmt" -> "stmt"
         "MkArmReturn" -> "expr"
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
@@ -870,7 +870,6 @@ export fn central_build_kind(bn: string) -> string {
         // capval_to_expr default. That is the same silent tree-corruption trap the annotation
         // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
         "MkSpliceArm" -> "arm"
-        "MkArm" -> "arm"
         // The destructure-loop binding carrier (a packed token list: gensym
         // temp + user names — see mk_for_binding). The row was MISSING while
         // the for rules were spine-composed: no validator ran against that

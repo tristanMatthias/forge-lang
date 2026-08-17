@@ -51,7 +51,7 @@ spec "t-47hc.25: the arm fragment owns exactly the two arm rules" {
     }
     then "match_arm still carries the pattern, the optional guard, and the arm build" {
         let r = arm_rules()
-        r.contains("pattern_or") && r.contains("\"if\"") && r.contains("MkArm(p, g, b)")
+        r.contains("pattern_or") && r.contains("\"if\"") && r.contains("build_arm(p, g, b)")
     }
     then "the `@off(allow_dot_postfix)` gate survives into the GENERATED parser" {
         // Asserted against the emitted source, not the render: render_grammar does not

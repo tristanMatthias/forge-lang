@@ -22,8 +22,8 @@ use @std.avrac.core.{render_stmt_id}
 
 fn match_grammar_src() -> string {
     "grammar Stmt {\n" +
-    "  match_stmt  = \"match\" subj:expression \"{\" ( arms:match_arm \",\"? )* \"}\" -> MkMatch(subj, arms)\n" +
-    "  match_arm   = p:pattern_or ( \"if\" g:expression )? \"->\" b:expression -> MkArm(p, g, b)\n" +
+    "  match_stmt  = \"match\" subj:expression \"{\" ( arms:match_arm \",\"? )* \"}\" -> build_match(subj, arms)\n" +
+    "  match_arm   = p:pattern_or ( \"if\" g:expression )? \"->\" b:expression -> build_arm(p, g, b)\n" +
     // ── pattern family ──
     "  pattern_or  = l:pattern ( \"or\" r:pattern_or )? -> OrMaybe(l, r)\n" +
     "  pattern     = variant_pat | ident_pat | bool_pat | str_pat | neg_pat | num_pat\n" +
