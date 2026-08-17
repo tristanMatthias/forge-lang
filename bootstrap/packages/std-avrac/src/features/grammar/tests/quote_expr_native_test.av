@@ -67,19 +67,6 @@ fn agree_bad(source: string) -> bool {
 
 fn wrap(body: string) -> string { "fn f() -> int {\n let q = ${body}\n return 0\n}\n" }
 
-/// Exact per-engine diagnostic counts for a characterized divergence — the
-/// point is that ANY movement (either engine, either direction) surfaces.
-fn counts(source: string, want_emit: int, want_exec: int) -> bool {
-    let e = mode_parse("emit", source, null)
-    let x = mode_parse("exec", source, e.r.store)
-    let ok = e.r.bag.diagnostics.length == want_emit && x.r.bag.diagnostics.length == want_exec
-    if !ok {
-        println("characterized counts moved: emit=${string(e.r.bag.diagnostics.length)} (want ${string(want_emit)}) exec=${string(x.r.bag.diagnostics.length)} (want ${string(want_exec)})")
-        println(source)
-    }
-    ok
-}
-
 spec "t-bwjg: the block-bodied quote kinds are grammar-native" {
     given "every valid block-bodied form" {
         then "the default `expr` kind agrees with hand" {
@@ -135,45 +122,38 @@ spec "t-bwjg: the block-bodied quote kinds are grammar-native" {
     }
     given "malformed quote forms" {
         // Both paths must REPORT, the same number of times, and recover to the same tree.
-        then "truncated BODIES (brace present) are reported identically on BOTH paths" {
+        then "truncated quote headers and bodies are reported on BOTH paths" {
+            // Each on its own line of history: `quote` and `quote stmt` (a
+            // header ending BEFORE the body's `{`) diverged 1-vs-2 until
+            // quote_expr gained the spawn-idiom `@require body:block_expr`
+            // gate (t-rd44 — surfaced the day this file's legs were actually
+            // pinned; the pre-testkit `tree(static_raw, …)` ignored its flag
+            // and every comparison here was one engine against itself).
+            agree_bad(wrap("quote")) &&
             agree_bad(wrap("quote {")) &&
+            agree_bad(wrap("quote stmt")) &&
             agree_bad(wrap("quote stmt {"))
-        }
-        then "KNOWN DIVERGENCE (t-rd44): a header truncated BEFORE its body brace — exec double-reports" {
-            // Surfaced the day this file's legs were actually pinned: the
-            // pre-testkit `tree(static_raw, …)` ignored its flag, so every
-            // comparison here was the production engine against itself.
-            // The boundary is exact (probed over all eight malformed forms):
-            // once the body's `{` is present, or a kind-specific rule
-            // engages (`quote type` / `quote arm`), the engines agree — the
-            // double-report fires only when the header ends BEFORE the
-            // brace. Both engines DO report (no silent drop — the t-6u9b
-            // floor holds); exec reports twice where emit reports once, the
-            // "reports but does not FAIL" shape. Exact counts asserted so a
-            // drift in EITHER direction — the fix, or a third report —
-            // surfaces here; t-rd44 restores these to agree_bad.
-            counts(wrap("quote"), 1, 2) &&
-            counts(wrap("quote stmt"), 1, 2)
         }
         then "malformed `type` / `arm` forms are reported on BOTH paths" {
             agree_bad(wrap("quote type")) &&
             agree_bad(wrap("quote type {")) &&
             agree_bad(wrap("quote arm {"))
         }
-        then "KNOWN DIVERGENCE (t-rd44): an unknown kind word — recovery SHAPES differ" {
-            // `parse_quote_kind` only recognises stmt/stmts/decl/type/arm; anything else
-            // falls through to "expr" and errors on the body's opening token. Both
-            // engines report (1 vs 2 — the same double-report as above), but they
-            // RECOVER differently: emit collapses the whole program to one error node
-            // while exec keeps the fn shape and localizes the error inside it —
-            // arguably the better recovery; t-rd44 decides the intended one and
-            // restores this input to agree_bad. The shapes are pinned exactly so any
-            // movement on either engine surfaces here.
-            let e = mode_parse("emit", wrap("quote badkind { 1 }"), null)
-            let x = mode_parse("exec", wrap("quote badkind { 1 }"), e.r.store)
-            counts(wrap("quote badkind { 1 }"), 1, 2) &&
-                rendered(e.r) == "(error)" &&
-                rendered(x.r).contains("(fn f") && rendered(x.r).contains("(error)")
+        then "an unknown kind word falls to the `{`-gate error, identically" {
+            // An unrecognised kind word is not stmt/stmts/decl (and the
+            // type/arm peeks declined), so the optional kind is skipped and
+            // the @require `{` gate reports at the kind word. Pre-t-rd44 the
+            // engines even RECOVERED differently here (emit collapsed the
+            // program to one error node; exec kept the fn and localized) —
+            // agree_bad now asserts count AND tree equality.
+            agree_bad(wrap("quote badkind { 1 }"))
+        }
+        then "spawn/isolated truncated headers — the sibling gates (t-rd44)" {
+            // `isolated` had the identical missing-@require divergence as the
+            // bare `quote` (spawn already carried the gate and served as the
+            // aligned-behavior control while diagnosing).
+            agree_bad(wrap("spawn")) &&
+            agree_bad(wrap("isolated"))
         }
     }
 }

@@ -5095,7 +5095,19 @@ fn parse_quote_expr(st: PState) -> CapVal {
     }
     let __modes_2 = st.modes
     st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
-    let body = parse_block_expr(st)
+    if !(starts_block_expr(st)) {
+        st.report("expected `{` to open the quote body")
+        st.set_abort_prop(true)
+        st.set_modes(__modes_2)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres2 = parse_block_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
+        st.set_modes(__modes_2)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let body = __rres2
     st.set_modes(__modes_2)
     mk_quote(st, sp_start, k, body)
 }
@@ -5120,7 +5132,17 @@ fn parse_spawn_expr(st: PState) -> CapVal {
 fn parse_isolated_expr(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     let _ = st.advance()
-    let body = parse_block_expr(st)
+    if !(starts_block_expr(st)) {
+        st.report("expected `{` after isolated")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres1 = parse_block_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
+        return CapVal.Node(st.error_node_silent())
+    }
+    let body = __rres1
     mk_isolated(st, sp_start, body)
 }
 
