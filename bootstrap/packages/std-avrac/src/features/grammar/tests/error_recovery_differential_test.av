@@ -27,8 +27,8 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
-use @std.avrac.parse.{parser_new}
-use @std.avrac.core.{render_stmt_ids}
+use @std.avrac.parse.{parser_new, parser_new_shared, ProgramParseResult}
+use @std.avrac.core.{render_stmt_ids, NodeStore}
 
 // The occurrence-ordered F-code signature of `bs2 check <src>` under `env`.
 // Comparing the ORDERED list (duplicates preserved) captures both the error SET
@@ -797,8 +797,19 @@ spec "ps3t.6.7 slice 5a: static parser error recovery == exec oracle (invalid co
 /// Those are the two surviving implementations; production is "emit", so a comparison
 /// that omits "exec" cannot see an executor-only divergence — and the executor is still
 /// the production parser for the TYPE family, so it is not a museum piece.
-fn rtree_at(mode: string, source: string) -> string {
-    mut p = parser_new(source)
+/// One mode's parse over `source`. `shared` reuses a prior leg's store — and
+/// therefore its REGISTRY: `parser_new` eagerly re-runs every feature factory
+/// and re-parses every definition gram per construction, and under
+/// `AVRA_RC_STRICT`'s no-reuse quarantine those builds are CUMULATIVE. This
+/// file makes ~500 engine-leg parses; per-leg fresh stores were the 10GB
+/// x8-shard F4014 on the rc-strict gate (the test-side twin of the compiler's
+/// own throwaway-registry fix that `parser_new_shared` documents). Pair legs
+/// share one store; `start` is the store's stmt watermark before the parse,
+/// so per-leg row reads (poslist) slice [start, count) instead of the store.
+type MRun = { r: ProgramParseResult, start: int }
+fn mode_parse(mode: string, source: string, shared: NodeStore?) -> MRun {
+    mut p = if shared == null { parser_new(source) }
+            else { parser_new_shared(source, "<differential>", shared!) }
     // EVERY routing field is set explicitly, for BOTH modes. `parser_new` reads
     // `decl_static` from the environment (`… != "0"`, so ON by default) and `expr_flip`
     // independently of it, which means a helper that sets only the ONE field
@@ -809,9 +820,17 @@ fn rtree_at(mode: string, source: string) -> string {
     let f = mode_flags(mode)
     p.decl_static = f.decl_static
     p.expr_flip = f.expr_flip
-    let r = p.parse_file_program()
+    let start = p.store.stmts.count()
+    MRun { r: p.parse_file_program(), start: start }
+}
+
+fn rendered(r: ProgramParseResult) -> string {
     if r.ids == null { return "<null>" }
     render_stmt_ids(r.store, r.ids!)
+}
+
+fn rtree_at(mode: string, source: string) -> string {
+    rendered(mode_parse(mode, source, null).r)
 }
 
 /// The IN-PROCESS twin of `mode_env` — EVERY routing field for the named mode, so a
@@ -846,8 +865,12 @@ fn rtree(static_raw: bool, source: string) -> string {
     rtree_at(if static_raw { "emit" } else { "exec" }, source)
 }
 fn agree_tree(source: string) -> bool {
-    let sr = rtree(true, source)
-    let ex = rtree(false, source)
+    // One store for both legs — the exec parse reuses the emit parse's
+    // registry (see mode_parse's WHY).
+    let re = mode_parse("emit", source, null)
+    let rx = mode_parse("exec", source, re.r.store)
+    let sr = rendered(re.r)
+    let ex = rendered(rx.r)
     if sr != ex {
         println("recovery tree mismatch")
         println(source)
@@ -976,30 +999,27 @@ spec "t-47hc.4.1: emit and exec agree on the inputs that split the hand from the
 //
 // A genuinely DROPPED position still fails: the row vanishes from the stamped
 // sequence, so the two lists diverge in length and content.
-fn poslist(static_raw: bool, source: string) -> string {
-    mut p = parser_new(source)
-    let f = mode_flags(if static_raw { "emit" } else { "exec" })
-    p.decl_static = f.decl_static
-    p.expr_flip = f.expr_flip
-    let r = p.parse_file_program()
-    if r.ids == null { return "<null>" }
+/// One leg's stamped positions, sliced to the rows THIS parse appended
+/// ([start, count)) — on a shared store the earlier leg's rows precede ours,
+/// and the whole-store walk this used to do would fold them in.
+fn poslist_from(m: MRun) -> string {
+    if m.r.ids == null { return "<null>" }
     mut out = ""
-    mut i = 0
-    while i < r.store.stmts.count() {
-        let sp = r.store.stmts.pos_of(StmtId(i))
+    mut i = m.start
+    while i < m.r.store.stmts.count() {
+        let sp = m.r.store.stmts.pos_of(StmtId(i))
         if sp.line > 0 { out = out + string(sp.line) + ":" + string(sp.col) + " " }
         i = i + 1
     }
     out
 }
 
+fn poslist(static_raw: bool, source: string) -> string {
+    poslist_from(mode_parse(if static_raw { "emit" } else { "exec" }, source, null))
+}
+
 fn rdiags(static_raw: bool, source: string) -> int {
-    mut p = parser_new(source)
-    let f = mode_flags(if static_raw { "emit" } else { "exec" })
-    p.decl_static = f.decl_static
-    p.expr_flip = f.expr_flip
-    let r = p.parse_file_program()
-    r.bag.diagnostics.length
+    mode_parse(if static_raw { "emit" } else { "exec" }, source, null).r.bag.diagnostics.length
 }
 
 /// The assertion for an INVALID source: both parsers recover to the same tree AND
@@ -1007,9 +1027,22 @@ fn rdiags(static_raw: bool, source: string) -> int {
 /// for anything malformed — `agree_tree` alone cannot tell "reported and recovered"
 /// from "silently dropped".
 fn agree_bad(source: string) -> bool {
-    if !agree_tree(source) { return false }
-    let sr = rdiags(true, source)
-    let ex = rdiags(false, source)
+    // TREE and DIAG-COUNT from the SAME pair of parses (one store, one
+    // registry build) — this used to re-parse four times: twice for the
+    // trees, twice more for the counts.
+    let re = mode_parse("emit", source, null)
+    let rx = mode_parse("exec", source, re.r.store)
+    let st = rendered(re.r)
+    let xt = rendered(rx.r)
+    if st != xt {
+        println("recovery tree mismatch")
+        println(source)
+        println("emit=" + st)
+        println("exec=" + xt)
+        return false
+    }
+    let sr = re.r.bag.diagnostics.length
+    let ex = rx.r.bag.diagnostics.length
     if sr == 0 || ex == 0 {
         println("SILENT DROP — invalid source parsed with no diagnostic")
         println(source)
@@ -1741,8 +1774,9 @@ fn tree_agrees_everywhere(source: string) -> bool {
     // one of the two comparisons was a value against itself. Raised in review on PR
     // #1220 — the same shape this file exists to police, arriving by rename rather than
     // by design. The name is kept: it still means "on every engine there is".
-    let e = rtree_at("emit", source)
-    let x = rtree_at("exec", source)
+    let me = mode_parse("emit", source, null)
+    let e = rendered(me.r)
+    let x = rendered(mode_parse("exec", source, me.r.store).r)
     if e != x {
         println("TREE mismatch across engines")
         println(source)
@@ -1887,8 +1921,10 @@ spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
 }
 
 fn agree_pos(source: string) -> bool {
-    let h = poslist(false, source)
-    let n = poslist(true, source)
+    let mx = mode_parse("exec", source, null)
+    let mn = mode_parse("emit", source, mx.r.store)
+    let h = poslist_from(mx)
+    let n = poslist_from(mn)
     if h != n {
         println("SrcPos side-table divergence")
         println(source)

@@ -515,7 +515,7 @@ fn emit_fold_build(g: Grammar, build: GBuild, seed_label: string, inner: GSeq) -
             }
             // fold_logical/fold_nullish take the rule-entry sp_start (emit_fold
             // captures it); fold_binary→Pratt and fold_postfix do not.
-            let sp_arg = if build_uses_sp_start(g, name) { "sp_start, " } else { "" }
+            let sp_arg = if build_uses_sp_start(g, name, args.length) { "sp_start, " } else { "" }
             "CapVal.Node(${build_fn(name)}(st, ${sp_arg}${join_commas(rendered)}))"
         }
         _ -> "CapVal.Node(st.error_node(\"fold rule without a build\"))"
@@ -528,12 +528,14 @@ fn emit_fold_build(g: Grammar, build: GBuild, seed_label: string, inner: GSeq) -
 /// emit `let sp_start = st.cur().pos` at fn entry (emit_fold / emit_single_branch);
 /// fold_binary (→Pratt, sp_start captured in the loop) and the span-free
 /// fold_postfix / mk_is / etc. are excluded.
-fn build_uses_sp_start(g: Grammar, name: string) -> bool {
-    // Manifest names answer from the STAMPED rows — consult order mirrors
-    // emit_call_build, and reading the grammar (not feature_builders(),
-    // which re-runs every factory) keeps emission allocation-flat.
+fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
+    // Manifest names answer from the STAMPED rows — consult keys (name, arity)
+    // exactly as emit_call_build does, so the sp_start prelude and the call it
+    // feeds always agree on which row's `spanned` applies. Reading the grammar
+    // (not feature_builders(), which re-runs every factory) keeps emission
+    // allocation-flat.
     for b in g.builder_kinds {
-        if b.name == name { return b.spanned }
+        if b.name == name && b.arity == arity { return b.spanned }
     }
     // `-> return v` in a match arm stamps the SYNTHESIZED return row at the `return`
     // keyword — the rule's entry byte. The hand snapshots that position before parsing
@@ -619,7 +621,7 @@ fn build_uses_sp_start(g: Grammar, name: string) -> bool {
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
 fn seq_build_uses_sp_start(g: Grammar, build: GBuild) -> bool {
     match build {
-        .Call(name, _) -> build_uses_sp_start(g, name)
+        .Call(name, bargs) -> build_uses_sp_start(g, name, bargs.length)
         _ -> false
     }
 }

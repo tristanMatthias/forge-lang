@@ -790,7 +790,7 @@ export fn node_kind(g: Grammar, node: GNode, visited: List<string>) -> string {
 
 export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
     match seq.build {
-        .Call(bn, _) -> build_kind_with(g.builder_kinds, bn)
+        .Call(bn, bargs) -> build_kind_with(g.builder_kinds, bn, bargs.length)
         // A PASSTHROUGH build (`-> n`) has the kind of whatever `n` captured. Left
         // unresolved this defaults the rule to "expr", and the mistyping CASCADES:
         // `use_decl = "use" ut:use_tail -> ut` made `declaration` non-statement, which
@@ -928,10 +928,14 @@ export fn central_build_kind(bn: string) -> string {
 /// "expr". Grammar analysis (accumulator typing, alternation kind
 /// inference) keeps this leniency; exact membership questions go to
 /// `central_build_kind`, manifest validation to features/lang.av.
-export fn build_kind_with(rows: List<BuildKindRow>, bn: string) -> string {
+export fn build_kind_with(rows: List<BuildKindRow>, bn: string, arity: int) -> string {
     let k = central_build_kind(bn)
     if k != "" { return k }
-    for r in rows { if r.name == bn { return r.kind } }
+    // (name, arity) — the manifest dispatch key everywhere (executor consult,
+    // emit_call_build, fold_builders' dedup). A name may carry rows at several
+    // arities with distinct kinds; matching by name alone would classify every
+    // call by whichever row folded first.
+    for r in rows { if r.name == bn && r.arity == arity { return r.kind } }
     "expr"
 }
 
@@ -939,7 +943,7 @@ export fn build_kind_with(rows: List<BuildKindRow>, bn: string) -> string {
 /// (validation preambles, specs pinning the central table alone).
 export fn build_kind(bn: string) -> string {
     let empty: List<BuildKindRow> = []
-    build_kind_with(empty, bn)
+    build_kind_with(empty, bn, 0)
 }
 
 /// True iff the primary is a zero-width predicate (emit side) — `@when(flag)` mode read

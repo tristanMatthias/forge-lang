@@ -36,12 +36,10 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 /// @field expr_tag       — sentinel Expr value whose tag this feature
 ///                          handles (null when not an expr feature).
 /// @field stmt_tag       — sentinel Stmt value, mirror of expr_tag.
-/// @field stmt_keyword   — first token of a stmt-level construct.
 /// @field expr_keyword   — leading keyword of a `kw { … }` expression
 ///                          construct (e.g. "grammar"); the generic
 ///                          "registered `<keyword> { }` → package parser"
 ///                          seam for embedded sublanguages.
-/// @field parse_stmt     — parser hook for stmt-level constructs.
 /// @field parse_expr     — parser hook for `expr_keyword`-led expressions.
 ///                          The `int` arg is the keyword's start offset
 ///                          (parse_primary's `sp_start`) so the generated
@@ -102,9 +100,9 @@ export fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
 export fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     StepResult { runtime: rt, value: value_null(), had_error: true, is_return: false, error_message: "no eval_stmt handler" }
 }
-/// Parser no-op — returns null so the parser falls back to the
-/// in-tree dispatch when no feature claims this keyword.
-/// Expression-parser no-op for the `parse_expr` default.
+/// Expression-parser no-op for the `parse_expr` default — errors when a
+/// claimed keyword has no parser. (An entirely unclaimed keyword never
+/// reaches this: lookup_expr_parser answers null and the parser moves on.)
 export fn noop_parse_expr(p: Parser, start: int) -> Result<ExprId, string> { .Err("no expr parser registered") }
 
 /// Construct a Feature with no-op handlers. Each feature module

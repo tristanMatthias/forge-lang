@@ -98,15 +98,19 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
         err.contains("1 arg(s)") && err.contains("no supplied builder of that name declares that arity")
     }
     then "TWO arities of ONE name are two distinct lowerings — both validate" {
+        // A gram that genuinely calls Phantom at BOTH arities, and a manifest
+        // supplying a row per arity: every ref resolves, every row is
+        // referenced, and the same-name pair is NOT a duplicate — the
+        // MkEnumDecl generic/plain shape, distilled.
+        let g = grammar {
+            top  = a:leaf b:leaf -> Phantom(a, b)
+            leaf = z:"ztok" -> Phantom(z)
+        }
         let pair = [
+            bind("Phantom", "expr", 2, "features.toy", "phantom_pair_build"),
             bind("Phantom", "expr", 1, "features.toy", "phantom_build"),
-            bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ]
-        // toy_gram references Phantom with 1 arg; adding a second Phantom row
-        // at arity 1 would duplicate — but a DIFFERENT-arity row referenced by
-        // a second rule is legal. Here the single-arity manifest still passes,
-        // pinning that the restructured validator accepts the base case.
-        builder_validation_error_for("toy", toy_gram(), pair) == ""
+        builder_validation_error_for("toy", grammar_checked(g), pair) == ""
     }
     then "a `spanned` builder of a non-stmt kind is rejected" {
         // Span stamping composes mk_stamp_stmt_at around the adapter — a
@@ -226,14 +230,17 @@ spec "t-kd4y.3: defer resolves through the manifest — the flip's registration 
 }
 
 spec "t-kd4y.3: the production manifest is duplicate-free" {
-    then "no build name is supplied by two features" {
+    then "no (name, arity) pair is supplied by two features" {
+        // (name, arity) is the dispatch key — same-name rows at DIFFERENT
+        // arities are two legitimate lowerings (fold_builders' contract), so
+        // only an exact pair collision is a duplicate here.
         let binds = feature_builders()
         mut clean = true
         mut i = 0
         while i < binds.length {
             mut j = i + 1
             while j < binds.length {
-                if binds[i].name == binds[j].name { clean = false }
+                if binds[i].name == binds[j].name && binds[i].arity == binds[j].arity { clean = false }
                 j = j + 1
             }
             i = i + 1
