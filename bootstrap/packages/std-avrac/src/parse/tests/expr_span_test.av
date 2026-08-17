@@ -16,13 +16,13 @@
 //      to the enclosing compound's span. This is load-bearing for interning
 //      safety — see intern_test.av's rollback family.
 
-use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.parse.{parse_expression_generated_probe}
 use @std.avrac.core.{Expr, NodeStore, ExprId, byte_span_is_none}
 
 /// The probe's root span, or a [-1, -1) marker when the parse failed —
 /// keeps each then-body a single boolean expression.
 fn root_span_of(source: string) -> List<int> {
-    let probe = parse_expression_native_probe(source)
+    let probe = parse_expression_generated_probe(source)
     if probe.had_error != 0 { return [0 - 1, 0 - 1] }
     let sp = probe.store.exprs.span_of(probe.root)
     if byte_span_is_none(sp) { return [0 - 1, 0 - 1] }
@@ -37,7 +37,7 @@ fn root_span_of(source: string) -> List<int> {
 /// root begins at 0. Distinct per-occurrence starts are the point of
 /// threading — a shared/none span would collapse them.
 fn nested_compound_own_start() -> bool {
-    let probe = parse_expression_native_probe("1 + 2 * 3")
+    let probe = parse_expression_generated_probe("1 + 2 * 3")
     if probe.had_error != 0 { return false }
     let root_sp = probe.store.exprs.span_of(probe.root)
     let mul_sp = match probe.store.exprs.get(probe.root) {
@@ -51,7 +51,7 @@ fn nested_compound_own_start() -> bool {
 /// span on it would lie about one of the two positions, so the leaf
 /// deliberately carries none — the enclosing Binary's span attributes.
 fn interned_operands_span_free(source: string) -> bool {
-    let probe = parse_expression_native_probe(source)
+    let probe = parse_expression_generated_probe(source)
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .Binary(left, _, right) ->

@@ -13,7 +13,7 @@
 // deliberately kept out of their corpora ("avoids nested generics — the `>>`
 // merge, the 6.5.8/6.5.10 concern"). It now works.
 //
-// Oracle: run the DSL type parser AND the hand parser (parse_type_expr, which
+// Oracle: run the DSL type parser AND the pinned generated parser (parse_type_expr, which
 // splits `>>` via maybe_split_shr), lower both via the shared type_expr_to_vtype,
 // and assert identical ValueTypes via render_type_id.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_type}
@@ -39,8 +39,12 @@ fn dsl_type(src: string) -> string {
     render_type_id(r.store, r.root)
 }
 
-fn hand_type(src: string) -> string {
+fn generated_type(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.type_static = true
     match p.parse_type_expr("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))
@@ -50,7 +54,7 @@ fn hand_type(src: string) -> string {
     }
 }
 
-fn agree(src: string) -> bool { dsl_type(src) == hand_type(src) }
+fn agree(src: string) -> bool { dsl_type(src) == generated_type(src) }
 
 spec "grammar-DSL gnarly-5%: nested-generic >>-split == hand parser (ps3t.6.5.10)" {
     given "double nesting that closes with `>>`" {
@@ -88,7 +92,7 @@ spec "grammar-DSL gnarly-5%: nested-generic >>-split == hand parser (ps3t.6.5.10
             agree("Box<T>?") &&
             agree("int") &&
             // sanity: the nested tree really differs from the flat one.
-            dsl_type("List<List<T>>") == hand_type("List<List<T>>") &&
+            dsl_type("List<List<T>>") == generated_type("List<List<T>>") &&
             dsl_type("List<List<T>>") != dsl_type("List<T>")
         }
     }

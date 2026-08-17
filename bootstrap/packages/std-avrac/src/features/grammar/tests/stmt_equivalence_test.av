@@ -33,8 +33,12 @@ fn dsl_stmt(src: string) -> string {
 }
 
 // The hand-written parser's tree for `src`, rendered the SAME way.
-fn hand_stmt(src: string) -> string {
+fn generated_stmt(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.stmt_static = true
     match p.parse_statement() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<parse error>"
@@ -43,7 +47,7 @@ fn hand_stmt(src: string) -> string {
 
 // True when both parsers agree on the statement tree for `src`.
 fn agree(src: string) -> bool {
-    dsl_stmt(src) == hand_stmt(src)
+    dsl_stmt(src) == generated_stmt(src)
 }
 
 spec "grammar-DSL statement family: generated parser == hand-written parser (ps3t.6.5.2)" {

@@ -25,7 +25,7 @@
 // seed_postfix, so the accumulator they restore is one that is about to be overwritten.
 
 use @std.avrac.features.grammar.{run_grammar_expr, avra_expr_grammar, dump_expr}
-use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.parse.{parse_expression_generated_probe}
 
 fn dsl(src: string) -> string {
     let r = run_grammar_expr(avra_expr_grammar(), src)
@@ -33,7 +33,7 @@ fn dsl(src: string) -> string {
 }
 
 fn hand(src: string) -> string {
-    let p = parse_expression_native_probe(src)
+    let p = parse_expression_generated_probe(src)
     if p.had_error != 0 { return "<parse error>" }
     dump_expr(p.store, p.root)
 }

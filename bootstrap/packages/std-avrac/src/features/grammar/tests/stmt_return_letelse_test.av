@@ -65,15 +65,19 @@ fn dsl_stmt(src: string) -> string {
     render_stmt_id(r.store, r.root)
 }
 
-fn hand_stmt(src: string) -> string {
+fn generated_stmt(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.decl_static = true
     match p.parse_declaration() {
         .Ok(id) -> render_stmt_id(p.store, id)
         .Err(_) -> "<parse error>"
     }
 }
 
-fn agree(src: string) -> bool { dsl_stmt(src) == hand_stmt(src) }
+fn agree(src: string) -> bool { dsl_stmt(src) == generated_stmt(src) }
 
 spec "grammar-DSL statement family: bare return + let-else == hand-written parser (ps3t.6.5.4)" {
     given "bare `return` (ReturnEmpty) vs `return expr` (Return) — optional operand" {
@@ -93,7 +97,7 @@ spec "grammar-DSL statement family: bare return + let-else == hand-written parse
             agree("let mut v = x else { return }") &&
             agree("let n = compute() else { return 0 }") &&
             // The desugar's fresh temp is $letelse$1 on both (gensym starts at 0).
-            dsl_stmt("let v = x else { return }") == hand_stmt("let v = x else { return }")
+            dsl_stmt("let v = x else { return }") == generated_stmt("let v = x else { return }")
         }
     }
     given "plain `let` (no else)" {

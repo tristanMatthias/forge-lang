@@ -1,23 +1,16 @@
 // ps3t.6.7 Step G slice 4 / t-47hc.37 — the STATEMENT-family ENGINE differential.
 //
-// `parse_statement` is UNCONDITIONAL now: it runs the statement grammar through
-// run_dsl_stmt_at_shared (the tree INTERPRETER over avra_stmt_flip_grammar's
-// `statement` rule) and owns its own recovery. The `stmt_flip` field and the hand
-// dispatcher `parse_statement_hand` it used to fall through to are both DELETED.
-//
 // WHICH TWO ENGINES THIS COMPARES, because the answer is not obvious and getting it
-// wrong makes the file vacuous:
+// wrong makes the file vacuous (it has happened — see flip_stmt's pin):
 //
-//   INTERPRETER — `parse_statement`, above.
-//   GENERATED   — `parse_declaration` driving the CHECKED-IN static parser. The
-//                 statement rules ARE generated: avra_decl_dispatch_grammar composes
-//                 avra_stmt_dispatch_grammar into the declaration one, so they are
-//                 emitted into parse/gen_decl_parser.av (parse_statement at :3467,
-//                 called 6x) and `declaration` carries a `statement` tail. A bare
-//                 statement therefore reaches the generated statement rules through
-//                 the declaration entry. There is no separate gen_stmt_parser.av file
-//                 — which is a packaging fact, not an absence of an implementation,
-//                 and mistaking the two is what t-47hc.37's retracted first draft did.
+//   INTERPRETER — `parse_statement` PINNED `stmt_static = false` (the tree
+//                 interpreter over THE grammar's `statement` rule). The seam
+//                 DEFAULTS to the generated parser since the t-47hc.8 stmt
+//                 flip, so the pin is what keeps this side an interpreter.
+//   GENERATED   — `parse_declaration` (pinned static) driving the CHECKED-IN
+//                 generated parser — parse/gen_parser.av, where `declaration`
+//                 carries a `statement` tail, so a bare statement reaches the
+//                 generated statement rules through the declaration entry.
 //
 // Parity = same tree AND same accept/reject: for every VALID statement form both
 // engines build the same Stmt; for INVALID forms both must REJECT. Both helpers
@@ -41,6 +34,13 @@ use @std.avrac.core.{render_stmt_id}
 /// review on PR #1221.
 fn flip_stmt(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the INTERPRETER, explicitly. The header's
+    // "parse_statement is UNCONDITIONAL" era ended when the stmt seam grew
+    // `stmt_static` (default: the generated parser) — from that commit until
+    // this pin, THIS side silently ran the same generated engine as gen_stmt
+    // below and the whole file compared an engine against itself (t-bw9s,
+    // second episode; stmt_while_flip_test records the first).
+    p.stmt_static = false
     match p.parse_statement() {
         .Ok(id) -> if p.had_error { "<err>" } else { render_stmt_id(p.store, id) }
         .Err(_) -> "<err>"

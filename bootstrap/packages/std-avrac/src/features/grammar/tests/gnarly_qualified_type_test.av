@@ -4,7 +4,7 @@
 // @comptime bodies. The native rule preserves adjacent `::`, generic/optional
 // suffixes, nesting, and fused `>>` closes.
 //
-// Oracle: run the DSL type parser AND the hand parser (parse_type_expr →
+// Oracle: run the DSL type parser AND the pinned generated parser (parse_type_expr →
 // parse_type_atom's `@` branch), lower both via the shared type_expr_to_vtype,
 // and assert identical ValueTypes via render_type_id.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_type}

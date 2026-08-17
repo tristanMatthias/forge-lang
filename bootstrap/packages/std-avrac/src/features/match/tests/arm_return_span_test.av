@@ -5,14 +5,14 @@
 // field-access null-trap in the body at the delimiter / next arm instead of
 // the `return`. These specs pin that the Return row carries the return's line.
 
-use @std.avrac.parse.{parse_expression_native_probe}
+use @std.avrac.parse.{parse_expression_generated_probe}
 use @std.avrac.core.{Expr, NodeStore}
 
 /// Parse a match expression and return the source line stamped on the first
 /// arm's synthesized `Stmt.Return` (its body is an `Expr.Block` of one stmt).
 /// -1 on parse error / unexpected shape.
 fn first_arm_return_line(source: string) -> int {
-    let probe = parse_expression_native_probe(source)
+    let probe = parse_expression_generated_probe(source)
     if probe.had_error != 0 { return -1 }
     match probe.store.exprs.get(probe.root) {
         .MatchExpr(_, arms) -> {

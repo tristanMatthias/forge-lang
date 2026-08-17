@@ -19,6 +19,10 @@ fn dsl(src: string) -> string {
 
 fn hand(src: string) -> string {
     mut p = parser_new(src)
+    // ORACLE PIN (t-47hc.8): the production engine, explicitly — an
+    // env-inherited engine lets the executor lane collapse this
+    // differential to same-vs-same (t-bw9s).
+    p.expr_flip = false
     match p.parse_expression() {
         .Ok(id) -> render_expr_id(p.store, id)
         .Err(_) -> "<err>"

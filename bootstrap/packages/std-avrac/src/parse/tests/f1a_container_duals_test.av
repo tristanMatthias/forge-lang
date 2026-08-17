@@ -7,7 +7,7 @@
 // containers: MatchArm's pattern, and CompConfig's ty_vt/ty_id (the
 // ValueType/TypeId dual).
 
-use @std.avrac.parse.{parse_program_source, parse_expression_native_probe}
+use @std.avrac.parse.{parse_program_source, parse_expression_generated_probe}
 use @std.avrac.core.{Expr, Stmt, StmtId, render_expr, render_stmt, render_pattern, vtype_display, stmt_unwrap, NodeStore, ExprId}
 
 /// Dig the first statement of the first fn's body out of a served program.
@@ -22,7 +22,7 @@ fn first_body_stmt(store: NodeStore, stmts: List<StmtId>) -> Stmt {
 /// returns out of the synthesized unit fn and silently drops registrations
 /// (filed bug) — helpers own the early returns.
 fn when_bodies_mirror() -> bool {
-    let probe = parse_expression_native_probe("when { a > 1 -> f(a)  _ -> g() }")
+    let probe = parse_expression_generated_probe("when { a > 1 -> f(a)  _ -> g() }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .When(arms) -> {
@@ -39,7 +39,7 @@ fn when_bodies_mirror() -> bool {
 }
 
 fn when_conds_mirror() -> bool {
-    let probe = parse_expression_native_probe("when { a > 1 -> f(a)  _ -> g() }")
+    let probe = parse_expression_generated_probe("when { a > 1 -> f(a)  _ -> g() }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .When(arms) -> {
@@ -224,7 +224,7 @@ spec "F4: struct-literal field inits carry a resolved value_id (boxed value reti
 // ── F1c: MatchArm pattern dual + arena-only guard/body (F4b) ──
 
 fn match_arm_ids_resolve() -> bool {
-    let probe = parse_expression_native_probe("match x { 1 if g -> a, _ -> b }")
+    let probe = parse_expression_generated_probe("match x { 1 if g -> a, _ -> b }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .MatchExpr(_, arms) -> {
@@ -251,7 +251,7 @@ fn match_arm_ids_resolve() -> bool {
 }
 
 fn quote_arm_ids_resolve() -> bool {
-    let probe = parse_expression_native_probe("quote arm { 1 if g -> 2 }")
+    let probe = parse_expression_generated_probe("quote arm { 1 if g -> 2 }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .Quote(_, body) -> match probe.store.exprs.get(body) {
@@ -270,7 +270,7 @@ fn quote_arm_ids_resolve() -> bool {
 }
 
 fn unguarded_quote_arm_guard_null() -> bool {
-    let probe = parse_expression_native_probe("quote arm { 1 -> 2 }")
+    let probe = parse_expression_generated_probe("quote arm { 1 -> 2 }")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .Quote(_, body) -> match probe.store.exprs.get(body) {
@@ -374,7 +374,7 @@ fn method_self_param_dual_mirrors() -> bool {
 }
 
 fn typed_lambda_param_dual_mirrors() -> bool {
-    let probe = parse_expression_native_probe("(x: string) -> x")
+    let probe = parse_expression_generated_probe("(x: string) -> x")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .Lambda(params, _) -> {
@@ -388,7 +388,7 @@ fn typed_lambda_param_dual_mirrors() -> bool {
 }
 
 fn untyped_lambda_param_duals_null() -> bool {
-    let probe = parse_expression_native_probe("(x, y) -> x")
+    let probe = parse_expression_generated_probe("(x, y) -> x")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .Lambda(params, _) -> {
@@ -425,7 +425,7 @@ fn use_name_list_duals_null() -> bool {
 fn it_lambda_param_dual_null() -> bool {
     // `it` in a method-call arg wraps the arg in a synthesized (it) -> lambda
     // (method calls parse as Call(FieldAccess(recv, name), args)).
-    let probe = parse_expression_native_probe("xs.map(it + 1)")
+    let probe = parse_expression_generated_probe("xs.map(it + 1)")
     if probe.had_error != 0 { return false }
     match probe.store.exprs.get(probe.root) {
         .Call(_, args) -> match probe.store.exprs.get(args[0]) {
