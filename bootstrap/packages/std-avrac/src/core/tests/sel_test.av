@@ -1,0 +1,49 @@
+// WHY: the thin-slice Sel verbs (core/sel.av, t-6iee) — asserted positive AND
+// negative, because their whole purpose is replacing text pins whose drifted
+// form passed vacuously: every verb must answer the absent/empty case with a
+// value no assertion can satisfy (found=false, "", empty selection), never
+// with an accidental truth.
+//
+// Subtree verbs (callees/locals) are deliberately NOT here — no generic
+// id-crossing traversal exists on the B-final arena yet (see sel.av's
+// header); their specs arrive with the substrate.
+use @std.avrac.test_runner.{sel_of_source}
+
+fn prog() -> string {
+    "fn alpha() {\n" +
+    "    let s_cut = 1\n" +
+    "    beta()\n" +
+    "    gamma(1)\n" +
+    "}\n" +
+    "\n" +
+    "fn tail_fn(st: int) -> int {\n" +
+    "    other()\n" +
+    "    parse_statement(st)\n" +
+    "}\n"
+}
+
+spec "Sel thin slice: declaration views over a parsed program" {
+    then "fn_decl finds a declared fn, and fns() sees them all" {
+        let p = sel_of_source(prog())
+        p.fn_decl("alpha").found && p.fn_decl("tail_fn").found && p.fns().length == 2
+    }
+    then "a missing fn is NOT-FOUND, and its accessors answer sentinels" {
+        let f = sel_of_source(prog()).fn_decl("zzz")
+        !f.found && f.tail_callee() == "" && !f.body().exists()
+    }
+    then "an unparsable source selects NOTHING (empty ast, not a crash)" {
+        !sel_of_source("fn broken(").exists()
+    }
+}
+
+spec "Sel thin slice: the tail verb" {
+    then "tail_callee reads the body's bare-call tail, and only that" {
+        let p = sel_of_source(prog())
+        p.fn_decl("tail_fn").tail_callee() == "parse_statement" &&
+            p.fn_decl("alpha").tail_callee() == "gamma"
+    }
+    then "body() counts statements (the Sel bridge)" {
+        let p = sel_of_source(prog())
+        p.fn_decl("alpha").body().count() == 3 && p.fn_decl("tail_fn").body().count() == 2
+    }
+}
