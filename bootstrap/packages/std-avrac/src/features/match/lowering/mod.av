@@ -4,9 +4,17 @@
 // imports ONLY features.grammar + core — both already in every generated
 // parser's closure — so the F4012 import-closure invariant holds by
 // construction; the feature's passes/hooks stay in ../mod.av.
+//
+// Batch B completes the family: the span-carrying rows (MkWhenStmt /
+// MkArmReturn / MkMatchTableExpr) ride `spanned` binds — the rule-entry
+// byte arrives as st.build_sp (-1 on the interpreter path, which stays
+// span-free like the retired central arms) — and the table pair's cores
+// live here now. `mk_when` stays engine-homed: the spine's `when`
+// EXPRESSION build (MkWhen) is still central until the expression section
+// composes from fragments.
 
-use core.{Stmt, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, byte_span_none}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list}
+use core.{Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, byte_span, byte_span_none}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_present, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list, capval_tok_list, capval_to_pat_list, capval_to_node_list, mk_when}
 
 export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
     WhenArm { cond_id: c, body_id: b }
@@ -48,10 +56,173 @@ export fn build_match_abi(st: PState, vals: List<CapVal>) -> CapVal {
     CapVal.SNode(st.store.add_stmt(build_match(capval_to_expr(st, vals[0]), arms), byte_span_none(), refs))
 }
 
-/// ALL of the match feature's rows — one list per feature.
+/// The subjectless `match { cond -> body }` statement — a `When` EXPRESSION
+/// under a span-free `Stmt.Expr` leaf. The span belongs to the INTERIOR
+/// When node (its ByteSpan, via st.build_sp), never the stmt row — the
+/// shape that needed the unified span protocol to leave the engine.
+export fn mk_when_stmt_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, mk_when(st, st.build_sp, vals[0])))))
+}
+
+/// `-> return v` / `-> return` as a match ARM body (the `MkArmReturn` row's core).
+///
+/// `MatchArm.body_id` is an ExprId and `return` is a STATEMENT, so the hand bridged the
+/// two by wrapping: `Expr.Block([Stmt.Return(v)])` — "stmt-bearing, so it bridges at its
+/// boundary" — reproduced here rather than invented, because the arm body has nowhere
+/// else to put a statement.
+///
+/// The bare form is `Stmt.ReturnEmpty`, and WHICH form applies is newline-sensitive: the
+/// hand took the empty branch when the next token is `}`, `,` or EOF, or sits on a LATER
+/// LINE. Without that, an arm folds the NEXT arm's pattern into its return value. The
+/// grammar spells the same rule as `^( e:expression )?` — the same-line marker
+/// `return_stmt` already uses — so the two engines decide it identically.
+///
+/// The synthesized row is stamped at the `return` KEYWORD (sp_start), not at the cursor
+/// after parsing the value: a post-advance stamp points a field-access null-trap at the
+/// delimiter or the next token instead of the `return` (the hand recorded the same
+/// caveat, having hit it).
+fn mk_arm_return(st: PState, sp_start: int, val_cv: CapVal) -> CapVal {
+    let ret_id = if capval_present(val_cv) {
+        st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, val_cv)))
+    } else {
+        st.store.stmts.add_leaf(Stmt.ReturnEmpty)
+    }
+    if sp_start >= 0 {
+        let lc = st.store.lines.to_linecol(sp_start)
+        st.store.stmts.record_pos(ret_id, SrcPos { line: lc.line, col: lc.col, file: st.file })
+    }
+    let body: List<StmtId> = [ret_id]
+    CapVal.Node(st.store.exprs.add_leaf(Expr.Block(body)))
+}
+
+export fn mk_arm_return_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_arm_return(st, st.build_sp, vals[0])
+}
+
+/// t-47hc.29 — the match TABLE's arms, desugared exactly as the hand
+/// `parse_match_table_arms` / `parse_match_table_rows` did in the hand parser.
+///
+/// The header's FIRST column names the PATTERN column and is DISCARDED; the rest are the
+/// value columns, so `#cols` IS the hand's `value_count = header_count - 1`. That identity
+/// is what lets the grammar express the row width as a bounded repetition `x{#cols}`
+/// (t-47hc.28) rather than the data-dependent `while i < value_count` loop the roadmap
+/// once read as inexpressible.
+///
+/// Rows arrive FLATTENED — one alternation branch owns the whole table, because a repetition
+/// bound may only name a capture collected earlier in the SAME branch and `exec_rule` mints a
+/// fresh CapEnv per rule. So the cells are re-chunked here by `cols.length`, which is sound
+/// precisely because the cap guarantees no row exceeds it; a SHORT row (the hand's
+/// `if check(RightBrace) break`) is tolerated by clamping, never by reading past the end.
+///
+/// Each key is `Expr.String` whose lexeme KEEPS its surrounding quotes — the hand writes
+/// `"\"${col}\""` because codegen's `strip_quotes` removes them again. Dropping them here
+/// would silently change every generated map key. Keys, values and bodies are all
+/// span-free `alloc_leaf` rows, matching the hand.
+fn build_table_arms(st: PState, cols_cv: CapVal, pats_cv: CapVal, vals_cv: CapVal) -> List<MatchArm> {
+    let cols = capval_tok_list(cols_cv)
+    let pats = capval_to_pat_list(pats_cv)
+    let vals = capval_to_node_list(vals_cv)
+    mut out: List<MatchArm> = []
+    // `header_count < 2` (i.e. no value columns) yields NO arms — the hand's early return.
+    if cols.length == 0 { return out }
+    // t-qhbz: REQUIRE the declared width. The row's cell repetition is `*{#cols}`, and a
+    // `{#cap}` bound is AT MOST N — never a requirement (`item_bound_cap` stops at the cap
+    // but nothing demands it). So a token starting none of `table_cell`'s alternatives —
+    // a prefix operator like `-1`, which cells deliberately exclude — simply ENDS the row
+    // rather than reporting, and the outer row loop then consumes it as the NEXT row's
+    // `p:pattern`, because a negative literal IS a valid pattern. Everything is consumed
+    // and nothing complains, so
+    //
+    //     match e table { pat | delta
+    //         .A | -1
+    //         .B | 2
+    //     }
+    //
+    // checked CLEAN on both native engines (pats=[.A, -1, 2], vals=[.B]) while the hand
+    // parser rejected it F0040. A latent hole since t-47hc.29 — unreachable until fn
+    // bodies were routed natively, because a hand-parsed body never got here.
+    //
+    // This is the one place that knows BOTH the header's value-column count and the
+    // flattened cell count, so it is where the width becomes checkable. `cols` holds only
+    // the VALUE columns (the header's leading IDENT — the pattern column — is matched
+    // unlabelled), so a well-formed table has exactly one cell per row per value column.
+    if vals.length != pats.length * cols.length {
+        // CODED, because the hand rejects this as F0040 and an uncoded report reaches the
+        // flip seam as the F0001 default — the same sentence under two codes depending on
+        // which engine produced it. The note above is exactly right that this became
+        // reachable when fn bodies routed; the code was the half still missing.
+        st.report_coded("F0040", "expected expression")
+        return out
+    }
+    mut r = 0
+    while r < pats.length {
+        mut ids: List<ExprId> = []
+        mut c = 0
+        while c < cols.length {
+            let at = r * cols.length + c
+            if at >= vals.length { break }
+            ids.push(st.store.add_expr(Expr.String("\"${cols[c].text}\""), byte_span_none(), []))
+            ids.push(vals[at])
+            c = c + 1
+        }
+        let pid = pats[r]
+        out.push(MatchArm {
+            pattern: st.store.pats.get(pid),
+            pattern_id: pid,
+            guard_id: none,
+            body_id: st.store.add_expr(Expr.MapLit(ids), byte_span_none(), []),
+        })
+        r = r + 1
+    }
+    out
+}
+
+/// The statement-form match TABLE (t-47hc.29). Node construction is byte-identical to
+/// build_match's — `Stmt.Match` with `byte_span_none()` and one PatRef per arm — because
+/// the hand's table path ended in the very same `alloc_stmt(node, byte_span_none(),
+/// glue_match_arm_refs(arms))`. Only where the ARMS come from differs.
+export fn mk_match_table_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    let arms = build_table_arms(st, vals[1], vals[2], vals[3])
+    mut refs: List<NodeRef> = []
+    for arm in arms {
+        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
+    }
+    CapVal.SNode(st.store.add_stmt(Stmt.Match(capval_to_expr(st, vals[0]), arms), byte_span_none(), refs))
+}
+
+/// The EXPRESSION twin (t-47hc.29 slice 12). Identical arms — the table desugaring is
+/// shared via `build_table_arms`, so the two forms cannot drift; only the node kind and
+/// the span differ, exactly as build_match / the expr match differ.
+///
+/// SPAN: the hand's expression table path ended in `alloc_expr(node, span_from(sp_start),
+/// glue_match_arm_refs(arms))`, anchored at the `match` keyword — st.build_sp here, with
+/// the `< 0` guard for the interpreter path (which has no sequence-start byte to pass).
+/// REFS are the arms' patterns only: the subject is a walker-opaque ExprId scalar and
+/// contributes no edge.
+export fn mk_match_table_expr_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    let arms = build_table_arms(st, vals[1], vals[2], vals[3])
+    mut refs: List<NodeRef> = []
+    for arm in arms {
+        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
+    }
+    CapVal.Node(st.store.add_expr(
+        Expr.MatchExpr(capval_to_expr(st, vals[0]), arms),
+        if st.build_sp < 0 { byte_span_none() } else { byte_span(st.build_sp, st.cur().pos) },
+        refs
+    ))
+}
+
+/// ALL of the match feature's rows — one list per feature. The Mk-named rows
+/// keep their grammar-side names (the row name IS the gram ref, so the flip
+/// touches no rule text); `spanned` marks the rows whose builds read
+/// st.build_sp.
 export fn match_builds() -> List<BuilderBind> {
     bind_rows("features.match.lowering", [bind_row("build_when_arm", "warm", 2, false, "build_when_arm_abi", build_when_arm_abi),
      bind_row("build_when_default", "warm", 1, false, "build_when_default_abi", build_when_default_abi),
      bind_row("build_arm", "arm", 3, false, "build_arm_abi", build_arm_abi),
-     bind_row("build_match", "stmt", 2, false, "build_match_abi", build_match_abi)])
+     bind_row("build_match", "stmt", 2, false, "build_match_abi", build_match_abi),
+     bind_row("MkWhenStmt", "stmt", 1, true, "mk_when_stmt_abi", mk_when_stmt_abi),
+     bind_row("MkArmReturn", "expr", 1, true, "mk_arm_return_abi", mk_arm_return_abi),
+     bind_row("MkMatchTable", "stmt", 4, false, "mk_match_table_abi", mk_match_table_abi),
+     bind_row("MkMatchTableExpr", "expr", 4, true, "mk_match_table_expr_abi", mk_match_table_expr_abi)])
 }

@@ -859,15 +859,14 @@ export fn central_build_kind(bn: string) -> string {
             or "Unary" or "Grouping" or "field_suffix" or "index_suffix" or "call_suffix"
             or "MkWithSuffix" or "MkMapLit" or "MkSplice" or "MkSpliceStruct" or "MkQualExpr"
             or "MkTemplate" or "MkTrySuffix" or "MkCatchSuffix" or "MkOptChain" or "MkTupleIndex"
-            or "MkFieldAccess" or "MkMatchTableExpr" or "MkIndexSuffix" or "MkCallSuffix" or "MkGenericCallSuffix"
+            or "MkFieldAccess" or "MkIndexSuffix" or "MkCallSuffix" or "MkGenericCallSuffix"
             or "MkEnumCtorSuffix" or "MkOptMethodCall" or "MkForceUnwrap" or "MkCallArg" or "MkStructLit"
             or "MkGrammarBlock" or "MkTaggedTemplate" or "MkTableHeader" or "MkTableRow" or "MkTableLit"
             or "MkPrimaryFail" -> "expr"
         "Break" or "Continue" or "ReturnEmpty" or "Return"
             or "ExprStmt" or "Block"
-            or "MkForDestructure" or "MkMatchTable"
-            or "MkWhenStmt" or "MkIfLetStmt" -> "stmt"
-        "MkArmReturn" -> "expr"
+            or "MkForDestructure"
+            or "MkIfLetStmt" -> "stmt"
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
         // is inferred from the OTHER branch alone in some orders and from this one in others,
         // and a `( arms:match_arm )*` accumulator silently declares `List<ExprId>` — the
