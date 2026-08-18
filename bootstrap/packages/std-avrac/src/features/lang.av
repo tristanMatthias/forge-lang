@@ -121,11 +121,15 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
         if !builder_kind_supported(b.kind) {
             return "feature `${fname}`: builder `${b.name}` declares unknown kind `${b.kind}`"
         }
-        // Span stamping is a STATEMENT concern — the emit wrap is
-        // mk_stamp_stmt_at, which coerces its inner to a StmtId. A spanned
-        // non-stmt bind would silently coerce-fail mid-parse; reject it here.
-        if b.spanned && b.kind != "stmt" {
-            return "feature `${fname}`: builder `${b.name}` declares `spanned` with kind `${b.kind}` — span stamping applies to `stmt` builders only"
+        // `spanned` has exactly TWO defined protocols, by kind: "stmt" rows
+        // stamp AROUND the adapter (mk_stamp_stmt_at — coerces to StmtId),
+        // "expr" rows thread the rule-entry byte INTO the adapter
+        // (call_with_build_sp → st.build_sp, the Batch B expression-span
+        // row). Any other kind has no span story — a spanned "variant"/
+        // "arm"/… bind would silently do nothing on one engine and
+        // coerce-fail on the other; reject it here.
+        if b.spanned && b.kind != "stmt" && b.kind != "expr" {
+            return "feature `${fname}`: builder `${b.name}` declares `spanned` with kind `${b.kind}` — span protocols exist for `stmt` (stamp wrap) and `expr` (st.build_sp) builders only"
         }
         // ANY central-name shadow is rejected — same-kind included (contract
         // 3 above). The historical check rejected only a KIND mismatch,
