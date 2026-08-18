@@ -2566,12 +2566,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "MkWhen" -> "mk_when(st, sp_start, CapVal.WArms(${args[0]}_list))"
         "MkMatchExpr" -> "mk_match_expr(st, sp_start, ${args[0]}, CapVal.Arms(${args[1]}_list))"
         "MkIfExpr" -> "mk_if_expr(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
-        "MkIfLet" -> "mk_if_let(st, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]})"
-        // No `sp_start`: `build_if_let_stmt` uses `add_stmt_leaf` (unstamped).
-        // Stamping here would record a row the
-        // interpreter does not — the SrcPos divergence the While/If note above
-        // describes, which `agree_pos` would then catch.
-        "MkIfLetStmt" -> "mk_if_let_stmt(st, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]}, ${args[4]})"
         "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
         // Contextual enum ctor `.Variant`/`.Variant(args)` (Phase 3a-7 slice 4): `v` is
         // the scalar variant IDENT, `a` the repetition args-list accumulator (empty ⇒

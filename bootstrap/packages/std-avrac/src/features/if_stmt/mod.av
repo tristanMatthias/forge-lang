@@ -1,10 +1,14 @@
 // if — conditional branching, statement AND expression positions (spec
 // Axis 28). The definition carries the feature whole: syntax, docs, editor
-// surface, hooks, and the STATEMENT grammar rule the statement views
-// compose (gram_family = "stmt", t-47hc.8) with its feature-owned lowering
-// (build_if, a `spanned` manifest row). The EXPRESSION form (`if_expr`,
-// incl. its if-let branch) stays a spine rule — it is woven into the
-// expression precedence ladder, not the statement family.
+// surface, hooks, and the grammar rules the views compose (gram_family =
+// "stmt", t-47hc.8) with their feature-owned lowerings (build_if /
+// MkIfLet / MkIfLetStmt — manifest rows, t-kd4y.3.2.1). The BIND-FRESH
+// `if let` forms live here whole, in both positions: `iflet_stmt` beside
+// `if_stmt`, and `iflet_expr` in its own fragment because the expression
+// views need it without the statement rules. Only the plain `if_expr`
+// remains a spine rule — it is woven into the expression precedence
+// ladder — and it reaches the if-let form the way `statement` does, by
+// referencing this feature's rule behind `@peek(if_let)`.
 // dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
 // surface flat at `features.if_stmt.{...}`. emit_if + emit_if_expr are
 // in scope without a self-import.
@@ -15,14 +19,90 @@ use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_erro
 use features.eval.{eval_expr, execute_stmt}
 use resolve.{resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_er, tc_report, tc_gate_unthreaded_lambda, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if, generic_args_layout_conflict}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
+use features.{composed}
 use features.if_stmt.lowering.{if_builds}
 
-/// `if cond { then } ( else stmt )?`. Same spanned discipline as
-/// build_while; the absent-else fold lives in capval_to_stmt_opt (the
-/// adapter's unwrap), so this fn is the bare shape. Home in the feature
-/// file (t-47hc.8 dissolution) — the engine's checked-in `_gb_` adapter
-/// imports it back.
+/// The `if` STATEMENT rules — the plain form and its bind-fresh `if let`
+/// twin. The statement views compose this via the feature registry
+/// (gram_family = "stmt"); `statement` names both rules and binds them
+/// after the flat merge.
+///
+/// `@onfail(bail)` on `if_stmt`'s CONDITION: a failed condition ends the
+/// rule so the missing block is never also reported (`if return 2 …` is
+/// one F0040, not F0040 + F0010). `@require t:block`: without it a missing
+/// block is not an error HERE — the rule builds an `if` with no consequent
+/// and the enclosing body reports about ITS closer instead. Dual-key
+/// @expect on that @require — same fragment-vs-compose split the while
+/// rule documents: standalone validation needs the rule-name key (`block`
+/// is a spine rule it cannot resolve), the composed emit looks up block's
+/// FIRST literal `{`. One message, one F0010, both keys.
+///
+/// `iflet_stmt` is STATEMENT-position `if let` — not its expression twin.
+/// Routing it to `expression` (which reaches `if_expr`) parsed the form
+/// correctly but lowered it to the WRONG SHAPE: an `ExprStmt(Block-expr)`
+/// holding an `if-expr`, where the pinned shape is a `Stmt.Block` holding a
+/// `Stmt.If`. Both run, which is why every diagnostic oracle stayed green —
+/// a VALID program has no diagnostics to compare, so only the TREE sees it.
+/// The two shapes are not interchangeable: with no `else`, the expression
+/// form has to SYNTHESISE an empty else block (an if-expr needs a value)
+/// while the statement form leaves `else_opt` absent, so `if let v = x { … }`
+/// grew an else arm the source never wrote. Its shape mirrors `iflet_expr`
+/// with STATEMENT bodies (`block` / `statement`, as `if_stmt` uses); the
+/// three `@require`s stay the three abort points, and `tmp:@gensym(iflet)`
+/// keeps its position between `"if"` and `"let"` so a nested `if let` still
+/// numbers after its parent.
+export fn avra_if_stmt_grammar() -> Grammar {
+    let gp = grammar {
+  if_stmt = "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block ( "else" e:statement )? @expect("{", "expected `{` after if condition", F0010) @expect("block", "expected `{` after if condition", F0010) -> build_if(c, t, e)
+  iflet_stmt = "if" tmp:@gensym(iflet) "let" @require b:IDENT @require "="
+               @off(allow_struct_lit) s:expression @require t:block ( "else" e:statement )?
+               @expect("IDENT", "expected a binding name after `if let`")
+               @expect("=", "expected `=` after the `if let` binding")
+               @expect("{", "expected `{` after the `if let` binding", F0010)
+               @expect("block", "expected `{` after the `if let` binding", F0010) -> MkIfLetStmt(tmp, b, s, t, e)
+    }
+    grammar_checked(gp)
+}
+
+/// EXPRESSION-position `if let` — the same form with expression bodies, in
+/// its OWN fragment because the expression views need it without the
+/// statement rules that surround it above. The spine's `if_expr` reaches it
+/// exactly as `statement` reaches `iflet_stmt`: a `@peek(if_let)`-gated
+/// branch naming this rule, so the lookahead that peels the form off stays
+/// with the alternation that has a plain-`if` sibling to fall to.
+///
+/// A DESUGAR, not a parse: `build_if_let_expr` (core/arena.av) turns it into
+/// a temp binding, a none-check condition, and an unwrap-bind row prepended
+/// to the then-block. That core is SHARED with parse_if_let_expression — the
+/// same rows in the same order — so the two cannot drift in what they lower
+/// to, and `iflet_stmt` above shares the statement-shaped twin the same way.
+///
+/// `tmp:@gensym(iflet)` sits between `"if"` and `"let"` because that is
+/// exactly where parse_if_let_header mints (its first line, after `if` has
+/// been consumed). Position is load-bearing, not cosmetic: a build-minted
+/// temp would number a NESTED `if let` before its parent, inverting the mint
+/// order.
+///
+/// The three `@require`s are the three abort points, in order —
+/// consume_identifier for the binding, consume(Equal), and the `{` check. An
+/// ABSENT piece aborts the whole leaf; a MALFORMED subject or block still
+/// recovers inside its own rule.
+export fn avra_iflet_expr_grammar() -> Grammar {
+    let gp = grammar {
+  iflet_expr = "if" tmp:@gensym(iflet) "let" @require b:IDENT @require "="
+               @off(allow_struct_lit) s:expression @require t:block_expr ( "else" e:else_tail )?
+               @expect("IDENT", "expected a binding name after `if let`")
+               @expect("=", "expected `=` after the `if let` binding")
+               @expect("{", "expected `{` after the `if let` binding", F0010)
+               @expect("block_expr", "expected `{` after the `if let` binding", F0010) -> MkIfLet(tmp, b, s, t, e)
+    }
+    grammar_checked(gp)
+}
+
+/// The definition: the two fragments above, the manifest rows their builds
+/// resolve through (`if_builds` — build_if spanned, MkIfLet / MkIfLetStmt
+/// span-free), and every pass hook below.
 export fn if_lang() -> LanguageFeature {
     LanguageFeature if_def {
         name = "if",
@@ -39,21 +119,19 @@ as the condition, never a struct literal). An `x != none` / `x == none`
 condition flow-narrows `x` inside the proven branch — and after the
 whole `if`, when the none-side diverges (`if x == none { return }`).
 
+`if let v = opt { … }` binds the unwrapped value for the branch — a
+DESUGAR into a temp binding, a `none` check, and an unwrap-bind row, in
+both statement and expression position.
+
 `if` is also an EXPRESSION: `let x = if cond { a } else { b }` — that
-form (and its `if let` sibling) lives in the expression grammar, not
-this rule.
+form lives in the expression grammar, not this rule.
 """,
-        // `@onfail(bail)` on the CONDITION: a failed condition ends the rule
-        // so the missing block is never also reported (`if return 2 …` is
-        // one F0040, not F0040 + F0010). `@require t:block`: without it a
-        // missing block is not an error HERE — the rule builds an `if` with
-        // no consequent and the enclosing body reports about ITS closer
-        // instead. Dual-key @expect on that @require — same
-        // fragment-vs-compose split the while rule documents: standalone
-        // validation needs the rule-name key (`block` is a spine rule it
-        // cannot resolve), the composed emit looks up block's FIRST literal
-        // `{`. One message, one F0010, both keys.
-        gram = grammar { if_stmt = "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block ( "else" e:statement )? @expect("{", "expected `{` after if condition", F0010) @expect("block", "expected `{` after if condition", F0010) -> build_if(c, t, e) },
+        // Both fragments compose here because the no-orphans validator
+        // reads THIS gram: `iflet_expr`'s row (MkIfLet) is supplied below,
+        // so the rule referencing it must be in view. gram_family = "stmt"
+        // hands the whole thing to the statement views — the expression
+        // views take the expression fragment on its own, by name.
+        gram = composed([avra_if_stmt_grammar(), avra_iflet_expr_grammar()]),
         builders = if_builds(),
         snippet = r"if ${1:cond} {\n    ${2:body}\n}",
         expr_tag = Expr.IfExpr(ExprId(0), ExprId(0), ExprId(0)),

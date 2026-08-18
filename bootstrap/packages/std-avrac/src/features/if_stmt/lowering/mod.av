@@ -4,9 +4,18 @@
 // imports ONLY features.grammar + core — both already in every generated
 // parser's closure — so the F4012 import-closure invariant holds by
 // construction; the feature's passes/hooks stay in ../mod.av.
+//
+// The if-let pair (t-kd4y.3.2.1) joins as ABI-direct adapters under their
+// existing grammar names: both are DESUGARS whose rows are built by the
+// shared cores in core/arena.av, so there is no pure typed fn to lift out
+// — the marshalling IS the lowering. Neither row is `spanned`: each core
+// ends in a leaf constructor that records no span (`intern_expr_leaf` for
+// the expression form, `add_stmt_leaf` for the statement one), so
+// threading st.build_sp would record a SrcPos the interpreter does not —
+// the divergence `agree_pos` catches.
 
-use core.{Stmt, ExprId, StmtId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, capval_to_stmt_opt, mk_stamp_stmt_at}
+use core.{Stmt, Expr, ExprId, StmtId, build_if_let_expr, build_if_let_stmt}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, capval_to_stmt_opt, capval_tok_text, mk_stamp_stmt_at}
 
 export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
 
@@ -15,6 +24,74 @@ export fn build_if_abi(st: PState, vals: List<CapVal>) -> CapVal {
     mk_stamp_stmt_at(st, st.build_sp, capval_stmt_val(st, build_if(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1]), capval_to_stmt_opt(st, vals[2]))))
 }
 
+/// The bind-fresh `if let v = x { … } else { … }` in EXPRESSION position
+/// (t-47hc.26).
+///
+/// A DESUGAR, not a parse. Every row is built by `build_if_let_expr`
+/// (core/arena.av), the SAME shared core the hand's `parse_if_let_expression`
+/// calls — so the native rule and the hand oracle lower to identical rows in
+/// identical order, and neither can drift from the other by editing one site.
+///
+/// `vals[0]` is the `@gensym(iflet)` mint, already performed AT ITS POSITION
+/// in the sequence (between `if` and `let`), which is where the hand mints.
+/// Reading it here as an ordinary captured token is the whole point of making
+/// gensym a primary: by the time this build runs, the number is already fixed.
+///
+/// The absent-else case builds the SAME Void empty block `mk_if_expr` does,
+/// and BEFORE the desugar rows, matching the hand's order
+/// (parse_if_let_expression synthesises the else, then calls the builder). Not
+/// a `0` literal: an empty block types `.Void`, which is what keeps
+/// `if let v = x { return v }` valid in value position instead of a
+/// synthesized int hijacking the result type.
+export fn mk_if_let_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    let empty_rows: List<StmtId> = []
+    let else_id = match vals[4] {
+        .Nil -> st.store.intern_expr_leaf(Expr.Block(empty_rows))
+        _ -> capval_to_expr(st, vals[4])
+    }
+    CapVal.Node(build_if_let_expr(
+        st.store,
+        capval_tok_text(vals[0]),
+        capval_tok_text(vals[1]),
+        capval_to_expr(st, vals[2]),
+        capval_to_expr(st, vals[3]),
+        else_id
+    ))
+}
+
+/// STATEMENT-position `if let` — `mk_if_let_abi`'s twin, lowering through the
+/// SHARED `build_if_let_stmt` exactly as the hand's `parse_if_let_statement`
+/// does.
+///
+/// The difference from `mk_if_let_abi` is the whole point of the rule
+/// existing: the then and else are STATEMENTS (`capval_to_stmt`), the result
+/// is a `Stmt.Block`, and an ABSENT else stays ABSENT. `mk_if_let_abi` must
+/// synthesise an empty block there because an if-EXPRESSION needs a value; a
+/// `Stmt.If` does not, and the hand passes `none`. Synthesising one here would
+/// put an else arm in the tree that the source never wrote — which is
+/// precisely the divergence this builder was added to close.
+///
+/// Else shape follows `build_if` verbatim (`.SNode` or absent), so `else if`
+/// chains and block elses reach the same `StmtId?` the hand's
+/// `parse_statement()` produces.
+export fn mk_if_let_stmt_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mut else_opt: StmtId? = none
+    match vals[4] {
+        .SNode(eid) -> else_opt = eid
+        _ -> {}
+    }
+    CapVal.SNode(build_if_let_stmt(
+        st.store,
+        capval_tok_text(vals[0]),
+        capval_tok_text(vals[1]),
+        capval_to_expr(st, vals[2]),
+        capval_to_stmt(st, vals[3]),
+        else_opt
+    ))
+}
+
 export fn if_builds() -> List<BuilderBind> {
-    bind_rows("features.if_stmt.lowering", [bind_row("build_if", "stmt", 3, true, "build_if_abi", build_if_abi)])
+    bind_rows("features.if_stmt.lowering", [bind_row("build_if", "stmt", 3, true, "build_if_abi", build_if_abi),
+     bind_row("MkIfLet", "expr", 5, false, "mk_if_let_abi", mk_if_let_abi),
+     bind_row("MkIfLetStmt", "stmt", 5, false, "mk_if_let_stmt_abi", mk_if_let_stmt_abi)])
 }
