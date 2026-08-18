@@ -4,12 +4,11 @@
 // rule serves TWO statements — a present `..` builds the integer-range
 // `Stmt.For`, an absent one the collection `Stmt.ForIn` — so the flip
 // splits across two LanguageFeatures (one per AST tag, like
-// defer/errdefer): for_lang carries the gram + the build_for lowering (a
-// `spanned` manifest row), for_in_lang carries the ForIn hooks alone. The
-// tuple-destructure branch (`for (a, b) in …`) keeps its CENTRAL builds
-// (MkForDestructure / MkForBinding): its gensym-threaded desugar is
-// mid-build arena choreography the typed marshalling rows don't express
-// yet — flip what the rows cover, keep the rest central until they grow.
+// defer/errdefer): for_lang carries the gram + ALL THREE lowerings,
+// for_in_lang carries the ForIn hooks alone. The tuple-destructure branch
+// (`for (a, b) in …`) joined them in t-kd4y.3.2.2 — its gensym-threaded
+// desugar is mid-build arena choreography, which the ABI expresses fine
+// once the row carries it: the adapter IS the marshalling layer.
 // dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
 // surface flat at `features.for_stmt.{...}`. Sibling exports (emit_for,
 // emit_for_in) are in scope without explicit self-imports.
@@ -142,7 +141,8 @@ the next element with `continue`.
         // (F0001). Spending the capability waits on matching that resync.
         // `for_binding` lives here because only the destructure branch
         // references it; its build (MkForBinding) and the destructure's
-        // (MkForDestructure) stay engine-central — see the header note.
+        // (MkForDestructure) are feature-owned manifest rows under those
+        // very names, so the rule text below is what it always was.
         gram = grammar {
   for_stmt = @peek(for_destructure) "for" fb:for_binding @require "in" @off(allow_struct_lit) coll:expression body:block @expect("in", "expected `in` after for destructure pattern") -> MkForDestructure(fb, coll, body)
            | "for" v:IDENT @require "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block @expect("in", "expected `in` after loop variable") -> build_for(v, lo, hi, body)

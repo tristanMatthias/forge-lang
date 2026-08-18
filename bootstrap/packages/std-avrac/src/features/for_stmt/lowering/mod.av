@@ -4,9 +4,20 @@
 // imports ONLY features.grammar + core — both already in every generated
 // parser's closure — so the F4012 import-closure invariant holds by
 // construction; the feature's passes/hooks stay in ../mod.av.
+//
+// t-kd4y.3.2.2 completes the family: the tuple-destructure branch's two
+// builds (MkForDestructure / MkForBinding) join build_for here, keeping
+// their grammar-side names — the row name IS the gram ref, so the flip
+// touches no rule text. Their cores came verbatim from executor.av; only
+// the sp_start ARGUMENT became the `spanned` protocol's st.build_sp.
 
-use core.{Stmt, ExprId, StmtId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_tok_text, mk_stamp_stmt_at}
+use core.{Expr, ExprId, SrcPos, Stmt, StmtId, Tk, ValueType}
+use features.grammar.{Token, PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_tok_list, capval_tok_text, mk_stamp_stmt_at, param_entries_from_toks}
+
+/// The process-wide gensym counter behind the destructure loop's temp name.
+/// Declared (not imported) so this module's import closure stays exactly
+/// `features.grammar` + `core` — an extern declaration adds no module edge.
+extern fn avra_gensym() -> int
 
 export fn build_for(v: string, lo: ExprId, hi: ExprId?, body: StmtId) -> Stmt {
     if hi == null { Stmt.ForIn(v, lo, body) } else { Stmt.For(v, lo, hi!, body) }
@@ -24,6 +35,77 @@ export fn build_for_abi(st: PState, vals: List<CapVal>) -> CapVal {
     mk_stamp_stmt_at(st, st.build_sp, capval_stmt_val(st, build_for(v, lo, capval_to_expr_opt(st, vals[2]), body)))
 }
 
+/// Capture a tuple-destructure loop binding before parsing its collection/body.
+/// The hand parser reserves the gensym immediately after `for (`; doing that in
+/// this sub-rule preserves allocation order for nested destructure loops. The
+/// synthetic first token carries both the temp name and the opening-paren byte;
+/// the remaining tokens are the user binding names.
+///
+/// Kind "toks": the packed token list IS the rule's result — the carrier the
+/// `fb:for_binding` capture hands to the destructure build below, never a node.
+export fn mk_for_binding(lp_cv: CapVal, names_cv: CapVal) -> CapVal {
+    let lp = match lp_cv {
+        .Tok(t) -> t
+        _ -> Token { kind: "PUNCT", text: "(", pos: 0, tk: Tk.LeftParen }
+    }
+    mut packed: List<Token> = [Token {
+        kind: "IDENT",
+        text: "__forpair_${avra_gensym()}",
+        pos: lp.pos,
+        tk: Tk.Identifier,
+    }]
+    for name in capval_tok_list(names_cv) { packed.push(name) }
+    CapVal.Toks(packed)
+}
+
+export fn mk_for_binding_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_for_binding(vals[0], vals[1])
+}
+
+/// Finish `for (a, b, …) in collection { body }` using the hand parser's exact
+/// desugaring and node-allocation order. `binding_cv` was created before parsing
+/// the collection/body, so its temp name has the same process-wide gensym order.
+///
+/// TWO stamps, only one of them the span protocol's: the synthesized `let (a,
+/// b) = tmp` unpack row is recorded at the TEMP TOKEN's own pos — a byte this
+/// build carries in its data, unconditional and independent of `sp_start` —
+/// while the enclosing `ForIn` takes the rule-entry byte like every other
+/// statement build.
+export fn mk_for_destructure(st: PState, sp_start: int, binding_cv: CapVal, coll_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let packed = capval_tok_list(binding_cv)
+    if packed.length == 0 {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error))
+    }
+    let tmp_tok = packed[0]
+    mut names: List<Token> = []
+    mut i = 1
+    while i < packed.length {
+        names.push(packed[i])
+        i = i + 1
+    }
+    let tmp_ident_id = st.store.exprs.add_leaf(Expr.Ident(tmp_tok.text))
+    let entries = param_entries_from_toks(CapVal.Toks(names), ValueType.Unknown)
+    let unpack_id = st.store.stmts.add_leaf(Stmt.LetDestructure(entries, tmp_ident_id))
+    let lc = st.store.lines.to_linecol(tmp_tok.pos)
+    st.store.stmts.record_pos(unpack_id, SrcPos { line: lc.line, col: lc.col, file: st.file })
+    let body_id = capval_to_stmt(st, body_cv)
+    let block_id = st.store.stmts.add_leaf(Stmt.Block([unpack_id, body_id]))
+    mk_stamp_stmt_at(st, sp_start, capval_stmt_val(st, Stmt.ForIn(tmp_tok.text, capval_to_expr(st, coll_cv), block_id)))
+}
+
+export fn mk_for_destructure_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    // spanned row: the destructure rule's entry byte IS the statement start,
+    // so the stamp agrees with the statement-list loop's rather than adding a
+    // row; -1 on the interpreter path, which stays span-free like the retired
+    // central arm's `0 - 1`.
+    mk_for_destructure(st, st.build_sp, vals[0], vals[1], vals[2])
+}
+
+/// ALL of the for feature's rows. `build_for` covers the range/collection
+/// branch; the Mk-named pair covers the tuple-destructure branch under the
+/// names its gram already spells.
 export fn for_builds() -> List<BuilderBind> {
-    bind_rows("features.for_stmt.lowering", [bind_row("build_for", "stmt", 4, true, "build_for_abi", build_for_abi)])
+    bind_rows("features.for_stmt.lowering", [bind_row("build_for", "stmt", 4, true, "build_for_abi", build_for_abi),
+     bind_row("MkForBinding", "toks", 2, false, "mk_for_binding_abi", mk_for_binding_abi),
+     bind_row("MkForDestructure", "stmt", 3, true, "mk_for_destructure_abi", mk_for_destructure_abi)])
 }
