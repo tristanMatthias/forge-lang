@@ -25,7 +25,7 @@ fn decl_grammar_src() -> string {
     "grammar Decl {\n" +
     "  decl          = fn_decl | type_decl | enum_decl\n" +
     "  fn_decl       = \"fn\" fname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, pad_tp, params, ret, body, pad_wp)\n" +
-    "  type_decl     = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, fields)\n" +
+    "  type_decl     = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDeclAny(tname, pad_tp, fields, pad_al, pad_op, pad_opf)\n" +
     "  enum_decl     = \"enum\" edname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(edname, tparams, vars)\n" +
     "  field         = fldname:IDENT \":\" ftype:type_expr -> MkField(fldname, ftype)\n" +
     "  tparam        = tpname:IDENT ( \":\" bound:IDENT )? -> MkTypeParam(tpname, bound)\n" +

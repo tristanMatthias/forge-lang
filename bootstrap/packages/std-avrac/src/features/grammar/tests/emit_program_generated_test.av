@@ -63,7 +63,7 @@ spec "grammar emitter: renders the whole-program generated static parser" {
         // operators. The hand picks between them AFTER parsing the RHS — from the
         // resulting TypeExpr, not from tokens — so the trifurcation has to live in the
         // builder, and there is a single build rather than four.
-        src.contains("mk_type_decl_any(st, capval_tok_text(tname), tparams_list, fields_list,") &&
+        src.contains("mk_type_decl_any_abi(st, [tname, CapVal.TParams(tparams_list), CapVal.Fields(fields_list), talias, top, CapVal.Toks(topf_list)])") &&
         // `use` SPLITS on the `@`-package prefix (t-47hc slice 10.1): the two branches
         // are FIRST-disjoint inside `use_tail`, so the package scope is its own capture
         // and each lowers to a distinct core rather than one call with a presence flag.
