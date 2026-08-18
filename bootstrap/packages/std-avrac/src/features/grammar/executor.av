@@ -13,9 +13,6 @@ use features.grammar.{rule_result_kind, gprim_ref_name, BuildKindRow}
 // The field-name acceptance set (t-47hc.33.1).
 use core.{tk_is_field_name}
 use core.{tk_keyword_str}
-// The SHARED if-let desugar, also called by parse_if_let_expression — one
-// definition of the rows, so the two callers cannot lower differently.
-use core.{build_if_let_expr, build_if_let_stmt}
 use core.{build_let_else_init, stmt_ids_diverge}
 use core.{SelectArm}
 use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct, lookup_stmt_parser}
@@ -4158,8 +4155,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // `if c { … } else …` (t-47hc.24). An ABSENT else arrives as CapVal.Nil, which
         // mk_if_expr turns into the hand's synthesized empty (Void) block.
         "MkIfExpr" if args.length == 3 -> mk_if_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
-        "MkIfLet" if args.length == 5 -> mk_if_let(st, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]), env.get(args[4]))
-        "MkIfLetStmt" if args.length == 5 -> mk_if_let_stmt(st, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]), env.get(args[4]))
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
         "mk_enum_ctor" if args.length == 2 -> CapVal.Node(mk_enum_ctor_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))
@@ -5616,7 +5611,8 @@ export fn mk_match_expr(st: PState, sp_start: int, subject_cv: CapVal, arms_cv: 
 }
 
 /// `if c { … } else …` in EXPRESSION position (t-47hc.24) — the ordinary form only;
-/// the bind-fresh `if let` is its own `@peek(if_let)`-routed rule (mk_if_let).
+/// the bind-fresh `if let` is its own `@peek(if_let)`-routed rule, owned by the
+/// if feature (features/if_stmt: `iflet_expr` → mk_if_let_abi, t-kd4y.3.2.1).
 ///
 /// The whole reason this needs a build rather than a bare 3-capture node ctor is the
 /// ABSENT else. The hand (if_stmt/parser.av:190-202) synthesizes an EMPTY BLOCK — NOT a
@@ -5635,67 +5631,6 @@ export fn mk_if_expr(st: PState, sp_start: int, cond_cv: CapVal, then_cv: CapVal
         Expr.IfExpr(capval_to_expr(st, cond_cv), capval_to_expr(st, then_cv), else_id),
         if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
         []
-    ))
-}
-
-/// The bind-fresh `if let v = x { … } else { … }` in EXPRESSION position (t-47hc.26).
-///
-/// A DESUGAR, not a parse. Every row is built by `build_if_let_expr` (core/arena.av),
-/// the SAME shared core the hand's `parse_if_let_expression` calls — so the native rule
-/// and the hand oracle lower to identical rows in identical order, and neither can drift
-/// from the other by editing one site.
-///
-/// `tmp_cv` is the `@gensym(iflet)` mint, already performed AT ITS POSITION in the
-/// sequence (between `if` and `let`), which is where the hand mints. Reading it here as
-/// an ordinary captured token is the whole point of making gensym a primary: by the time
-/// this build runs, the number is already fixed.
-///
-/// The absent-else case builds the SAME Void empty block `mk_if_expr` does, and BEFORE
-/// the desugar rows, matching the hand's order (parse_if_let_expression synthesises the
-/// else, then calls the builder). Not a `0` literal: an empty block types `.Void`, which
-/// is what keeps `if let v = x { return v }` valid in value position instead of a
-/// synthesized int hijacking the result type.
-export fn mk_if_let(st: PState, tmp_cv: CapVal, bind_cv: CapVal, subj_cv: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
-    let empty_rows: List<StmtId> = []
-    let else_id = match else_cv {
-        .Nil -> st.store.intern_expr_leaf(Expr.Block(empty_rows))
-        _ -> capval_to_expr(st, else_cv)
-    }
-    CapVal.Node(build_if_let_expr(
-        st.store,
-        capval_tok_text(tmp_cv),
-        capval_tok_text(bind_cv),
-        capval_to_expr(st, subj_cv),
-        capval_to_expr(st, then_cv),
-        else_id
-    ))
-}
-
-/// STATEMENT-position `if let` — `mk_if_let`'s twin, lowering through the SHARED
-/// `build_if_let_stmt` exactly as the hand's `parse_if_let_statement` does.
-///
-/// The difference from `mk_if_let` is the whole point of the rule existing: the then
-/// and else are STATEMENTS (`capval_to_stmt`), the result is a `Stmt.Block`, and an
-/// ABSENT else stays ABSENT. `mk_if_let` must synthesise an empty block there because
-/// an if-EXPRESSION needs a value; a `Stmt.If` does not, and the hand passes `none`.
-/// Synthesising one here would put an else arm in the tree that the source never wrote
-/// — which is precisely the divergence this builder was added to close.
-///
-/// Else shape follows `mk_if` verbatim (`.SNode` or absent), so `else if` chains and
-/// block elses reach the same `StmtId?` the hand's `parse_statement()` produces.
-export fn mk_if_let_stmt(st: PState, tmp_cv: CapVal, bind_cv: CapVal, subj_cv: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
-    mut else_opt: StmtId? = none
-    match else_cv {
-        .SNode(eid) -> else_opt = eid
-        _ -> {}
-    }
-    CapVal.SNode(build_if_let_stmt(
-        st.store,
-        capval_tok_text(tmp_cv),
-        capval_tok_text(bind_cv),
-        capval_to_expr(st, subj_cv),
-        capval_to_stmt(st, then_cv),
-        else_opt
     ))
 }
 

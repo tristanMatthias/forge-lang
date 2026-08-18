@@ -882,8 +882,6 @@ export fn engine_core_builds() -> List<string> {
 /// and the domain lint keeps the remainder exact.
 export fn unflipped_builds() -> List<string> {
     [
-     // t-kd4y.3.2.1 if-let (if_stmt)
-     "MkIfLet", "MkIfLetStmt",
      // t-kd4y.3.2.2 for completion (for_stmt)
      "MkForDestructure", "MkForBinding",
      // t-kd4y.3.2.3 let family (let/mut/const/destructure)
@@ -966,7 +964,7 @@ export fn central_build_kind(bn: string) -> string {
             or "fold_postfix_with" or "fold_postfix" or "mk_assign" or "rebind_eq" or "mk_is"
             or "mk_inlist" or "mk_inrange" or "mk_enum_ctor" or "mk_eqchain" or "MkListLit"
             or "MkListComp" or "MkChannel" or "MkWhen" or "MkMatchExpr" or "MkIfExpr"
-            or "MkIfLet" or "MkQuote" or "MkQuoteType" or "MkQuoteArm" or "MkExprBlock"
+            or "MkQuote" or "MkQuoteType" or "MkQuoteArm" or "MkExprBlock"
             or "MkSpawn" or "MkIsolated" or "MkTuple" or "MkLambda" or "MkLambdaTyped"
             or "Unary" or "Grouping" or "field_suffix" or "index_suffix" or "call_suffix"
             or "MkWithSuffix" or "MkMapLit" or "MkSplice" or "MkSpliceStruct" or "MkQualExpr"
@@ -976,8 +974,7 @@ export fn central_build_kind(bn: string) -> string {
             or "MkGrammarBlock" or "MkTaggedTemplate" or "MkTableHeader" or "MkTableRow" or "MkTableLit"
             or "MkPrimaryFail" -> "expr"
         "ExprStmt" or "Block"
-            or "MkForDestructure"
-            or "MkIfLetStmt" -> "stmt"
+            or "MkForDestructure" -> "stmt"
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
         // is inferred from the OTHER branch alone in some orders and from this one in others,
         // and a `( arms:match_arm )*` accumulator silently declares `List<ExprId>` — the

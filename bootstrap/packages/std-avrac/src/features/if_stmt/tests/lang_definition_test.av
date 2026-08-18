@@ -1,20 +1,23 @@
 // The if LanguageFeature definition (features/if_stmt/mod.av): the
 // definition carries title/docs/snippet + BOTH position families' hooks
-// (stmt + expr), its keyword DERIVES from the declared grammar, and the
-// declared STATEMENT rule reaches the composed views through
-// feature_stmt_grammar_fragments — the t-47hc.8 flip's guard. The lowering
-// rides a `spanned` manifest row whose optional-else unwrap
-// (capval_to_stmt_opt, the StmtId? marshalling row this flip added) is
-// pinned by the row shape below.
-use @std.avrac.features.if_stmt.{if_lang}
+// (stmt + expr), its keywords DERIVE from the declared grammar, and the
+// declared rules reach the composed views through
+// feature_stmt_grammar_fragments — the t-47hc.8 flip's guard. The lowerings
+// ride manifest rows: build_if `spanned` (its optional-else unwrap,
+// capval_to_stmt_opt, is pinned by the row shape below) and the if-let pair
+// span-free (t-kd4y.3.2.1 — the desugar cores end in a leaf constructor that
+// records no span: `intern_expr_leaf` for the expression form,
+// `add_stmt_leaf` for the statement one, so neither has a span to thread).
+use @std.avrac.features.if_stmt.{if_lang, avra_if_stmt_grammar, avra_iflet_expr_grammar}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar, grammar_build_refs, Grammar}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar, avra_expr_grammar, avra_expr_dispatch_grammar, central_build_kind, grammar_build_refs, Grammar}
 
 spec "if as a LanguageFeature" {
-    then "the keyword derives from the declared grammar" {
-        // "else" is a derived keyword too — both literals live in the rule.
+    then "the keywords derive from the declared grammar" {
+        // "else" is a derived keyword too — both literals live in if_stmt —
+        // and "let" arrives with the bind-fresh rules the feature now owns.
         let kws = feature_keywords(if_lang())
-        kws.length == 2 && kws[0] == "if" && kws[1] == "else"
+        kws.length == 3 && kws[0] == "if" && kws[1] == "else" && kws[2] == "let"
     }
     then "title, docs, and editor snippet are carried" {
         let f = if_lang()
@@ -50,10 +53,151 @@ spec "if as a LanguageFeature" {
         ok
     }
     then "build_if rides the manifest as a SPANNED stmt row" {
-        mut row = ""
-        for b in feature_builders() {
-            if b.name == "build_if" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
+        row_of("build_if") == "stmt/3/spanned/build_if_abi"
+    }
+}
+
+// ── t-kd4y.3.2.1: the if-let pair is the FEATURE's, in both positions ────────
+//
+// The flip moved two things at once and each needs its own assertion: the
+// LOWERINGS (MkIfLet / MkIfLetStmt are manifest rows, and the engine's central
+// tables no longer classify either name) and the RULES (`iflet_stmt` beside
+// `if_stmt` in the statement fragment, `iflet_expr` in its own so the
+// expression views can take it without the statement rules). The spine keeps
+// only the `@peek(if_let)`-gated REFERENCE — which is what makes `if_expr`
+// still reach the form.
+fn row_of(name: string) -> string {
+    for b in feature_builders() {
+        if b.name == name { return "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
+    }
+    ""
+}
+
+fn defines(g: Grammar, rule: string) -> bool {
+    for r in g.rules { if r.name == rule { return true } }
+    false
+}
+
+/// The `(build, arity)` list ONE rule references. A whole-grammar scan cannot
+/// answer this, and the difference is the point: swap the two if-let builders
+/// and every "is MkIfLet referenced somewhere" assertion still passes, because
+/// both names are still there — only a rule-keyed answer goes red. (CodeRabbit
+/// find on #1267; `BuildRef.rule` is what makes it expressible.)
+fn rule_builds(g: Grammar, rule: string) -> string {
+    mut out = ""
+    for br in grammar_build_refs(g) {
+        if br.rule == rule { out = out + "${br.name}/${string(br.argc)};" }
+    }
+    out
+}
+
+/// A rule's declared `@expect` entries — key, message and F-code — in
+/// declaration order. The DISPLAY render omits annotations entirely, so a
+/// dropped or mis-keyed expectation is invisible to any rendered-string
+/// assertion; this reads the structure. The dual key on the block `@require`
+/// (literal `{` for the composed emit, the rule name for standalone fragment
+/// validation) is exactly the metadata that has to survive a rule moving into
+/// a feature fragment, so it is pinned rather than described.
+fn rule_expects(g: Grammar, rule: string) -> string {
+    mut out = ""
+    for r in g.rules {
+        if r.name == rule {
+            match r.body {
+                .Alt(branches) -> {
+                    for b in branches {
+                        for a in b.annots {
+                            match a {
+                                .Expect(tok, msg, code) -> { out = out + "${tok}|${msg}|${code};" }
+                                _ -> {}
+                            }
+                        }
+                    }
+                }
+            }
         }
-        row == "stmt/3/spanned/build_if_abi"
+    }
+    out
+}
+
+spec "if let is feature-owned — rules and lowerings both" {
+    then "both if-let builds ride the manifest, span-free, at arity 5" {
+        row_of("MkIfLet") == "expr/5/flat/mk_if_let_abi"
+            && row_of("MkIfLetStmt") == "stmt/5/flat/mk_if_let_stmt_abi"
+    }
+    then "neither name is an engine central build any more" {
+        // The flip's other half: a name the manifest supplies must NOT also
+        // classify centrally — the two dispatchers consult in opposite orders,
+        // so a shadow would split the engines. builder_validation_error
+        // rejects it at registry build; this pins the deletion itself.
+        central_build_kind("MkIfLet") == "" && central_build_kind("MkIfLetStmt") == ""
+    }
+    then "each rule references ITS OWN builder — a swapped pair fails HERE" {
+        // The two if-let rules differ only in `block`/`block_expr`,
+        // `statement`/`else_tail` and the build name, so crossing the builds is
+        // the plausible wiring slip. Keyed by rule, it cannot pass.
+        let g = feature_gram(if_lang())
+        defines(g, "iflet_stmt") && defines(g, "iflet_expr")
+            && rule_builds(g, "iflet_stmt") == "MkIfLetStmt/5;"
+            && rule_builds(g, "iflet_expr") == "MkIfLet/5;"
+            && rule_builds(g, "if_stmt") == "build_if/3;"
+    }
+    then "each if-let rule declares its four @expect entries, keys and codes included" {
+        // Two uncoded (IDENT, `=`) and the DUAL-keyed block requirement under
+        // F0010 — the literal for the composed emit, the rule name for
+        // standalone fragment validation. The statement rule keys `block`, the
+        // expression rule `block_expr`: that difference is the fragment split
+        // itself, so it is asserted rather than assumed.
+        let g = feature_gram(if_lang())
+        rule_expects(g, "iflet_stmt") == "IDENT|expected a binding name after `if let`|;=|expected `=` after the `if let` binding|;{|expected `{` after the `if let` binding|F0010;block|expected `{` after the `if let` binding|F0010;"
+            && rule_expects(g, "iflet_expr") == "IDENT|expected a binding name after `if let`|;=|expected `=` after the `if let` binding|;{|expected `{` after the `if let` binding|F0010;block_expr|expected `{` after the `if let` binding|F0010;"
+            && rule_expects(g, "if_stmt") == "{|expected `{` after if condition|F0010;block|expected `{` after if condition|F0010;"
+    }
+    then "the statement fragment owns iflet_stmt, the expression fragment iflet_expr" {
+        // Disjoint by construction: the expression views compose ONLY the
+        // second, so a statement rule leaking into it would reach views that
+        // cannot resolve `block` / `statement`.
+        defines(avra_if_stmt_grammar(), "if_stmt") && defines(avra_if_stmt_grammar(), "iflet_stmt")
+            && !defines(avra_if_stmt_grammar(), "iflet_expr")
+            && defines(avra_iflet_expr_grammar(), "iflet_expr")
+            && !defines(avra_iflet_expr_grammar(), "iflet_stmt")
+    }
+    then "every production view DEFINES both rules — not just references them" {
+        // An unresolved reference parses as an error node at run time, so the
+        // rule TABLE is the assertion that matters. Both rules arrive by the
+        // one route — the feature registry — so the expression views get
+        // iflet_expr through the statement family they already compose.
+        mut ok = true
+        for g in [avra_stmt_flip_grammar(), avra_program_grammar(), avra_expr_grammar()] {
+            if !defines(g, "iflet_stmt") || !defines(g, "iflet_expr") { ok = false }
+        }
+        ok
+    }
+    then "the DISPATCH-only expression view leaves it external, like match_table_expr" {
+        // avra_expr_dispatch_grammar is bare avra_expr_core: a composition
+        // internal whose feature-owned references resolve after the merge.
+        // Composing the fragment in HERE would double-count it against the
+        // registry fold — the disjointness property fragment_registry_test
+        // pins — so the reference stays external, the shape `match_expr`'s
+        // table branch already has.
+        !defines(avra_expr_dispatch_grammar(), "iflet_expr")
+            && !defines(avra_expr_dispatch_grammar(), "match_table_expr")
+    }
+    then "the spine keeps the @peek-gated reference, not the rule body" {
+        // if_expr reaches the form by NAMING it, exactly as `statement` does —
+        // so the plain-if branch is still the alternation's sibling. The
+        // structural half is what proves the body LEFT: if_expr builds only
+        // MkIfExpr now, because its other branch is a bare rule reference with
+        // no build of its own.
+        let prod = avra_program_grammar()
+        render_grammar(prod).contains("if_expr = @peek(if_let) iflet_expr | \"if\"")
+            && rule_builds(prod, "if_expr") == "MkIfExpr/3;"
+    }
+    then "the COMPOSED view wires each rule to its own builder too" {
+        // The feature gram is what register_lang validates; the program view is
+        // what actually parses. Both are asserted because composition is where a
+        // fragment could arrive from the wrong place.
+        let prod = avra_program_grammar()
+        rule_builds(prod, "iflet_stmt") == "MkIfLetStmt/5;"
+            && rule_builds(prod, "iflet_expr") == "MkIfLet/5;"
     }
 }

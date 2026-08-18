@@ -342,26 +342,18 @@ fn avra_expr_core() -> Grammar {
   // `block_expr` likewise cannot fold in: brace_expr peeks brace_map first, so
   // `else { "a": 1 }` would become a MAP where a block is required
   // unconditionally.
-  // t-47hc.26 — the bind-fresh form goes native, spending `@gensym`. It is a DESUGAR,
-  // not a parse: `build_if_let_expr` (core/arena.av) turns it into a temp binding, a
-  // none-check condition, and an unwrap-bind row prepended to the then-block. That
-  // builder is SHARED with parse_if_let_expression — the same rows in the
-  // same order — so the two cannot drift in what they lower to.
+  // t-kd4y.3.2.1 — the bind-fresh form is the IF FEATURE's rule
+  // (`iflet_expr`, features/if_stmt), reached here the way `statement`
+  // reaches its statement twin: a `@peek(if_let)`-gated branch naming the
+  // rule. The lookahead stays HERE, with the alternation that has a
+  // plain-`if` sibling to fall to; the rule text and its lowering (MkIfLet)
+  // live with the feature that owns the syntax.
   //
-  // `tmp:@gensym(iflet)` sits between `"if"` and `"let"` because that is exactly where
-  // parse_if_let_header mints (its first line, after `if` has been
-  // consumed). Position is load-bearing, not cosmetic: a build-minted temp
-  // would number a NESTED `if let` before its parent, inverting the mint order.
-  //
-  // The three `@require`s are the three abort points, in order —
-  // consume_identifier for the binding, consume(Equal), and the `{` check. An ABSENT
-  // piece aborts the whole leaf; a MALFORMED subject or
-  // block still recovers inside its own rule.
-  if_expr      = @peek(if_let) "if" tmp:@gensym(iflet) "let" @require b:IDENT @require "="
-                 @off(allow_struct_lit) s:expression @require t:block_expr ( "else" e:else_tail )?
-                 @expect("IDENT", "expected a binding name after `if let`")
-                 @expect("=", "expected `=` after the `if let` binding")
-                 @expect("{", "expected `{` after the `if let` binding", F0010) -> MkIfLet(tmp, b, s, t, e)
+  // EXTERNAL to this fragment, exactly as `match_expr`'s `match_table_expr`
+  // branch is: the rule arrives with the feature registry, so every view
+  // that composes it defines this reference and the dispatch-only view
+  // leaves it external by design.
+  if_expr      = @peek(if_let) iflet_expr
                // The condition is `@onfail(bail)`: a condition that FAILED means there is no
                // `if` to finish.
                // Without it `else if` with nothing after it reported the missing condition
@@ -925,35 +917,10 @@ fn avra_stmt_common_grammar() -> Grammar {
   // match_stmt / match_when_arm / match_arm live with their owning feature
   // (avra_match_stmt_grammar / avra_match_arm_grammar, features/match); the
   // rest of the statement family — defer / errdefer / return / while / if /
-  // for / break / continue — rides the feature_stmt_grammar_fragments
+  // iflet / for / break / continue — rides the feature_stmt_grammar_fragments
   // registry (t-47hc.8): the `statement` alternation above names each rule
   // and the reference binds against the composed rule set. ONE definition
   // each, in the feature's own file; the views only choose dispatch order.
-  // STATEMENT-position `if let` — not its
-  // expression twin. Routing this to `expression` (which reaches `if_expr`) parsed the
-  // form correctly but lowered it to the WRONG SHAPE: an `ExprStmt(Block-expr)` holding
-  // an `if-expr`, where the pinned shape is a `Stmt.Block` holding a `Stmt.If`. Both run,
-  // which is why every diagnostic oracle in error_recovery_differential_test stayed
-  // green — a VALID program has no diagnostics to compare, so only the TREE sees it.
-  // The two shapes are not interchangeable: with no `else`, the expression form has to
-  // SYNTHESISE an empty else block (an if-expr needs a value) while the statement form
-  // leaves
-  // `else_opt` absent, so `if let v = x { … }` grew an else arm the source never wrote.
-  //
-  // `build_if_let_stmt` (core/arena.av) is the shared core —
-  // its header says the native rule lowers to exactly these rows — so the desugar
-  // lives in ONE place for both engines, the same discipline `MkIfLet` follows for
-  // the expression form.
-  //
-  // Shape mirrors the `if_expr` if-let branch with STATEMENT bodies (`block` /
-  // `statement`, as `if_stmt` uses). The three `@require`s stay the three
-  // abort points, and `tmp:@gensym(iflet)` keeps its position between `"if"`
-  // and `"let"` so a nested `if let` still numbers after its parent.
-  iflet_stmt    = "if" tmp:@gensym(iflet) "let" @require b:IDENT @require "="
-                 @off(allow_struct_lit) s:expression @require t:block ( "else" e:statement )?
-                 @expect("IDENT", "expected a binding name after `if let`")
-                 @expect("=", "expected `=` after the `if let` binding")
-                 @expect("{", "expected `{` after the `if let` binding", F0010) -> MkIfLetStmt(tmp, b, s, t, e)
   expr_stmt     = e:expression -> ExprStmt(e)
     }
     grammar_checked(gp)
