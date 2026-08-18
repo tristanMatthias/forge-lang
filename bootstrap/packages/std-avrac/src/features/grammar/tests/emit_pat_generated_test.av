@@ -1,11 +1,17 @@
 // ps3t.6.5.11 (pattern family) — emit.av RENDERS the generated static parser
-// for the pattern family: `parse_pattern_or` folds the right-recursive or-pattern
-// and the Pattern builds (OrMaybe / IdentPat / MkVariant / PatBool / PatStr /
-// PatNum / PatNegNum) lower to the SHARED constructor cores (ident_pat_bare /
-// pat_bool_node / … , the same helpers executor.apply_build calls). Fast in-suite
+// for the pattern family: `parse_pattern_or` folds the right-recursive
+// or-pattern and the Pattern builds (OrMaybe / IdentPat / MkVariant / PatBool /
+// PatStr / PatNum / PatNegNum / OptPresent / OptAbsent) lower through the
+// MANIFEST — since t-kd4y.3.2.6 they are feature-owned rows in
+// features/match/lowering, so each emits as its normalized-ABI adapter call
+// (`<export_name>(st, [args…])`) rather than a central template. Fast in-suite
 // structural guard on the emitter over avra_pat_grammar(); the executor
 // differential is pattern_equivalence_test and the airtight behavioural gate is
 // diagnose.sh --emit-gen-check (which covers patterns too).
+//
+// These assertions are the EMIT half of the flip-parity contract: the executor
+// reaches the very same adapters through apply_build's manifest consult, so
+// pinning the call spelling here pins both engines to one lowering.
 
 use @std.avrac.features.grammar.{emit_parser_source}
 // t-47hc.8: the pattern grammar fragment is owned by the match feature (features/match.av).
@@ -35,39 +41,44 @@ spec "grammar emitter: renders the pattern family's generated static parser" {
         src.contains("fn starts_str_pat(st: PState) -> bool {\n    st.cur().tk == Tk.String\n}")
     }
 
-    then "the or-pattern is a conditional build over the optional right side" {
+    then "the or-pattern routes its optional right side through the manifest adapter" {
         let src = emit_all()
-        // OrMaybe: absent `or` ⇒ the left pattern; present ⇒ Pattern.Or.
-        src.contains("match r { .Nil -> l  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, l), capval_to_pat(st, r)))) }")
+        // OrMaybe's optional `r` stays a bare CapVal var (`.Nil` when absent) —
+        // the adapter, not the generated fn, decides passthrough-vs-Pattern.Or.
+        src.contains("or_maybe_abi(st, [l, r])")
     }
 
-    then "the leaf builds lower to the SHARED pattern-node cores" {
+    then "the leaf builds emit as their manifest ABI calls" {
         let src = emit_all()
-        src.contains("CapVal.PNode(pat_bool_node(st, capval_tok_text(b)))") &&
-        src.contains("CapVal.PNode(pat_str_node(st, capval_tok_text(s)))") &&
-        src.contains("CapVal.PNode(pat_num_node(st, capval_tok_text(n), true))") &&
-        src.contains("CapVal.PNode(ident_pat_bare(st, capval_tok_text(name)))")
+        src.contains("pat_bool_abi(st, [b])") &&
+        src.contains("pat_str_abi(st, [s])") &&
+        src.contains("pat_neg_num_abi(st, [n])") &&
+        src.contains("pat_num_abi(st, [n])") &&
+        src.contains("ident_pat_abi(st, [name, b])")
     }
 
     then "variant_pat dispatches its nested-alternation payload (binds | subs)" {
         let src = emit_all()
         // A structural (multi-branch) group becomes an if/else-if on each
-        // branch's FIRST (the shared predicate), then the MkVariant conditional
-        // build on the sub-list.
+        // branch's FIRST (the shared predicate); the MkVariant row then takes
+        // BOTH accumulators, each wrapped in its kind's CapVal list ctor, and
+        // picks Variant-vs-NestedVariant inside the adapter.
         src.contains("} else if starts_variant_pat(st) {") &&
-        src.contains("if subs_list.length > 0 { CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(")
+        src.contains("mk_variant_abi(st, [name, CapVal.Toks(binds_list), CapVal.PNodes(subs_list)])")
     }
 
-    then "the optional-match arm surface lowers to the SHARED reducer cores" {
+    then "the optional-match arm surface routes through the manifest adapters" {
         let src = emit_all()
-        // `let <name>` → .Some(name); `none`/`null` → .None (spec Axis 10.4).
-        // Dispatch via the shared FIRST predicates; keyword tests in their bodies.
+        // `let <name>` → .Some(name); `none`/`null` → .None (spec Axis 10.4),
+        // both via core/ast's shared reducers inside the adapters. Dispatch via
+        // the shared FIRST predicates; keyword tests in their bodies. OptAbsent
+        // is the arity-0 row — its call carries an empty arg list.
         src.contains("if starts_opt_present(st) {") &&
         src.contains("fn starts_opt_present(st: PState) -> bool {\n    st.cur().text == \"let\"\n}") &&
-        src.contains("CapVal.PNode(st.store.pats.add_leaf(pattern_optional_present(capval_tok_text(name))))") &&
+        src.contains("opt_present_abi(st, [name])") &&
         src.contains("if starts_opt_absent(st) {") &&
         src.contains("fn starts_opt_absent(st: PState) -> bool {\n    st.cur().text == \"none\" || st.cur().text == \"null\"\n}") &&
-        src.contains("CapVal.PNode(st.store.pats.add_leaf(pattern_optional_absent()))")
+        src.contains("opt_absent_abi(st, [])")
     }
 
 }

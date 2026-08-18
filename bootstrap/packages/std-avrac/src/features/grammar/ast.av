@@ -891,9 +891,6 @@ export fn unflipped_builds() -> List<string> {
      "MkLet", "MkMut", "MkConst",
      // t-kd4y.3.2.5 spec/given/then
      "MkSpecBlock", "MkGivenBlock", "MkThenBlock",
-     // t-kd4y.3.2.6 patterns (match's pat fragment)
-     "OrMaybe", "IdentPat", "MkVariant", "PatBool", "PatStr", "PatNum",
-     "PatNegNum", "OptPresent", "OptAbsent",
      // t-kd4y.3.3.1 fn + extern decls (+ param plumbing)
      "MkFnDecl", "MkExtern", "MkParam", "MkTypeParam", "MkWhereParam",
      // t-kd4y.3.3.2 type + shape decls (+ field rows)
@@ -1027,8 +1024,6 @@ export fn central_build_kind(bn: string) -> string {
         "MkChildrenSlotList" -> "cslots"
         "MkTypeParam" or "MkWhereParam" -> "tparam"
         "MkField" -> "field"
-        "OrMaybe" or "IdentPat" or "MkVariant" or "PatBool" or "PatStr"
-            or "PatNum" or "PatNegNum" or "OptPresent" or "OptAbsent" -> "pat"
         "TyUnion" or "MkFn" or "TyDyn" or "TyList" or "TyParen"
             or "MkNamed" or "MkQualified" -> "type"
         _ -> ""
