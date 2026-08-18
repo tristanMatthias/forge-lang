@@ -4133,11 +4133,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkSpawn" if args.length == 1 -> mk_spawn(st, 0 - 1, env.get(args[0]))
         "MkIsolated" if args.length == 1 -> mk_isolated(st, 0 - 1, env.get(args[0]))
         "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
-        // The concurrency statements (t-47hc Phase 4) — both engines lower
-        // through the shared cores.
-        "MkParallel" if args.length == 1 -> mk_parallel_g(st, capval_to_stmt_list(env.get(args[0])))
-        "MkSelect" if args.length == 1 -> mk_select_g(st, env.get(args[0]))
-        "MkSelectArm" if args.length == 3 -> mk_select_arm_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_to_stmt_list(env.get(args[2])))
+        // The spec-test blocks (t-47hc Phase 4) — both engines lower through
+        // the shared cores.
         "MkSpecBlock" if args.length == 2 -> mk_spec_block_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
         "MkGivenBlock" if args.length == 2 -> mk_given_block_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
         "MkThenBlock" if args.length == 2 -> mk_then_block_g(st, capval_tok_text(env.get(args[0])), capval_to_stmt_list(env.get(args[1])))
@@ -4801,28 +4798,6 @@ export fn capval_to_when_arm(st: PState, v: CapVal) -> WhenArm {
             WhenArm { cond_id: none, body_id: st.error_node_silent() }
         }
     }
-}
-
-/// `parallel { … }` — the MkParallel build's core (t-47hc Phase 4). The
-/// statement list is held as RAW ids under a LEAF Parallel row — the hand's
-/// `alloc_stmt_leaf(Stmt.Parallel(body.ids))`, no Block wrapper.
-export fn mk_parallel_g(st: PState, body: List<StmtId>) -> CapVal {
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Parallel(body)))
-}
-
-/// One `binding <- channel -> { body }` select arm — the MkSelectArm build's
-/// core. Mirrors parse_select_arm_list's row exactly: binding name text,
-/// channel expr id, body stmt ids.
-export fn mk_select_arm_g(st: PState, binding: string, ch_cv: CapVal, body: List<StmtId>) -> CapVal {
-    CapVal.SArm(SelectArm { binding: binding, chan_id: capval_to_expr(st, ch_cv), body_ids: body })
-}
-
-/// Fold grammar-built select arms into the walker-opaque Stmt.Select LEAF —
-/// the hand's `alloc_stmt_leaf(Stmt.Select(arms))`: SelectArm is not a
-/// registered container struct, so the canonical ingest records no children
-/// and the native alloc mirrors that.
-export fn mk_select_g(st: PState, arms_cv: CapVal) -> CapVal {
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Select(capval_to_select_arm_list(arms_cv))))
 }
 
 /// A repeated `select_arm` capture is SArms for many, SArm for one, Nil for none

@@ -5,12 +5,14 @@
 // family; parse/tests/gen_parser_regen_test.av asserts it equals
 // emit_parser_file() so a grammar edit that isn't regenerated fails the suite.
 
-use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, capval_tok_texts, error_stmt_of, fold_logical_expr, fold_nullish_expr, fold_pipe_expr, fold_postfix_with_expr, fold_type_union, gensym_token, ident_pat_bare, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assign_expr, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_channel, mk_children_slot_g, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_g, mk_comp_config_list, mk_comp_config_pair_g, mk_comp_field_g, mk_component_block_g, mk_component_def_g, mk_component_paren_def_g, mk_const_binding_g, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_eqchain_expr, mk_export_decl, mk_expr_block, mk_extern_fn, mk_field, mk_field_access, mk_field_init, mk_fn_decl_where_g, mk_fn_type, mk_for_binding, mk_for_destructure, mk_force_unwrap, mk_generic_call_suffix, mk_given_block_g, mk_grammar_block, mk_group_or_empty, mk_if_expr, mk_if_let, mk_if_let_stmt, mk_index_suffix, mk_inlist_expr, mk_inrange_expr, mk_is_expr, mk_isolated, mk_lambda, mk_lambda_typed, mk_let_binding_g, mk_let_destructure_g, mk_list_comp, mk_list_lit, mk_map_lit, mk_match_expr, mk_method_shorthand_g, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_parallel_g, mk_param, mk_paren_type, mk_plain_name, mk_qualified, mk_qualified_type, mk_quote, mk_quote_arm, mk_quote_type, mk_raw_component_block_g, mk_select_arm_g, mk_select_g, mk_shape_decl, mk_spawn, mk_spec_block_g, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_struct_lit, mk_table_header, mk_table_lit, mk_table_row, mk_tagged_template, mk_template, mk_then_block_g, mk_trait_list, mk_try_suffix, mk_tuple_fr, mk_tuple_index, mk_type_decl_any, mk_type_param, mk_when, mk_where_param, mk_with_suffix, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, param_entries_from_toks, pat_bool_node, pat_num_node, pat_str_node, rawbrace_scan, rebind_eq_expr, text_is_word, unary_expr}
+use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, capval_tok_texts, error_stmt_of, fold_logical_expr, fold_nullish_expr, fold_pipe_expr, fold_postfix_with_expr, fold_type_union, gensym_token, ident_pat_bare, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assign_expr, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_channel, mk_children_slot_g, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_g, mk_comp_config_list, mk_comp_config_pair_g, mk_comp_field_g, mk_component_block_g, mk_component_def_g, mk_component_paren_def_g, mk_const_binding_g, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_eqchain_expr, mk_export_decl, mk_expr_block, mk_extern_fn, mk_field, mk_field_access, mk_field_init, mk_fn_decl_where_g, mk_fn_type, mk_for_binding, mk_for_destructure, mk_force_unwrap, mk_generic_call_suffix, mk_given_block_g, mk_grammar_block, mk_group_or_empty, mk_if_expr, mk_if_let, mk_if_let_stmt, mk_index_suffix, mk_inlist_expr, mk_inrange_expr, mk_is_expr, mk_isolated, mk_lambda, mk_lambda_typed, mk_let_binding_g, mk_let_destructure_g, mk_list_comp, mk_list_lit, mk_map_lit, mk_match_expr, mk_method_shorthand_g, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_param, mk_paren_type, mk_plain_name, mk_qualified, mk_qualified_type, mk_quote, mk_quote_arm, mk_quote_type, mk_raw_component_block_g, mk_shape_decl, mk_spawn, mk_spec_block_g, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_struct_lit, mk_table_header, mk_table_lit, mk_table_row, mk_tagged_template, mk_template, mk_then_block_g, mk_trait_list, mk_try_suffix, mk_tuple_fr, mk_tuple_index, mk_type_decl_any, mk_type_param, mk_when, mk_where_param, mk_with_suffix, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, param_entries_from_toks, pat_bool_node, pat_num_node, pat_str_node, rawbrace_scan, rebind_eq_expr, text_is_word, unary_expr}
 use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, MatchArm, ParamEntry, PatId, Pattern, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, ValueType, Variant, WhenArm, pattern_optional_absent, pattern_optional_present}
 use features.modules.lowering.{module_build, use_bare_build, use_pkg_build}
 use features.enum_decl.lowering.{enum_decl_build, evariant_build}
 use features.trait_decl.lowering.{assoc_type_build, trait_decl_build, trait_method_build}
 use features.impl_decl.lowering.{impl_build, method_build}
+use features.select_stmt.lowering.{select_arm_build, select_build}
+use features.parallel_stmt.lowering.{parallel_build}
 use features.match.lowering.{build_arm_abi, build_match_abi, build_when_arm_abi, build_when_default_abi, mk_arm_return_abi, mk_match_table_abi, mk_match_table_expr_abi, mk_when_stmt_abi}
 use features.defer.lowering.{build_defer_abi, build_errdefer_abi}
 use features.return_stmt.lowering.{build_return_abi}
@@ -796,195 +798,6 @@ fn parse_letdes_decl(st: PState) -> CapVal {
     }
     let init = __bres6
     mk_let_destructure_g(st, n_list, init)
-}
-
-fn parse_parallel_decl(st: PState) -> CapVal {
-    mut tried_spec = false
-    if st.cur().text == "parallel" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        mut s_cut = false
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        while true {
-            mut body_list: List<StmtId> = []
-            let _ = st.advance()
-            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
-            if !s_cut { break }
-            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-                st.report("expected `{` after parallel")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            let __pre_err = st.had_error
-            mut __any_err = __pre_err
-            while true {
-                if st.at_end() || st.cur().text == "}" { break }
-                let __sp = st.cur().pos
-                let __before_i = st.pos
-                st.clear_error()
-                let __cv = parse_declaration(st)
-                if st.had_error { __any_err = true }
-                if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
-                    __any_err = true
-                    st.synchronize_stmt()
-                    if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-                    st.set_abort_prop(false)
-                    let __elc = st.store.lines.to_linecol(__sp)
-                    let __e = error_stmt_of(st, __cv)
-                    st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-                    body_list.push(__e)
-                    st.clear_error()
-                    continue
-                }
-                let __sid = capval_to_stmt(st, __cv)
-                let __lc = st.store.lines.to_linecol(__sp)
-                st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
-                body_list.push(__sid)
-                if st.pos == __before_i { break }
-            }
-            if __any_err { st.note_had_error() }
-            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-                st.report("expected `}` to close parallel block")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-                return mk_parallel_g(st, body_list)
-            }
-            break
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
-    }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_expected_expr())
-}
-
-fn parse_select_decl(st: PState) -> CapVal {
-    mut tried_spec = false
-    if st.cur().text == "select" {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        mut s_cut = false
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        while true {
-            mut arms_list: List<SelectArm> = []
-            let _ = st.advance()
-            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
-            if !s_cut { break }
-            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-                st.report("expected `{` after select")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            while lookahead_ok("not_rbrace", st) {
-                let __rep_before = st.pos
-                st.set_abort_prop(false)
-                if !(starts_select_arm(st)) { break }
-                let __gres0 = parse_select_arm(st)
-                if st.abort_prop || capval_is_error_expr(st, __gres0) {
-                    st.set_abort_prop(false)
-                    break
-                }
-                arms_list.push(capval_to_select_arm(st, __gres0))
-                if st.pos == __rep_before { break }
-            }
-            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-                st.report("expected `}` to close select")
-                if s_cut {
-                    st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-                }
-            }
-            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-                return mk_select_g(st, CapVal.SArms(arms_list))
-            }
-            break
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
-    }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_expected_expr())
-}
-
-fn parse_select_arm(st: PState) -> CapVal {
-    mut body_list: List<StmtId> = []
-    let b = CapVal.Tok(st.advance())
-    if st.cur().tk == Tk.LeftArrow { let _ = st.advance() } else {
-        st.report("expected `<-` after select arm binding")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    let __bdiag2 = st.diags.length
-    let __bres2 = parse_expression(st)
-    if capval_is_error_expr(st, __bres2) || capval_is_error_stmt(st, __bres2) || st.diags.length != __bdiag2 {
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    let ch = __bres2
-    if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-        st.report("expected `->` after channel in select arm")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-        st.report("expected `{` for select arm body")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    let __pre_err = st.had_error
-    mut __any_err = __pre_err
-    while true {
-        if st.at_end() || st.cur().text == "}" { break }
-        let __sp = st.cur().pos
-        let __before_i = st.pos
-        st.clear_error()
-        let __cv = parse_declaration(st)
-        if st.had_error { __any_err = true }
-        if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
-            __any_err = true
-            st.synchronize_stmt()
-            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-            st.set_abort_prop(false)
-            let __elc = st.store.lines.to_linecol(__sp)
-            let __e = error_stmt_of(st, __cv)
-            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-            body_list.push(__e)
-            st.clear_error()
-            continue
-        }
-        let __sid = capval_to_stmt(st, __cv)
-        let __lc = st.store.lines.to_linecol(__sp)
-        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
-        body_list.push(__sid)
-        if st.pos == __before_i { break }
-    }
-    if __any_err { st.note_had_error() }
-    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected `}` to close select arm")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    mk_select_arm_g(st, capval_tok_text(b), ch, body_list)
 }
 
 fn parse_spec_decl(st: PState) -> CapVal {
@@ -3445,6 +3258,195 @@ fn parse_impl_method(st: PState) -> CapVal {
             }
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
                 return method_build(st, [imname, CapVal.PEntries(imparams_list), imret, CapVal.SNodes(imbody_list)])
+            }
+            break
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
+fn parse_select_decl(st: PState) -> CapVal {
+    mut tried_spec = false
+    if st.cur().text == "select" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        mut s_cut = false
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        while true {
+            mut arms_list: List<SelectArm> = []
+            let _ = st.advance()
+            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
+            if !s_cut { break }
+            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+                st.report("expected `{` after select")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            while lookahead_ok("not_rbrace", st) {
+                let __rep_before = st.pos
+                st.set_abort_prop(false)
+                if !(starts_select_arm(st)) { break }
+                let __gres0 = parse_select_arm(st)
+                if st.abort_prop || capval_is_error_expr(st, __gres0) {
+                    st.set_abort_prop(false)
+                    break
+                }
+                arms_list.push(capval_to_select_arm(st, __gres0))
+                if st.pos == __rep_before { break }
+            }
+            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+                st.report("expected `}` to close select")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
+                return select_build(st, [CapVal.SArms(arms_list)])
+            }
+            break
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
+fn parse_select_arm(st: PState) -> CapVal {
+    mut body_list: List<StmtId> = []
+    let b = CapVal.Tok(st.advance())
+    if st.cur().tk == Tk.LeftArrow { let _ = st.advance() } else {
+        st.report("expected `<-` after select arm binding")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let __bdiag2 = st.diags.length
+    let __bres2 = parse_expression(st)
+    if capval_is_error_expr(st, __bres2) || capval_is_error_stmt(st, __bres2) || st.diags.length != __bdiag2 {
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let ch = __bres2
+    if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+        st.report("expected `->` after channel in select arm")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` for select arm body")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        let __before_i = st.pos
+        st.clear_error()
+        let __cv = parse_declaration(st)
+        if st.had_error { __any_err = true }
+        if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
+            __any_err = true
+            st.synchronize_stmt()
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            st.set_abort_prop(false)
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = error_stmt_of(st, __cv)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            body_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        body_list.push(__sid)
+        if st.pos == __before_i { break }
+    }
+    if __any_err { st.note_had_error() }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` to close select arm")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    select_arm_build(st, [b, ch, CapVal.SNodes(body_list)])
+}
+
+fn parse_parallel_decl(st: PState) -> CapVal {
+    mut tried_spec = false
+    if st.cur().text == "parallel" {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        mut s_cut = false
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        while true {
+            mut body_list: List<StmtId> = []
+            let _ = st.advance()
+            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
+            if !s_cut { break }
+            if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+                st.report("expected `{` after parallel")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            let __pre_err = st.had_error
+            mut __any_err = __pre_err
+            while true {
+                if st.at_end() || st.cur().text == "}" { break }
+                let __sp = st.cur().pos
+                let __before_i = st.pos
+                st.clear_error()
+                let __cv = parse_declaration(st)
+                if st.had_error { __any_err = true }
+                if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
+                    __any_err = true
+                    st.synchronize_stmt()
+                    if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+                    st.set_abort_prop(false)
+                    let __elc = st.store.lines.to_linecol(__sp)
+                    let __e = error_stmt_of(st, __cv)
+                    st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+                    body_list.push(__e)
+                    st.clear_error()
+                    continue
+                }
+                let __sid = capval_to_stmt(st, __cv)
+                let __lc = st.store.lines.to_linecol(__sp)
+                st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+                body_list.push(__sid)
+                if st.pos == __before_i { break }
+            }
+            if __any_err { st.note_had_error() }
+            if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+                st.report("expected `}` to close parallel block")
+                if s_cut {
+                    st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+                }
+            }
+            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
+                return parallel_build(st, [CapVal.SNodes(body_list)])
             }
             break
         }
@@ -6417,18 +6419,6 @@ fn starts_letdes_decl(st: PState) -> bool {
     lookahead_ok("let_destructure", st) && (st.cur().text == "let")
 }
 
-fn starts_parallel_decl(st: PState) -> bool {
-    st.cur().text == "parallel"
-}
-
-fn starts_select_decl(st: PState) -> bool {
-    st.cur().text == "select"
-}
-
-fn starts_select_arm(st: PState) -> bool {
-    st.cur().tk == Tk.Identifier
-}
-
 fn starts_spec_decl(st: PState) -> bool {
     st.cur().text == "spec"
 }
@@ -6571,6 +6561,18 @@ fn starts_impl_assoc(st: PState) -> bool {
 
 fn starts_impl_method(st: PState) -> bool {
     st.cur().text == "fn"
+}
+
+fn starts_select_decl(st: PState) -> bool {
+    st.cur().text == "select"
+}
+
+fn starts_select_arm(st: PState) -> bool {
+    st.cur().tk == Tk.Identifier
+}
+
+fn starts_parallel_decl(st: PState) -> bool {
+    st.cur().text == "parallel"
 }
 
 fn starts_block(st: PState) -> bool {

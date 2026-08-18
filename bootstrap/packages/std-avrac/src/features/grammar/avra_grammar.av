@@ -18,6 +18,8 @@ use features.enum_decl.{avra_enum_decl_grammar}
 use features.trait_decl.{avra_trait_decl_grammar}
 use features.impl_decl.{avra_impl_decl_grammar}
 use features.modules.{avra_modules_grammar}
+use features.select_stmt.{avra_select_grammar}
+use features.parallel_stmt.{avra_parallel_grammar}
 // t-47hc slice 10.3 — `tparam`, shared by every generic decl keyword.
 use features.generics.{avra_generics_grammar}
 
@@ -647,39 +649,10 @@ fn avra_decl_edge_grammar() -> Grammar {
   letdes_decl = @peek(let_destructure) "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? @require ")" @require "=" @onfail(bail) init:expression
                 @expect(")", "expected `)` after destructure names")
                 @expect("=", "expected `=` after destructure pattern") -> MkDestructure(n, init)
-  // The CONCURRENCY statements (t-47hc Phase 4). `parallel` is a keyword + a
-  // brace-delimited statement list held as RAW ids under a LEAF Parallel row
-  // (parse_statement_list_ids → Stmt.Parallel(ids) — no Block
-  // wrapper). `select` arms are
-  // `binding <- channel -> { body }`, ZERO arms is valid (`select { }`), and
-  // the arm list folds into the walker-opaque Stmt.Select leaf. The binding is
-  // Tk.Identifier only.
-  //
-  // `select` OWNS its recovery (t-myz7): `@cut` sits directly after the keyword,
-  // so a malformed arm COMMITS and reports through `select_arm`'s own `@expect`s
-  // instead of rolling back. `@gate` on the arm repetition
-  // is what lets the loop be entered on a token the arm's own FIRST would refuse —
-  // without it a non-IDENT arm head silently ended the list — and the gated FIRST
-  // re-check emit inserts is what reports for it. `@expect("IDENT", …)` on
-  // `select_arm` supplies that check's message; with no declared message it would
-  // fall back to a generic "expected select_arm", naming a grammar rule at the user.
-  parallel_decl = @try "parallel" @cut @require "{" body:declaration* @require "}"
-                  @expect("{", "expected `{` after parallel")
-                  @expect("}", "expected `}` to close parallel block") -> MkParallel(body)
-  // NOT committed, for the reason recorded on `enum_decl`: `select { x }` must report
-  // the missing `<-` and still build `(select ())`, while a committed rule ABORTS to
-  // `(error)` and additionally leaves the `}` unconsumed so the caller adds a spurious
-  // F0013. A gated element's failure needs to SKIP the element and let the rule close,
-  // which is a non-aborting mode the DSL does not have.
-  select_decl   = @try "select" @cut @require "{" ( @peek(not_rbrace) @gate @onfail(close) arms:select_arm )* @require "}"
-                  @expect("{", "expected `{` after select")
-                  @expect("}", "expected `}` to close select") -> MkSelect(arms)
-  select_arm    = b:IDENT @require "<-" @onfail(bail) ch:expression @require "->" @require "{" body:declaration* @require "}"
-                  @expect("IDENT", "expected select arm binding name")
-                  @expect("<-", "expected `<-` after select arm binding")
-                  @expect("->", "expected `->` after channel in select arm")
-                  @expect("{", "expected `{` for select arm body")
-                  @expect("}", "expected `}` to close select arm") -> MkSelectArm(b, ch, body)
+  // The CONCURRENCY statements (t-47hc Phase 4) live in their features now
+  // (t-kd4y.3.2.4): `parallel_decl` in features/parallel_stmt/grammar.av,
+  // `select_decl` + `select_arm` in features/select_stmt/grammar.av — both
+  // composed in below, both referenced from the alternations above by name.
   // The SPEC-TEST blocks (t-47hc Phase 4). `spec_item` mirrors parse_spec_body's
   // dispatch — given-block | then-block | any declaration — and both nesting
   // levels stamp per-item positions via the shared stmt-repetition loop
@@ -886,6 +859,8 @@ fn avra_decl_edge_grammar() -> Grammar {
         avra_fn_decl_grammar(),
         avra_trait_decl_grammar(),
         avra_impl_decl_grammar(),
+        avra_select_grammar(),
+        avra_parallel_grammar(),
     ])
 }
 
@@ -1085,6 +1060,8 @@ export fn feature_decl_grammar_fragments() -> List<Grammar> {
         avra_impl_decl_grammar(),    // impl_decl, impl_method
         avra_modules_grammar(),      // use_decl, mod_decl
         avra_generics_grammar(),     // tparam — shared by every generic decl keyword
+        avra_select_grammar(),       // select_decl, select_arm
+        avra_parallel_grammar(),     // parallel_decl
     ]
 }
 

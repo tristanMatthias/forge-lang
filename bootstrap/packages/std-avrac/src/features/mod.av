@@ -21,13 +21,13 @@ use features.list_lit.{list_lit_feature}
 use features.map_lit.{map_lit_feature}
 use features.modules.{mod_lang, use_lang}
 use features.null_safety.{null_coalesce_feature, optional_chain_feature, optional_method_call_feature, try_feature, catch_feature}
-use features.parallel_stmt.{parallel_feature}
+use features.parallel_stmt.{parallel_lang}
 use features.spawn_expr.{spawn_expr_feature}
 use features.channels.{channels_feature}
 use features.isolated_expr.{isolated_expr_feature}
 use features.quote_expr.{quote_expr_feature}
 use features.return_stmt.{return_lang}
-use features.select_stmt.{select_feature}
+use features.select_stmt.{select_lang}
 use features.spec_test.{spec_feature, given_feature, then_feature}
 use features.struct_decl.{struct_lit_feature, field_access_feature, enum_ctor_feature, field_assign_feature, type_decl_feature, shape_decl_feature}
 use features.trait_decl.{trait_lang}
@@ -113,8 +113,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
     for f in feats { register_lang(reg, f) }
     let binds = fold_builders(feats)
     register(reg, let_destructure_feature())
-    register(reg, select_feature())
-    register(reg, parallel_feature())
 
     // ── Expressions ──
     register(reg, closures_feature())
@@ -163,7 +161,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang(), impl_decl_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,

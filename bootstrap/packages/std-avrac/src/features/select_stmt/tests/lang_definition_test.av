@@ -1,0 +1,55 @@
+// The select LanguageFeature definition (features/select_stmt/mod.av): the
+// definition carries title/docs/snippet + the pass hooks, its keyword
+// DERIVES from the declared grammar, and the declared rules reach the
+// composed declaration + whole-program views through the decl-fragment
+// registry — the t-kd4y.3.2.4 flip's guard: ONE definition in the feature
+// dir, zero spine copies. Both lowerings ride the manifest.
+use @std.avrac.features.select_stmt.{select_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+
+fn row_of(name: string) -> string {
+    mut row = ""
+    for b in feature_builders() {
+        if b.name == name { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}" }
+    }
+    row
+}
+
+spec "select as a LanguageFeature" {
+    then "the keyword derives from the declared grammar" {
+        let kws = feature_keywords(select_lang())
+        kws.length == 1 && kws[0] == "select"
+    }
+    then "title, docs, and editor snippet are carried" {
+        let f = select_lang()
+        f.title.length > 0 && f.docs.contains("Channel<T>") && f.snippet.contains("select")
+    }
+    then "the declared rules reach the composed whole-program view, spelling and all" {
+        // The DISPLAY render omits item markers (@try/@cut/@require/@gate live
+        // only in rule_identity), so the pinned strings are the marker-free
+        // heads + the feature-owned lowerings.
+        let decl = "select_decl = \"select\" \"{\" ( @peek(not_rbrace) arms:select_arm )* \"}\" -> MkSelect(arms)"
+        let arm = "select_arm = b:IDENT \"<-\" ch:expression \"->\" \"{\" body:declaration* \"}\" -> MkSelectArm(b, ch, body)"
+        let own = render_grammar(feature_gram(select_lang()))
+        let prod = render_grammar(avra_program_grammar())
+        own.contains(decl) && own.contains(arm) && prod.contains(decl) && prod.contains(arm)
+    }
+    then "the decl-fragment registry serves both rules" {
+        mut has_decl = false
+        mut has_arm = false
+        for g in feature_decl_grammar_fragments() {
+            for r in g.rules {
+                if r.name == "select_decl" { has_decl = true }
+                if r.name == "select_arm" { has_arm = true }
+            }
+        }
+        has_decl && has_arm
+    }
+    then "both builds ride the manifest and NOTHING is left central" {
+        row_of("MkSelect") == "stmt/1/flat/select_build/features.select_stmt.lowering"
+            && row_of("MkSelectArm") == "sarm/3/flat/select_arm_build/features.select_stmt.lowering"
+            && central_build_kind("MkSelect") == ""
+            && central_build_kind("MkSelectArm") == ""
+    }
+}

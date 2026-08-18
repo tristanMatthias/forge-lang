@@ -1,0 +1,33 @@
+// The select feature's LOWERINGS — the ABI fns + their manifest rows, in a
+// dedicated SUBMODULE so the generated parser imports them directly
+// (t-kd4y.3 Batch A shape). Only features.grammar + core are imported —
+// both already in every generated parser's closure — so the F4012
+// import-closure invariant holds by construction; the feature's passes and
+// hooks stay in ../mod.av.
+
+use core.{Stmt, SelectArm}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_to_select_arm_list, capval_to_stmt_list, capval_tok_text}
+
+/// One `binding <- channel -> { body }` arm (`MkSelectArm`, arity 3).
+/// Mirrors parse_select_arm_list's row exactly: binding name text, channel
+/// expr id, body stmt ids.
+export fn select_arm_build(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.SArm(SelectArm { binding: capval_tok_text(vals[0]), chan_id: capval_to_expr(st, vals[1]), body_ids: capval_to_stmt_list(vals[2]) })
+}
+
+/// `select { arm* }` (`MkSelect`, arity 1) — the arms fold into the
+/// walker-opaque Stmt.Select LEAF, the hand's
+/// `alloc_stmt_leaf(Stmt.Select(arms))`: SelectArm is not a registered
+/// container struct, so the canonical ingest records no children and the
+/// native alloc mirrors that. ZERO arms is valid (`select { }`).
+export fn select_build(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Select(capval_to_select_arm_list(vals[0]))))
+}
+
+/// The select feature's rows — Batch A shape: they bind the EXISTING Mk
+/// names (the row name IS the gram reference, so the flip edits no rule
+/// text) to fns in THIS module, which the generated parser imports directly.
+export fn select_builds() -> List<BuilderBind> {
+    bind_rows("features.select_stmt.lowering", [bind_row("MkSelect", "stmt", 1, false, "select_build", select_build),
+     bind_row("MkSelectArm", "sarm", 3, false, "select_arm_build", select_arm_build)])
+}

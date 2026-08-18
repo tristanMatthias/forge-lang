@@ -1,0 +1,42 @@
+// The parallel LanguageFeature definition (features/parallel_stmt/mod.av):
+// the definition carries title/docs/snippet + the pass hooks, its keyword
+// DERIVES from the declared grammar, and the declared rule reaches the
+// composed declaration + whole-program views through the decl-fragment
+// registry — the t-kd4y.3.2.4 flip's guard: ONE definition in the feature
+// dir, zero spine copies.
+use @std.avrac.features.parallel_stmt.{parallel_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+
+spec "parallel as a LanguageFeature" {
+    then "the keyword derives from the declared grammar" {
+        let kws = feature_keywords(parallel_lang())
+        kws.length == 1 && kws[0] == "parallel"
+    }
+    then "title, docs, and editor snippet are carried" {
+        let f = parallel_lang()
+        f.title.length > 0 && f.docs.contains("concurrent") && f.snippet.contains("parallel")
+    }
+    then "the declared rule reaches the composed whole-program view, spelling and all" {
+        let rule = "parallel_decl = \"parallel\" \"{\" body:declaration* \"}\" -> MkParallel(body)"
+        render_grammar(feature_gram(parallel_lang())).contains(rule)
+            && render_grammar(avra_program_grammar()).contains(rule)
+    }
+    then "the decl-fragment registry serves the rule" {
+        mut found = false
+        for g in feature_decl_grammar_fragments() {
+            for r in g.rules {
+                if r.name == "parallel_decl" { found = true }
+            }
+        }
+        found
+    }
+    then "MkParallel rides the manifest and NOTHING is left central" {
+        mut row = ""
+        for b in feature_builders() {
+            if b.name == "MkParallel" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}" }
+        }
+        row == "stmt/1/flat/parallel_build/features.parallel_stmt.lowering"
+            && central_build_kind("MkParallel") == ""
+    }
+}
