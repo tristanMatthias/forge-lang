@@ -32,8 +32,8 @@ fn decl_grammar_src() -> string {
     "  variant       = vname:IDENT ( \"(\" ( vfields:field \",\"? )* \")\" )? -> MkEVariant(vname, vfields)\n" +
     "  param         = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
     "  statement     = break_stmt | return_stmt | expr_stmt\n" +
-    "  break_stmt    = \"break\" -> Break()\n" +
-    "  return_stmt   = \"return\" re:expression -> Return(re)\n" +
+    "  break_stmt    = \"break\" -> build_break()\n" +
+    "  return_stmt   = \"return\" re:expression -> build_return(re)\n" +
     "  expr_stmt     = es:expression -> ExprStmt(es)\n" +
     "  type_expr     = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
     "  type_atom     = fn_type | dyn_type | list_type | paren_type | named_type\n" +

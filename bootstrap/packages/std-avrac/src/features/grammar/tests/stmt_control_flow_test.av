@@ -30,9 +30,9 @@ use @std.avrac.core.{render_stmt_id}
 fn cf_grammar_src() -> string {
     "grammar Stmt {\n" +
     "  statement     = break_stmt | continue_stmt | return_stmt | while_stmt | if_stmt | for_stmt | block | expr_stmt\n" +
-    "  break_stmt    = \"break\" -> Break()\n" +
-    "  continue_stmt = \"continue\" -> Continue()\n" +
-    "  return_stmt   = \"return\" e:expression -> Return(e)\n" +
+    "  break_stmt    = \"break\" -> build_break()\n" +
+    "  continue_stmt = \"continue\" -> build_continue()\n" +
+    "  return_stmt   = \"return\" e:expression -> build_return(e)\n" +
     // build_while is the return feature's sibling: a MANIFEST lowering
     // (resolved via the lazy parse_features() registry), not a central arm.
     "  while_stmt    = \"while\" c:expression body:block -> build_while(c, body)\n" +

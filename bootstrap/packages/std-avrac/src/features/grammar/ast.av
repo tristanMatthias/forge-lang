@@ -848,6 +848,114 @@ export fn engine_build_kinds() -> List<string> {
      "cslot", "ccfgs", "cslots", "ann"]
 }
 
+/// t-kd4y.3.1 — the PURITY LEDGER. Every name the central tables know is
+/// classified by ONE question: does a user's program SPELL the syntax this
+/// build lowers? Spelled -> it belongs to a FEATURE and sits on the
+/// unflipped list until its family PR moves it out of the engine. Never
+/// spelled — the build exists only inside the grammar engine's execution —
+/// -> engine-core, documented per name below. `diagnose.sh
+/// --check-central-domain` (spec: central_domain_lint_test) enforces
+/// totality and exactness: central == engine-core ∪ unflipped, lists
+/// disjoint, no stale entries. A family flip deletes its names from
+/// `unflipped_builds` in the same diff; that list reaching [] IS the old
+/// system fully deleted (t-kd4y.3.6).
+export fn engine_core_builds() -> List<string> {
+    // fold_binary / fold_postfix — the DSL's own fold semantics: a rule's
+    //   repetition-fold and the postfix-chain fold execute THROUGH these,
+    //   like `*` or `@try`. The operator/suffix rules riding them are
+    //   feature content (t-kd4y.3.5.7/.8); the folds are the machine.
+    // Block / ExprStmt — how the DSL lowers a `{ stmt* }` capture and a
+    //   bare-expression statement: the glue between any feature's body and
+    //   the statement list. No syntax of their own.
+    // MkPrimaryFail — the error-recovery node emitted where NO rule
+    //   matched; it exists precisely where no feature applies.
+    // MkStampAt — SrcPos-stamp plumbing invoked by wrapper rules; writes a
+    //   side-table row, builds nothing a user spells. (Tableless: exec/emit
+    //   arms only, no kind row — see central_tableless_builds.)
+    // MkNone — the absent-optional-capture marshalling value. (Tableless.)
+    ["fold_binary", "fold_postfix", "Block", "ExprStmt", "MkPrimaryFail",
+     "MkStampAt", "MkNone"]
+}
+
+/// Every FEATURE-OWNED central build, grouped by the family ticket that
+/// deletes it. The order is the ticket order; a flip PR removes its group
+/// and the domain lint keeps the remainder exact.
+export fn unflipped_builds() -> List<string> {
+    [
+     // t-kd4y.3.2.1 if-let (if_stmt)
+     "MkIfLet", "MkIfLetStmt",
+     // t-kd4y.3.2.2 for completion (for_stmt)
+     "MkForDestructure", "MkForBinding",
+     // t-kd4y.3.2.3 let family (let/mut/const/destructure)
+     "MkLetBinding", "MkMutBinding", "MkConstBinding", "MkDestructure",
+     "MkLet", "MkMut", "MkConst",
+     // t-kd4y.3.2.4 select + parallel
+     "MkSelect", "MkSelectArm", "MkParallel",
+     // t-kd4y.3.2.5 spec/given/then
+     "MkSpecBlock", "MkGivenBlock", "MkThenBlock",
+     // t-kd4y.3.2.6 patterns (match's pat fragment)
+     "OrMaybe", "IdentPat", "MkVariant", "PatBool", "PatStr", "PatNum",
+     "PatNegNum", "OptPresent", "OptAbsent",
+     // t-kd4y.3.3.1 fn + extern decls (+ param plumbing)
+     "MkFnDecl", "MkExtern", "MkParam", "MkTypeParam", "MkWhereParam",
+     // t-kd4y.3.3.2 type + shape decls (+ field rows)
+     "MkTypeDecl", "MkTypeDeclAny", "MkShapeDecl", "MkField", "MkTypeAlias",
+     "MkTypeRHS",
+     // t-kd4y.3.3.3 trait decls
+     "MkTraitDecl", "MkAssocType", "MkAssocTypeDef", "MkTraitMethod",
+     "MkTraitList",
+     // t-kd4y.3.3.4 impl decls
+     "MkImpl", "MkMethod", "MkMethodShorthand",
+     // t-kd4y.3.3.5 component decls
+     "MkComponentDef", "MkComponentParenDef", "MkComponentBlock",
+     "MkRawComponentBlock", "MkCompField", "MkCompBodyMarker",
+     "MkCompConfig", "MkCompConfigPair", "MkCompConfigList",
+     "MkChildrenSlot", "MkChildrenSlotList",
+     // t-kd4y.3.4 quote + splices
+     "MkQuote", "MkQuoteType", "MkQuoteArm", "MkSplice", "MkSpliceStruct",
+     "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName",
+     // t-kd4y.3.5.1 concurrency primaries
+     "MkSpawn", "MkIsolated", "MkChannel",
+     // t-kd4y.3.5.2 when/match/if expression forms
+     "MkWhen", "MkMatchExpr", "MkIfExpr",
+     // t-kd4y.3.5.3 paren family (closures/tuple)
+     "MkTuple", "MkLambda", "MkLambdaTyped", "MkGroupOrEmpty", "MkTupleFR",
+     "Grouping",
+     // t-kd4y.3.5.4 collections
+     "MkListLit", "MkListComp", "MkMapLit",
+     // t-kd4y.3.5.5 tables
+     "MkTableLit", "MkTableHeader", "MkTableRow",
+     // t-kd4y.3.5.6 ident-led + struct/with + enum-ctor + block-expr
+     "MkStructLit", "MkWithSuffix", "MkGrammarBlock", "MkTaggedTemplate",
+     "MkQualExpr", "mk_enum_ctor", "MkEnumCtorSuffix", "MkFieldInit",
+     "MkExprBlock",
+     // t-kd4y.3.5.7 operator families
+     "fold_logical", "fold_nullish", "fold_pipe", "fold_with",
+     "fold_postfix_with", "mk_assign", "rebind_eq", "mk_eqchain", "mk_is",
+     "mk_inlist", "mk_inrange", "Unary",
+     // t-kd4y.3.5.8 postfix/call families
+     "field_suffix", "index_suffix", "call_suffix", "MkCallSuffix",
+     "MkIndexSuffix", "MkGenericCallSuffix", "MkCallArg", "MkFieldAccess",
+     "MkTupleIndex", "MkOptChain", "MkOptMethodCall", "MkForceUnwrap",
+     "MkTrySuffix", "MkCatchSuffix",
+     // t-kd4y.3.5.9 templates + decl wrappers
+     "MkTemplate", "MkAnn", "MkAnnotatedArgs", "MkAnnotated", "MkExport",
+     "MkDocAnnotated", "MkModuleDoc",
+     // t-kd4y.3.5.10 type expressions
+     "TyUnion", "TyDyn", "TyList", "TyParen", "MkFn", "MkNamed",
+     "MkQualified"
+    ]
+}
+
+/// Names with executor/emit arms but NO `central_build_kind` row — their
+/// kind flows through the lenient analysis default. They classify in the
+/// ledger like every other central name; the domain lint expects exactly
+/// this set to be ledgered-but-tableless.
+export fn central_tableless_builds() -> List<string> {
+    ["MkAnnotated", "MkConst", "MkGroupOrEmpty", "MkLet", "MkMut", "MkNone",
+     "MkStampAt", "MkTupleFR", "MkTypeAlias", "MkTypeRHS"]
+}
+
 export fn central_build_kind(bn: string) -> string {
     match bn {
         "fold_binary" or "fold_logical" or "fold_nullish" or "fold_pipe" or "fold_with"
@@ -863,8 +971,7 @@ export fn central_build_kind(bn: string) -> string {
             or "MkEnumCtorSuffix" or "MkOptMethodCall" or "MkForceUnwrap" or "MkCallArg" or "MkStructLit"
             or "MkGrammarBlock" or "MkTaggedTemplate" or "MkTableHeader" or "MkTableRow" or "MkTableLit"
             or "MkPrimaryFail" -> "expr"
-        "Break" or "Continue" or "ReturnEmpty" or "Return"
-            or "ExprStmt" or "Block"
+        "ExprStmt" or "Block"
             or "MkForDestructure"
             or "MkIfLetStmt" -> "stmt"
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind

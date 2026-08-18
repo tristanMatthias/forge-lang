@@ -744,6 +744,12 @@ SEED MANAGEMENT
                          re-couple items order-wise and break the per-item
                          query split. [dir] defaults to the typeck tree;
                          the guard test passes a temp dir.
+  --check-central-domain t-kd4y.3.1 purity-ledger lint. Fail unless the grammar
+                         engine's central build surface is EXACTLY the declared
+                         classification: central_build_kind's domain ==
+                         (engine_core_builds ∪ unflipped_builds) minus
+                         central_tableless_builds; every executor arm head is
+                         classified; the lists are disjoint and dup-free.
   --check-layout-boundary [dir]
                          ps3t.4.5(d) rep-boundary lint. Fail if codegen maps an
                          under-determined `.Unknown` type straight to an LLVM
@@ -4032,6 +4038,49 @@ mode_check_typeck_collect_boundary() {
 # points it at a temp dir with a planted violation). The sanctioned guarded arm
 # maps via ok_layout/err_layout (`-> if …`, never `-> <ptr>`) and non-layout arms
 # map to `false`/`{}`/etc., so neither matches — zero false positives.
+# t-kd4y.3.1 — the purity-ledger domain lint. Textual (like the layout
+# lint) because a match fn's domain cannot be enumerated at runtime: the
+# ledger lists and the central tables are adjacent string-literal sources,
+# so set algebra over their extracted names IS the invariant check.
+mode_check_central_domain() {
+  local g="$BOOTSTRAP_DIR/packages/std-avrac/src/features/grammar"
+  local ast="$g/ast.av" ex="$g/executor.av" em="$g/emit.av"
+  [ -f "$ast" ] && [ -f "$ex" ] || die "check-central-domain: grammar sources not found under $g"
+  local kinds='^(expr|stmt|arm|warm|sarm|pat|type|tok|toks|pentry|tparam|field|variant|finit|ccfg|cpair|cslot|ccfgs|cslots|ann)$'
+  local scratch
+  scratch=$(mktemp -d)
+  # shellcheck disable=SC2064
+  trap "rm -rf '$scratch'" RETURN
+  awk '/^export fn central_build_kind/,/^}/' "$ast" | grep -oE '"[A-Za-z_]+"' | tr -d '"' | grep -vE "$kinds" | sort -u > "$scratch/table"
+  awk '/^export fn engine_core_builds/,/^}/' "$ast" | grep -oE '"[A-Za-z_]+"' | tr -d '"' | sort -u > "$scratch/core"
+  awk '/^export fn unflipped_builds/,/^}/' "$ast" | grep -oE '"[A-Za-z_]+"' | tr -d '"' | sort -u > "$scratch/unflipped"
+  awk '/^export fn central_tableless_builds/,/^}/' "$ast" | grep -oE '"[A-Za-z_]+"' | tr -d '"' | sort -u > "$scratch/tableless"
+  [ -s "$scratch/core" ] && [ -s "$scratch/unflipped" ] || die "check-central-domain: ledger fns missing/empty in ast.av"
+  sort -u "$scratch/core" "$scratch/unflipped" > "$scratch/ledger"
+  # executor central arm heads — both the args-guarded and the bare shapes
+  grep -oE '^[[:space:]]*"[A-Za-z_]+" (if args\.length|->)' "$ex" | grep -oE '"[A-Za-z_]+"' | tr -d '"' | sort -u > "$scratch/exec"
+  local bad=0
+  local overlap; overlap=$(comm -12 "$scratch/core" "$scratch/unflipped")
+  if [ -n "$overlap" ]; then err "check-central-domain: engine-core ∩ unflipped must be empty:"; printf '%s\n' "$overlap" >&2; bad=1; fi
+  local unledgered; unledgered=$(comm -23 "$scratch/table" "$scratch/ledger")
+  if [ -n "$unledgered" ]; then err "check-central-domain: central_build_kind rows with NO classification — add each to engine_core_builds (never-spelled DSL mechanism, documented) or unflipped_builds (feature-owned, with its family ticket):"; printf '%s\n' "$unledgered" >&2; bad=1; fi
+  local ghost; ghost=$(comm -13 "$scratch/table" "$scratch/ledger")
+  if [ "$ghost" != "$(cat "$scratch/tableless")" ]; then
+    err "check-central-domain: ledgered-but-tableless set drifted from central_tableless_builds — a flip removed a table row without updating the ledger (or vice versa). Expected exactly:"; cat "$scratch/tableless" >&2; err "got:"; printf '%s\n' "$ghost" >&2; bad=1
+  fi
+  local unclassified_arms; unclassified_arms=$(comm -23 "$scratch/exec" "$scratch/ledger" | comm -23 - "$scratch/table")
+  if [ -n "$unclassified_arms" ]; then err "check-central-domain: executor central arms with NO ledger classification:"; printf '%s\n' "$unclassified_arms" >&2; bad=1; fi
+  local n
+  for n in $(cat "$scratch/tableless"); do
+    grep -q "\"$n\"" "$ex" "$em" || { err "check-central-domain: tableless name '$n' has no executor/emit arm — stale ledger entry"; bad=1; }
+  done
+  # `return`, not `exit`: exit would bypass the RETURN trap and leak the
+  # scratch dir; main's case dispatch is the script's last act, so the
+  # failure status propagates to the CLI unchanged (CodeRabbit, #1263).
+  [ "$bad" = 0 ] || return 1
+  ok "check-central-domain: central surface exactly classified — $(wc -l < "$scratch/core") engine-core (DSL mechanism) + $(wc -l < "$scratch/unflipped") unflipped (feature-owned, counting down)"
+}
+
 mode_check_layout_boundary() {
   local cg="${1:-$BOOTSTRAP_DIR/packages/std-avrac/src/codegen}"
   [ -d "$cg" ] || die "check-layout-boundary: dir not found: $cg"
@@ -4437,6 +4486,7 @@ main() {
     --seed-inputs-hash)   seed_inputs_hash "$@" ;;
     --seed-self-contained) seed_is_self_contained "$@" ;;
     --check-bootstrap-window) mode_check_bootstrap_window "$@" ;;
+    --check-central-domain) mode_check_central_domain "$@" ;;
     --check-layout-boundary) mode_check_layout_boundary "$@" ;;
     --check-parser-flags) mode_check_parser_flags "$@" ;;
     --check-ci-gates)     mode_check_ci_gates "$@" ;;

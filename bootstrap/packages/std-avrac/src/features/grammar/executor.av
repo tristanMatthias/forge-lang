@@ -4198,11 +4198,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             CapVal.Node(st.store.exprs.add_leaf(Expr.Call(st.missing_node(), capval_to_node_list(env.get(args[0])))))
         }
         "fold_postfix" if args.length == 2 -> CapVal.Node(fold_postfix_expr(st, env.get(args[0]), env.get(args[1])))
-        // ── Statement builds (target: Stmt, ps3t.6.5.2) ──
-        "Break" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Break))
-        "Continue" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Continue))
-        "ReturnEmpty" if args.length == 0 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.ReturnEmpty))
-        "Return" if args.length == 1 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Return(capval_to_expr(st, env.get(args[0])))))
+        // ── Statement builds (target: Stmt, ps3t.6.5.2). The convenience
+        //    Break/Continue/Return/ReturnEmpty rows are GONE (purity pass,
+        //    t-kd4y.3.1): the real features own build_break/build_continue/
+        //    build_return, and test grammars reference those manifest names
+        //    exactly as production rules do. ──
         // `return` with an OPTIONAL operand (absent ⇒ ReturnEmpty) is
         // feature-owned now: build_return in the manifest (t-47hc.8 flip).
         // A statement-position expression that FAILED recovers as a bare `Stmt.Error`,
