@@ -14,7 +14,7 @@
 // threading st.build_sp would record a SrcPos the interpreter does not —
 // the divergence `agree_pos` catches.
 
-use core.{Stmt, Expr, ExprId, StmtId, build_if_let_expr, build_if_let_stmt}
+use core.{Stmt, Expr, ExprId, StmtId, build_if_let_expr, build_if_let_stmt, byte_span, byte_span_none}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, capval_to_stmt_opt, capval_tok_text, mk_stamp_stmt_at}
 
 export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
@@ -90,8 +90,34 @@ export fn mk_if_let_stmt_abi(st: PState, vals: List<CapVal>) -> CapVal {
     ))
 }
 
+/// `if c { … } else …` in EXPRESSION position (moved from the engine,
+/// t-kd4y.3.5.2). The whole reason this needs a build rather than a bare
+/// 3-capture node ctor is the ABSENT else: the retired hand synthesized an
+/// EMPTY BLOCK — NOT a `0` literal — so the if-expr types `.Void` on the
+/// fall-through path, which keeps `if c { return X }` valid in value
+/// position. That empty block goes through `intern_expr_leaf` (hash-consed,
+/// spanless) and is allocated BEFORE the IfExpr row so arena ids stay in
+/// the hand's order.
+export fn mk_if_expr(st: PState, sp_start: int, cond_cv: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
+    let empty_rows: List<StmtId> = []
+    let else_id = match else_cv {
+        .Nil -> st.store.intern_expr_leaf(Expr.Block(empty_rows))
+        _ -> capval_to_expr(st, else_cv)
+    }
+    CapVal.Node(st.store.add_expr(
+        Expr.IfExpr(capval_to_expr(st, cond_cv), capval_to_expr(st, then_cv), else_id),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+export fn mk_if_expr_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_if_expr(st, st.build_sp, vals[0], vals[1], vals[2])
+}
+
 export fn if_builds() -> List<BuilderBind> {
-    bind_rows("features.if_stmt.lowering", [bind_row("build_if", "stmt", 3, true, "build_if_abi", build_if_abi),
+    bind_rows("features.if_stmt.lowering", [bind_row("MkIfExpr", "expr", 3, true, "mk_if_expr_abi", mk_if_expr_abi),
+     bind_row("build_if", "stmt", 3, true, "build_if_abi", build_if_abi),
      bind_row("MkIfLet", "expr", 5, false, "mk_if_let_abi", mk_if_let_abi),
      bind_row("MkIfLetStmt", "stmt", 5, false, "mk_if_let_stmt_abi", mk_if_let_stmt_abi)])
 }

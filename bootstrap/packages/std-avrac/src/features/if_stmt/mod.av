@@ -88,6 +88,31 @@ export fn avra_if_stmt_grammar() -> Grammar {
 /// consume_identifier for the binding, consume(Equal), and the `{` check. An
 /// ABSENT piece aborts the whole leaf; a MALFORMED subject or block still
 /// recovers inside its own rule.
+/// The EXPRESSION `if` (t-kd4y.3.5.2 — moved from the spine, verbatim):
+/// `let x = if cond { a } else { b }`. The bind-fresh `if let` is peeled to
+/// `iflet_expr` (below) at the `if`; the ordinary branch is then PREDICTIVE.
+/// `else_tail` chains `else if` without a nested block requirement. The
+/// spine's unary ladder references `if_expr` by name.
+export fn avra_if_expr_grammar() -> Grammar {
+    let gp = grammar {
+  if_expr      = @peek(if_let) iflet_expr
+               // The condition is `@onfail(bail)`: a condition that FAILED means there is no
+               // `if` to finish — without it `else if` with nothing after it reported the
+               // missing condition (F0040) and then the missing block too.
+               | "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block_expr ( "else" e:else_tail )?
+                 // F0010 `ExpectedBlock`, matching the statement view's twin. The
+                 // `@expect` is declared TWICE, keyed both ways, because this rule
+                 // lives in a FRAGMENT: `block_expr` is external here, so the
+                 // standalone gram cannot derive its single-literal FIRST and
+                 // `@require` on the ref demands a rule-NAME key (the quote_expr
+                 // precedent); composed, the token-keyed message is the one read.
+                 @expect("{", "expected `{` after if condition", F0010)
+                 @expect("block_expr", "expected `{` after if condition", F0010) -> MkIfExpr(c, t, e)
+  else_tail    = if_expr | block_expr | expression
+    }
+    grammar_checked(gp)
+}
+
 export fn avra_iflet_expr_grammar() -> Grammar {
     let gp = grammar {
   iflet_expr = "if" tmp:@gensym(iflet) "let" @require b:IDENT @require "="
@@ -131,7 +156,7 @@ form lives in the expression grammar, not this rule.
         // so the rule referencing it must be in view. gram_family = "stmt"
         // hands the whole thing to the statement views — the expression
         // views take the expression fragment on its own, by name.
-        gram = composed([avra_if_stmt_grammar(), avra_iflet_expr_grammar()]),
+        gram = composed([avra_if_stmt_grammar(), avra_iflet_expr_grammar(), avra_if_expr_grammar()]),
         builders = if_builds(),
         snippet = r"if ${1:cond} {\n    ${2:body}\n}",
         expr_tag = Expr.IfExpr(ExprId(0), ExprId(0), ExprId(0)),
