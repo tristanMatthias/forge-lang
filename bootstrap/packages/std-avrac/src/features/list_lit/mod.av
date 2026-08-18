@@ -2,19 +2,58 @@
 // as siblings, surface flat at `features.list_lit.{...}`. emit_list_lit
 // + check_list_lit are in scope without self-imports.
 use codegen.{err_emit}
-use core.{feature_new, Feature}
 use resolve.{resolve_expr_list_ids}
 use typeck.{tc_er}
+use features.grammar.{parse_grammar}
+use features.list_lit.lowering.{list_lit_builds}
 
-/// Register the `[a, b, c]` list literal feature. Wires up
-/// resolver, type-checker, and codegen via the standard registry.
-export fn list_lit_feature() -> Feature {
-    feature_new("list_lit") with {
-        expr_tag: Expr.ListLit([]),
-        emit_expr: list_lit_emit_expr,
-        resolve_expr: list_lit_resolve_expr,
-        check_expr: list_lit_check_expr,
+/// `[a, b, c]` list literals + the `[`-led comprehension — the definition
+/// carries both (t-kd4y.3.5.4): `list_expr` is ONE alternation whose
+/// comprehension branch spells MkListComp through the `list_comp`
+/// sub-rule, so one gram owns BOTH rows (the no-orphans validator demands
+/// it; list_comp_lang carries the ListComp hooks beside it, the
+/// closures/tuples precedent). `gram_family = "expr"` folds the rules
+/// into every expression view; the spine's primary ladder references
+/// `list_expr` by name.
+export fn list_lit_lang() -> LanguageFeature {
+    LanguageFeature list_lit_def {
+        name = "list_lit",
+        title = "lists — literals and comprehensions",
+        docs = """
+`[a, b, c]` builds a list; the `[body for v in coll]` comprehension
+(optionally `if filter`) builds one from a collection. Elements infer
+a common element type.
+""",
+        // VERBATIM from the spine. The comprehension branch is PREDICTIVE,
+        // by the same scan `paren_expr` uses: a `@try` here rewound the
+        // cursor to before `[`, so a malformed comprehension failed the
+        // list-LITERAL branch's closer with the cursor sitting ON `for`,
+        // and statement-level resync then parsed a for-LOOP out of the
+        // leftovers — `[a for]` came back as two `(error)` rows and a
+        // `(for-in …)` against the pinned one. The retired hand
+        // `parse_list_elements` never got there: it CONSUMED `for` before
+        // aborting, so its resync started after it (control that isolates
+        // it: `[a while]` / `[a return]` already agreed, because only
+        // `for` was a token already eaten).
+        gram = grammar {
+  list_expr    = @peek(list_comp_ahead) "[" @require cb:list_comp @require "]"
+                 @expect("list_comp", "expected a comprehension body")
+                 @expect("]", "expected `]` after list") -> cb
+               | "[" ( a:expression ( @peek(comma_not_rbracket) "," @onfail(bail) a:expression )* ( "," )? )? @require "]"
+                 @expect("]", "expected `]` after list") -> MkListLit(a)
+  list_comp    = b:expression "for" @require v:IDENT @require "in" c:expression ( "if" f:expression )?
+                 @expect("IDENT", "expected variable name after `for`")
+                 @expect("in", "expected `in` after loop variable") -> MkListComp(b, v, c, f)
+        },
+        builders = list_lit_builds(),
+        snippet = r"[${1:a}, ${2:b}]",
+        expr_tag = Expr.ListLit([]),
+        emit_expr = list_lit_emit_expr,
+        resolve_expr = list_lit_resolve_expr,
+        check_expr = list_lit_check_expr,
+        gram_family = "expr",
     }
+    list_lit_def
 }
 
 /// Resolver hook for `ListLit`. Walks every element expression.
