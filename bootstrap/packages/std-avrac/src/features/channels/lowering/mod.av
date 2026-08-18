@@ -1,0 +1,28 @@
+// The channels feature's LOWERING (t-kd4y.3.5.1) — imports ONLY
+// features.grammar + core (the F4012 import-closure invariant). One
+// `spanned` expr row.
+use core.{Expr, ExprId, NodeRef, byte_span, byte_span_none, type_expr_to_vtype}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_texpr}
+
+/// A typed channel constructor. The element type is represented both inline
+/// on Expr.ChannelNew and as the sole walker edge; capacity remains
+/// walker-opaque, exactly matching the retired hand parser.
+export fn mk_channel(st: PState, sp_start: int, elem_cv: CapVal, cap_cv: CapVal) -> CapVal {
+    let elem = type_expr_to_vtype(capval_to_texpr(st, elem_cv))
+    mut cap: ExprId? = null
+    if capval_present(cap_cv) { cap = capval_to_expr(st, cap_cv) }
+    let elem_id = st.store.ingest_type(elem, byte_span_none())
+    CapVal.Node(st.store.add_expr(
+        Expr.ChannelNew(elem, cap),
+        byte_span(sp_start, st.cur().pos),
+        [NodeRef.TypeRef(elem_id)]
+    ))
+}
+
+export fn mk_channel_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_channel(st, st.build_sp, vals[0], vals[1])
+}
+
+export fn channels_builds() -> List<BuilderBind> {
+    bind_rows("features.channels.lowering", [bind_row("MkChannel", "expr", 2, true, "mk_channel_abi", mk_channel_abi)])
+}

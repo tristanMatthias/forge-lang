@@ -268,7 +268,8 @@ export fn avra_expr_spine_grammar() -> Grammar {
   variant_ctor = "." @require v:IDENT ( "(" ( a:expression ( "," a:expression )* )? @require ")" )?
                  @expect("IDENT", "expected a variant name after `.`", F0040)
                  @expect(")", "expected `)` after arguments") -> mk_enum_ctor(v, a)
-  channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
+  // channel_expr lives with its feature (features/channels, gram_family =
+  // "expr", t-kd4y.3.5.1) — referenced from the ladder above by name.
   // The `quote` family lives with its feature (features/quote_expr, gram_family
   // = "expr", t-kd4y.3.4): quote_expr / quote_type_expr / quote_arm_expr are ONE
   // definition each in features/quote_expr/mod.av and reach every expression view
@@ -281,12 +282,10 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // rules write: `@bump(quote_depth)` wraps every quote body, so
   // `@when(at_quote_top)` sees bitnot and `@when(in_quote_body)` sees a splice
   // — a COUNTER, so a nested quote still resolves at the right depth.
-  spawn_expr   = "spawn" @require body:block_expr
-                 @expect("{", "expected `{` after spawn") -> MkSpawn(body)
-  // Same gate, same reason — `isolated` truncated diverged 1 vs 2 exactly
-  // like the bare `quote` (t-rd44's sibling find).
-  isolated_expr = "isolated" @require body:block_expr
-                  @expect("{", "expected `{` after isolated") -> MkIsolated(body)
+  // spawn_expr / isolated_expr live with their features (features/spawn_expr
+  // + features/isolated_expr, gram_family = "expr", t-kd4y.3.5.1) — both
+  // referenced from the ladder above by name, both carrying the t-rd44
+  // `@require body:block_expr` gate (double-keyed @expect in fragment form).
   block_expr   = "{" @on(allow_dot_postfix) stmts:declaration* "}"
                  @expect("}", "expected `}` after block expression") -> MkExprBlock(stmts)
   when_expr    = "when" "{" ( a:when_arm )* "}" -> MkWhen(a)
