@@ -2,6 +2,8 @@
 // as siblings, surface flat at `features.struct_decl.{...}`.
 use codegen.{err_emit}
 use core.{feature_new, Feature, vtype_struct_name, ExprId}
+use features.{composed}
+use features.struct_decl.lowering.{type_decl_builds}
 use resolve.{resolve_expr, resolve_expr_list_ids, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
 use typeck.{tc_enum_find_by_variant}
@@ -56,15 +58,44 @@ export fn field_assign_feature() -> Feature {
     }
 }
 
-/// Register the `type Foo = { ... }` declaration feature.
-export fn type_decl_feature() -> Feature {
-    feature_new("type_decl")
+/// `type` — the declaration's definition carries syntax, docs, surface,
+/// and ALL THREE lowerings its fragment spells (MkTypeDeclAny / MkShapeDecl
+/// / MkField — t-kd4y.3.3.2). `gram_family` stays "" — declaration rules,
+/// composed by the decl view + fragment registry. No stmt hooks:
+/// `Stmt.TypeDecl`/`NewtypeDecl`/`UnionAliasDecl` are core passes, exactly
+/// as the retired hookless `feature_new("type_decl")` register left them.
+export fn type_decl_lang() -> LanguageFeature {
+    LanguageFeature type_decl_def {
+        name = "type_decl",
+        title = "type — nominal type declarations",
+        docs = """
+`type Name = { fields }` declares a nominal struct; `type Id = UUID` a
+newtype wrapper; `type N = A | B` a union alias; and `type Sub = Base
+without { f }` (or `only`) derives a narrowed struct. Generics ride an
+optional `<T, U: Bound>` list.
+""",
+        gram = composed([avra_struct_decl_grammar()]),
+        builders = type_decl_builds(),
+        snippet = r"type ${1:Name} = {\n    ${2:field}: ${3:Type},\n}",
+    }
+    type_decl_def
 }
 
-/// Register the structural-typing `shape Foo = { ... }`
-/// declaration feature. Shapes use width subtyping (spec Axis 1).
-export fn shape_decl_feature() -> Feature {
-    feature_new("shape_decl")
+/// `shape` — structural typing (width subtyping, spec Axis 1). The SYNTAX
+/// lives in the type fragment (`shape_decl` beside `type_decl` — same
+/// family), so this definition carries the surface alone.
+export fn shape_lang() -> LanguageFeature {
+    LanguageFeature shape_def {
+        name = "shape_decl",
+        title = "shape — structural type declarations",
+        docs = """
+`shape Name = { fields }` declares a structural type: any value carrying
+at least those fields conforms (width subtyping), no `impl` needed. No
+type parameters — shapes describe field sets, not generic families.
+""",
+        snippet = r"shape ${1:Name} = {\n    ${2:field}: ${3:Type},\n}",
+    }
+    shape_def
 }
 
 /// Codegen hook for `StructLit`. Forwards to `emit_struct_lit`.

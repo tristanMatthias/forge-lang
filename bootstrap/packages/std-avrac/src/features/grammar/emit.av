@@ -2674,9 +2674,9 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // is manifest-owned (features/fn_decl + features/generics lowering,
         // t-kd4y.3.3.1) — emit_call_build finds its rows before these
         // central templates.
-        "MkTypeDeclAny" -> "mk_type_decl_any(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list, ${args[3]}, capval_present(${args[3]}), ${args[4]}, capval_present(${args[4]}), ${args[5]}_list)"
-        "MkTypeDecl" if args.length == 3 -> "mk_type_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
-        "MkShapeDecl" -> "mk_shape_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
+        // The TYPE family (MkTypeDeclAny / MkShapeDecl / MkField) is
+        // manifest-owned (features/struct_decl lowering, t-kd4y.3.3.2);
+        // MkTypeDecl/2 and /3 died with their exec arms.
         "MkExport" -> "mk_export_decl(st, ${args[0]})"
         "MkStampAt" -> "mk_stamp_stmt_at(st, sp_start, ${args[0]})"
         // ── The prefix WRAPPERS (t-47hc Phase 4). The doc lines are a repeated
@@ -2704,11 +2704,9 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "MkComponentParenDef" -> "mk_component_paren_def_g(st, capval_tok_text(${args[0]}), CapVal.PEntries(${args[1]}_list), capval_tok_texts(${args[2]}), ${args[3]}, ${args[4]}_list)"
         "MkAnn" -> "mk_ann_g(capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
-        "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         // MkImpl / MkMethod — feature-owned (features/impl_decl, t-kd4y.3.3.4).
         // MkUseBare / MkUsePkg / MkModule — feature-owned (features/modules);
         // MkUse was dead (no grammar reference).
-        "MkField" -> "mk_field(st, capval_tok_text(${args[0]}), ${args[1]})"
         // MkEnumDecl / MkEVariant — feature-owned (features/enum_decl).
         "MkParam" -> "mk_param(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
         // MkTraitDecl / MkAssocType / MkTraitMethod — feature-owned
