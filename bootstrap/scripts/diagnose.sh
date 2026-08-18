@@ -2150,7 +2150,7 @@ acquire_compile_slot() {
             # (a timeout-killed regen left slot.2 pid-less; a full suite
             # run sat behind it for 20+ minutes). Reap once the dir is
             # provably older than the window.
-            now=$(date +%s); born=$(stat -c %Y "$dir" 2>/dev/null || echo "$now")
+            now=$(date +%s); born=$(stat -c %Y "$dir" 2>/dev/null || stat -f %m "$dir" 2>/dev/null || echo "$now")
             [ $((now - born)) -ge 5 ] && rm -rf "$dir" 2>/dev/null
           fi
         fi
@@ -2180,7 +2180,7 @@ acquire_compile_slot() {
           ! kill -0 "$owner" 2>/dev/null && rm -rf "$dir" 2>/dev/null
         else
           # Same empty-pid reap as the heavy loop above (t-kdyj.12).
-          now=$(date +%s); born=$(stat -c %Y "$dir" 2>/dev/null || echo "$now")
+          now=$(date +%s); born=$(stat -c %Y "$dir" 2>/dev/null || stat -f %m "$dir" 2>/dev/null || echo "$now")
           [ $((now - born)) -ge 5 ] && rm -rf "$dir" 2>/dev/null
         fi
       done
