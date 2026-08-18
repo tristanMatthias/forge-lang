@@ -4074,7 +4074,10 @@ mode_check_central_domain() {
   for n in $(cat "$scratch/tableless"); do
     grep -q "\"$n\"" "$ex" "$em" || { err "check-central-domain: tableless name '$n' has no executor/emit arm — stale ledger entry"; bad=1; }
   done
-  [ "$bad" = 0 ] || exit 1
+  # `return`, not `exit`: exit would bypass the RETURN trap and leak the
+  # scratch dir; main's case dispatch is the script's last act, so the
+  # failure status propagates to the CLI unchanged (CodeRabbit, #1263).
+  [ "$bad" = 0 ] || return 1
   ok "check-central-domain: central surface exactly classified — $(wc -l < "$scratch/core") engine-core (DSL mechanism) + $(wc -l < "$scratch/unflipped") unflipped (feature-owned, counting down)"
 }
 
