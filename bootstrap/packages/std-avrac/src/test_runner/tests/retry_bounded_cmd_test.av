@@ -1,0 +1,33 @@
+// WHY: t-kdyj.12 — the solo retry's BOX PROTECTION. A ceiling-stopped
+// shard retried "solo on the drained box" used to run UNBOUNDED: on 8GB
+// fleet VMs a whale batch rode the F4014 soft-hold straight into a
+// runner-level OOM eviction, killing the job as an unattributable cancel
+// (nine identical evictions on PR #1273 — no shard name, no F4014, the
+// per-shard logs dead with the VM). retry_bounded_cmd wraps the victim's
+// command with a HARD ceiling matched to the drained box minus a runner
+// reserve, so a shard that cannot fit stops ITSELF with a named F4014 in
+// its own log while the runner survives to aggregate. These specs pin
+// the command shape and the floor clamp — the one degenerate value that
+// must never be emitted is 0, which AVRA_MEM_LIMIT_MB reads as "disable
+// the ceiling entirely".
+use @std.avrac.test_runner.{retry_bounded_cmd}
+
+spec "t-kdyj.12: the solo retry's hard ceiling follows the drained box" {
+    then "a roomy box exports avail minus the runner reserve" {
+        retry_bounded_cmd("run_shard > log 2>&1", 8000)
+            == "export AVRA_MEM_LIMIT_MB=6464; run_shard > log 2>&1"
+    }
+    then "a tight box clamps to the floor — never 0, never negative" {
+        // 1600 - 1536 = 64 would starve any compile; 0 would DISABLE the
+        // ceiling. Both clamp to the floor.
+        retry_bounded_cmd("c", 1600) == "export AVRA_MEM_LIMIT_MB=1024; c"
+            && retry_bounded_cmd("c", 0) == "export AVRA_MEM_LIMIT_MB=1024; c"
+    }
+    then "the wrapped command survives verbatim — redirects included" {
+        // The shard cmd's truncating `> log` redirect is what lets the
+        // retry's outcome REPLACE the first F4014 capture; the wrapper
+        // must not disturb it.
+        let out = retry_bounded_cmd("sh -c 'x && y' > /tmp/l 2>&1", 10000)
+        out.ends_with("sh -c 'x && y' > /tmp/l 2>&1") && out.starts_with("export AVRA_MEM_LIMIT_MB=8464; ")
+    }
+}
