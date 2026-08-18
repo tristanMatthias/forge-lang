@@ -1,0 +1,91 @@
+// The let_stmt feature's LOWERINGS — the binding cores + their ABI adapters +
+// manifest rows, in a dedicated SUBMODULE so the generated parser imports
+// them directly (t-kd4y.3 Batch A, the wrapper-free shape). This module
+// imports ONLY features.grammar + core — both already in every generated
+// parser's closure — so the F4012 import-closure invariant holds by
+// construction; the feature's hooks stay in ../mod.av.
+//
+// t-kd4y.3.2.3: the four PRODUCTION binding builds (MkLetBinding /
+// MkMutBinding / MkConstBinding / MkDestructure) keep their grammar-side
+// names — the row name IS the gram ref, so the flip touches no rule text.
+// The cores came verbatim from executor.av. The §2 oracle-era convenience
+// trio (MkLet / MkMut / MkConst — spelled by no production rule) was
+// DELETED with the flip: the same purity move that removed the central
+// Break/Continue/Return convenience rows (t-kd4y.3.1) — a binding a user
+// grammar builds spells the production rows.
+//
+// `binding_stmt_row` stays in features.grammar and is IMPORTED, not moved:
+// the component-family builds (t-kd4y.3.3.5) drive the same row shape.
+use core.{Stmt, StmtId, ValueType, build_let_else_init, stmt_ids_diverge, type_expr_to_vtype}
+use features.grammar.{Token, PState, CapVal, BuilderBind, bind_row, bind_rows, binding_stmt_row, capval_present, capval_to_expr, capval_to_stmt, capval_to_texpr, capval_tok_list, capval_tok_text, param_entries_from_toks}
+
+/// `let` / `mut` bindings — the shared core of the `MkLetBinding` /
+/// `MkMutBinding` builds. The optional annotation lowers through the SHARED
+/// type family (a captured TExpr → ValueType via type_expr_to_vtype); absent
+/// ⇒ Unknown, exactly the un-annotated binding default.
+export fn mk_let_binding_g(st: PState, has_mut: bool, name: string, ty_cv: CapVal, has_ty: bool, init_cv: CapVal, else_cv: CapVal, has_else: bool, tmp_cv: CapVal) -> CapVal {
+    mut ty_vt = ValueType.Unknown
+    if has_ty { ty_vt = type_expr_to_vtype(capval_to_texpr(st, ty_cv)) }
+    mut init_id = capval_to_expr(st, init_cv)
+    if has_else {
+        // The else-arm body rows: a parsed else-Block's rows are reused verbatim
+        // (never re-walked); any other stmt shape wraps as the block's single
+        // element — exactly the hand's readback.
+        let else_sid = capval_to_stmt(st, else_cv)
+        let else_ids: List<StmtId> = match st.store.stmts.get(else_sid) {
+            .Block(b) -> b
+            _ -> [else_sid]
+        }
+        if !stmt_ids_diverge(st.store, else_ids) {
+            st.report_coded("F1203", "the `else` of a `let … else` must diverge (`return` / `break` / `continue` / `panic`)")
+        }
+        init_id = build_let_else_init(st.store, capval_tok_text(tmp_cv), init_id, else_ids)
+    }
+    let node = if has_mut { Stmt.Mut(name, ty_vt, init_id) } else { Stmt.Let(name, ty_vt, init_id) }
+    CapVal.SNode(binding_stmt_row(st, node, ty_vt))
+}
+
+export fn mk_let_binding_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_let_binding_g(st, capval_present(vals[0]), capval_tok_text(vals[1]), vals[2], capval_present(vals[2]), vals[3], vals[4], capval_present(vals[4]), vals[5])
+}
+
+export fn mk_mut_binding_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_let_binding_g(st, true, capval_tok_text(vals[0]), vals[1], capval_present(vals[1]), vals[2], vals[3], capval_present(vals[3]), vals[4])
+}
+
+/// `const NAME (":" T)? "=" init` — the same row shape, no guard form (the
+/// retired hand parser's const statement had no else branch).
+export fn mk_const_binding_g(st: PState, name: string, ty_cv: CapVal, has_ty: bool, init_cv: CapVal) -> CapVal {
+    mut ty_vt = ValueType.Unknown
+    if has_ty { ty_vt = type_expr_to_vtype(capval_to_texpr(st, ty_cv)) }
+    CapVal.SNode(binding_stmt_row(st, Stmt.Const(name, ty_vt, capval_to_expr(st, init_cv)), ty_vt))
+}
+
+export fn mk_const_binding_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_const_binding_g(st, capval_tok_text(vals[0]), vals[1], capval_present(vals[1]), vals[2])
+}
+
+/// `let (a, b, …) = init` — the destructure binding, the shared core of the
+/// `MkDestructure` build. The ident list becomes ParamEntry bindings (names
+/// only, Unknown vtype — inferred-later rows; an EMPTY list is valid,
+/// matching `let () = t`) under a LEAF LetDestructure row — alloc_stmt_leaf,
+/// NOT `binding_stmt_row`: destructure bindings cannot carry a type
+/// annotation, so no TypeRef edge exists.
+export fn mk_let_destructure_g(st: PState, names: List<Token>, init_cv: CapVal) -> CapVal {
+    let entries = param_entries_from_toks(CapVal.Toks(names), ValueType.Unknown)
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.LetDestructure(entries, capval_to_expr(st, init_cv))))
+}
+
+export fn mk_let_destructure_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_let_destructure_g(st, capval_tok_list(vals[0]), vals[1])
+}
+
+/// ALL of the let feature's rows — span-free (`binding_stmt_row` is a
+/// byte_span_none row and the destructure a bare leaf; the statement-list
+/// loop stamps the outermost node, so no build reads st.build_sp).
+export fn let_builds() -> List<BuilderBind> {
+    bind_rows("features.let_stmt.lowering", [bind_row("MkLetBinding", "stmt", 6, false, "mk_let_binding_abi", mk_let_binding_abi),
+     bind_row("MkMutBinding", "stmt", 5, false, "mk_mut_binding_abi", mk_mut_binding_abi),
+     bind_row("MkConstBinding", "stmt", 3, false, "mk_const_binding_abi", mk_const_binding_abi),
+     bind_row("MkDestructure", "stmt", 2, false, "mk_let_destructure_abi", mk_let_destructure_abi)])
+}

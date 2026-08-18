@@ -1,0 +1,103 @@
+// The let-family LanguageFeature definitions (features/let_stmt/mod.av):
+// let_lang carries the gram fragment + ALL FOUR manifest rows; mut_lang /
+// const_lang carry the editor surface; let_destructure_lang carries the
+// LetDestructure hooks — the t-kd4y.3.2.3 flip's guard: ONE definition set
+// in the feature dir, zero spine copies, and the §2 oracle-era convenience
+// trio (MkLet / MkMut / MkConst) DELETED, not merely moved (the
+// Break/Continue/Return purity precedent).
+use @std.avrac.features.let_stmt.{let_lang, mut_lang, const_lang, let_destructure_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+use @std.avrac.parse.{oracle_decl}
+
+spec "let family as LanguageFeatures" {
+    then "the keywords derive from let_lang's declared grammar" {
+        mut has_let = false
+        mut has_mut = false
+        mut has_const = false
+        for k in feature_keywords(let_lang()) {
+            if k == "let" { has_let = true }
+            if k == "mut" { has_mut = true }
+            if k == "const" { has_const = true }
+        }
+        has_let && has_mut && has_const
+    }
+    then "titles, docs, and editor snippets are carried" {
+        let l = let_lang()
+        let m = mut_lang()
+        let c = const_lang()
+        l.title.length > 0 && l.docs.contains("destructures") && l.snippet.contains("let")
+            && m.title.length > 0 && m.snippet.contains("mut")
+            && c.title.length > 0 && c.snippet.contains("const")
+    }
+    then "the declared rules reach the composed whole-program view" {
+        let prog = render_grammar(avra_program_grammar())
+        let frag = render_grammar(feature_gram(let_lang()))
+        frag.contains("MkLetBinding(m, n, ty, init, e, tmp)")
+            && prog.contains("MkLetBinding(m, n, ty, init, e, tmp)")
+            && prog.contains("MkMutBinding(n, ty, init, e, tmp)")
+            && prog.contains("MkConstBinding(n, ty, init)")
+            && prog.contains("MkDestructure(n, init)")
+    }
+    then "the decl-fragment registry serves all four rules" {
+        mut let_r = false
+        mut mut_r = false
+        mut const_r = false
+        mut des_r = false
+        for g in feature_decl_grammar_fragments() {
+            for r in g.rules {
+                if r.name == "let_decl" { let_r = true }
+                if r.name == "mut_decl" { mut_r = true }
+                if r.name == "const_decl" { const_r = true }
+                if r.name == "letdes_decl" { des_r = true }
+            }
+        }
+        let_r && mut_r && const_r && des_r
+    }
+    then "the four binding rows ride the manifest and NOTHING is left central" {
+        mut lb = ""
+        mut mb = ""
+        mut cb = ""
+        mut db = ""
+        for b in feature_builders() {
+            let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
+            if b.name == "MkLetBinding" { lb = row }
+            if b.name == "MkMutBinding" { mb = row }
+            if b.name == "MkConstBinding" { cb = row }
+            if b.name == "MkDestructure" { db = row }
+        }
+        lb == "stmt/6/flat/mk_let_binding_abi/features.let_stmt.lowering"
+            && mb == "stmt/5/flat/mk_mut_binding_abi/features.let_stmt.lowering"
+            && cb == "stmt/3/flat/mk_const_binding_abi/features.let_stmt.lowering"
+            && db == "stmt/2/flat/mk_let_destructure_abi/features.let_stmt.lowering"
+            && central_build_kind("MkLetBinding") == ""
+            && central_build_kind("MkMutBinding") == ""
+            && central_build_kind("MkConstBinding") == ""
+            && central_build_kind("MkDestructure") == ""
+    }
+    then "the convenience trio is GONE — no manifest row, no central kind" {
+        mut trio_rows = 0
+        for b in feature_builders() {
+            if b.name == "MkLet" || b.name == "MkMut" || b.name == "MkConst" { trio_rows = trio_rows + 1 }
+        }
+        trio_rows == 0
+            && central_build_kind("MkLet") == ""
+            && central_build_kind("MkMut") == ""
+            && central_build_kind("MkConst") == ""
+    }
+}
+
+// The representative binding shapes, parsed by the PRODUCTION parser —
+// ported from the retired stmt_binding_test (its toy gram spelled the
+// deleted trio; the real rules' exec-vs-emit agreement lives in the
+// composed-program differentials).
+spec "binding shapes parse to the expected trees" {
+    then "canonical renders of representative forms" {
+        (oracle_decl("let x: int = 5") ?? "<parse error>") == "(let x:int 5)"
+            && (oracle_decl("let x = 5") ?? "<parse error>") == "(let x:<unknown> 5)"
+            && (oracle_decl("mut y = a") ?? "<parse error>") == "(mut y:<unknown> a)"
+            && (oracle_decl("const N: int = a") ?? "<parse error>") == "(const N:int a)"
+            && (oracle_decl("let (a, b) = p") ?? "<parse error>") == "(let-destruct (a, b) p)"
+            && (oracle_decl("let mut c: int = a") ?? "<parse error>") == "(mut c:int a)"
+    }
+}

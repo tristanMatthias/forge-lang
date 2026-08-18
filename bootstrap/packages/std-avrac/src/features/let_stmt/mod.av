@@ -1,35 +1,93 @@
-// dir-as-module (g2eo.1): parser.av + codegen.av + typeck.av auto-load
-// as siblings, surface flat at `features.let_stmt.{...}`. bind_destructure
-// is in scope without a self-import.
-use codegen.{err_stmt, StmtResult}
+// dir-as-module (g2eo.1): codegen.av + typeck.av + grammar.av auto-load
+// as siblings, surface flat at `features.let_stmt.{...}` (avra_let_grammar
+// and bind_destructure are in scope without a self-import); the manifest
+// rows live in lowering/ (t-kd4y.3.2.3).
+use codegen.{StmtResult}
 use codegen.{ok_sr, err_sr}
 use features.eval.{error_result, ok_result, eval_expr, define_binding, value_null}
-use core.{feature_new, Feature, vtype_display}
+use core.{vtype_display}
 use diagnostics.{DiagCode}
+use features.{composed}
+use features.let_stmt.lowering.{let_builds}
 use resolve.{define_param_names, resolve_expr}
 use features.tuples.{emit_let_destructure}
 use typeck.{check_expr, tc_report}
 
-/// Register the `let (a, b, c) = tuple` destructuring feature.
-/// Wires up resolver, typeck, codegen, and eval hooks.
-export fn let_destructure_feature() -> Feature {
-    feature_new("let_destructure") with {
-        stmt_tag: Stmt.LetDestructure([], ExprId(0)),
-        emit_stmt: let_destructure_emit_stmt,
-        resolve_stmt: let_destructure_resolve_stmt,
-        check_stmt: let_destructure_check_stmt,
-        eval_stmt: let_destructure_eval_stmt,
+/// `let` — the binding family's definition carries the feature whole
+/// (t-kd4y.3.2.3): syntax, docs, editor surface, and ALL FOUR lowerings
+/// (the `mut`/`const`/destructure rows ride here too — one gram fragment,
+/// one manifest, like for_lang carrying the ForIn/destructure builds).
+/// `gram_family` stays "" — the binding rules are DECLARATION rules,
+/// composed by the decl view beside the other decl keywords and referenced
+/// from its alternations by name. No stmt hooks: `Stmt.Let`/`Mut`/`Const`
+/// codegen, resolve, and typeck are core passes, exactly as the retired
+/// hookless `feature_new("let")` register left them.
+export fn let_lang() -> LanguageFeature {
+    LanguageFeature let_def {
+        name = "let",
+        title = "let — immutable bindings",
+        docs = """
+`let name = value` binds an immutable name; `let name: Type = value` adds
+an annotation. `let mut` (or bare `mut`) makes the binding mutable, and
+`let x = init else { … }` runs the diverging guard block when a nullable
+initializer is null. `let (a, b) = pair` destructures a tuple by position.
+""",
+        gram = composed([avra_let_grammar()]),
+        builders = let_builds(),
+        snippet = r"let ${1:name} = ${2:value}",
     }
+    let_def
 }
 
-/// Register the `let` keyword feature — immutable bindings.
-export fn let_keyword_feature() -> Feature { feature_new("let") }
+/// `mut` — mutable bindings. The SYNTAX lives in let_lang's gram
+/// (`mut_decl`, plus the `let mut` modifier on `let_decl`), so this
+/// definition carries the surface alone.
+export fn mut_lang() -> LanguageFeature {
+    LanguageFeature mut_def {
+        name = "mut",
+        title = "mut — mutable bindings",
+        docs = """
+`mut name = value` binds a name whose value may be reassigned. Equivalent
+to `let mut name = value`. Module-level `mut` is a mutable global; prefer
+function-local `mut` and thread state explicitly.
+""",
+        snippet = r"mut ${1:name} = ${2:value}",
+    }
+    mut_def
+}
 
-/// Register the `const` keyword feature — compile-time constant bindings.
-export fn const_keyword_feature() -> Feature { feature_new("const") }
+/// `const` — compile-time constant bindings. Syntax in let_lang's gram
+/// (`const_decl`); surface only.
+export fn const_lang() -> LanguageFeature {
+    LanguageFeature const_def {
+        name = "const",
+        title = "const — constant bindings",
+        docs = """
+`const NAME = value` binds a compile-time constant (SCREAMING_SNAKE by
+convention). Module-level consts are scoped per module and referenced
+bare within it.
+""",
+        snippet = r"const ${1:NAME} = ${2:value}",
+    }
+    const_def
+}
 
-/// Register the `mut` keyword feature — mutable bindings.
-export fn mut_keyword_feature() -> Feature { feature_new("mut") }
+/// `let (a, b) = …` — the tuple-destructure statement. A distinct AST tag
+/// (`Stmt.LetDestructure`) so codegen / typeck / eval dispatch pick these
+/// hooks; the SYNTAX lives in let_lang's gram (`letdes_decl`), so this
+/// definition carries hooks alone.
+export fn let_destructure_lang() -> LanguageFeature {
+    LanguageFeature letdes_def {
+        name = "let_destructure",
+        title = "let (…) — tuple destructuring",
+        stmt_tag = Stmt.LetDestructure([], ExprId(0)),
+        emit_stmt = let_destructure_emit_stmt,
+        resolve_stmt = let_destructure_resolve_stmt,
+        check_stmt = let_destructure_check_stmt,
+        eval_stmt = let_destructure_eval_stmt,
+    }
+    letdes_def
+}
 
 /// Resolver hook for `let (a, b, c) = ...`. Resolves the
 /// initializer first, then defines each tuple-position name in
