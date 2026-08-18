@@ -32,9 +32,9 @@ fn trait_grammar_src() -> string {
     "  param         = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
     // ── body statement subset (default methods) ──
     "  statement     = break_stmt | continue_stmt | return_stmt | expr_stmt\n" +
-    "  break_stmt    = \"break\" -> Break()\n" +
-    "  continue_stmt = \"continue\" -> Continue()\n" +
-    "  return_stmt   = \"return\" re:expression -> Return(re)\n" +
+    "  break_stmt    = \"break\" -> build_break()\n" +
+    "  continue_stmt = \"continue\" -> build_continue()\n" +
+    "  return_stmt   = \"return\" re:expression -> build_return(re)\n" +
     "  expr_stmt     = es:expression -> ExprStmt(es)\n" +
     // ── type family (param + return annotations) ──
     "  type_expr     = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +

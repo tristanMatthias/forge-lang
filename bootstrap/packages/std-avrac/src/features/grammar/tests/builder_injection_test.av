@@ -57,8 +57,10 @@ fn toy_binds() -> List<BuilderBind> {
 }
 
 /// References only an engine build — the central-fallback control.
+/// ExprStmt is DSL statement glue, the mechanism tier that never flips
+/// (the convenience Break/Continue/Return rows died in the purity pass).
 fn central_gram() -> Grammar {
-    let g = grammar { top = "break" -> Break() }
+    let g = grammar { top = x:"break" -> ExprStmt(x) }
     grammar_checked(g)
 }
 

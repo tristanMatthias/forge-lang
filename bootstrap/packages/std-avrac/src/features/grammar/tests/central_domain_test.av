@@ -1,0 +1,72 @@
+// WHY: t-kd4y.3.1 — the purity ledger's guard. The engine's central build
+// surface is classified by ONE question (does a user's program SPELL it?):
+// never-spelled DSL mechanism lives in engine_core_builds (7 names, each
+// documented at the list); everything feature-owned sits in unflipped_builds
+// until its family PR deletes it. `diagnose.sh --check-central-domain` is the
+// textual equation (central_build_kind's domain == ledger minus tableless,
+// executor arm heads all classified) — mutation-verified at landing: planting
+// an overlap and deleting a ledger entry each failed the lint naming the
+// exact name. The in-process arms below keep the semantic invariants in the
+// suite without shelling per assertion.
+//
+// @@fixture-stateful@@ — shells out to the SHARED scripts/diagnose.sh
+// (external state not in the fixture-cache key); opt out of failure caching
+// so a repaired lint re-probes instead of replaying a stale `: FAIL`.
+
+use @std.avrac.core.{avra_shell_exec_status}
+use @std.avrac.features.grammar.{engine_core_builds, unflipped_builds, central_tableless_builds, central_build_kind, str_in}
+
+fn dup_free(xs: List<string>) -> bool {
+    mut i = 0
+    while i < xs.length {
+        mut j = i + 1
+        while j < xs.length {
+            if xs[i] == xs[j] { return false }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    true
+}
+
+fn disjoint(a: List<string>, b: List<string>) -> bool {
+    for x in a { if str_in(b, x) { return false } }
+    true
+}
+
+spec "t-kd4y.3.1: the purity ledger classifies the central surface exactly" {
+    then "the domain lint is green on the real tree" {
+        avra_shell_exec_status("bash scripts/diagnose.sh --check-central-domain >/dev/null 2>&1") == 0
+    }
+    then "engine-core and unflipped are disjoint, both dup-free" {
+        disjoint(engine_core_builds(), unflipped_builds()) &&
+            dup_free(engine_core_builds()) && dup_free(unflipped_builds()) &&
+            dup_free(central_tableless_builds())
+    }
+    then "every ledgered name is REAL: it classifies centrally or is declared tableless" {
+        // A flip that deletes a table row but forgets the ledger line dies
+        // here (and in the lint) — no stale countdown entries.
+        mut ok = true
+        for n in engine_core_builds() {
+            if central_build_kind(n) == "" && !str_in(central_tableless_builds(), n) { ok = false }
+        }
+        for n in unflipped_builds() {
+            if central_build_kind(n) == "" && !str_in(central_tableless_builds(), n) { ok = false }
+        }
+        ok
+    }
+    then "tableless names never silently gain a kind row" {
+        // If one does, it must LEAVE central_tableless_builds — the lint's
+        // ghost-set equation enforces the same from the textual side.
+        mut ok = true
+        for n in central_tableless_builds() {
+            if central_build_kind(n) != "" { ok = false }
+        }
+        ok
+    }
+    then "the engine core stays EXACTLY the DSL mechanism — growing it is a deliberate act" {
+        // The purity ratchet: adding an eighth engine-core name means editing
+        // this spec too, so it cannot happen as a side effect of a flip.
+        engine_core_builds().length == 7
+    }
+}
