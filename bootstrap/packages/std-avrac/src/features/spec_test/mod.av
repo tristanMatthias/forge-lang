@@ -1,49 +1,87 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av + reporter.av auto-load
 // as siblings, surface flat at `features.spec_test.{...}`.
 use features.eval.{error_result, ok_result, value_null}
-use core.{feature_new, Feature, MatchArm, WhenArm, FieldInit}
+use features.{composed}
+use features.spec_test.grammar.{avra_spec_grammar}
+use features.spec_test.lowering.{spec_builds}
+use core.{MatchArm, WhenArm, FieldInit}
 use resolve.{resolve_expr, resolve_stmt_ids}
 use typeck.{check_expr, check_stmt, tc_report_at}
 use diagnostics.{DiagCode}
 
-/// Register the `spec "name" { ... }` BDD-style test block
-/// feature. Spec blocks contain `given` / `then` arms; the
-/// codegen emits calls to the test runner around each.
-export fn spec_feature() -> Feature {
+/// The `spec "name" { ... }` BDD-style test block. Spec blocks contain
+/// `given` / `then` arms; the codegen emits calls to the test runner around
+/// each. This definition carries the whole keyword GROUP's grammar fragment
+/// and lowerings (t-kd4y.3.2.5) — one gram owns `spec_decl`, `spec_item`,
+/// `given_blk` and `then_blk` because one feature directory owns all three
+/// keywords, exactly as features/modules carries `use` and `mod` together.
+/// The sibling definitions below add only their own pass hooks.
+export fn spec_lang() -> LanguageFeature {
     let empty_body: List<StmtId> = []
-    feature_new("spec") with {
-        stmt_tag: Stmt.SpecBlock("", empty_body),
-        emit_stmt: spec_emit_stmt,
-        resolve_stmt: spec_resolve_stmt,
-        check_stmt: spec_check_stmt,
-        eval_stmt: spec_eval_stmt,
+    LanguageFeature spec_def {
+        name = "spec",
+        title = "spec — a BDD-style test block",
+        docs = """
+`spec "name" { ... }` declares a test block. Its body holds ordinary
+declarations (setup) plus `given` groups and `then` assertions; the runner
+discovers blocks by AST tag and reports PASS/FAIL per `then`. A `return`
+anywhere inside is rejected (F0901) — the whole file lowers into one unit fn,
+so an early exit would silently drop every later block.
+""",
+        gram = composed([avra_spec_grammar()]),
+        builders = spec_builds(),
+        snippet = r"""spec "${1:name}" {\n    ${2}\n}""",
+        stmt_tag = Stmt.SpecBlock("", empty_body),
+        emit_stmt = spec_emit_stmt,
+        resolve_stmt = spec_resolve_stmt,
+        check_stmt = spec_check_stmt,
+        eval_stmt = spec_eval_stmt,
     }
+    spec_def
 }
 
-/// Register the `given "context" { ... }` test arm feature.
-/// Used inside `spec` blocks to group related `then` assertions.
-export fn given_feature() -> Feature {
+/// The `given "context" { ... }` test arm, used inside `spec` blocks to group
+/// related `then` assertions. Grammar and lowerings ride `spec_lang`'s
+/// fragment.
+export fn given_lang() -> LanguageFeature {
     let empty_body: List<StmtId> = []
-    feature_new("given") with {
-        stmt_tag: Stmt.GivenBlock("", empty_body),
-        emit_stmt: spec_emit_stmt,
-        resolve_stmt: given_resolve_stmt,
-        check_stmt: given_check_stmt,
-        eval_stmt: given_eval_stmt,
+    LanguageFeature given_def {
+        name = "given",
+        title = "given — group assertions under a shared setup",
+        docs = """
+`given "context" { ... }` nests inside a `spec` block (or another `given`)
+and groups the `then` assertions that share its setup. Structurally it is a
+`spec` block one level down.
+""",
+        snippet = r"""given "${1:context}" {\n    ${2}\n}""",
+        stmt_tag = Stmt.GivenBlock("", empty_body),
+        emit_stmt = spec_emit_stmt,
+        resolve_stmt = given_resolve_stmt,
+        check_stmt = given_check_stmt,
+        eval_stmt = given_eval_stmt,
     }
+    given_def
 }
 
-/// Register the `then "expectation" { cond }` assertion feature.
-/// The condition expression must evaluate to true; the runner
-/// reports PASS/FAIL per arm.
-export fn then_feature() -> Feature {
-    feature_new("then") with {
-        stmt_tag: Stmt.ThenBlock("", ExprId(0)),
-        emit_stmt: spec_emit_stmt,
-        resolve_stmt: then_resolve_stmt,
-        check_stmt: then_check_stmt,
-        eval_stmt: then_eval_stmt,
+/// The `then "expectation" { cond }` assertion. The body's final expression is
+/// its boolean result; the runner reports PASS/FAIL per arm.
+export fn then_lang() -> LanguageFeature {
+    LanguageFeature then_def {
+        name = "then",
+        title = "then — one assertion",
+        docs = """
+`then "expectation" { cond }` asserts inside a `spec` or `given` block. The
+body is a statement list whose final expression is the assertion's result —
+there is no `return`; the value falls out of the block.
+""",
+        snippet = r"""then "${1:expectation}" {\n    ${2}\n}""",
+        stmt_tag = Stmt.ThenBlock("", ExprId(0)),
+        emit_stmt = spec_emit_stmt,
+        resolve_stmt = then_resolve_stmt,
+        check_stmt = then_check_stmt,
+        eval_stmt = then_eval_stmt,
     }
+    then_def
 }
 
 /// Fold `check_stmt` over a body's rows. Used by spec/given check

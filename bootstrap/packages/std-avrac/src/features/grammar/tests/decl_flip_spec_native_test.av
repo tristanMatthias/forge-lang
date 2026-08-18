@@ -95,13 +95,15 @@ spec "t-47hc Phase 4: spec / given / then are emitted as native rules" {
         // The kind-plumbing trap the `pattern` / `tparam` / `match_arm` emit
         // entries were written for: `spec_item` is an alternation whose kind
         // must derive "stmt" through its given/then builds — a mis-kinded
-        // repeat would coerce items through capval_to_expr. (The SPECULATIVE
+        // repeat would coerce items through capval_to_expr, and the manifest
+        // arg spelling would wrap the accumulator in the wrong CapVal list
+        // ctor (t-kd4y.3.2.5: `CapVal.SNodes` IS the kind assertion). (The SPECULATIVE
         // property itself is proven BEHAVIORALLY: the corpus red-check turns
         // the recovery-tree spec red when the routing is flipped to bare.)
         let src = decl_src()
-        src.contains("mk_spec_block_g(st, capval_tok_text(") &&
-            src.contains("mk_given_block_g(st, capval_tok_text(") &&
-            src.contains("mk_then_block_g(st, capval_tok_text(")
+        src.contains("spec_block_build(st, [n, CapVal.SNodes(body_list)])") &&
+            src.contains("given_block_build(st, [n, CapVal.SNodes(body_list)])") &&
+            src.contains("then_block_build(st, [n, CapVal.SNodes(body_list)])")
     }
 }
 

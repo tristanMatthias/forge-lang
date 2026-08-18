@@ -24,6 +24,7 @@ use features.impl_decl.{avra_impl_decl_grammar}
 use features.modules.{avra_modules_grammar}
 use features.select_stmt.{avra_select_grammar}
 use features.parallel_stmt.{avra_parallel_grammar}
+use features.spec_test.{avra_spec_grammar}
 // t-47hc slice 10.3 — `tparam`, shared by every generic decl keyword.
 use features.generics.{avra_generics_grammar}
 
@@ -642,37 +643,8 @@ fn avra_decl_edge_grammar() -> Grammar {
   // (t-kd4y.3.2.4): `parallel_decl` in features/parallel_stmt/grammar.av,
   // `select_decl` + `select_arm` in features/select_stmt/grammar.av — both
   // composed in below, both referenced from the alternations above by name.
-  // The SPEC-TEST blocks (t-47hc Phase 4). `spec_item` mirrors parse_spec_body's
-  // dispatch — given-block | then-block | any declaration — and both nesting
-  // levels stamp per-item positions via the shared stmt-repetition loop
-  // (record_pos per spec item). A `then` body is a plain
-  // statement list whose rows fold into a walker-opaque Expr.Block cond
-  // (parse_block_expression's shape); all three nodes are LEAF rows.
-  //
-  // All three missing-name diagnostics are OWNED NATIVELY (t-myz7). `@cut` sits
-  // directly after each keyword, so a missing STRING COMMITS the branch and reports
-  // through its own `@expect` rather than rolling back. The
-  // `given`/`then` messages are pinned verbatim, because a nested block is
-  // exactly where rolling back was never enough: `parse_spec_body` swallows the Err
-  // and returns the partial item list, so `spec "s" { given }` closed cleanly with
-  // the malformed `given` SILENTLY DROPPED. A rule with no `@expect` at all reported
-  // the generic "expected `STRING`", which named neither the construct nor the fix.
-  // NOT committed, same reason: `spec "s" { given }` must DROP the malformed item and
-  // build `(spec "s" )`, where the committed rule keeps `(spec "s" (error))`. Item-drop
-  // is a third recovery shape the DSL cannot yet express.
-  spec_decl  = @try "spec" @cut @require n:STRING @require "{" @onfail(drop) body:spec_item* @require "}"
-               @expect("STRING", "expected spec name string after `spec`")
-               @expect("{", "expected `{` after spec name")
-               @expect("}", "expected `}` to close spec block") -> MkSpecBlock(n, body)
-  spec_item  = given_blk | then_blk | declaration
-  given_blk  = @try "given" @cut @require n:STRING @require "{" @onfail(drop) body:spec_item* @require "}"
-               @expect("STRING", "expected given name string after `given`")
-               @expect("{", "expected `{` after given name")
-               @expect("}", "expected `}` to close given block") -> MkGivenBlock(n, body)
-  then_blk   = @try "then" @cut @require n:STRING @require "{" body:declaration* @require "}"
-               @expect("STRING", "expected then name string after `then`")
-               @expect("{", "expected `{` after then name")
-               @expect("}", "expected `}` to close then block") -> MkThenBlock(n, body)
+  // The SPEC-TEST blocks (spec_decl / spec_item / given_blk / then_blk) live in
+  // features/spec_test/grammar.av and are composed in below (t-kd4y.3.2.5).
   // The COMPONENT definition, MODERN form only (t-47hc Phase 4 slice A):
   // `component name [implements A, B] { config? children? body:TokenStream? … }`.
   // The legacy paren form (`component C(params) {`), the keyword-prefixed
@@ -850,6 +822,7 @@ fn avra_decl_edge_grammar() -> Grammar {
         avra_impl_decl_grammar(),
         avra_select_grammar(),
         avra_parallel_grammar(),
+        avra_spec_grammar(),
     ])
 }
 
@@ -1023,6 +996,7 @@ export fn feature_decl_grammar_fragments() -> List<Grammar> {
         avra_trait_decl_grammar(),   // trait_decl, trait_member, assoc_member, method_member
         avra_impl_decl_grammar(),    // impl_decl, impl_method
         avra_modules_grammar(),      // use_decl, mod_decl
+        avra_spec_grammar(),         // spec_decl, spec_item, given_blk, then_blk
         avra_generics_grammar(),     // tparam — shared by every generic decl keyword
         avra_select_grammar(),       // select_decl, select_arm
         avra_parallel_grammar(),     // parallel_decl

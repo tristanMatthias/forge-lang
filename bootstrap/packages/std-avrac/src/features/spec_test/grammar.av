@@ -1,0 +1,56 @@
+// WHY: t-kd4y.3.2.5 — the spec-test keyword group's grammar FRAGMENT, moved
+// out of the central decl-edge view so the three testing keywords live where
+// their lowerings, hooks, runner and reporter already do. Composed into the
+// decl views by name (feature_decl_grammar_fragments + avra_decl_edge_grammar),
+// exactly like features/modules/grammar.av — the rules are unchanged text, so
+// every generated parser regenerates byte-identically.
+//
+// `declaration` stays an EXTERNAL reference: `spec_item` and a `then` body are
+// declaration lists, and `declaration` is the decl view's own dispatch rule —
+// no feature owns it. The flat merge binds it after composition, the same way
+// `avra_modules_grammar` leans on IDENT/WORD.
+//
+// NOTE for the next family flip: `spec_decl`'s `@onfail(drop)` asserts that
+// `spec_item` is a STATEMENT repetition, and spec_item's kind derives through
+// `given_blk` -> `MkGivenBlock` — a FEATURE-manifest build since this flip, not
+// a central one. `parse_grammar` validates a fragment before any manifest is
+// stamped, so that check defers via `rule_kind_known` rather than reading the
+// lenient "expr" default and rejecting correct rules (see validate_onfail_drop).
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
+
+/// The SPEC-TEST blocks (t-47hc Phase 4). `spec_item` mirrors parse_spec_body's
+/// dispatch — given-block | then-block | any declaration — and both nesting
+/// levels stamp per-item positions via the shared stmt-repetition loop
+/// (record_pos per spec item). A `then` body is a plain
+/// statement list whose rows fold into a walker-opaque Expr.Block cond
+/// (parse_block_expression's shape); all three nodes are LEAF rows.
+///
+/// All three missing-name diagnostics are OWNED NATIVELY (t-myz7). `@cut` sits
+/// directly after each keyword, so a missing STRING COMMITS the branch and reports
+/// through its own `@expect` rather than rolling back. The
+/// `given`/`then` messages are pinned verbatim, because a nested block is
+/// exactly where rolling back was never enough: `parse_spec_body` swallows the Err
+/// and returns the partial item list, so `spec "s" { given }` closed cleanly with
+/// the malformed `given` SILENTLY DROPPED. A rule with no `@expect` at all reported
+/// the generic "expected `STRING`", which named neither the construct nor the fix.
+/// NOT committed, same reason: `spec "s" { given }` must DROP the malformed item and
+/// build `(spec "s" )`, where the committed rule keeps `(spec "s" (error))`. Item-drop
+/// is a third recovery shape the DSL cannot yet express.
+export fn avra_spec_grammar() -> Grammar {
+    let gp = grammar {
+  spec_decl  = @try "spec" @cut @require n:STRING @require "{" @onfail(drop) body:spec_item* @require "}"
+               @expect("STRING", "expected spec name string after `spec`")
+               @expect("{", "expected `{` after spec name")
+               @expect("}", "expected `}` to close spec block") -> MkSpecBlock(n, body)
+  spec_item  = given_blk | then_blk | declaration
+  given_blk  = @try "given" @cut @require n:STRING @require "{" @onfail(drop) body:spec_item* @require "}"
+               @expect("STRING", "expected given name string after `given`")
+               @expect("{", "expected `{` after given name")
+               @expect("}", "expected `}` to close given block") -> MkGivenBlock(n, body)
+  then_blk   = @try "then" @cut @require n:STRING @require "{" body:declaration* @require "}"
+               @expect("STRING", "expected then name string after `then`")
+               @expect("{", "expected `{` after then name")
+               @expect("}", "expected `}` to close then block") -> MkThenBlock(n, body)
+    }
+    grammar_checked(gp)
+}
