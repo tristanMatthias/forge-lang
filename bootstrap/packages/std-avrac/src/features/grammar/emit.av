@@ -2687,15 +2687,9 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // generated call and the interpreter drive ONE implementation. ──
         "MkDocAnnotated" -> "mk_doc_annotated(st, ${args[0]}_list, ${args[1]})"
         "MkModuleDoc" -> "mk_module_doc(st, sp_start, ${args[0]}_list)"
-        // ── The binding declarations (t-47hc Phase 4): `let`/`mut`/`const`. The
-        // optional `mut` modifier, type annotation, and `else` guard group all
-        // arrive as presence-tested CapVals; the `@gensym(letelse)` mint rides the
-        // guard group as an ordinary captured token. Both engines drive the ONE
-        // shared core (mk_let_binding_g / mk_const_binding_g). ──
-        "MkLetBinding" -> "mk_let_binding_g(st, capval_present(${args[0]}), capval_tok_text(${args[1]}), ${args[2]}, capval_present(${args[2]}), ${args[3]}, ${args[4]}, capval_present(${args[4]}), ${args[5]})"
-        "MkMutBinding" -> "mk_let_binding_g(st, true, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}), ${args[2]}, ${args[3]}, capval_present(${args[3]}), ${args[4]})"
-        "MkConstBinding" -> "mk_const_binding_g(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}), ${args[2]})"
-        "MkDestructure" -> "mk_let_destructure_g(st, ${args[0]}_list, ${args[1]})"
+        // The binding declarations are manifest-owned (features/let_stmt
+        // lowering, t-kd4y.3.2.3) — emit_call_build finds their rows before
+        // consulting these central templates.
         "MkCompConfig" -> "mk_comp_config_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
         "MkCompConfigPair" -> "mk_comp_config_pair_g(st, capval_tok_text(${args[0]}), capval_to_expr(st, ${args[1]}))"
         "MkComponentBlock" -> "mk_component_block_g(st, capval_tok_text(${args[0]}), capval_tok_text(${args[1]}), ${args[2]}_list, ${args[3]}_list)"

@@ -899,9 +899,6 @@ export fn engine_core_builds() -> List<string> {
 /// and the domain lint keeps the remainder exact.
 export fn unflipped_builds() -> List<string> {
     [
-     // t-kd4y.3.2.3 let family (let/mut/const/destructure)
-     "MkLetBinding", "MkMutBinding", "MkConstBinding", "MkDestructure",
-     "MkLet", "MkMut", "MkConst",
      // t-kd4y.3.3.1 fn + extern decls (+ param plumbing)
      "MkFnDecl", "MkExtern", "MkParam", "MkTypeParam", "MkWhereParam",
      // t-kd4y.3.3.2 type + shape decls (+ field rows)
@@ -971,7 +968,7 @@ export fn unflipped_builds() -> List<string> {
 /// ledger like every other central name; the domain lint expects exactly
 /// this set to be ledgered-but-tableless.
 export fn central_tableless_builds() -> List<string> {
-    ["MkAnnotated", "MkConst", "MkGroupOrEmpty", "MkLet", "MkMut", "MkNone",
+    ["MkAnnotated", "MkGroupOrEmpty", "MkNone",
      "MkStampAt", "MkTupleFR", "MkTypeAlias", "MkTypeRHS"]
 }
 
@@ -1007,7 +1004,6 @@ export fn central_build_kind(bn: string) -> string {
             or "MkTypeDeclAny"
             or "MkAssocTypeDef"
             or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
-            or "MkLetBinding" or "MkMutBinding" or "MkConstBinding" or "MkDestructure"
             or "MkComponentDef"
             or "MkComponentParenDef" or "MkComponentBlock" or "MkRawComponentBlock" or "MkMethodShorthand" or "MkCompField" -> "stmt"
         "MkAnn" -> "ann"

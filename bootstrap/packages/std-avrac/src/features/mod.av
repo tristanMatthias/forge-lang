@@ -15,7 +15,7 @@ use features.if_stmt.{if_lang}
 use features.impl_decl.{impl_decl_lang}
 use features.is_keyword.{is_keyword_feature}
 use features.in_operator.{in_operator_feature}
-use features.let_stmt.{let_destructure_feature, let_keyword_feature, const_keyword_feature, mut_keyword_feature}
+use features.let_stmt.{let_lang, mut_lang, const_lang, let_destructure_lang}
 use features.list_comp.{list_comp_feature}
 use features.list_lit.{list_lit_feature}
 use features.map_lit.{map_lit_feature}
@@ -112,7 +112,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
     let feats = language_features()
     for f in feats { register_lang(reg, f) }
     let binds = fold_builders(feats)
-    register(reg, let_destructure_feature())
 
     // ── Expressions ──
     register(reg, closures_feature())
@@ -142,9 +141,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
     register(reg, extern_decl_feature())
     register(reg, type_decl_feature())
     register(reg, shape_decl_feature())
-    register(reg, let_keyword_feature())
-    register(reg, const_keyword_feature())
-    register(reg, mut_keyword_feature())
 
     // ── Infrastructure ──
     register(reg, component_decl_feature())
@@ -157,7 +153,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang(), quote_lang(), spec_lang(), given_lang(), then_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), let_lang(), mut_lang(), const_lang(), let_destructure_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang(), quote_lang(), spec_lang(), given_lang(), then_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,

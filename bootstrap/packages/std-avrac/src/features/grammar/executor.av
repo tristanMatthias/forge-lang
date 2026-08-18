@@ -4223,18 +4223,13 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "TyDyn" if args.length == 1 -> mk_dyn_type(capval_tok_text(env.get(args[0])), false)
         "TyDyn" if args.length == 2 -> mk_dyn_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])))
         "MkFn" if args.length == 3 -> mk_fn_type(st, capval_present(env.get(args[0])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])), env.get(args[2]))
-        // ── Binding + remaining statement builds (target: Stmt, ps3t.6.5.4) ──
-        // `let`/`mut`/`const name (":" T)? "=" init`. The optional annotation
-        // lowers through the SHARED type family (a captured TExpr → ValueType via
-        // type_expr_to_vtype); absent ⇒ Unknown — exactly the hand parser's
-        // `ty_vt = Unknown` default. `let mut` and a bare `mut` both build Mut.
-        "MkLet" if args.length == 3 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Let(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
-        "MkMut" if args.length == 3 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Mut(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
-        "MkConst" if args.length == 3 -> CapVal.SNode(st.store.stmts.add_leaf(Stmt.Const(capval_tok_text(env.get(args[0])), ann_to_vtype(env.get(args[1])), capval_to_expr(st, env.get(args[2])))))
-        // `let (a, b, …) = init` — delegates to the SHARED core (t-47hc Phase 4:
-        // this build is on the PRODUCTION path now, so apply_build and the
-        // generated static parser must lower through one implementation).
-        "MkDestructure" if args.length == 2 -> mk_let_destructure_g(st, capval_tok_list(env.get(args[0])), env.get(args[1]))
+        // ── Remaining statement builds (target: Stmt, ps3t.6.5.4). The
+        //    BINDING family is feature-owned now (MkLetBinding / MkMutBinding /
+        //    MkConstBinding / MkDestructure, features/let_stmt lowering —
+        //    t-kd4y.3.2.3): the manifest dispatches them. The §2 oracle-era
+        //    MkLet/MkMut/MkConst convenience trio was DELETED with that flip
+        //    (the Break/Continue/Return purity move): a grammar that builds a
+        //    binding spells the production rows. ──
         // ── Match statement builds (target: Stmt, ps3t.6.5.4) — the match
         //    family is feature-owned now (build_arm / build_match /
         //    MkWhenStmt / MkArmReturn / the table pair, features/match
@@ -4292,13 +4287,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // Span-free in the interpreter, like MkStampAt: the NoOp's position is
         // recorded only on the emitted path.
         "MkModuleDoc" if args.length == 1 -> mk_module_doc(st, 0 - 1, capval_tok_list(env.get(args[0])))
-        // ── Binding declaration builds (target: Stmt, t-47hc Phase 4) — the
-        //    PRODUCTION `let`/`mut`/`const` rules. Distinct from the §2 oracle-era
-        //    MkLet/MkMut/MkConst above: these build the hand's alloc_binding_stmt
-        //    row (TypeRef edge) and carry the `else` guard form. ──
-        "MkLetBinding" if args.length == 6 -> mk_let_binding_g(st, capval_present(env.get(args[0])), capval_tok_text(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), env.get(args[3]), env.get(args[4]), capval_present(env.get(args[4])), env.get(args[5]))
-        "MkMutBinding" if args.length == 5 -> mk_let_binding_g(st, true, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])), env.get(args[2]), env.get(args[3]), capval_present(env.get(args[3])), env.get(args[4]))
-        "MkConstBinding" if args.length == 3 -> mk_const_binding_g(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])), env.get(args[2]))
         // `type Name = base ( ("without"|"only") "{" fields "}" )?` — the non-brace RHS
         // only, kept for the grammar-string consumers that predate `MkTypeDeclAny`
         // (decl_type_op_test). It DELEGATES rather than reimplementing: slice 10.5 grew
@@ -4363,16 +4351,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
             CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, capval_to_stmt(st, env.get(args[1])))))
         }
         _ -> CapVal.Node(st.error_node("unknown build `${name}`"))
-    }
-}
-
-/// An optional `: type` annotation capture → the declared `ValueType`, via
-/// the SHARED `type_expr_to_vtype` (ps3t.6.5.4). Absent (or non-type) ⇒
-/// `Unknown`, exactly the hand parser's un-annotated binding default.
-fn ann_to_vtype(v: CapVal) -> ValueType {
-    match v {
-        .TExpr(te) -> type_expr_to_vtype(te)
-        _ -> ValueType.Unknown
     }
 }
 
@@ -5234,53 +5212,18 @@ export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, inner))))
 }
 
-/// `let` / `mut` / `const` bindings go native (t-47hc Phase 4) — the shared core of
-export fn mk_let_binding_g(st: PState, has_mut: bool, name: string, ty_cv: CapVal, has_ty: bool, init_cv: CapVal, else_cv: CapVal, has_else: bool, tmp_cv: CapVal) -> CapVal {
-    mut ty_vt = ValueType.Unknown
-    if has_ty { ty_vt = type_expr_to_vtype(capval_to_texpr(st, ty_cv)) }
-    mut init_id = capval_to_expr(st, init_cv)
-    if has_else {
-        // The else-arm body rows: a parsed else-Block's rows are reused verbatim
-        // (never re-walked); any other stmt shape wraps as the block's single
-        // element — exactly the hand's readback.
-        let else_sid = capval_to_stmt(st, else_cv)
-        let else_ids: List<StmtId> = match st.store.stmts.get(else_sid) {
-            .Block(b) -> b
-            _ -> [else_sid]
-        }
-        if !stmt_ids_diverge(st.store, else_ids) {
-            st.report_coded("F1203", "the `else` of a `let … else` must diverge (`return` / `break` / `continue` / `panic`)")
-        }
-        init_id = build_let_else_init(st.store, capval_tok_text(tmp_cv), init_id, else_ids)
-    }
-    let node = if has_mut { Stmt.Mut(name, ty_vt, init_id) } else { Stmt.Let(name, ty_vt, init_id) }
-    CapVal.SNode(binding_stmt_row(st, node, ty_vt))
-}
-
-/// `const NAME (":" T)? "=" init` — the same row shape, no guard form (the hand's
-/// `parse_const_statement` has no else branch).
-export fn mk_const_binding_g(st: PState, name: string, ty_cv: CapVal, has_ty: bool, init_cv: CapVal) -> CapVal {
-    mut ty_vt = ValueType.Unknown
-    if has_ty { ty_vt = type_expr_to_vtype(capval_to_texpr(st, ty_cv)) }
-    CapVal.SNode(binding_stmt_row(st, Stmt.Const(name, ty_vt, capval_to_expr(st, init_cv)), ty_vt))
-}
+// The binding cores (mk_let_binding_g / mk_const_binding_g /
+// mk_let_destructure_g) moved to features/let_stmt/lowering with the
+// binding rows (t-kd4y.3.2.3) — only their shared row helper stays.
 
 /// The hand's `alloc_binding_stmt` row, verbatim: a byte_span_none stmt whose one
 /// edge is the declared type's TypeRef (walker order — the initializer is an id
 /// payload, so it records no edge; the payload IS the child mechanism).
-fn binding_stmt_row(st: PState, node: Stmt, ty_vt: ValueType) -> StmtId {
+/// EXPORTED (t-kd4y.3.2.3): the let feature's lowering drives the same row
+/// shape as the component-field builds here — shared row choreography, one
+/// implementation.
+export fn binding_stmt_row(st: PState, node: Stmt, ty_vt: ValueType) -> StmtId {
     st.store.add_stmt(node, byte_span_none(), [NodeRef.TypeRef(st.store.ingest_type(ty_vt, byte_span_none()))])
-}
-
-/// `let (a, b, …) = init` — the destructure binding (t-47hc Phase 4), the shared
-/// core of the `MkDestructure` build. The ident list becomes ParamEntry bindings
-/// (names only, Unknown vtype — exactly parse_destructure_names' inferred-later
-/// rows; an EMPTY list is valid, matching the hand's `let () = t`) under a LEAF
-/// LetDestructure row — the hand's `alloc_stmt_leaf`, NOT `binding_stmt_row`:
-/// destructure bindings cannot carry a type annotation, so no TypeRef edge exists.
-export fn mk_let_destructure_g(st: PState, names: List<Token>, init_cv: CapVal) -> CapVal {
-    let entries = param_entries_from_toks(CapVal.Toks(names), ValueType.Unknown)
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.LetDestructure(entries, capval_to_expr(st, init_cv))))
 }
 
 /// Stamp an ALREADY-BUILT statement with its own source position and return it

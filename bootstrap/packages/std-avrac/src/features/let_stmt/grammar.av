@@ -1,0 +1,43 @@
+// WHY: t-kd4y.3.2.3 — the `let` / `mut` / `const` binding grammar FRAGMENT,
+// owned by the feature that owns the keywords (see features/fn_decl/grammar.av
+// for the registry's full rationale). The rules moved here verbatim from the
+// central decl view; `type_expr`, `expression`, `statement` and the peek
+// predicates (`let_destructure`, `comma_ident`) are cross-fragment references
+// that bind by name after the merge, exactly as `variant` references `field`.
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
+
+/// The binding declarations — the highest-traffic rules in the language.
+/// `let_decl` covers the guard form too (`let x = init else { … }`, the
+/// `@gensym(letelse)` mint riding the guard group); `letdes_decl` is the
+/// tuple-destructure sibling, gated by the `let_destructure` peek so the
+/// `(`-lead never costs `let_decl` its `@cut` commit.
+export fn avra_let_grammar() -> Grammar {
+    let gp = grammar {
+  let_decl   = @try "let" @cut ( m:"mut" )? @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
+               @expect("IDENT", "expected variable name")
+               @expect("type_expr", "expected type after `:`")
+               @expect("=", "expected `=` after variable name") -> MkLetBinding(m, n, ty, init, e, tmp)
+  mut_decl   = @try "mut" @cut @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
+               @expect("IDENT", "expected variable name")
+               @expect("type_expr", "expected type after `:`")
+               @expect("=", "expected `=` after variable name") -> MkMutBinding(n, ty, init, e, tmp)
+  const_decl = @try "const" @cut @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression
+               @expect("IDENT", "expected constant name")
+               @expect("type_expr", "expected type after `:`")
+               @expect("=", "expected `=` after constant name") -> MkConstBinding(n, ty, init)
+  // `let (a, b, …) = init` — the destructure binding. The list shape is
+  // `for_binding`'s, verbatim: `@peek(comma_ident)` gates each repeat
+  // iteration so a trailing comma survives to the `","?` (`(a, b,)` is
+  // tolerated), and the whole names group is optional because an EMPTY list
+  // is accepted (`let () = t` parses — entries are typed at check time).
+  // `( m:"mut" )?`: an optional `mut` is consumed BEFORE testing for `(`,
+  // and the destructure build never reads is_mut — so `let mut (a, b) = t`
+  // is a plain destructure on both engines. A BARE `mut (` stays an error
+  // (mut_decl demands an identifier), which is why mut_decl has no
+  // destructure sibling.
+  letdes_decl = @peek(let_destructure) "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? @require ")" @require "=" @onfail(bail) init:expression
+                @expect(")", "expected `)` after destructure names")
+                @expect("=", "expected `=` after destructure pattern") -> MkDestructure(n, init)
+    }
+    grammar_checked(gp)
+}

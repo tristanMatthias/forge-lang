@@ -25,6 +25,7 @@ use features.modules.{avra_modules_grammar}
 use features.select_stmt.{avra_select_grammar}
 use features.parallel_stmt.{avra_parallel_grammar}
 use features.spec_test.{avra_spec_grammar}
+use features.let_stmt.{avra_let_grammar}
 // t-47hc slice 10.3 — `tparam`, shared by every generic decl keyword.
 use features.generics.{avra_generics_grammar}
 
@@ -612,33 +613,11 @@ fn avra_decl_edge_grammar() -> Grammar {
   // nothing else here, and `wrapped_inner` is shared by both `annot_decl` and
   // `doc_decl`, so this covers the doc-comment form too.
   wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | comp_header | @try use_decl | @try mod_decl | export_decl | doc_decl | annot_decl | letdes_decl | let_decl | mut_decl | const_decl | spec_decl | select_decl | parallel_decl | mdoc_decl | @try bare_comp_inst_raw | @try bare_comp_inst | statement
-  // The `let` / `mut` / `const` BINDINGS (t-47hc Phase 4) — the highest-traffic
-  let_decl   = @try "let" @cut ( m:"mut" )? @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
-               @expect("IDENT", "expected variable name")
-               @expect("type_expr", "expected type after `:`")
-               @expect("=", "expected `=` after variable name") -> MkLetBinding(m, n, ty, init, e, tmp)
-  mut_decl   = @try "mut" @cut @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
-               @expect("IDENT", "expected variable name")
-               @expect("type_expr", "expected type after `:`")
-               @expect("=", "expected `=` after variable name") -> MkMutBinding(n, ty, init, e, tmp)
-  const_decl = @try "const" @cut @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression
-               @expect("IDENT", "expected constant name")
-               @expect("type_expr", "expected type after `:`")
-               @expect("=", "expected `=` after constant name") -> MkConstBinding(n, ty, init)
-  // `let (a, b, …) = init` — the destructure binding. The list shape is
-  // `for_binding`'s,
-  // verbatim: `@peek(comma_ident)` gates each repeat iteration so a trailing
-  // comma survives to the `","?` (`(a, b,)` is
-  // tolerated), and the whole names group is optional because
-  // an EMPTY list is accepted (`let () = t` parses — entries are typed at check time).
-  // `( m:"mut" )?`: an
-  // optional `mut` is consumed BEFORE testing for `(`, and the destructure build
-  // never reads is_mut — so `let mut (a, b) = t` is a plain destructure on both
-  // engines. A BARE `mut (` stays an error (mut_decl demands an
-  // identifier), which is why mut_decl has no destructure sibling.
-  letdes_decl = @peek(let_destructure) "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? @require ")" @require "=" @onfail(bail) init:expression
-                @expect(")", "expected `)` after destructure names")
-                @expect("=", "expected `=` after destructure pattern") -> MkDestructure(n, init)
+  // The `let` / `mut` / `const` BINDINGS live in their feature now
+  // (t-kd4y.3.2.3): `let_decl` / `mut_decl` / `const_decl` / `letdes_decl`
+  // in features/let_stmt/grammar.av — composed in below, referenced from
+  // the alternations above by name (their lowerings are the let feature's
+  // manifest rows).
   // The CONCURRENCY statements (t-47hc Phase 4) live in their features now
   // (t-kd4y.3.2.4): `parallel_decl` in features/parallel_stmt/grammar.av,
   // `select_decl` + `select_arm` in features/select_stmt/grammar.av — both
@@ -823,6 +802,7 @@ fn avra_decl_edge_grammar() -> Grammar {
         avra_select_grammar(),
         avra_parallel_grammar(),
         avra_spec_grammar(),
+        avra_let_grammar(),
     ])
 }
 
@@ -1000,6 +980,7 @@ export fn feature_decl_grammar_fragments() -> List<Grammar> {
         avra_generics_grammar(),     // tparam — shared by every generic decl keyword
         avra_select_grammar(),       // select_decl, select_arm
         avra_parallel_grammar(),     // parallel_decl
+        avra_let_grammar(),          // let_decl, mut_decl, const_decl, letdes_decl
     ]
 }
 
