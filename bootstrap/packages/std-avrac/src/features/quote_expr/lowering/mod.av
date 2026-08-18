@@ -1,0 +1,138 @@
+// The quote feature's LOWERINGS — the `quote` cores + their ABI adapters +
+// manifest rows, in a dedicated SUBMODULE so the generated parser imports
+// them directly (t-kd4y.3 Batch A, the wrapper-free shape). This module
+// imports ONLY features.grammar + core — both already in every generated
+// parser's closure — so the F4012 import-closure invariant holds by
+// construction; the feature's lowering PASS (../lower.av, which rewrites
+// Expr.Quote into AST-construction calls) and its registration stay in
+// ../mod.av and never enter the parse closure.
+//
+// t-kd4y.3.4, the EXPRESSION pattern prover: all three rows are `spanned`
+// expr binds — the rule-entry byte arrives as st.build_sp, which is -1 on
+// the interpreter path exactly as the retired central arms' `0 - 1`
+// encoded. The cores keep their `sp_start: int` parameter rather than
+// reading st.build_sp themselves, so the span decision stays one
+// expression per node and the adapters are the only st.build_sp readers.
+
+use core.{Expr, MatchArm, NodeRef, byte_span, byte_span_none, type_expr_to_vtype}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_pat, capval_to_texpr, capval_tok_pos, capval_tok_text}
+
+/// Grammar-native `quote arm { pat (if guard)? -> body ,? }` (t-bwjg slice 4b).
+///
+/// The arm is wrapped in a SYNTHETIC
+/// single-armed `Expr.MatchExpr` so the `Quote(kind, body)` shape stays uniform across
+/// every kind; the lowering pass picks the arm back out via the `arm` discriminator.
+///
+/// THREE things here are byte-identity-critical:
+///
+/// 1. The synthetic subject is `intern_expr_leaf`, NOT `add_expr` — an interned
+///    row, so repeated
+///    `quote arm`s share one `Expr.None`. Using add_expr would mint a fresh row each
+///    time and the arena would diverge.
+/// 2. The edge set is EXACTLY `[PatRef(pat_id)]`. `MatchArm` is a MIXED walker node:
+///    only the pattern is a walked child, while guard and body ride as walker-opaque
+///    `ExprId` scalars, and the subject is opaque too. Adding any of them would hand the
+///    walker a different child set — the same rule mk_match_expr documents.
+/// 3. The inner MatchExpr spans from the `{`,
+///    while the outer Quote spans from the `quote` keyword.
+export fn mk_quote_arm(st: PState, sp_start: int, lb_cv: CapVal, pat_cv: CapVal, guard_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let pat_id = capval_to_pat(st, pat_cv)
+    let guard = if capval_present(guard_cv) { capval_to_expr(st, guard_cv) } else { null }
+    let arm = MatchArm {
+        pattern: st.store.pats.get(pat_id),
+        pattern_id: pat_id,
+        guard_id: guard,
+        body_id: capval_to_expr(st, body_cv)
+    }
+    let arms: List<MatchArm> = [arm]
+    let subject_id = st.store.intern_expr_leaf(Expr.None)
+    let edges: List<NodeRef> = [NodeRef.PatRef(pat_id)]
+    let lb = capval_tok_pos(lb_cv)
+    let inner = st.store.add_expr(
+        Expr.MatchExpr(subject_id, arms),
+        if lb < 0 { byte_span_none() } else { byte_span(lb, st.cur().pos) },
+        edges
+    )
+    CapVal.Node(st.store.add_expr(
+        Expr.Quote("arm", inner),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+/// Grammar-native `quote type { <type> }` (t-bwjg slice 4b).
+///
+/// The two spans are
+/// deliberately different: the inner `Expr.TypeLit` carrier spans from the `{`,
+/// while the outer
+/// `Expr.Quote` spans from the `quote` keyword. `lb_cv` is the captured `{` token, which
+/// is the only way the build can recover that inner byte.
+///
+/// NOTE the deliberate difference from `mk_channel`, the other build that carries a
+/// type: channel INGESTS its element (`ingest_type` + a `NodeRef.TypeRef` edge).
+/// `quote type` does NOT — it is a plain alloc with
+/// no refs — so ingesting here would add a type-table row and a walker edge,
+/// and the IR would diverge.
+export fn mk_quote_type(st: PState, sp_start: int, lb_cv: CapVal, t_cv: CapVal) -> CapVal {
+    let vt = type_expr_to_vtype(capval_to_texpr(st, t_cv))
+    let lb = capval_tok_pos(lb_cv)
+    let body = st.store.add_expr(
+        Expr.TypeLit(vt),
+        if lb < 0 { byte_span_none() } else { byte_span(lb, st.cur().pos) },
+        []
+    )
+    CapVal.Node(st.store.add_expr(
+        Expr.Quote("type", body),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+/// Grammar-native `quote { … }` / `quote stmt|stmts|decl { … }` (t-bwjg).
+///
+/// The BLOCK-BODIED kinds only. The two
+/// non-block kinds — `quote type { <type> }` (a TypeLit carrier) and `quote arm
+/// { pat -> body }` (a synthetic single-armed MatchExpr envelope) — are declined by
+/// `@peek(quote_type)` and `@peek(quote_arm)`, each routed to its own native rule, so
+/// this build never sees either.
+///
+/// `kind_cv` is the OPTIONAL kind keyword; absent means the default, `"expr"`.
+/// `Expr.Quote`'s body is an ExprId SCALAR and is
+/// walker-opaque, so this allocs as a LEAF with no child refs. Adding an edge here
+/// would give the walker a child that was never registered.
+export fn mk_quote(st: PState, sp_start: int, kind_cv: CapVal, body_cv: CapVal) -> CapVal {
+    let kind = if capval_present(kind_cv) { capval_tok_text(kind_cv) } else { "expr" }
+    CapVal.Node(st.store.add_expr(
+        Expr.Quote(kind, capval_to_expr(st, body_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+/// The three ABI adapters — the ONLY readers of st.build_sp in this module.
+/// A `spanned` row means the generated parser wraps the call in
+/// call_with_build_sp(st, sp_start, …), so the rule-entry byte is in hand for
+/// the duration of the build; the executor calls the adapter bare, so exec
+/// reads the -1 default and stays span-free exactly as the retired central
+/// arms' `0 - 1` argument encoded.
+export fn mk_quote_arm_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_quote_arm(st, st.build_sp, vals[0], vals[1], vals[2], vals[3])
+}
+
+export fn mk_quote_type_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_quote_type(st, st.build_sp, vals[0], vals[1])
+}
+
+export fn mk_quote_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_quote(st, st.build_sp, vals[0], vals[1])
+}
+
+/// ALL of the quote feature's rows — one list per feature. The Mk-named rows
+/// keep their grammar-side names (the row name IS the gram ref, so the flip
+/// touches no rule text); every one is `spanned`, because every quote node
+/// is stamped from the `quote` keyword.
+export fn quote_builds() -> List<BuilderBind> {
+    bind_rows("features.quote_expr.lowering", [bind_row("MkQuote", "expr", 2, true, "mk_quote_abi", mk_quote_abi),
+     bind_row("MkQuoteType", "expr", 2, true, "mk_quote_type_abi", mk_quote_type_abi),
+     bind_row("MkQuoteArm", "expr", 4, true, "mk_quote_arm_abi", mk_quote_arm_abi)])
+}

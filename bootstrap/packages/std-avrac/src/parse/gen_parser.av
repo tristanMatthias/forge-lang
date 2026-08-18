@@ -5,7 +5,7 @@
 // family; parse/tests/gen_parser_regen_test.av asserts it equals
 // emit_parser_file() so a grammar edit that isn't regenerated fails the suite.
 
-use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, capval_tok_texts, error_stmt_of, fold_logical_expr, fold_nullish_expr, fold_pipe_expr, fold_postfix_with_expr, fold_type_union, gensym_token, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assign_expr, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_channel, mk_children_slot_g, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_g, mk_comp_config_list, mk_comp_config_pair_g, mk_comp_field_g, mk_component_block_g, mk_component_def_g, mk_component_paren_def_g, mk_const_binding_g, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_eqchain_expr, mk_export_decl, mk_expr_block, mk_extern_fn, mk_field, mk_field_access, mk_field_init, mk_fn_decl_where_g, mk_fn_type, mk_for_binding, mk_for_destructure, mk_force_unwrap, mk_generic_call_suffix, mk_given_block_g, mk_grammar_block, mk_group_or_empty, mk_if_expr, mk_index_suffix, mk_inlist_expr, mk_inrange_expr, mk_is_expr, mk_isolated, mk_lambda, mk_lambda_typed, mk_let_binding_g, mk_let_destructure_g, mk_list_comp, mk_list_lit, mk_map_lit, mk_match_expr, mk_method_shorthand_g, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_param, mk_paren_type, mk_plain_name, mk_qualified, mk_qualified_type, mk_quote, mk_quote_arm, mk_quote_type, mk_raw_component_block_g, mk_shape_decl, mk_spawn, mk_spec_block_g, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_struct_lit, mk_table_header, mk_table_lit, mk_table_row, mk_tagged_template, mk_template, mk_then_block_g, mk_trait_list, mk_try_suffix, mk_tuple_fr, mk_tuple_index, mk_type_decl_any, mk_type_param, mk_when, mk_where_param, mk_with_suffix, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, rebind_eq_expr, text_is_word, unary_expr}
+use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, capval_tok_texts, error_stmt_of, fold_logical_expr, fold_nullish_expr, fold_pipe_expr, fold_postfix_with_expr, fold_type_union, gensym_token, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assign_expr, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_channel, mk_children_slot_g, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_g, mk_comp_config_list, mk_comp_config_pair_g, mk_comp_field_g, mk_component_block_g, mk_component_def_g, mk_component_paren_def_g, mk_const_binding_g, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_eqchain_expr, mk_export_decl, mk_expr_block, mk_extern_fn, mk_field, mk_field_access, mk_field_init, mk_fn_decl_where_g, mk_fn_type, mk_for_binding, mk_for_destructure, mk_force_unwrap, mk_generic_call_suffix, mk_given_block_g, mk_grammar_block, mk_group_or_empty, mk_if_expr, mk_index_suffix, mk_inlist_expr, mk_inrange_expr, mk_is_expr, mk_isolated, mk_lambda, mk_lambda_typed, mk_let_binding_g, mk_let_destructure_g, mk_list_comp, mk_list_lit, mk_map_lit, mk_match_expr, mk_method_shorthand_g, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_param, mk_paren_type, mk_plain_name, mk_qualified, mk_qualified_type, mk_raw_component_block_g, mk_shape_decl, mk_spawn, mk_spec_block_g, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_struct_lit, mk_table_header, mk_table_lit, mk_table_row, mk_tagged_template, mk_template, mk_then_block_g, mk_trait_list, mk_try_suffix, mk_tuple_fr, mk_tuple_index, mk_type_decl_any, mk_type_param, mk_when, mk_where_param, mk_with_suffix, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, rebind_eq_expr, text_is_word, unary_expr}
 use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, MatchArm, ParamEntry, PatId, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, Variant, WhenArm}
 use features.modules.lowering.{module_build, use_bare_build, use_pkg_build}
 use features.enum_decl.lowering.{enum_decl_build, evariant_build}
@@ -20,6 +20,7 @@ use features.if_stmt.lowering.{build_if_abi, mk_if_let_abi, mk_if_let_stmt_abi}
 use features.break_continue.lowering.{build_break_abi, build_continue_abi}
 use features.while_stmt.lowering.{build_while_abi}
 use features.for_stmt.lowering.{build_for_abi}
+use features.quote_expr.lowering.{mk_quote_abi, mk_quote_arm_abi, mk_quote_type_abi}
 
 // generated recursive-descent parser for grammar `grammar`
 fn binary_lbp_g(t: Token) -> int {
@@ -4964,118 +4965,6 @@ fn parse_channel_expr(st: PState) -> CapVal {
     mk_channel(st, sp_start, elem, cap)
 }
 
-fn parse_quote_type_expr(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    let _ = st.advance()
-    if st.cur().text == "type" { let _ = st.advance() } else {
-        st.report("expected `type`")
-    }
-    let lb = if st.cur().tk == Tk.LeftBrace { CapVal.Tok(st.advance()) } else {
-        st.report("expected `{` after `quote type`")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-        CapVal.Tok(st.cur())
-    }
-    let __modes_3 = st.modes
-    st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
-    if !(starts_type_expr(st)) {
-        st.report("expected a type inside `quote type { ... }`")
-        st.set_abort_prop(true)
-        st.set_modes(__modes_3)
-        return CapVal.Node(st.error_node_silent())
-    }
-    st.set_abort_prop(false)
-    let __rres3 = parse_type_expr(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres3) || capval_is_error_stmt(st, __rres3) {
-        st.set_modes(__modes_3)
-        return CapVal.Node(st.error_node_silent())
-    }
-    let t = __rres3
-    st.set_modes(__modes_3)
-    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected `}` after the type in `quote type`")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    mk_quote_type(st, sp_start, lb, t)
-}
-
-fn parse_quote_arm_expr(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    mut g: CapVal = CapVal.Nil
-    let _ = st.advance()
-    if st.cur().text == "arm" { let _ = st.advance() } else {
-        st.report("expected `arm`")
-    }
-    let lb = if st.cur().tk == Tk.LeftBrace { CapVal.Tok(st.advance()) } else {
-        st.report("expected `{` after `quote arm`")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-        CapVal.Tok(st.cur())
-    }
-    let __modes_3 = st.modes
-    st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
-    if !(starts_pattern_or(st)) {
-        st.report("expected `.`, `_`, literal, or type pattern to start pattern")
-        st.set_abort_prop(true)
-        st.set_modes(__modes_3)
-        return CapVal.Node(st.error_node_silent())
-    }
-    st.set_abort_prop(false)
-    let __rres3 = parse_pattern_or(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres3) || capval_is_error_stmt(st, __rres3) {
-        st.set_modes(__modes_3)
-        return CapVal.Node(st.error_node_silent())
-    }
-    let p = __rres3
-    st.set_modes(__modes_3)
-    if st.cur().text == "if" {
-        let _ = st.advance()
-        g = parse_expression(st)
-    }
-    if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-        st.report("expected `->` after pattern in quote arm")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    let b = parse_expression(st)
-    if st.cur().tk == Tk.Comma {
-        let _ = st.advance()
-    }
-    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-        st.report("expected `}` after quote arm body")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    mk_quote_arm(st, sp_start, lb, p, g, b)
-}
-
-fn parse_quote_expr(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    mut k: CapVal = CapVal.Nil
-    let _ = st.advance()
-    if st.cur().text == "stmt" || st.cur().text == "stmts" || st.cur().text == "decl" {
-        k = CapVal.Tok(st.advance())
-    }
-    let __modes_2 = st.modes
-    st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
-    if !(starts_block_expr(st)) {
-        st.report("expected `{` to open the quote body")
-        st.set_abort_prop(true)
-        st.set_modes(__modes_2)
-        return CapVal.Node(st.error_node_silent())
-    }
-    st.set_abort_prop(false)
-    let __rres2 = parse_block_expr(st)
-    if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
-        st.set_modes(__modes_2)
-        return CapVal.Node(st.error_node_silent())
-    }
-    let body = __rres2
-    st.set_modes(__modes_2)
-    mk_quote(st, sp_start, k, body)
-}
-
 fn parse_spawn_expr(st: PState) -> CapVal {
     let sp_start = st.cur().pos
     let _ = st.advance()
@@ -5598,6 +5487,118 @@ fn parse_table_cell(st: PState) -> CapVal {
 fn parse_null_cell(st: PState) -> CapVal {
     let n = CapVal.Tok(st.advance())
     n
+}
+
+fn parse_quote_type_expr(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    let _ = st.advance()
+    if st.cur().text == "type" { let _ = st.advance() } else {
+        st.report("expected `type`")
+    }
+    let lb = if st.cur().tk == Tk.LeftBrace { CapVal.Tok(st.advance()) } else {
+        st.report("expected `{` after `quote type`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+        CapVal.Tok(st.cur())
+    }
+    let __modes_3 = st.modes
+    st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
+    if !(starts_type_expr(st)) {
+        st.report("expected a type inside `quote type { ... }`")
+        st.set_abort_prop(true)
+        st.set_modes(__modes_3)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres3 = parse_type_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres3) || capval_is_error_stmt(st, __rres3) {
+        st.set_modes(__modes_3)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let t = __rres3
+    st.set_modes(__modes_3)
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` after the type in `quote type`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    call_with_build_sp(st, sp_start, mk_quote_type_abi, [lb, t])
+}
+
+fn parse_quote_arm_expr(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    mut g: CapVal = CapVal.Nil
+    let _ = st.advance()
+    if st.cur().text == "arm" { let _ = st.advance() } else {
+        st.report("expected `arm`")
+    }
+    let lb = if st.cur().tk == Tk.LeftBrace { CapVal.Tok(st.advance()) } else {
+        st.report("expected `{` after `quote arm`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+        CapVal.Tok(st.cur())
+    }
+    let __modes_3 = st.modes
+    st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
+    if !(starts_pattern_or(st)) {
+        st.report("expected `.`, `_`, literal, or type pattern to start pattern")
+        st.set_abort_prop(true)
+        st.set_modes(__modes_3)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres3 = parse_pattern_or(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres3) || capval_is_error_stmt(st, __rres3) {
+        st.set_modes(__modes_3)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let p = __rres3
+    st.set_modes(__modes_3)
+    if st.cur().text == "if" {
+        let _ = st.advance()
+        g = parse_expression(st)
+    }
+    if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+        st.report("expected `->` after pattern in quote arm")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let b = parse_expression(st)
+    if st.cur().tk == Tk.Comma {
+        let _ = st.advance()
+    }
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` after quote arm body")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    call_with_build_sp(st, sp_start, mk_quote_arm_abi, [lb, p, g, b])
+}
+
+fn parse_quote_expr(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    mut k: CapVal = CapVal.Nil
+    let _ = st.advance()
+    if st.cur().text == "stmt" || st.cur().text == "stmts" || st.cur().text == "decl" {
+        k = CapVal.Tok(st.advance())
+    }
+    let __modes_2 = st.modes
+    st.set_modes(modes_with_counter_bumped(st.modes, "quote_depth"))
+    if !(starts_block_expr(st)) {
+        st.report("expected `{` to open the quote body")
+        st.set_abort_prop(true)
+        st.set_modes(__modes_2)
+        return CapVal.Node(st.error_node_silent())
+    }
+    st.set_abort_prop(false)
+    let __rres2 = parse_block_expr(st)
+    if st.abort_prop || capval_is_error_expr(st, __rres2) || capval_is_error_stmt(st, __rres2) {
+        st.set_modes(__modes_2)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let body = __rres2
+    st.set_modes(__modes_2)
+    call_with_build_sp(st, sp_start, mk_quote_abi, [k, body])
 }
 
 fn parse_type_expr(st: PState) -> CapVal {
@@ -6659,18 +6660,6 @@ fn starts_channel_expr(st: PState) -> bool {
     st.cur().text == "channel"
 }
 
-fn starts_quote_type_expr(st: PState) -> bool {
-    st.cur().text == "quote"
-}
-
-fn starts_quote_arm_expr(st: PState) -> bool {
-    st.cur().text == "quote"
-}
-
-fn starts_quote_expr(st: PState) -> bool {
-    st.cur().text == "quote"
-}
-
 fn starts_spawn_expr(st: PState) -> bool {
     st.cur().text == "spawn"
 }
@@ -6721,6 +6710,18 @@ fn starts_table_cell(st: PState) -> bool {
 
 fn starts_null_cell(st: PState) -> bool {
     st.cur().text == "null" || st.cur().text == "none"
+}
+
+fn starts_quote_type_expr(st: PState) -> bool {
+    st.cur().text == "quote"
+}
+
+fn starts_quote_arm_expr(st: PState) -> bool {
+    st.cur().text == "quote"
+}
+
+fn starts_quote_expr(st: PState) -> bool {
+    st.cur().text == "quote"
 }
 
 fn starts_type_expr(st: PState) -> bool {

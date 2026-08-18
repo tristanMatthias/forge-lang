@@ -193,7 +193,11 @@ spec "t-bwjg: the emitted dispatch routes quote correctly" {
     then "the native rule bumps and RESTORES the counter around the body" {
         let src = checked_in_parser_source()
         src.contains("modes_with_counter_bumped(st.modes, \"quote_depth\")") &&
-        src.contains("mk_quote(st, sp_start,")
+        // t-kd4y.3.4 — the lowering is feature-owned now, so the call is the
+        // manifest ABI form: the rule-entry byte arrives as st.build_sp through
+        // call_with_build_sp instead of as a positional `sp_start` argument.
+        // Everything else about this fn is byte-identical through the flip.
+        src.contains("call_with_build_sp(st, sp_start, mk_quote_abi,")
     }
     then "both guarded gates precede the unguarded native branch" {
         // Ordered choice: `quote arm` (still the hand's) and `quote type` (native, its own
@@ -210,7 +214,15 @@ spec "t-bwjg: the emitted dispatch routes quote correctly" {
     }
     then "both non-block kinds lower to their own native rules, not to a hand leaf" {
         let src = checked_in_parser_source()
-        src.contains("fn parse_quote_type_expr(") && src.contains("mk_quote_type(st, sp_start,") &&
-        src.contains("fn parse_quote_arm_expr(") && src.contains("mk_quote_arm(st, sp_start,")
+        src.contains("fn parse_quote_type_expr(") && src.contains("call_with_build_sp(st, sp_start, mk_quote_type_abi,") &&
+        src.contains("fn parse_quote_arm_expr(") && src.contains("call_with_build_sp(st, sp_start, mk_quote_arm_abi,")
+    }
+    then "the generator derives the feature import, so nothing hand-lists it" {
+        // The flip's other half: the adapters live in features/quote_expr/lowering
+        // and the header line naming them is DERIVED from the manifest rows the
+        // grammar carries (derived_import_lines_for) — there is no hand-kept
+        // import list to drift. The engine no longer exports the cores at all.
+        let src = checked_in_parser_source()
+        src.contains("use features.quote_expr.lowering.{mk_quote_abi, mk_quote_arm_abi, mk_quote_type_abi}")
     }
 }

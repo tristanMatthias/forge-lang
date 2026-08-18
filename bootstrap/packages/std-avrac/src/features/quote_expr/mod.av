@@ -1,21 +1,97 @@
-// WHY: feature registration for `quote { body }` (and the kind-annotated
-// forms `quote stmt`, `quote stmts`, `quote type`, `quote decl`).
+// quote / splice — capture the AST of a body as a runtime value (spec Axis
+// 30, Components V2 phase 3). The definition carries the feature whole:
+// syntax, docs, editor surface, and the three grammar rules the EXPRESSION
+// views compose (gram_family = "expr", t-kd4y.3.4 — the first expression
+// family to leave the spine). The lowerings (MkQuote / MkQuoteType /
+// MkQuoteArm) are feature-owned via the builder manifest and live in
+// `lowering/`; the lowering PASS that rewrites Expr.Quote into
+// AST-construction calls stays in lower.av, which the parse closure never
+// imports.
 //
-// Phase 3 (vez6.3) of Components V2. Captures the AST of `body` as a
-// runtime Expr value via a lowering pass that turns Expr.Quote into
-// AST-construction calls. Splicing (`~name`) lands in Phase 4.
-//
-// dir-as-module (g2eo.1): parser.av auto-loads as a sibling, surface
+// dir-as-module (g2eo.1): lower.av auto-loads as a sibling, surface
 // flat at `features.quote_expr.{...}`.
 
-use core.{feature_new, Feature, Expr, ExprId}
+use core.{Expr, ExprId}
+use features.grammar.{parse_grammar}
+use features.quote_expr.lowering.{quote_builds}
 
-/// Register the `quote { body }` expression feature. The feature is
-/// minimal at this stage — parser only. Resolver / typeck / codegen
-/// hooks land alongside the lowering pass that replaces Expr.Quote
-/// nodes with concrete AST-construction expressions.
-export fn quote_expr_feature() -> Feature {
-    feature_new("quote") with {
-        expr_tag: Expr.Quote("expr", ExprId(0)),
+/// The `quote` expression family. THREE rules, because the three bodies are
+/// structurally different — a block, a type, and a match arm — and
+/// @peek(quote_type)/@peek(quote_arm) route between them at the `unary`
+/// alternation (engine ladder, spine-owned) before `quote` is consumed, so
+/// the plain rule's FIRST stays a bare `quote` and it serves as the
+/// unguarded catch-all.
+export fn quote_lang() -> LanguageFeature {
+    LanguageFeature quote_def {
+        name = "quote",
+        title = "quote — capture a body's AST as a runtime value",
+        docs = """
+`quote { body }` captures the AST of `body` as a runtime value instead of
+evaluating it. The optional kind word selects the shape:
+
+    quote { 1 + 2 }              // Expr
+    quote stmt { let x = 5 }     // Stmt
+    quote stmts { … }            // List<StmtId>
+    quote decl { fn g() -> int { 1 } }
+    quote type { List<int> }     // ValueType
+    quote arm { .Ok(v) -> v }    // a single match arm
+
+Inside a quote body `~target` SPLICES — the runtime AST value of `target`
+is substituted at that position. Outside any quote body `~` is bitwise
+NOT, and the two are told apart by the `@bump(quote_depth)` counter this
+gram wraps around every body: the splice branches read it as
+`@when(in_quote_body)`, the bitnot branch as `@when(at_quote_top)`. A
+counter, not a flag — a nested `quote { quote { ~x } }` needs the depth.
+
+`lower_quotes` (lower.av) rewrites every `Expr.Quote` into a tree of
+AST-construction calls after resolve and before typecheck, so no later
+pass ever sees a Quote or Splice node.
+""",
+        gram = grammar {
+  // `quote type { <type> }` — native as of slice 4b. @bump wraps the TYPE parse so a
+  // splice inside it (`quote type { ~T }`, quote_splice_type_ident_test) still sees a
+  // nonzero depth; the braces themselves do not care.
+  // Every mandatory terminal is `@require`d with the exact pinned wording. Unrequired,
+  // a missing `{` reported a generic "expected {" and the rule CARRIED ON — parsing an
+  // empty type and then reporting the missing `}` too, so `quote type` alone came out
+  // three diagnostics where one is pinned.
+  quote_type_expr = "quote" "type" @require lb:"{" @require @bump(quote_depth) t:type_expr @require "}"
+                    @expect("{", "expected `{` after `quote type`")
+                    @expect("type_expr", "expected a type inside `quote type { ... }`")
+                    @expect("}", "expected `}` after the type in `quote type`") -> MkQuoteType(lb, t)
+  // `quote arm { pat (if guard)? -> body ,? }` — the last quote shape, native as of
+  // slice 4b. `pattern_or` is the same rule the match families use; the trailing comma
+  // is optional exactly as parse_quote_arm_body allows it.
+  // Same treatment as quote_type_expr, and the pattern position is the same shape as
+  // its type position: `@require` under the `@bump`, so a missing pattern aborts with
+  // `parse_pattern_or`'s message instead of reporting a generic F0040 and
+  // then the missing `->` on top of it.
+  quote_arm_expr = "quote" "arm" @require lb:"{" @require @bump(quote_depth) p:pattern_or ( "if" g:expression )? @require "->" b:expression ( "," )? @require "}"
+                   @expect("{", "expected `{` after `quote arm`")
+                   @expect("pattern_or", "expected `.`, `_`, literal, or type pattern to start pattern")
+                   @expect("->", "expected `->` after pattern in quote arm")
+                   @expect("}", "expected `}` after quote arm body") -> MkQuoteArm(lb, p, g, b)
+  // `@require body:block_expr` (the spawn_expr idiom, FIRST = `{` so the gate
+  // is narrow): without it a truncated header (`quote`, `quote stmt`, an
+  // unknown kind word) DIVERGED across the engines — the exec leg's
+  // block_expr report stuck and the outer recovery reported again (1 vs 2),
+  // and emit dropped the precise report entirely, keeping only the outer
+  // cascade. With the gate both engines own ONE `expected `{`` report and
+  // fail the rule cleanly (t-rd44; probed over all eight malformed forms).
+  // The `@expect` is declared TWICE, keyed both ways, because this rule now lives
+  // in a FRAGMENT: `block_expr` is external here, so the standalone gram cannot
+  // derive its single-literal FIRST and `@require` on the ref demands a rule-NAME
+  // key (the same double declaration `if_stmt` carries for `block`). Composed, the
+  // FIRST resolves to `{` and the token-keyed message is the one both engines read
+  // — the rule-name key is never consulted, so the emitted parser is unchanged.
+  quote_expr   = "quote" ( k:("stmt" | "stmts" | "decl") )? @bump(quote_depth) @require body:block_expr
+                 @expect("{", "expected `{` to open the quote body")
+                 @expect("block_expr", "expected `{` to open the quote body") -> MkQuote(k, body)
+        },
+        builders = quote_builds(),
+        snippet = r"quote { ${1:body} }",
+        expr_tag = Expr.Quote("expr", ExprId(0)),
+        gram_family = "expr",
     }
+    quote_def
 }

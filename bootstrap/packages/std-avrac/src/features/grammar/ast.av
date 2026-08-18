@@ -913,8 +913,12 @@ export fn unflipped_builds() -> List<string> {
      "MkRawComponentBlock", "MkCompField", "MkCompBodyMarker",
      "MkCompConfig", "MkCompConfigPair", "MkCompConfigList",
      "MkChildrenSlot", "MkChildrenSlotList", "MkTraitList",
-     // t-kd4y.3.4 quote + splices
-     "MkQuote", "MkQuoteType", "MkQuoteArm", "MkSplice", "MkSpliceStruct",
+     // t-kd4y.3.4 splices — the quote family's rules moved and MkQuote /
+     // MkQuoteType / MkQuoteArm flipped with them; the splice builds stay
+     // central because the rules that reference them did NOT move: `~` is a
+     // branch of the engine ladder's `unary` and of `type_atom`, and a
+     // feature may only supply builders its OWN gram references.
+     "MkSplice", "MkSpliceStruct",
      "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName",
      // t-kd4y.3.5.1 concurrency primaries
      "MkSpawn", "MkIsolated", "MkChannel",
@@ -964,7 +968,7 @@ export fn central_build_kind(bn: string) -> string {
             or "fold_postfix_with" or "fold_postfix" or "mk_assign" or "rebind_eq" or "mk_is"
             or "mk_inlist" or "mk_inrange" or "mk_enum_ctor" or "mk_eqchain" or "MkListLit"
             or "MkListComp" or "MkChannel" or "MkWhen" or "MkMatchExpr" or "MkIfExpr"
-            or "MkQuote" or "MkQuoteType" or "MkQuoteArm" or "MkExprBlock"
+            or "MkExprBlock"
             or "MkSpawn" or "MkIsolated" or "MkTuple" or "MkLambda" or "MkLambdaTyped"
             or "Unary" or "Grouping" or "field_suffix" or "index_suffix" or "call_suffix"
             or "MkWithSuffix" or "MkMapLit" or "MkSplice" or "MkSpliceStruct" or "MkQualExpr"
