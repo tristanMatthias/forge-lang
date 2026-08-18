@@ -914,8 +914,6 @@ export fn unflipped_builds() -> List<string> {
      // feature may only supply builders its OWN gram references.
      "MkSplice", "MkSpliceStruct",
      "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName",
-     // t-kd4y.3.5.1 concurrency primaries
-     "MkSpawn", "MkIsolated", "MkChannel",
      // t-kd4y.3.5.2 when/match/if expression forms
      "MkWhen", "MkMatchExpr", "MkIfExpr",
      // t-kd4y.3.5.3 paren family (closures/tuple). `MkParam` re-grouped
@@ -965,9 +963,9 @@ export fn central_build_kind(bn: string) -> string {
         "fold_binary" or "fold_logical" or "fold_nullish" or "fold_pipe" or "fold_with"
             or "fold_postfix_with" or "fold_postfix" or "mk_assign" or "rebind_eq" or "mk_is"
             or "mk_inlist" or "mk_inrange" or "mk_enum_ctor" or "mk_eqchain" or "MkListLit"
-            or "MkListComp" or "MkChannel" or "MkWhen" or "MkMatchExpr" or "MkIfExpr"
+            or "MkListComp" or "MkWhen" or "MkMatchExpr" or "MkIfExpr"
             or "MkExprBlock"
-            or "MkSpawn" or "MkIsolated" or "MkTuple" or "MkLambda" or "MkLambdaTyped"
+            or "MkTuple" or "MkLambda" or "MkLambdaTyped"
             or "Unary" or "Grouping" or "field_suffix" or "index_suffix" or "call_suffix"
             or "MkWithSuffix" or "MkMapLit" or "MkSplice" or "MkSpliceStruct" or "MkQualExpr"
             or "MkTemplate" or "MkTrySuffix" or "MkCatchSuffix" or "MkOptChain" or "MkTupleIndex"

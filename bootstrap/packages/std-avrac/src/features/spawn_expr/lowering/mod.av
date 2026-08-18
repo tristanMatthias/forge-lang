@@ -1,0 +1,24 @@
+// The spawn feature's LOWERING (t-kd4y.3.5.1) — imports ONLY
+// features.grammar + core (the F4012 import-closure invariant). One
+// `spanned` expr row: the rule-entry byte arrives as st.build_sp, -1 on
+// the interpreter path exactly as the retired central arm's `0 - 1`.
+use core.{Expr, byte_span, byte_span_none}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr}
+
+/// Grammar-native `spawn { ... }`, preserving the retired hand parser's
+/// span and walker-opaque body id.
+export fn mk_spawn(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
+    CapVal.Node(st.store.add_expr(
+        Expr.Spawn(capval_to_expr(st, body_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+export fn mk_spawn_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_spawn(st, st.build_sp, vals[0])
+}
+
+export fn spawn_builds() -> List<BuilderBind> {
+    bind_rows("features.spawn_expr.lowering", [bind_row("MkSpawn", "expr", 1, true, "mk_spawn_abi", mk_spawn_abi)])
+}

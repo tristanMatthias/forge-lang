@@ -3,20 +3,49 @@
 //
 // dir-as-module (g2eo.1): codegen.av + parser.av auto-load as siblings,
 // surface flat at `features.spawn_expr.{...}`.
-use core.{feature_new, Feature, ExprId}
+use core.{ExprId}
+use features.grammar.{parse_grammar}
+use features.spawn_expr.lowering.{spawn_builds}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
 
-/// Register the `spawn { body }` expression feature. Yields a typed
-/// `Task<T>` handle (T = the body's result type; ps3t.4.8) that is
-/// auto-awaited at scope exit. Spec Axis 18 (concurrency).
-export fn spawn_expr_feature() -> Feature {
-    feature_new("spawn") with {
-        expr_tag: Expr.Spawn(ExprId(0)),
-        emit_expr: spawn_emit_expr,
-        resolve_expr: spawn_resolve,
-        check_expr: spawn_check,
+/// `spawn { body }` — the definition carries the feature whole
+/// (t-kd4y.3.5.1): syntax, docs, its one lowering, and the pass hooks.
+/// Yields a typed `Task<T>` handle (T = the body's result type; ps3t.4.8)
+/// that is auto-awaited at scope exit. Spec Axis 18 (concurrency).
+/// `gram_family = "expr"`: the expression views compose the rule; the
+/// spine's `unary` alternation references `spawn_expr` by name. The
+/// `@expect` is declared twice, keyed both ways, because the rule lives in
+/// a FRAGMENT: `block_expr` is external here, so the standalone gram cannot
+/// derive its single-literal FIRST and `@require` on the ref demands a
+/// rule-NAME key (the quote_expr precedent); composed, the token-keyed
+/// message is the one both engines read.
+export fn spawn_lang() -> LanguageFeature {
+    LanguageFeature spawn_def {
+        name = "spawn",
+        title = "spawn — green-thread task spawning",
+        docs = """
+`spawn { body }` runs the block as a concurrent green-thread task and
+yields a `Task<T>` handle (T = the body's result type). Tasks are
+auto-awaited at scope exit; `.await` / `.cancel()` control them
+explicitly (spec Axis 18).
+""",
+        // The `@require body:block_expr` gate is t-rd44's: without it a
+        // truncated `spawn` diverged across the engines (1 vs 2 reports).
+        gram = grammar {
+  spawn_expr   = "spawn" @require body:block_expr
+                 @expect("{", "expected `{` after spawn")
+                 @expect("block_expr", "expected `{` after spawn") -> MkSpawn(body)
+        },
+        builders = spawn_builds(),
+        snippet = r"spawn { ${1:body} }",
+        expr_tag = Expr.Spawn(ExprId(0)),
+        emit_expr = spawn_emit_expr,
+        resolve_expr = spawn_resolve,
+        check_expr = spawn_check,
+        gram_family = "expr",
     }
+    spawn_def
 }
 
 /// Resolver hook for `Spawn`. The body resolves in the enclosing
