@@ -1,0 +1,39 @@
+// WHY: t-kd4y.3.2.4 — the `select` keyword's grammar FRAGMENT, owned by the
+// feature that owns the keyword (see features/fn_decl/grammar.av for the
+// registry's full rationale). Both rules moved here verbatim from the
+// central §-view; `expression` and `declaration` are cross-fragment
+// references that bind by name after the merge, exactly as `variant`
+// already references `field`.
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
+
+/// `select { binding <- channel -> { body } }` and its arm rule. ZERO arms
+/// is valid (`select { }`), the arm list folds into the walker-opaque
+/// Stmt.Select leaf, and the binding is Tk.Identifier only.
+///
+/// `select` OWNS its recovery (t-myz7): `@cut` sits directly after the keyword,
+/// so a malformed arm COMMITS and reports through `select_arm`'s own `@expect`s
+/// instead of rolling back. `@gate` on the arm repetition
+/// is what lets the loop be entered on a token the arm's own FIRST would refuse —
+/// without it a non-IDENT arm head silently ended the list — and the gated FIRST
+/// re-check emit inserts is what reports for it. `@expect("IDENT", …)` on
+/// `select_arm` supplies that check's message; with no declared message it would
+/// fall back to a generic "expected select_arm", naming a grammar rule at the user.
+export fn avra_select_grammar() -> Grammar {
+    let gp = grammar {
+  // NOT committed, for the reason recorded on `enum_decl`: `select { x }` must report
+  // the missing `<-` and still build `(select ())`, while a committed rule ABORTS to
+  // `(error)` and additionally leaves the `}` unconsumed so the caller adds a spurious
+  // F0013. A gated element's failure needs to SKIP the element and let the rule close,
+  // which is a non-aborting mode the DSL does not have.
+  select_decl   = @try "select" @cut @require "{" ( @peek(not_rbrace) @gate @onfail(close) arms:select_arm )* @require "}"
+                  @expect("{", "expected `{` after select")
+                  @expect("}", "expected `}` to close select") -> MkSelect(arms)
+  select_arm    = b:IDENT @require "<-" @onfail(bail) ch:expression @require "->" @require "{" body:declaration* @require "}"
+                  @expect("IDENT", "expected select arm binding name")
+                  @expect("<-", "expected `<-` after select arm binding")
+                  @expect("->", "expected `->` after channel in select arm")
+                  @expect("{", "expected `{` for select arm body")
+                  @expect("}", "expected `}` to close select arm") -> MkSelectArm(b, ch, body)
+    }
+    grammar_checked(gp)
+}

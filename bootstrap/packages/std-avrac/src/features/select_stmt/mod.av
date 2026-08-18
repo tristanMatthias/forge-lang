@@ -1,9 +1,15 @@
-// dir-as-module (g2eo.1): no `mod` decls — codegen.av + parser.av +
+// select — channel multiplexing (spec Axis 18). The definition carries the
+// feature whole: syntax, docs, editor surface, hooks, and the grammar rules
+// the DECLARATION view composes (t-kd4y.3.2.4) — the lowerings are
+// feature-owned via the builder manifest in lowering/.
+// dir-as-module (g2eo.1): no `mod` decls — codegen.av + grammar.av +
 // resolver.av auto-load as siblings, surface flat at
 // `features.select_stmt.{...}`. Sibling exports are in scope without
 // explicit self-imports.
-use core.{feature_new, Feature}
+use core.{SelectArm}
 use typeck.{check_expr, check_stmt_ids, tc_enter, tc_exit, tc_bind}
+use features.{composed}
+use features.select_stmt.lowering.{select_builds}
 
 /// Resolver hook for `select`. Forwards to `resolve_select_arms`
 /// which walks each channel expression and arm body.
@@ -41,15 +47,31 @@ fn select_check(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
-/// Register the `select { ... }` channel-multiplexing feature.
-/// Spec Axis 18: blocks until one of the listed channels is
-/// ready, then runs the matching arm.
-export fn select_feature() -> Feature {
+/// The `select { ... }` channel-multiplexing feature — the definition
+/// carries it whole (t-kd4y.3.2.4): syntax, docs, editor surface, hooks,
+/// and the LOWERINGS its own grammar references. `gram_family` stays "" —
+/// `select_decl` is a DECLARATION rule, composed by
+/// `feature_decl_grammar_fragments` beside the other decl keywords, not by
+/// the statement views.
+export fn select_lang() -> LanguageFeature {
     let empty_arms: List<SelectArm> = []
-    feature_new("select") with {
-        stmt_tag: Stmt.Select(empty_arms),
-        emit_stmt: select_emit_stmt,
-        resolve_stmt: select_resolve,
-        check_stmt: select_check,
+    LanguageFeature select_def {
+        name = "select",
+        title = "select — block until one of several channels is ready",
+        docs = """
+`select { v <- ch -> { body } }` blocks until one of the listed channels
+has a value, then binds it and runs that arm's body (spec Axis 18). Each
+arm's binding takes the channel's element type — a `Channel<T>` gives
+`T`, a legacy raw-extern channel leaves it unknown — and is visible only
+inside that arm's body. Zero arms is legal: `select { }` blocks forever.
+""",
+        gram = composed([avra_select_grammar()]),
+        builders = select_builds(),
+        snippet = r"select {\n    ${1:v} <- ${2:ch} -> {\n        ${3:body}\n    }\n}",
+        stmt_tag = Stmt.Select(empty_arms),
+        emit_stmt = select_emit_stmt,
+        resolve_stmt = select_resolve,
+        check_stmt = select_check,
     }
+    select_def
 }

@@ -1,5 +1,9 @@
 # select statement (channel multiplexing)
 
+> The AUTHORITATIVE rules are `select_decl` / `select_arm` in `grammar.av`
+> (the fragment the declaration view composes, t-kd4y.3.2.4). The sketch
+> below is prose; `avra` reads the fragment.
+
 ## Syntax
 
 ```

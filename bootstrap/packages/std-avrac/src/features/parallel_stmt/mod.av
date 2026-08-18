@@ -1,8 +1,14 @@
-// dir-as-module (g2eo.1): no `mod` decls — codegen.av + parser.av
+// parallel — concurrent block execution (spec Axis 18). The definition
+// carries the feature whole: syntax, docs, editor surface, hooks, and the
+// grammar rule the DECLARATION view composes (t-kd4y.3.2.4) — the lowering
+// is feature-owned via the builder manifest in lowering/.
+// dir-as-module (g2eo.1): no `mod` decls — codegen.av + grammar.av
 // auto-load as siblings and surface flat at `features.parallel_stmt.{...}`.
-// Sibling exports (parallel_emit_stmt, parse_parallel_statement) are in
-// scope here without an explicit self-import.
-use core.{feature_new, Feature, stmt_unwrap}
+// Sibling exports (parallel_emit_stmt) are in scope here without an
+// explicit self-import.
+use core.{stmt_unwrap, StmtId}
+use features.{composed}
+use features.parallel_stmt.lowering.{parallel_builds}
 use resolve.{resolve_stmt_ids}
 use typeck.{TC, check_stmt_ids, tc_enter, tc_exit, tc_gate_unthreaded_lambda}
 
@@ -37,15 +43,29 @@ fn parallel_check(tc: TC, stmt: Stmt) -> TC {
 }
 
 
-/// Register the `parallel` block feature. Spawns the body's
-/// statements as concurrent tasks; the wrapper waits for them to
-/// finish before continuing. Spec Axis 18.
-export fn parallel_feature() -> Feature {
+/// The `parallel { ... }` block feature — the definition carries it whole
+/// (t-kd4y.3.2.4): syntax, docs, editor surface, hooks, and the LOWERING
+/// its own grammar references. `gram_family` stays "" — `parallel_decl` is
+/// a DECLARATION rule, composed by `feature_decl_grammar_fragments` beside
+/// the other decl keywords, not by the statement views.
+export fn parallel_lang() -> LanguageFeature {
     let empty_body: List<StmtId> = []
-    feature_new("parallel") with {
-        stmt_tag: Stmt.Parallel(empty_body),
-        emit_stmt: parallel_emit_stmt,
-        resolve_stmt: parallel_resolve,
-        check_stmt: parallel_check,
+    LanguageFeature parallel_def {
+        name = "parallel",
+        title = "parallel — run a block's statements concurrently",
+        docs = """
+`parallel { a(); b() }` spawns each statement in the body as a concurrent
+task and waits for all of them before continuing (spec Axis 18). The body
+is a plain statement list — its rows are held directly, with no block
+scope of their own — and it is type-checked in its own scope like a block.
+""",
+        gram = composed([avra_parallel_grammar()]),
+        builders = parallel_builds(),
+        snippet = r"parallel {\n    ${1:body}\n}",
+        stmt_tag = Stmt.Parallel(empty_body),
+        emit_stmt = parallel_emit_stmt,
+        resolve_stmt = parallel_resolve,
+        check_stmt = parallel_check,
     }
+    parallel_def
 }

@@ -889,8 +889,6 @@ export fn unflipped_builds() -> List<string> {
      // t-kd4y.3.2.3 let family (let/mut/const/destructure)
      "MkLetBinding", "MkMutBinding", "MkConstBinding", "MkDestructure",
      "MkLet", "MkMut", "MkConst",
-     // t-kd4y.3.2.4 select + parallel
-     "MkSelect", "MkSelectArm", "MkParallel",
      // t-kd4y.3.2.5 spec/given/then
      "MkSpecBlock", "MkGivenBlock", "MkThenBlock",
      // t-kd4y.3.2.6 patterns (match's pat fragment)
@@ -999,7 +997,6 @@ export fn central_build_kind(bn: string) -> string {
         // now states what the build always was.
         "MkForBinding" -> "toks"
         "MkFieldInit" -> "finit"
-        "MkSelectArm" -> "sarm"
         "MkCompConfig" -> "ccfg"
         "MkCompConfigPair" -> "cpair"
         "MkChildrenSlot" -> "cslot"
@@ -1009,8 +1006,8 @@ export fn central_build_kind(bn: string) -> string {
             or "MkTypeDeclAny"
             or "MkAssocTypeDef"
             or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
-            or "MkLetBinding" or "MkMutBinding" or "MkConstBinding" or "MkDestructure" or "MkParallel"
-            or "MkSelect" or "MkSpecBlock" or "MkGivenBlock" or "MkThenBlock" or "MkComponentDef"
+            or "MkLetBinding" or "MkMutBinding" or "MkConstBinding" or "MkDestructure"
+            or "MkSpecBlock" or "MkGivenBlock" or "MkThenBlock" or "MkComponentDef"
             or "MkComponentParenDef" or "MkComponentBlock" or "MkRawComponentBlock" or "MkMethodShorthand" or "MkCompField" -> "stmt"
         "MkAnn" -> "ann"
         "MkParam" -> "pentry"
