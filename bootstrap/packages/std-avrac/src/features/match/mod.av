@@ -11,15 +11,13 @@ use typeck.{check_expr, tc_er, EnumTypeReg, ExprResult, TC, check_expr_expected,
 use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_fragments}
 use features.match.lowering.{match_builds}
 
-// ── typed lowerings, home in the feature file (t-47hc.8 dissolution /
-// t-kd4y.3 match flip) — pure over unwrapped values; the engine's
-// checked-in `_gb_` adapters import these back and absorb the marshalling
-// (build_arm's boxed-Pattern read is the ADAPTER's `st.store.pats.get`,
-// so the typed fn stays arena-free). Still central: MkWhenStmt (its span
-// lands on the When EXPR node's ByteSpan — an expr-span row the manifest
-// doesn't carry) and MkArmReturn (interior stamp: the span belongs to the
-// synthesized inner Return row, not the result — same gap, recorded on
-// t-kd4y.3).
+// ── typed lowerings, home in the feature dir (t-47hc.8 dissolution /
+// t-kd4y.3 match flip) — pure over unwrapped values in lowering/mod.av;
+// the adapters absorb the marshalling (build_arm's boxed-Pattern read is
+// the ADAPTER's `st.store.pats.get`, so the typed fn stays arena-free).
+// Batch B completed the family: MkWhenStmt / MkArmReturn / the table pair
+// ride `spanned` manifest rows (st.build_sp), nothing match-owned is
+// central any more.
 use diagnostics.{DiagCode, diag_warning, span_new, bag_report}
 use features.union_type.{emit_union_tag, emit_union_extract}
 use features.{DiagSpec, composed}
@@ -207,13 +205,13 @@ variants earns a lint. `match` is also an expression — the arms' bodies
 unify to the result type. The row-oriented `match … table { }` form
 desugars into ordinary arms.
 """,
-        // The stmt fragment joined at the t-kd4y.3 core flip: build_match's
-        // referencing rule lives there, and the no-orphans validator reads
-        // THIS gram. gram_family stays "" — the spine composes the three
-        // match fragments explicitly by name, so this is validation/docs
-        // surface, never a second composition. The table fragment joins
-        // when ITS builders flip.
-        gram = composed([avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar()]),
+        // Every fragment whose rules reference a supplied row composes
+        // here: the no-orphans validator reads THIS gram (the table
+        // fragment joined when its builders flipped, t-kd4y.3 Batch B).
+        // gram_family stays "" — the spine composes the match fragments
+        // explicitly by name, so this is validation/docs surface, never a
+        // second composition.
+        gram = composed([avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]),
         builders = match_builds(),
         snippet = r"match ${1:subject} { ${2:pattern} -> ${3:body} }",
         diags = [DiagSpec {
