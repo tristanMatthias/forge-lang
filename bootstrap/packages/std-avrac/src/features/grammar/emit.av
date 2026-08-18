@@ -2742,7 +2742,7 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
         "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
-        "MkImpl" -> "mk_impl(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}), ${args[2]}_list)"
+        // MkImpl / MkMethod — feature-owned (features/impl_decl, t-kd4y.3.3.4).
         // MkUseBare / MkUsePkg / MkModule — feature-owned (features/modules);
         // MkUse was dead (no grammar reference).
         "MkField" -> "mk_field(st, capval_tok_text(${args[0]}), ${args[1]})"
@@ -2752,7 +2752,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // (features/trait_decl). MkAssocTypeDef stays until the impl family
         // flips: `impl_assoc` is the rule that references it.
         "MkAssocTypeDef" -> "mk_assoc_type_def(st, capval_tok_text(${args[0]}), ${args[1]})"
-        "MkMethod" -> "mk_method(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         _ -> "CapVal.Node(st.error_node(\"unknown build `${name}`\"))"
     }
 }

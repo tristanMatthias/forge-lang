@@ -12,7 +12,7 @@ use features.fn_decl.{fn_decl_feature}
 use features.for_stmt.{for_lang, for_in_lang}
 use features.grammar.{grammar_feature, Grammar, feature_decl_grammar_fragments}
 use features.if_stmt.{if_lang}
-use features.impl_decl.{impl_decl_feature}
+use features.impl_decl.{impl_decl_lang}
 use features.is_keyword.{is_keyword_feature}
 use features.in_operator.{in_operator_feature}
 use features.let_stmt.{let_destructure_feature, let_keyword_feature, const_keyword_feature, mut_keyword_feature}
@@ -142,7 +142,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 
     // ── Declarations (parse-only) ──
     register(reg, fn_decl_feature())
-    register(reg, impl_decl_feature())
     register(reg, extern_decl_feature())
     register(reg, type_decl_feature())
     register(reg, shape_decl_feature())
@@ -164,7 +163,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang(), impl_decl_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,

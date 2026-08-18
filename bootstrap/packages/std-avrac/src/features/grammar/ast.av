@@ -901,15 +901,21 @@ export fn unflipped_builds() -> List<string> {
      // t-kd4y.3.3.2 type + shape decls (+ field rows)
      "MkTypeDecl", "MkTypeDeclAny", "MkShapeDecl", "MkField", "MkTypeAlias",
      "MkTypeRHS",
-     // t-kd4y.3.3.4 impl decls. `MkAssocTypeDef` is grouped here, not with
-     // the trait rows it was filed under: `impl_assoc` (features/impl_decl)
-     // is the rule that references it, and a feature may only supply a
-     // builder its OWN gram references (builder_validation_error's orphan
-     // contract). Ownership follows the referencing rule, never the name.
-     "MkImpl", "MkMethod", "MkMethodShorthand", "MkAssocTypeDef",
+     // t-kd4y.3.3.4 impl decls. MkImpl / MkMethod are FLIPPED
+     // (features/impl_decl/lowering); `MkAssocTypeDef` remains, grouped here
+     // rather than with the trait rows it was filed under: `impl_assoc`
+     // (features/impl_decl) is the rule that references it, and a feature may
+     // only supply a builder its OWN gram references
+     // (builder_validation_error's orphan contract). Ownership follows the
+     // referencing rule, never the name.
+     "MkAssocTypeDef",
      // t-kd4y.3.3.5 component decls. `MkTraitList` is grouped here for the
      // same reason: its one reference is `comp_implements` — the component
      // header's `implements A, B` clause — so it flips with component.
+     // `MkMethodShorthand` is here for that reason too: its ONLY reference is
+     // `comp_block_item`, the component INSTANCE body, not anything `impl`
+     // parses.
+     "MkMethodShorthand",
      "MkComponentDef", "MkComponentParenDef", "MkComponentBlock",
      "MkRawComponentBlock", "MkCompField", "MkCompBodyMarker",
      "MkCompConfig", "MkCompConfigPair", "MkCompConfigList",
@@ -1000,9 +1006,9 @@ export fn central_build_kind(bn: string) -> string {
         // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
         // except the component CapVals (MkParam → PEntry, MkField → Field).
         "MkFnDecl" or "MkExtern" or "MkShapeDecl" or "MkExport" or "MkTypeDecl"
-            or "MkTypeDeclAny" or "MkImpl"
+            or "MkTypeDeclAny"
             or "MkAssocTypeDef"
-            or "MkMethod" or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
+            or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
             or "MkLetBinding" or "MkMutBinding" or "MkConstBinding" or "MkDestructure" or "MkParallel"
             or "MkSelect" or "MkSpecBlock" or "MkGivenBlock" or "MkThenBlock" or "MkComponentDef"
             or "MkComponentParenDef" or "MkComponentBlock" or "MkRawComponentBlock" or "MkMethodShorthand" or "MkCompField" -> "stmt"
