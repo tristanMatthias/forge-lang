@@ -282,10 +282,21 @@ fn avra_expr_core() -> Grammar {
                    @expect("pattern_or", "expected `.`, `_`, literal, or type pattern to start pattern")
                    @expect("->", "expected `->` after pattern in quote arm")
                    @expect("}", "expected `}` after quote arm body") -> MkQuoteArm(lb, p, g, b)
-  quote_expr   = "quote" ( k:("stmt" | "stmts" | "decl") )? @bump(quote_depth) body:block_expr -> MkQuote(k, body)
+  // `@require body:block_expr` (the spawn_expr idiom, FIRST = `{` so the gate
+  // is narrow): without it a truncated header (`quote`, `quote stmt`, an
+  // unknown kind word) DIVERGED across the engines — the exec leg's
+  // block_expr report stuck and the outer recovery reported again (1 vs 2),
+  // and emit dropped the precise report entirely, keeping only the outer
+  // cascade. With the gate both engines own ONE `expected `{`` report and
+  // fail the rule cleanly (t-rd44; probed over all eight malformed forms).
+  quote_expr   = "quote" ( k:("stmt" | "stmts" | "decl") )? @bump(quote_depth) @require body:block_expr
+                 @expect("{", "expected `{` to open the quote body") -> MkQuote(k, body)
   spawn_expr   = "spawn" @require body:block_expr
                  @expect("{", "expected `{` after spawn") -> MkSpawn(body)
-  isolated_expr = "isolated" body:block_expr -> MkIsolated(body)
+  // Same gate, same reason — `isolated` truncated diverged 1 vs 2 exactly
+  // like the bare `quote` (t-rd44's sibling find).
+  isolated_expr = "isolated" @require body:block_expr
+                  @expect("{", "expected `{` after isolated") -> MkIsolated(body)
   block_expr   = "{" @on(allow_dot_postfix) stmts:declaration* "}"
                  @expect("}", "expected `}` after block expression") -> MkExprBlock(stmts)
   when_expr    = "when" "{" ( a:when_arm )* "}" -> MkWhen(a)
