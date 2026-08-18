@@ -578,11 +578,8 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
         // in every emitted control-flow body. Measured against the hand:
         //     hand = 2:5 4:9 3:5 6:5
         //     emit = 2:5 4:9 3:18 3:5 6:5      <-- 3:18 is the `{`
-        // The MkForDestructure entry stays: its rule entry IS the statement
-        // start, so the stamp agrees with the list loop's rather than adding
-        // a row. (`While` / `If` / `ForLoop` moved to the manifest — their
-        // `spanned` rows answer above.)
-        name == "MkForDestructure" ||
+        // (`While` / `If` / `ForLoop` and the destructure pair moved to the
+        // manifest — their `spanned` rows answer above.)
         // A `with { … }` suffix spans sp_start = the `with` byte (t-47hc.17): its owning
         // with_suffix rule enters there, and rebind_with reads the partial node's `.hi`
         // to stamp each rebuilt `With` in a chained `a with { } with { }`.
@@ -2616,8 +2613,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // `0 - 1` (span-free) — the SAME argument the interpreter passes, and the
         // hand's unstamped `alloc_stmt_leaf`. See the `Block` note in build_uses_sp_start.
         "Block" -> "mk_block(st, 0 - 1, ${args[0]}_list)"
-        "MkForBinding" -> "mk_for_binding(${args[0]}, CapVal.Toks(${args[1]}_list))"
-        "MkForDestructure" -> "mk_for_destructure(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]})"
         "MkTemplate" -> "CapVal.Node(mk_template(st, ${args[0]}))"
         "MkQualExpr" -> "CapVal.Node(mk_qualified(st, sp_start, ${args[0]}, CapVal.Toks(${args[1]}_list), ${args[2]}, CapVal.FInits(${args[3]}_list)))"
         // ── the `table { … }` literal (t-myz7) ──

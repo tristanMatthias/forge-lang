@@ -899,8 +899,6 @@ export fn engine_core_builds() -> List<string> {
 /// and the domain lint keeps the remainder exact.
 export fn unflipped_builds() -> List<string> {
     [
-     // t-kd4y.3.2.2 for completion (for_stmt)
-     "MkForDestructure", "MkForBinding",
      // t-kd4y.3.2.3 let family (let/mut/const/destructure)
      "MkLetBinding", "MkMutBinding", "MkConstBinding", "MkDestructure",
      "MkLet", "MkMut", "MkConst",
@@ -992,23 +990,13 @@ export fn central_build_kind(bn: string) -> string {
             or "MkEnumCtorSuffix" or "MkOptMethodCall" or "MkForceUnwrap" or "MkCallArg" or "MkStructLit"
             or "MkGrammarBlock" or "MkTaggedTemplate" or "MkTableHeader" or "MkTableRow" or "MkTableLit"
             or "MkPrimaryFail" -> "expr"
-        "ExprStmt" or "Block"
-            or "MkForDestructure" -> "stmt"
+        "ExprStmt" or "Block" -> "stmt"
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
         // is inferred from the OTHER branch alone in some orders and from this one in others,
         // and a `( arms:match_arm )*` accumulator silently declares `List<ExprId>` — the
         // capval_to_expr default. That is the same silent tree-corruption trap the annotation
         // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
         "MkSpliceArm" -> "arm"
-        // The destructure-loop binding carrier (a packed token list: gensym
-        // temp + user names — see mk_for_binding). The row was MISSING while
-        // the for rules were spine-composed: no validator ran against that
-        // fragment, and the lenient analysis default ("expr") was never
-        // consulted for the fb capture. The for_lang flip routes the gram
-        // through register_lang's exact validation, which requires every
-        // referenced engine build to classify — so the engine's own table
-        // now states what the build always was.
-        "MkForBinding" -> "toks"
         "MkFieldInit" -> "finit"
         "MkCompConfig" -> "ccfg"
         "MkCompConfigPair" -> "cpair"

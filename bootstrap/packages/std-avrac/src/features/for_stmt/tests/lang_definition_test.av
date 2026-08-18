@@ -1,16 +1,15 @@
 // The for LanguageFeature definitions (features/for_stmt/mod.av): for_lang
 // carries the gram (ONE rule, TWO statements — `..` splits For / ForIn) +
-// the build_for lowering (a `spanned` manifest row) + the For-tag hooks;
-// for_in_lang carries the ForIn-tag hooks alone. The destructure branch
-// keeps its CENTRAL builds (MkForDestructure / MkForBinding) — the partial
-// flip this spec pins: the gram may reference central builds freely, the
-// validator only requires supplied binds to be referenced and referenced
-// non-central names to be supplied.
+// ALL THREE lowerings + the For-tag hooks; for_in_lang carries the ForIn-tag
+// hooks alone. t-kd4y.3.2.2 completed the family — the tuple-destructure
+// branch's MkForDestructure / MkForBinding left the engine under their
+// existing gram names, so the rule text is unchanged and the feature now
+// owns every build its grammar references.
 use @std.avrac.features.for_stmt.{for_lang, for_in_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar, grammar_build_refs, Grammar}
 
-spec "for as a LanguageFeature (partial flip: build_for owned, destructure central)" {
+spec "for as a LanguageFeature (every build its gram references is feature-owned)" {
     then "the keywords derive from the declared grammar" {
         let kws = feature_keywords(for_lang())
         kws.length == 2 && kws[0] == "for" && kws[1] == "in"
@@ -23,9 +22,9 @@ spec "for as a LanguageFeature (partial flip: build_for owned, destructure centr
     }
     then "for_stmt + for_binding are DEFINED rules in every view's table, build refs and all" {
         // Structural (the #1243 discipline): the rule table proves the rules
-        // exist; grammar_build_refs proves the branch lowerings — the OWNED
-        // build_for at arity 4 AND the central MkForDestructure/MkForBinding
-        // references — survive composition.
+        // exist; grammar_build_refs proves the branch lowerings — build_for
+        // at arity 4 AND the destructure pair's references — survive
+        // composition. All three resolve to manifest rows now.
         mut ok = true
         for g in [feature_gram(for_lang()), avra_stmt_flip_grammar(), avra_program_grammar()] {
             mut has_stmt = false
@@ -50,11 +49,19 @@ spec "for as a LanguageFeature (partial flip: build_for owned, destructure centr
         let prod = render_grammar(avra_program_grammar())
         prod.contains("build_for(v, lo, hi, body)") && !prod.contains("ForLoop(")
     }
-    then "build_for rides the manifest as a SPANNED stmt row" {
-        mut row = ""
+    then "all three for builds ride the manifest, spans per the unified protocol" {
+        // build_for + the destructure statement are SPANNED (each stamps at
+        // st.build_sp); the binding carrier is FLAT "toks" — it stamps
+        // nothing, and the unpack row's position comes from the temp token's
+        // own pos inside mk_for_destructure, not from the span protocol.
+        mut rows = ""
         for b in feature_builders() {
-            if b.name == "build_for" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
+            if b.name == "build_for" || b.name == "MkForDestructure" || b.name == "MkForBinding" {
+                rows = "${rows}${b.name}=${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name} "
+            }
         }
-        row == "stmt/4/spanned/build_for_abi"
+        rows.contains("build_for=stmt/4/spanned/build_for_abi ")
+            && rows.contains("MkForBinding=toks/2/flat/mk_for_binding_abi ")
+            && rows.contains("MkForDestructure=stmt/3/spanned/mk_for_destructure_abi ")
     }
 }
