@@ -539,7 +539,7 @@ export type GDiag = { code: string, msg: string, at: int, byte: int, end_byte: i
 /// lexer diagnostic before every parser one, and the recovery corpus compares the
 /// ORDERED F-code signature, so order is the assertion. Releasing them mid-parse is
 /// worse — see `seed_lex_diags`. The interleave happens in `boundary_diags`.
-export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, host: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool, lex_diags: List<LexDiag>, first_pos: int }
+export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: string, diags: List<GDiag>, had_error: bool, postfix_base: ExprId, postfix_sp_start: int, modes: ExprModes, file: string, gensym_seq: int, postfix_step_base: ExprId, postfix_step_sp: int, host: Parser?, tok_edits: List<TokEdit>, table_cols: List<TableCtx>, diag_code: string, abort_prop: bool, lex_diags: List<LexDiag>, first_pos: int, build_sp: int }
 
 /// One feature-supplied build lowering (t-kd4y.3): a definition that declares
 /// `-> Name(args)` in its gram can OWN the lowering too, instead of the engine
@@ -587,6 +587,23 @@ export fn bind_rows(module: string, rows: List<BuilderBind>) -> List<BuilderBind
     mut out: List<BuilderBind> = []
     for r in rows { out.push(r with { module: module }) }
     out
+}
+
+/// The EMIT side of a `spanned` EXPRESSION row (Batch B): the generated
+/// parser calls the adapter through this, so the rule-entry byte rides
+/// `st.build_sp` for exactly the duration of the build — set, call, reset.
+/// The ABI stays `fn(PState, List<CapVal>) -> CapVal`; an adapter that wants
+/// the span reads `st.build_sp` inside. The EXECUTOR never calls this and
+/// never sets the field, so its manifest builds read the -1 default —
+/// byte_span_none, the same deliberate span-free behavior its central
+/// sp_start arms encode as `0 - 1` (see apply_build). That asymmetry is the
+/// flip-parity contract: emit threads real spans, exec stays span-free.
+export fn call_with_build_sp(st_in: PState, sp: int, build: fn(PState, List<CapVal>) -> CapVal, vals: List<CapVal>) -> CapVal {
+    mut st = st_in
+    st.build_sp = sp
+    let r = build(st, vals)
+    st.build_sp = 0 - 1
+    r
 }
 
 export fn builder_kind_rows(binds: List<BuilderBind>) -> List<BuildKindRow> {
@@ -1255,7 +1272,7 @@ export fn new_pstate(src: string) -> PState {
     mut d = parser_new_with_store(src, "", store)
     d.records_roots = 0
     d.expr_flip = false
-    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    PState { toks: lex_real(src), pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: d, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
 }
 
 export fn run_grammar_expr(grammar: Grammar, src: string) -> RunResult {
@@ -1277,7 +1294,7 @@ export fn run_grammar_expr_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// `quote_depth` mode counter (a parser mode the token stream can't carry;
 /// ps3t.6.5.10).
 fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> RunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     if grammar.rules.length == 0 {
         let root = st.error_node("empty grammar")
         return RunResult { store: st.store, root, had_error: st.had_error, diags: st.diags }
@@ -1311,7 +1328,7 @@ export fn run_grammar_stmt_toks(grammar: Grammar, toks: List<Token>, store: Node
 /// list alone can't reconstruct a raw body / char-level lookahead. (ps3t.6.5.8
 /// store.)
 fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> StmtRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.stmts.add_leaf(Stmt.Error)
@@ -1336,7 +1353,7 @@ export fn run_grammar_pat(grammar: Grammar, src: string) -> PatRunResult {
 /// Caller-provided-store form of `run_grammar_pat` (ps3t.6.5.8). See
 /// `run_grammar_expr_toks`.
 export fn run_grammar_pat_toks(grammar: Grammar, toks: List<Token>, store: NodeStore) -> PatRunResult {
-    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src: "", diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.pats.add_leaf(Pattern.Wildcard)
@@ -1362,7 +1379,7 @@ export fn run_grammar_type(grammar: Grammar, src: string) -> TypeRunResult {
 
 /// Shared core of the type entry. `src` remains available to the common PState.
 fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string) -> TypeRunResult {
-    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     if grammar.rules.length == 0 {
         st.report("empty grammar")
         let root = st.store.types.add_leaf(ValueType.Unknown)
@@ -3603,7 +3620,7 @@ export fn run_dsl_type_at_toks(toks: List<Token>, start_byte: int, src: string) 
 /// Fully-shared form (ps3t.6.5.12 Step D) — takes a caller-owned `store` AND
 export fn run_dsl_type_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     st.seed_lex_diags(lex_diags)
     let te = capval_to_texpr(st, exec_rule(grammar, "type_expr", st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -3625,7 +3642,7 @@ export fn run_dsl_type_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
 /// straight-line speed (no per-node Grammar dispatch / capture-env allocation).
 export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslTypeResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     let te = capval_to_texpr(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3651,7 +3668,7 @@ export type DslPatResult = { pat: PatId, stop_byte: int, had_error: bool, diags:
 /// file's many patterns cost one lex + one grammar build.
 export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, grammar: Grammar, rule: string) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     let pat = capval_to_pat(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3672,7 +3689,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
 /// straight-line speed.
 export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: string, store: NodeStore, parse: fn(PState) -> CapVal) -> DslPatResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     let pat = capval_to_pat(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
@@ -3704,7 +3721,7 @@ export fn run_dsl_expr_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
     // without host continuity two desugars in the same function would both mint
     // `$tag$1`. Seeded from the host and written back after the parse.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     st.seed_lex_diags(lex_diags)
     let expr = capval_to_expr(st, exec_rule(grammar, "expression", st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
@@ -3734,7 +3751,7 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     // without host continuity two desugars in the same function would both mint
     // `$tag$1`. Seeded from the host and written back after the parse.
     let seq0 = if delegate == null { 0 } else { delegate!.gensym_seq }
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: seq0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     let expr = capval_to_expr(st, parse(st))
     if delegate != null { delegate!.gensym_seq = st.gensym_seq }
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -3761,7 +3778,7 @@ export type DslStmtResult = { stmt: StmtId, stop_byte: int, had_error: bool, dia
 /// differ only in the start rule.
 fn run_dsl_snode_at_shared(rule: string, lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, grammar: Grammar, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     st.seed_lex_diags(lex_diags)
     let stmt = capval_to_stmt(st, exec_rule(grammar, rule, st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a
@@ -3802,7 +3819,7 @@ export fn run_dsl_decl_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
 /// (run_static_decl, static_decl_entry.av) binds gen_decl_parser.parse_declaration.
 export fn run_static_snode_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?, parse: fn(PState) -> CapVal) -> DslStmtResult {
     let idx = lower_bound(toks, start_byte, (t: Token) -> t.pos)
-    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0 }
+    mut st = PState { toks, pos: idx, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes, file, gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: delegate, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     st.seed_lex_diags(lex_diags)
     let stmt = capval_to_stmt(st, parse(st))
     // The resync byte must be read BEFORE the undo: the cursor may sit ON a

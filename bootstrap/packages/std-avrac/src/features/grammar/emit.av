@@ -2487,14 +2487,23 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // below keep receiving raw labels and their own baked spellings.
         mut spelled: List<string> = []
         for a in args { spelled.push(manifest_arg_spelling(g, seq, a)) }
-        // A `spanned` bind stamps at the owning rule's entry byte via the
-        // engine's mk_stamp_stmt_at — the adapter itself stays span-free
-        // (identical add_leaf → record_pos order to the central
-        // add_stmt_at cores, so IR is byte-identical). The executor needs
-        // no twin: its central arms pass `0 - 1` for these builds, which
-        // a bare adapter call already reproduces.
+        // A `spanned` bind threads the owning rule's entry byte, by KIND:
+        // - "stmt": stamp AROUND the adapter via the engine's
+        //   mk_stamp_stmt_at (identical add_leaf → record_pos order to the
+        //   central add_stmt_at cores, so IR is byte-identical). The
+        //   executor needs no twin: its central arms pass `0 - 1` for
+        //   these builds, which a bare adapter call already reproduces.
+        // - otherwise (the Batch B expression rows): thread sp_start INTO
+        //   the adapter via call_with_build_sp — st.build_sp for the
+        //   duration of the build, reset after. The executor's manifest
+        //   consult calls the adapter bare, so exec reads the -1 default:
+        //   byte_span_none, the same deliberate span-free behavior its
+        //   central sp_start arms encode as `0 - 1`.
         if b.spanned {
-            return "mk_stamp_stmt_at(st, sp_start, ${b.export_name}(st, [${join_args(spelled)}]))"
+            if b.kind == "stmt" {
+                return "mk_stamp_stmt_at(st, sp_start, ${b.export_name}(st, [${join_args(spelled)}]))"
+            }
+            return "call_with_build_sp(st, sp_start, ${b.export_name}, [${join_args(spelled)}])"
         }
         return "${b.export_name}(st, [${join_args(spelled)}])"
     }
