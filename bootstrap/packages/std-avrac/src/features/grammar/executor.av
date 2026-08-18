@@ -4094,14 +4094,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // t-47hc slice 8 — the two IDENT-led primaries (grammar block + struct literal).
         "MkGrammarBlock" if args.length == 1 -> CapVal.Node(mk_grammar_block(st, 0 - 1, env.get(args[0])))
         "MkStructLit" if args.length == 2 -> CapVal.Node(mk_struct_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
-        // ── the `table { … }` literal (t-myz7) ──
-        // `MkTableHeader` yields CapVal.Nil, not a node: its whole job is to PUSH the
-        // header context the row build reads, so it must not mint an arena row.
+        // The `table { … }` family (MkTableLit/MkTableHeader/MkTableRow) is
+        // feature-owned (features/table_lit/lowering, t-kd4y.3.5.5): the
+        // manifest dispatches them.
         // The primary alternation's silent tail (t-47hc.5) — see mk_primary_fail.
         "MkPrimaryFail" if args.length == 0 -> CapVal.Node(mk_primary_fail(st))
-        "MkTableHeader" if args.length == 2 -> mk_table_header(st, env.get(args[0]), env.get(args[1]))
-        "MkTableRow" if args.length == 1 -> CapVal.Node(mk_table_row(st, env.get(args[0])))
-        "MkTableLit" if args.length == 1 -> CapVal.Node(mk_table_lit(st, 0 - 1, env.get(args[0])))
         "MkTaggedTemplate" if args.length == 2 -> CapVal.Node(mk_tagged_template(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkSplice" if args.length == 1 -> CapVal.Node(mk_splice(st, 0 - 1, env.get(args[0])))
         "MkSpliceStruct" if args.length == 2 -> CapVal.Node(mk_splice_struct(st, 0 - 1, env.get(args[0]), env.get(args[1])))
@@ -5285,66 +5282,6 @@ export type TableCtx = { row_type: string, cols: List<string> }
 /// The header half of `table [<Row>] { a | b`, run as its own rule so its build fires
 /// BEFORE the rows are parsed — the rows need the column names.
 ///
-/// Reports the hand's duplicate-column error here, at the same point the hand does
-/// (`parse_table_literal`, immediately after the header loop), so the diagnostic order
-/// across a table with BOTH a duplicate column and a bad row width matches.
-export fn mk_table_header(st: PState, rtcap: CapVal, hcap: CapVal) -> CapVal {
-    let cols = capval_tok_texts(hcap)
-    mut di = 0
-    while di < cols.length {
-        mut dj = di + 1
-        while dj < cols.length {
-            if cols[di] == cols[dj] {
-                st.push_table_ctx(TableCtx { row_type: capval_tok_text(rtcap), cols })
-                return CapVal.Node(st.error_node("duplicate table column `${cols[di]}`"))
-            }
-            dj = dj + 1
-        }
-        di = di + 1
-    }
-    st.push_table_ctx(TableCtx { row_type: capval_tok_text(rtcap), cols })
-    CapVal.Nil
-}
-
-/// ONE data row → the `Expr.StructLit` the hand builds, field names from the header and
-/// values from this row's cells, left to right.
-///
-/// INTERNS (`intern_expr_leaf`), matching the hand's `alloc_leaf` for the row node.
-///
-/// The cell-count check lives here, not in the outer build, because only here are the
-/// row's OWN cells visible. A flat cross-row cell capture cannot express it: `1|2` then
-/// `3` and `1` then `2|3` both yield three cells, so the per-row "N cell(s) but the
-/// header declares M" would be unreproducible — the same defect t-qhbz records in
-/// `build_table_arms`'s flat `vals` indexing.
-export fn mk_table_row(st: PState, vcap: CapVal) -> ExprId {
-    let cells = capval_to_node_list(vcap)
-    if st.table_cols.length == 0 { return st.error_node("table row outside a table header") }
-    let ctx = st.table_cols[st.table_cols.length - 1]
-    let n = ctx.cols.length
-    if cells.length != n {
-        return st.error_node("table row has ${string(cells.length)} cell(s) but the header declares ${string(n)} column(s)")
-    }
-    mut inits: List<FieldInit> = []
-    mut ci = 0
-    while ci < n {
-        inits.push(FieldInit { name: ctx.cols[ci], value_id: cells[ci] })
-        ci = ci + 1
-    }
-    st.store.intern_expr_leaf(Expr.StructLit(ctx.row_type, inits))
-}
-
-/// The whole `table [<Row>] { … }` literal → `Expr.ListLit(rows)`, spanned from the
-/// `table` keyword, which is what the hand's `alloc_at(…, sp_start)` produces.
-///
-/// A table whose header names NO columns is an empty `ListLit` — the hand returns one
-/// the moment `header_count == 0`, without looking at a single row.
-export fn mk_table_lit(st: PState, sp_start: int, rowscap: CapVal) -> ExprId {
-    let empty_header = st.table_cols.length > 0 && st.table_cols[st.table_cols.length - 1].cols.length == 0
-    st.pop_table_ctx()
-    let rows = if empty_header { [] } else { capval_to_node_list(rowscap) }
-    st.store.add_expr(Expr.ListLit(rows), byte_span(sp_start, st.cur().pos), [])
-}
-
 /// A `"…${x}…"` template primary (t-47hc.19). The desugar itself is SHARED with the
 /// hand parser via desugar_template_store — one implementation, two call sites — so the
 /// concatenation shape and format-spec routing cannot drift. The error is reported on
