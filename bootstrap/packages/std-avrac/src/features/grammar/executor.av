@@ -4222,48 +4222,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // builds (MkForDestructure / MkForBinding below) stay central.
         "MkForBinding" if args.length == 2 -> mk_for_binding(env.get(args[0]), env.get(args[1]))
         "MkForDestructure" if args.length == 3 -> mk_for_destructure(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
-        // ── Pattern builds (target: Pat, ps3t.6.5.5) ──
-        "OrMaybe" if args.length == 2 -> {
-            // `l ( "or" r )?` — the right-recursive or-pattern (parse_pattern_or).
-            // Absent `or` ⇒ just the left pattern; present ⇒ `Pattern.Or(l, r)`
-            // (right-associative, since `r` is itself a pattern_or).
-            match env.get(args[1]) {
-                .Nil -> env.get(args[0])
-                _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, env.get(args[0])), capval_to_pat(st, env.get(args[1])))))
-            }
-        }
-        "IdentPat" if args.length == 2 -> {
-            // A bare identifier pattern: `_` ⇒ Wildcard, `rest` ⇒ Rest (both
-            // contextual — only when NOT followed by `(`), and `name(binding)`
-            // ⇒ TypePattern. The Nil-arm core is `ident_pat_bare` (shared with
-            // the generated static pattern parser).
-            let nm = capval_tok_text(env.get(args[0]))
-            match env.get(args[1]) {
-                .Nil -> CapVal.PNode(ident_pat_bare(st, nm))
-                _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.TypePattern(nm, capval_tok_text(env.get(args[1])))))
-            }
-        }
-        "MkVariant" if args.length == 3 -> {
-            // `.Name` / `.Name(bind, …)` / `.Name(.Sub, …)`. A sub-pattern
-            // payload (first token `.`) ⇒ NestedVariant; a binding payload
-            // (identifiers) or none ⇒ Variant — mirroring the hand parser's
-            // is_pattern_start (`.`-only) branch.
-            let nm = capval_tok_text(env.get(args[0]))
-            match env.get(args[2]) {
-                .Nil -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(nm, param_entries_from_toks(env.get(args[1]), ValueType.Int))))
-                _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(nm, capval_to_pat_list(env.get(args[2])))))
-            }
-        }
-        "PatStr" if args.length == 1 -> CapVal.PNode(pat_str_node(st, capval_tok_text(env.get(args[0]))))
-        "PatBool" if args.length == 1 -> CapVal.PNode(pat_bool_node(st, capval_tok_text(env.get(args[0]))))
-        "PatNum" if args.length == 1 -> CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), false))
-        "PatNegNum" if args.length == 1 -> CapVal.PNode(pat_num_node(st, capval_tok_text(env.get(args[0])), true))
-        // The optional-match arm surface (spec Axis 10.4): `let <name> ->` binds the
-        // present value (lowers to `.Some(name)`), `none`/`null ->` matches absence
-        // (`.None`). Both delegate to the SHARED reducer cores the hand parser uses
-        // (pattern_optional_present / pattern_optional_absent), so the trees coincide.
-        "OptPresent" if args.length == 1 -> CapVal.PNode(st.store.pats.add_leaf(pattern_optional_present(capval_tok_text(env.get(args[0])))))
-        "OptAbsent" if args.length == 0 -> CapVal.PNode(st.store.pats.add_leaf(pattern_optional_absent()))
+        // The PATTERN family is feature-owned (t-kd4y.3.2.6): the nine pat
+        // builds live in features/match/lowering beside the fragment whose
+        // rules name them, dispatched through the manifest consult above.
         // ── Type-expression builds (target: TypeExpr, ps3t.6.5.6) — each arm
         //    delegates to the SHARED constructor core (fold_type_union /
         //    mk_named_type / mk_paren_type / mk_fn_type), so apply_build and the
@@ -4440,52 +4401,11 @@ export fn capval_present(v: CapVal) -> bool {
     }
 }
 
-/// Build an integer- or float-literal pattern from a NUMBER token's text.
-/// The DSL lexer lexes `42` and `3.14` both as NUMBER (no separate Float
-/// token — that awaits the real-lexer wiring, ps3t.6.5.8), so a `.` in the
-/// text selects `LitFloat` (stored as the string, sign included) vs
-/// `LitInt`, reproducing the hand parser's Number-vs-Float split exactly.
-export fn pat_num_node(st: PState, text: string, negative: bool) -> PatId {
-    if text.contains(".") {
-        let v = if negative { "-" + text } else { text }
-        return st.store.pats.add_leaf(Pattern.LitFloat(v))
-    }
-    let n = int(text)
-    let iv = if negative { 0 - n } else { n }
-    st.store.pats.add_leaf(Pattern.LitInt(iv))
-}
-
-/// A boolean literal pattern from its token text — the `PatBool` build's core
-/// (shared by apply_build + the generated static pattern parser, ps3t.6.5.11).
-export fn pat_bool_node(st: PState, text: string) -> PatId {
-    let v = if text == "true" { 1 } else { 0 }
-    st.store.pats.add_leaf(Pattern.LitBool(v))
-}
-
-/// A string literal pattern from the raw (bookend-quoted) token text — the
-/// `PatStr` build's core; stores the unquoted content (render re-quotes).
-export fn pat_str_node(st: PState, raw: string) -> PatId {
-    let content = if raw.length >= 2 { raw.substring(1, raw.length - 1) } else { raw }
-    st.store.pats.add_leaf(Pattern.LitString(content))
-}
-
-/// A bare identifier pattern (no `(binding)`): `_` ⇒ Wildcard, `rest` ⇒ Rest
-/// (both contextual), any other bare identifier is not a valid top-level
-/// pattern (reported, falls back to Wildcard). The `IdentPat` build's Nil-arm
-/// core.
-export fn ident_pat_bare(st: PState, nm: string) -> PatId {
-    if nm == "_" { return st.store.pats.add_leaf(Pattern.Wildcard) }
-    if nm == "rest" { return st.store.pats.add_leaf(Pattern.Rest) }
-    // The HAND's wording, verbatim (t-47hc.5). Its `parse_pattern` accepts only `_` and
-    // `rest` bare; every other bare identifier falls through to
-    // `consume(Tk.Dot, "expected `.`, `_`, literal, or type pattern to start pattern")`,
-    // so that is the message a rejected bare identifier gets — `Status_Gen.Ready` (a
-    // qualified enum prefix, which is not pattern syntax) is the shape that shows it.
-    // The rule reported its own sentence here, which only became visible when `fn` routed
-    // and match arms inside a function body routed natively.
-    st.report("expected `.`, `_`, literal, or type pattern to start pattern")
-    st.store.pats.add_leaf(Pattern.Wildcard)
-}
+// The pat-LEAF cores (pat_num_node / pat_bool_node / pat_str_node /
+// ident_pat_bare) moved to features/match/lowering with the pattern builds
+// they served (t-kd4y.3.2.6) — nothing else in the engine called them, and
+// each shed its arena plumbing on the way (a typed fn returns a `Pattern`;
+// `capval_pat_val` is the single add_leaf seam).
 
 /// Coerce a capture value to a Stmt node — the statement twin of
 /// `capval_to_expr`. Only a built statement node (`SNode`) is a valid

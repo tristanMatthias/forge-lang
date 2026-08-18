@@ -2598,18 +2598,9 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // (run_static_snode_at_shared builds a clean PState), so an absolute check
         // == "THIS expression failed" — no earlier-error false positive.
         "ExprStmt" -> "if st.had_error { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Error)) } else { CapVal.SNode(st.store.stmts.add_leaf(Stmt.Expr(capval_to_expr(st, ${args[0]})))) }"
-        // ── Pattern builds (target: Pattern) — conditional on optional/list
-        //    captures, mirroring executor.apply_build one-to-one. ──
-        "OrMaybe" -> "match ${args[1]} { .Nil -> ${args[0]}  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, ${args[0]}), capval_to_pat(st, ${args[1]})))) }"
-        "IdentPat" -> "match ${args[1]} { .Nil -> CapVal.PNode(ident_pat_bare(st, capval_tok_text(${args[0]})))  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.TypePattern(capval_tok_text(${args[0]}), capval_tok_text(${args[1]})))) }"
-        "MkVariant" -> "if ${args[2]}_list.length > 0 { CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(capval_tok_text(${args[0]}), ${args[2]}_list))) } else { CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(capval_tok_text(${args[0]}), param_entries_from_toks(CapVal.Toks(${args[1]}_list), ValueType.Int)))) }"
-        "PatBool" -> "CapVal.PNode(pat_bool_node(st, capval_tok_text(${args[0]})))"
-        "PatStr" -> "CapVal.PNode(pat_str_node(st, capval_tok_text(${args[0]})))"
-        "PatNum" -> "CapVal.PNode(pat_num_node(st, capval_tok_text(${args[0]}), false))"
-        "PatNegNum" -> "CapVal.PNode(pat_num_node(st, capval_tok_text(${args[0]}), true))"
-        // The optional-match arm surface — SHARED reducer cores (apply_build's twins).
-        "OptPresent" -> "CapVal.PNode(st.store.pats.add_leaf(pattern_optional_present(capval_tok_text(${args[0]}))))"
-        "OptAbsent" -> "CapVal.PNode(st.store.pats.add_leaf(pattern_optional_absent()))"
+        // The PATTERN family is feature-owned (t-kd4y.3.2.6): the nine pat
+        // builds emit as manifest ABI calls into features/match/lowering,
+        // resolved above — no central templates.
         // ── Type-expression builds (target: TypeExpr) — delegate to the SHARED
         //    constructor cores (executor.apply_build's exact twins). args[N]_list
         //    names a rep/list capture; a bare arg is a scalar/opt-scalar CapVal. ──

@@ -5,15 +5,15 @@
 // family; parse/tests/gen_parser_regen_test.av asserts it equals
 // emit_parser_file() so a grammar edit that isn't regenerated fails the suite.
 
-use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, capval_tok_texts, error_stmt_of, fold_logical_expr, fold_nullish_expr, fold_pipe_expr, fold_postfix_with_expr, fold_type_union, gensym_token, ident_pat_bare, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assign_expr, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_channel, mk_children_slot_g, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_g, mk_comp_config_list, mk_comp_config_pair_g, mk_comp_field_g, mk_component_block_g, mk_component_def_g, mk_component_paren_def_g, mk_const_binding_g, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_eqchain_expr, mk_export_decl, mk_expr_block, mk_extern_fn, mk_field, mk_field_access, mk_field_init, mk_fn_decl_where_g, mk_fn_type, mk_for_binding, mk_for_destructure, mk_force_unwrap, mk_generic_call_suffix, mk_given_block_g, mk_grammar_block, mk_group_or_empty, mk_if_expr, mk_if_let, mk_if_let_stmt, mk_index_suffix, mk_inlist_expr, mk_inrange_expr, mk_is_expr, mk_isolated, mk_lambda, mk_lambda_typed, mk_let_binding_g, mk_let_destructure_g, mk_list_comp, mk_list_lit, mk_map_lit, mk_match_expr, mk_method_shorthand_g, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_param, mk_paren_type, mk_plain_name, mk_qualified, mk_qualified_type, mk_quote, mk_quote_arm, mk_quote_type, mk_raw_component_block_g, mk_shape_decl, mk_spawn, mk_spec_block_g, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_struct_lit, mk_table_header, mk_table_lit, mk_table_row, mk_tagged_template, mk_template, mk_then_block_g, mk_trait_list, mk_try_suffix, mk_tuple_fr, mk_tuple_index, mk_type_decl_any, mk_type_param, mk_when, mk_where_param, mk_with_suffix, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, param_entries_from_toks, pat_bool_node, pat_num_node, pat_str_node, rawbrace_scan, rebind_eq_expr, text_is_word, unary_expr}
-use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, MatchArm, ParamEntry, PatId, Pattern, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, ValueType, Variant, WhenArm, pattern_optional_absent, pattern_optional_present}
+use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, capval_tok_texts, error_stmt_of, fold_logical_expr, fold_nullish_expr, fold_pipe_expr, fold_postfix_with_expr, fold_type_union, gensym_token, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assign_expr, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_channel, mk_children_slot_g, mk_children_slot_list, mk_comp_body_marker, mk_comp_config_g, mk_comp_config_list, mk_comp_config_pair_g, mk_comp_field_g, mk_component_block_g, mk_component_def_g, mk_component_paren_def_g, mk_const_binding_g, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_eqchain_expr, mk_export_decl, mk_expr_block, mk_extern_fn, mk_field, mk_field_access, mk_field_init, mk_fn_decl_where_g, mk_fn_type, mk_for_binding, mk_for_destructure, mk_force_unwrap, mk_generic_call_suffix, mk_given_block_g, mk_grammar_block, mk_group_or_empty, mk_if_expr, mk_if_let, mk_if_let_stmt, mk_index_suffix, mk_inlist_expr, mk_inrange_expr, mk_is_expr, mk_isolated, mk_lambda, mk_lambda_typed, mk_let_binding_g, mk_let_destructure_g, mk_list_comp, mk_list_lit, mk_map_lit, mk_match_expr, mk_method_shorthand_g, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_param, mk_paren_type, mk_plain_name, mk_qualified, mk_qualified_type, mk_quote, mk_quote_arm, mk_quote_type, mk_raw_component_block_g, mk_shape_decl, mk_spawn, mk_spec_block_g, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_struct_lit, mk_table_header, mk_table_lit, mk_table_row, mk_tagged_template, mk_template, mk_then_block_g, mk_trait_list, mk_try_suffix, mk_tuple_fr, mk_tuple_index, mk_type_decl_any, mk_type_param, mk_when, mk_where_param, mk_with_suffix, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, rebind_eq_expr, text_is_word, unary_expr}
+use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, MatchArm, ParamEntry, PatId, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, Variant, WhenArm}
 use features.modules.lowering.{module_build, use_bare_build, use_pkg_build}
 use features.enum_decl.lowering.{enum_decl_build, evariant_build}
 use features.trait_decl.lowering.{assoc_type_build, trait_decl_build, trait_method_build}
 use features.impl_decl.lowering.{impl_build, method_build}
 use features.select_stmt.lowering.{select_arm_build, select_build}
 use features.parallel_stmt.lowering.{parallel_build}
-use features.match.lowering.{build_arm_abi, build_match_abi, build_when_arm_abi, build_when_default_abi, mk_arm_return_abi, mk_match_table_abi, mk_match_table_expr_abi, mk_when_stmt_abi}
+use features.match.lowering.{build_arm_abi, build_match_abi, build_when_arm_abi, build_when_default_abi, ident_pat_abi, mk_arm_return_abi, mk_match_table_abi, mk_match_table_expr_abi, mk_variant_abi, mk_when_stmt_abi, opt_absent_abi, opt_present_abi, or_maybe_abi, pat_bool_abi, pat_neg_num_abi, pat_num_abi, pat_str_abi}
 use features.defer.lowering.{build_defer_abi, build_errdefer_abi}
 use features.return_stmt.lowering.{build_return_abi}
 use features.break_continue.lowering.{build_break_abi, build_continue_abi}
@@ -5861,7 +5861,7 @@ fn parse_pattern_or(st: PState) -> CapVal {
         let _ = st.advance()
         r = parse_pattern_or(st)
     }
-    match r { .Nil -> l  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.Or(capval_to_pat(st, l), capval_to_pat(st, r)))) }
+    or_maybe_abi(st, [l, r])
 }
 
 fn parse_pattern(st: PState) -> CapVal {
@@ -5898,12 +5898,12 @@ fn parse_opt_present(st: PState) -> CapVal {
         st.report_ident("expected `IDENT`")
         CapVal.Tok(st.cur())
     }
-    CapVal.PNode(st.store.pats.add_leaf(pattern_optional_present(capval_tok_text(name))))
+    opt_present_abi(st, [name])
 }
 
 fn parse_opt_absent(st: PState) -> CapVal {
     let _ = st.advance()
-    CapVal.PNode(st.store.pats.add_leaf(pattern_optional_absent()))
+    opt_absent_abi(st, [])
 }
 
 fn parse_variant_pat(st: PState) -> CapVal {
@@ -5935,7 +5935,7 @@ fn parse_variant_pat(st: PState) -> CapVal {
             st.report("expected `)`")
         }
     }
-    if subs_list.length > 0 { CapVal.PNode(st.store.pats.add_leaf(Pattern.NestedVariant(capval_tok_text(name), subs_list))) } else { CapVal.PNode(st.store.pats.add_leaf(Pattern.Variant(capval_tok_text(name), param_entries_from_toks(CapVal.Toks(binds_list), ValueType.Int)))) }
+    mk_variant_abi(st, [name, CapVal.Toks(binds_list), CapVal.PNodes(subs_list)])
 }
 
 fn parse_ident_pat(st: PState) -> CapVal {
@@ -5950,17 +5950,17 @@ fn parse_ident_pat(st: PState) -> CapVal {
             st.report("expected `)`")
         }
     }
-    match b { .Nil -> CapVal.PNode(ident_pat_bare(st, capval_tok_text(name)))  _ -> CapVal.PNode(st.store.pats.add_leaf(Pattern.TypePattern(capval_tok_text(name), capval_tok_text(b)))) }
+    ident_pat_abi(st, [name, b])
 }
 
 fn parse_bool_pat(st: PState) -> CapVal {
     let b = CapVal.Tok(st.advance())
-    CapVal.PNode(pat_bool_node(st, capval_tok_text(b)))
+    pat_bool_abi(st, [b])
 }
 
 fn parse_str_pat(st: PState) -> CapVal {
     let s = CapVal.Tok(st.advance())
-    CapVal.PNode(pat_str_node(st, capval_tok_text(s)))
+    pat_str_abi(st, [s])
 }
 
 fn parse_neg_pat(st: PState) -> CapVal {
@@ -5969,12 +5969,12 @@ fn parse_neg_pat(st: PState) -> CapVal {
         st.report("expected `NUMBER`")
         CapVal.Tok(st.cur())
     }
-    CapVal.PNode(pat_num_node(st, capval_tok_text(n), true))
+    pat_neg_num_abi(st, [n])
 }
 
 fn parse_num_pat(st: PState) -> CapVal {
     let n = CapVal.Tok(st.advance())
-    CapVal.PNode(pat_num_node(st, capval_tok_text(n), false))
+    pat_num_abi(st, [n])
 }
 
 fn parse_match_when_arm(st: PState) -> CapVal {

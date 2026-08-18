@@ -12,9 +12,18 @@
 // live here now. `mk_when` stays engine-homed: the spine's `when`
 // EXPRESSION build (MkWhen) is still central until the expression section
 // composes from fragments.
+//
+// t-kd4y.3.2.6 adds the PATTERN family. The pat fragment (avra_pat_grammar,
+// ../mod.av) was already feature-owned; only its nine lowerings were
+// engine-listed, so this is a pure ownership move — the leaf cores came
+// with them (nothing else in the engine called them). Patterns are also
+// consumed by let-destructure / if-let / for-destructure, but ownership
+// follows the RULES: those features reference the composed `pattern_or`
+// and never name a pat build, exactly as the shared `match_when_arm`
+// fragment precedent settles it.
 
-use core.{Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, byte_span, byte_span_none}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_present, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list, capval_tok_list, capval_to_pat_list, capval_to_node_list, mk_when}
+use core.{Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, ValueType, byte_span, byte_span_none, pattern_optional_present, pattern_optional_absent}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_pat_val, capval_present, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list, capval_tok_list, capval_tok_text, capval_to_pat_list, capval_to_node_list, mk_when, param_entries_from_toks}
 
 export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
     WhenArm { cond_id: c, body_id: b }
@@ -212,6 +221,117 @@ export fn mk_match_table_expr_abi(st: PState, vals: List<CapVal>) -> CapVal {
     ))
 }
 
+// ── The PATTERN family (t-kd4y.3.2.6) ──────────────────────────────────
+// The nine builds `avra_pat_grammar`'s rules name. Each retired central
+// pair (executor arm + emit template) was already a thin wrapper over a
+// shared core; the cores moved here with them and shed their arena
+// plumbing on the way — `capval_pat_val` is the ONE `pats.add_leaf` seam
+// now, so a typed fn returns a `Pattern` and nothing else allocates.
+
+/// An integer- or float-literal pattern from a NUMBER token's text. The DSL
+/// lexer lexes `42` and `3.14` both as NUMBER (no separate Float token), so a
+/// `.` in the text selects `LitFloat` (stored as the string, sign included)
+/// vs `LitInt` — the hand parser's Number-vs-Float split exactly.
+export fn build_pat_num(text: string, negative: bool) -> Pattern {
+    if text.contains(".") {
+        let v = if negative { "-" + text } else { text }
+        return Pattern.LitFloat(v)
+    }
+    let n = int(text)
+    let iv = if negative { 0 - n } else { n }
+    Pattern.LitInt(iv)
+}
+
+/// A boolean literal pattern from its token text.
+export fn build_pat_bool(text: string) -> Pattern {
+    let v = if text == "true" { 1 } else { 0 }
+    Pattern.LitBool(v)
+}
+
+/// A string literal pattern from the raw (bookend-quoted) token text — stores
+/// the unquoted content (render re-quotes).
+export fn build_pat_str(raw: string) -> Pattern {
+    let content = if raw.length >= 2 { raw.substring(1, raw.length - 1) } else { raw }
+    Pattern.LitString(content)
+}
+
+/// A bare identifier pattern (no `(binding)`): `_` ⇒ Wildcard, `rest` ⇒ Rest
+/// (both contextual), any other bare identifier is not a valid top-level
+/// pattern (reported, falls back to Wildcard).
+///
+/// The HAND's wording, verbatim (t-47hc.5). Its `parse_pattern` accepts only
+/// `_` and `rest` bare; every other bare identifier falls through to
+/// `consume(Tk.Dot, "expected `.`, `_`, literal, or type pattern to start
+/// pattern")`, so that is the message a rejected bare identifier gets —
+/// `Status_Gen.Ready` (a qualified enum prefix, which is not pattern syntax)
+/// is the shape that shows it. The rule reported its own sentence here, which
+/// only became visible when `fn` routed and match arms inside a function body
+/// routed natively.
+export fn build_ident_pat_bare(st: PState, nm: string) -> Pattern {
+    if nm == "_" { return Pattern.Wildcard }
+    if nm == "rest" { return Pattern.Rest }
+    st.report("expected `.`, `_`, literal, or type pattern to start pattern")
+    Pattern.Wildcard
+}
+
+/// `l ( "or" r )?` — the right-recursive or-pattern (parse_pattern_or).
+/// Absent `or` ⇒ the left pattern PASSED THROUGH unchanged (no new arena row,
+/// which is why this adapter returns `vals[0]` rather than rebuilding it);
+/// present ⇒ `Pattern.Or(l, r)`, right-associative since `r` is itself a
+/// pattern_or.
+export fn or_maybe_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    if !capval_present(vals[1]) { return vals[0] }
+    capval_pat_val(st, Pattern.Or(capval_to_pat(st, vals[0]), capval_to_pat(st, vals[1])))
+}
+
+/// A bare identifier pattern, or `name(binding)` ⇒ TypePattern.
+export fn ident_pat_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    let nm = capval_tok_text(vals[0])
+    if !capval_present(vals[1]) { return capval_pat_val(st, build_ident_pat_bare(st, nm)) }
+    capval_pat_val(st, Pattern.TypePattern(nm, capval_tok_text(vals[1])))
+}
+
+/// `.Name` / `.Name(bind, …)` / `.Name(.Sub, …)`. A sub-pattern payload (first
+/// token `.`) ⇒ NestedVariant; a binding payload (identifiers) or none ⇒
+/// Variant — mirroring the hand parser's is_pattern_start (`.`-only) branch.
+///
+/// The branch test is the SUB-LIST's LENGTH, which is what unified the two
+/// retired arms: the executor asked `subs != .Nil` and emit asked
+/// `subs_list.length > 0`. Those agree because the `subs` alternative binds
+/// `subs:variant_pat` unconditionally — a non-Nil capture always carries at
+/// least one element — and `capval_to_pat_list` maps `.Nil` to `[]`, so one
+/// test now serves both engines.
+export fn mk_variant_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    let nm = capval_tok_text(vals[0])
+    let subs = capval_to_pat_list(vals[2])
+    if subs.length > 0 { return capval_pat_val(st, Pattern.NestedVariant(nm, subs)) }
+    capval_pat_val(st, Pattern.Variant(nm, param_entries_from_toks(vals[1], ValueType.Int)))
+}
+
+export fn pat_bool_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_pat_val(st, build_pat_bool(capval_tok_text(vals[0])))
+}
+export fn pat_str_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_pat_val(st, build_pat_str(capval_tok_text(vals[0])))
+}
+export fn pat_num_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_pat_val(st, build_pat_num(capval_tok_text(vals[0]), false))
+}
+export fn pat_neg_num_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_pat_val(st, build_pat_num(capval_tok_text(vals[0]), true))
+}
+
+/// The optional-match arm surface (spec Axis 10.4): `let <name> ->` binds the
+/// present value (lowers to `.Some(name)`), `none`/`null ->` matches absence
+/// (`.None`). Both delegate to the SHARED core/ast reducers, which are also
+/// what typeck and codegen recognise through — never string-match Some/None.
+export fn opt_present_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_pat_val(st, pattern_optional_present(capval_tok_text(vals[0])))
+}
+export fn opt_absent_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_pat_val(st, pattern_optional_absent())
+}
+
 /// ALL of the match feature's rows — one list per feature. The Mk-named rows
 /// keep their grammar-side names (the row name IS the gram ref, so the flip
 /// touches no rule text); `spanned` marks the rows whose builds read
@@ -224,5 +344,14 @@ export fn match_builds() -> List<BuilderBind> {
      bind_row("MkWhenStmt", "stmt", 1, true, "mk_when_stmt_abi", mk_when_stmt_abi),
      bind_row("MkArmReturn", "expr", 1, true, "mk_arm_return_abi", mk_arm_return_abi),
      bind_row("MkMatchTable", "stmt", 4, false, "mk_match_table_abi", mk_match_table_abi),
-     bind_row("MkMatchTableExpr", "expr", 4, true, "mk_match_table_expr_abi", mk_match_table_expr_abi)])
+     bind_row("MkMatchTableExpr", "expr", 4, true, "mk_match_table_expr_abi", mk_match_table_expr_abi),
+     bind_row("OrMaybe", "pat", 2, false, "or_maybe_abi", or_maybe_abi),
+     bind_row("IdentPat", "pat", 2, false, "ident_pat_abi", ident_pat_abi),
+     bind_row("MkVariant", "pat", 3, false, "mk_variant_abi", mk_variant_abi),
+     bind_row("PatBool", "pat", 1, false, "pat_bool_abi", pat_bool_abi),
+     bind_row("PatStr", "pat", 1, false, "pat_str_abi", pat_str_abi),
+     bind_row("PatNum", "pat", 1, false, "pat_num_abi", pat_num_abi),
+     bind_row("PatNegNum", "pat", 1, false, "pat_neg_num_abi", pat_neg_num_abi),
+     bind_row("OptPresent", "pat", 1, false, "opt_present_abi", opt_present_abi),
+     bind_row("OptAbsent", "pat", 0, false, "opt_absent_abi", opt_absent_abi)])
 }
