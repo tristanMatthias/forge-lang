@@ -105,10 +105,13 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
     }
 
     then "the channel keyword primary is generated, not a hand delegate" {
+        // Post-flip (t-kd4y.3.5.1) MkChannel is feature-owned
+        // (features/channels lowering): a spanned manifest row, spelled as
+        // its call_with_build_sp adapter call.
         let src = emit_all()
         src.contains("fn parse_channel_expr(st: PState) -> CapVal {") &&
         src.contains("let base = parse_channel_expr(st)") &&
-        src.contains("mk_channel(st, sp_start, elem, cap)")
+        src.contains("call_with_build_sp(st, sp_start, mk_channel_abi, [elem, cap])")
     }
 
     then "subjectless when arms and their default are generated, not hand delegated" {
@@ -132,13 +135,15 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
     }
 
     then "expression blocks power generated spawn and isolated primaries" {
+        // MkSpawn/MkIsolated are feature-owned spanned rows (t-kd4y.3.5.1);
+        // MkExprBlock stays central (engine-core block machinery).
         let src = emit_all()
         src.contains("fn parse_block_expr(st: PState) -> CapVal {") &&
         src.contains("mut stmts_list: List<StmtId> = []") &&
         src.contains("let __cv = parse_declaration(st)") &&
         src.contains("mk_expr_block(st, sp_start, CapVal.SNodes(stmts_list))") &&
-        src.contains("mk_spawn(st, sp_start, body)") &&
-        src.contains("mk_isolated(st, sp_start, body)")
+        src.contains("call_with_build_sp(st, sp_start, mk_spawn_abi, [body])") &&
+        src.contains("call_with_build_sp(st, sp_start, mk_isolated_abi, [body])")
     }
 
     then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
