@@ -93,11 +93,16 @@ spec "t-47hc.9: the DECL keywords are feature-owned fragments, not central rules
         // …and `declaration` + the start symbol stay in the central base.
         ok && has_rule([prog], "declaration") && prog.rules[0].name == "program"
     }
-    then "`param` stays in the SHARED base — no single feature owns it" {
-        // Referenced by fn_decl, method_member and impl_method, so it belongs
-        // beside the expression ladder and type spine, not in one feature.
+    then "`param` is paren-family-owned and still reaches every consumer" {
+        // Moved out of the shared base into closures' expr fragment with the
+        // paren family (t-kd4y.3.5.3 — MkParam is closures' manifest row, and
+        // the no-orphans validator wants the row beside the gram that spells
+        // it). fn_decl, method_member and impl_method keep referencing it
+        // cross-fragment by name; it stays out of the DECL fragment registry
+        // (closures is an expr-family feature) and out of the spine.
         has_rule([avra_program_grammar()], "param")
             && !has_rule(feature_decl_grammar_fragments(), "param")
+            && !has_rule([avra_expr_spine_grammar()], "param")
     }
 }
 

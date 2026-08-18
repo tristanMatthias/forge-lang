@@ -314,50 +314,12 @@ export fn avra_expr_spine_grammar() -> Grammar {
   list_comp    = b:expression "for" @require v:IDENT @require "in" c:expression ( "if" f:expression )?
                  @expect("IDENT", "expected variable name after `for`")
                  @expect("in", "expected `in` after loop variable") -> MkListComp(b, v, c, f)
-  // A FAILED param ends the lambda. `param` already reports "expected parameter type
-  // after `:`" and aborts, and the MESSAGES matched exactly — but the branch built
-  // `(lambda () x)` around the aborted param anyway, dropping it silently instead of
-  // yielding `(error)`. A message-only probe calls that agreement; only the TREE shows it.
-  // `paren_lambda_ahead` guards the TYPED branch too, for the same reason it guards the
-  // untyped one: `(x: int) ->` with no body must come back
-  // `(error)`, not `(lambda (x:int) (error))`. The scan is
-  // token-level, so a typed parameter list is no different to it.
-  paren_expr   = @peek(lparen_ident_colon) @peek(paren_arrow_ahead) "(" @onfail(bail) ps:param ( "," @onfail(bail) ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
-               // PREDICTIVE, by a SCAN — the non-speculative decision this branch needed
-               // (t-47hc.5). `paren_lambda_ahead` walks to the matching `)` and checks two
-               // tokens: an `->` follows, and the token after it is in the shared
-               // expression FIRST set (`tok_starts_expr_leaf`, which admits `{`, so
-               // `lambda_body`'s two alternatives are covered by one predicate).
-               //
-               // `let a = (1) ->` with no body therefore never ENTERS here: the token
-               // after `->` cannot start a body, so the group branch answers and yields
-               // `(group 1)` with the `->` left for the caller — reached by scan,
-               // not speculation. This is what let `let` route.
-               //
-               // Deciding it by PARSING is the trap, and both obvious spellings fall into
-               // it: dropping the `@cut`, and `@require lb:lambda_body`. Inside a `@try`
-               // the emitted `@require` reports without aborting (emit.av's `abortable`
-               // guard), and the `@cut`'s own `if !s_cut { break }` is what otherwise
-               // stops a plain group before the body parse. Without that early exit every
-               // parenthesised group parses the whole remaining expression and unwinds,
-               // which nesting multiplies — measured 25/65/160/636ms at 10/12/14
-               // `(a == N) ||` terms against a flat ~24ms, and a 12GB F4014 while the
-               // compiler merely parsed its own `gen_expr_parser.av`. The `@cut` stays:
-               // the peek decides ENTRY, the cut still stops a malformed body committing.
-               | @try @peek(paren_lambda_ahead) "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
-               | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
-               | "(" ( @on(allow_dot_postfix) e:expression )? @require ")"
-                 @expect(")", "expected `)` after expression") -> MkGroupOrEmpty(e)
-  lambda_body  = block_expr | expression
-  // The TYPE position is `@require`d, keyed on the rule NAME because `type_expr`'s FIRST
-  // is a disjunction with no single token to name (t-myz7) — the same treatment `field`
-  // already has, for the same reason. Unrequired, a missing type did not abort: the
-  // expression view reported its own generic F0040 and the type view added "expected a
-  // type", so `fn foo(x: ) -> int { 1 }` came out F0040 + F0001 instead of the single
-  // "expected parameter type after `:`".
-  param        = pname:IDENT ( ":" @require pt:type_expr )?
-                 @expect("IDENT", "expected parameter name") 
-                 @expect("type_expr", "expected parameter type after `:`") -> MkParam(pname, pt)
+  // The `(`-led paren family (paren_expr / lambda_body) lives with the
+  // closures feature (gram_family = "expr", t-kd4y.3.5.3) — referenced
+  // from the ladder above by name. The F4014 exponential-backtracking
+  // history rides the rules' own comments there.
+  // The shared `param` rule lives there too (MkParam is closures' row);
+  // fn/trait/impl/component reference it cross-fragment by name.
   // t-47hc.29 — a match-table CELL, in
   // its own dispatch order, and deliberately NARROWER than the full expression
   // primary: a quote SPLICE and the PREFIX operators

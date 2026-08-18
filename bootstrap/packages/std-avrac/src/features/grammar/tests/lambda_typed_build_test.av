@@ -1,6 +1,6 @@
-// WHY: t-47hc (paren_expr flip prep) — the DORMANT TYPED-lambda BUILD (mk_lambda_typed),
-// the last expression-side build primitive for the paren_expr @hand-leaf deletion. It is
-// the TYPED twin of mk_lambda (#992): its params come from PENTRIES (name:type pairs built
+// WHY: t-47hc (paren_expr flip prep, spent by t-kd4y.3.5.3) — the TYPED-lambda BUILD
+// (MkLambdaTyped), now feature-owned in features/closures/lowering. It is
+// the TYPED twin of MkLambda (#992): its params come from PENTRIES (name:type pairs built
 // by the existing grammar-native `param = pname:IDENT ( ":" pt:type_expr )?` rule + MkParam)
 // rather than from bare Ident exprs, so it takes a List<ParamEntry> directly — the same
 // capval_to_pentry_list contract MkFnDecl / MkMethod use. Mirrors the hand parse_paren_expr's
@@ -10,8 +10,8 @@
 // + type_atom + named_type + …), so the pentry accumulation is the production-proven path —
 // this is the FIRST expr-context build to consume a PENTRY accumulator (all prior pentry
 // consumers were stmt/decl builds), so it also proves the interpreter handles an expr-context
-// pentry build. DORMANT: no production grammar uses it, so generated parsers regen byte-
-// identical (emit-gen-check GENPASS).
+// pentry build. LIVE: the production paren_expr (features/closures) spells it; both
+// engines resolve it through the manifest row.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn}
 use @std.avrac.core.{render_expr_id}
 
@@ -38,7 +38,7 @@ fn lamt_grammar_src() -> string {
     "  factor     = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
     "  un         = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
     "  primary    = NUMBER | STRING | \"true\" | \"false\" | IDENT\n" +
-    "             | \"(\" e:expression \")\" -> Grouping(e)\n" +
+    "             | \"(\" e:expression \")\" -> MkGroupOrEmpty(e)\n" +
     "}"
 }
 
@@ -56,7 +56,7 @@ fn emit_r() -> string {
     ""
 }
 
-spec "t-47hc: DORMANT typed-lambda build (mk_lambda_typed) — interpreter builds Expr.Lambda from pentries" {
+spec "t-47hc: typed-lambda build (MkLambdaTyped) — interpreter builds Expr.Lambda from pentries" {
     then "a zero-param lambda builds an empty-param Expr.Lambda" {
         run_render("() -> 9") == "(lambda () 9)"
     }
@@ -76,16 +76,16 @@ spec "t-47hc: DORMANT typed-lambda build (mk_lambda_typed) — interpreter build
     }
 }
 
-spec "t-47hc: DORMANT typed-lambda build (mk_lambda_typed) — emitter lowers to a mk_lambda_typed call" {
-    then "the emitter lowers MkLambdaTyped to a mk_lambda_typed call spanned at sp_start" {
+spec "t-47hc: typed-lambda build (MkLambdaTyped) — emitter lowers to the manifest adapter" {
+    then "the emitter lowers MkLambdaTyped to its spanned manifest adapter" {
         let src = emit_r()
-        src.contains("mk_lambda_typed(st, sp_start,") && src.contains("let sp_start = st.cur().pos")
+        src.contains("call_with_build_sp(st, sp_start, mk_lambda_typed_abi, [CapVal.PEntries(params_list), b])") && src.contains("let sp_start = st.cur().pos")
     }
-    then "the emitted MkLambdaTyped passes the pentry accumulator (params_list) + body via capval_to_expr" {
+    then "the pentry accumulator is declared typed and PEntries-wrapped into the adapter" {
         let src = emit_r()
-        src.contains("params_list") && src.contains("capval_to_expr(st,")
+        src.contains("mut params_list: List<ParamEntry> = []") && src.contains("CapVal.PEntries(params_list)")
     }
-    then "it lowers to mk_lambda_typed, distinct from the untyped mk_lambda" {
-        emit_r().contains("mk_lambda_typed(")
+    then "it lowers to mk_lambda_typed_abi, distinct from the untyped mk_lambda_abi" {
+        emit_r().contains("mk_lambda_typed_abi") && !emit_r().contains("mk_lambda_abi")
     }
 }

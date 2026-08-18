@@ -60,7 +60,7 @@ fn rule_src(grammar_src: string, rule: string) -> string {
     ""
 }
 
-const RB_RULE = "r = \"g\" \"{\" b:@rawbrace(gram) \"}\" -> Grouping(b)"
+const RB_RULE = "r = \"g\" \"{\" b:@rawbrace(gram) \"}\" -> MkGroupOrEmpty(b)"
 
 spec "t-47hc.31: @rawbrace captures the verbatim slice between balanced braces" {
     then "a simple body is captured, trimmed, and bound" {
@@ -100,17 +100,17 @@ spec "t-47hc.31: @rawbrace is validated at grammar-parse time" {
         grammar_error("r = \"g\" \"{\" @rawbrace(gram) \"}\" -> MkNone()") != ""
     }
     then "a tagless @rawbrace is rejected" {
-        grammar_error("r = \"g\" \"{\" b:@rawbrace() \"}\" -> Grouping(b)") != ""
+        grammar_error("r = \"g\" \"{\" b:@rawbrace() \"}\" -> MkGroupOrEmpty(b)") != ""
     }
     then "a repetition suffix on @rawbrace is rejected" {
         // One match already consumes to the balancing brace; a second iteration
         // would start ON the close brace and the engines would disagree about it.
-        grammar_error("r = \"g\" \"{\" b:@rawbrace(gram)* \"}\" -> Grouping(b)") != ""
+        grammar_error("r = \"g\" \"{\" b:@rawbrace(gram)* \"}\" -> MkGroupOrEmpty(b)") != ""
     }
     then "a mode marker wrapping @rawbrace is rejected" {
         // A raw capture reads bytes, not modes — a mode set around it is dead by
         // construction and must not imply an effect.
-        grammar_error("r = \"g\" \"{\" @off(allow_struct_lit) b:@rawbrace(gram) \"}\" -> Grouping(b)") != ""
+        grammar_error("r = \"g\" \"{\" @off(allow_struct_lit) b:@rawbrace(gram) \"}\" -> MkGroupOrEmpty(b)") != ""
     }
 }
 

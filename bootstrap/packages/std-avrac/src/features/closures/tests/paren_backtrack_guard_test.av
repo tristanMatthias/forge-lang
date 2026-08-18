@@ -1,0 +1,49 @@
+// WHY: the paren family's F4014 history (t-47hc.5): a broad-FIRST @require
+// inside paren_expr's speculative lambda branch once made every
+// parenthesised group parse the whole remaining expression before
+// unwinding — nesting multiplied it exponentially (25/65/160/636ms at
+// 10/12/14 ||-terms; a 12GB F4014 parsing gen_expr_parser.av's own giant
+// FIRST conditions). The production rules avoid it by construction: the
+// peeks PARTITION the input by scan and the lambda body rides `@cut`, so a
+// non-lambda group costs a bounded number of expression parses. These
+// specs parse the pathological SHAPES through the production engine at
+// sizes where the historic exponential cost was minutes — completion
+// within the suite's stall window IS the guard (no wall-clock assertion:
+// timing thresholds on a loaded box are the flake CLAUDE.md warns about).
+use @std.avrac.parse.{oracle_expr}
+
+fn or_chain(n: int) -> string {
+    mut s = ""
+    mut i = 0
+    while i < n {
+        if i > 0 { s = s + " || " }
+        s = s + "(a == ${string(i)})"
+        i = i + 1
+    }
+    s
+}
+
+fn nested_parens(depth: int) -> string {
+    mut s = "a"
+    mut i = 0
+    while i < depth {
+        s = "(" + s + ")"
+        i = i + 1
+    }
+    s
+}
+
+spec "paren_expr does not backtrack exponentially (t-47hc.5 shape guard)" {
+    then "a 2-term chain builds the expected tree (the fast path is also the CORRECT path)" {
+        (oracle_expr(or_chain(2)) ?? "<parse error>") == "(|| (group (== a 0)) (group (== a 1)))"
+    }
+    then "a 28-term ||-chain of paren groups parses (historic exponential cost at this size: minutes)" {
+        oracle_expr(or_chain(28)) != null
+    }
+    then "28-deep nested parens parse" {
+        oracle_expr(nested_parens(28)) != null
+    }
+    then "the combined shape — nested groups inside a chain — parses" {
+        oracle_expr(or_chain(14) + " || " + nested_parens(14)) != null
+    }
+}

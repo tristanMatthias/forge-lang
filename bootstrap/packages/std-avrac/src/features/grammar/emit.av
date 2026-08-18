@@ -233,8 +233,13 @@ export fn emit_parser_source_ex(g_in: Grammar, export_start: bool) -> string {
 
 /// Render one rule as its `parse_<name>` function. Takes the grammar so a
 /// referenced rule's FIRST set (a repetition/optional guard) resolves.
+/// SELF-STAMPS like emit_parser_source_ex: a bare toy grammar resolves
+/// feature-owned builds through the production manifest, the emit twin of
+/// apply_build's lazy parse_features consult — without it every flipped
+/// build regresses to `unknown build` in single-rule emits.
 export fn emit_rule_fn(g: Grammar, r: Rule) -> string {
-    emit_rule_fn_in(g, r)
+    let gs = if g.builder_kinds.length > 0 { g } else { grammar_with_builder_kinds(g, builder_kind_rows(feature_builders())) }
+    emit_rule_fn_in(gs, r)
 }
 
 fn emit_rule_fn_in(g: Grammar, r: Rule) -> string {
@@ -548,17 +553,12 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
         name == "MkExprBlock" ||
         // `( a, b, … )` tuple spans sp_start = the `(` byte (t-47hc paren prep, DORMANT) —
         // its owning rule enters at `(`, like MkListLit's at `[`.
-        name == "MkTuple" ||
         // `( … ) -> body` untyped lambda spans sp_start = the `(` byte (t-47hc paren prep,
         // DORMANT) — same owning-rule-entry anchor as the tuple.
-        name == "MkLambda" ||
         // `( x: T, … ) -> body` typed lambda spans sp_start = the `(` byte (t-47hc paren
         // prep, DORMANT) — same owning-rule-entry anchor as the untyped lambda / tuple.
-        name == "MkLambdaTyped" ||
         // `( e )` grouping / `()` empty tuple spans sp_start = the `(` byte (t-47hc paren
         // spend) — its owning paren_expr rule enters at `(`, like the tuple/lambda builds.
-        name == "MkGroupOrEmpty" ||
-        name == "MkTupleFR" ||
         // Statement control-flow builds thread the rule-entry byte so the generated
         // static parser records per-statement SrcPos byte-identical to the hand
         // parser (t-47hc.12); the interpreter passes 0 - 1 (span-free).
@@ -2528,23 +2528,10 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // (built in the list_comp sub-rule entered after `[`). MkListComp's body/v/coll
         // are scalars; the optional `filt` (arity 4) is Nil when the `( if … )?` is absent.
         "MkListLit" -> "CapVal.Node(mk_list_lit(st, sp_start, CapVal.Nodes(${args[0]}_list)))"
-        // `( a, b, … )` tuple (t-47hc paren prep — DORMANT). Structural twin of MkListLit:
-        // `a` is the comma-list accumulator, spanned at sp_start = the owning rule's `(`.
-        "MkTuple" -> "CapVal.Node(mk_tuple(st, sp_start, CapVal.Nodes(${args[0]}_list)))"
-        // `( … ) -> body` untyped lambda (t-47hc paren prep — DORMANT). args[0] = the
-        // param-name comma-list accumulator, args[1] = the body scalar (→ ExprId).
-        "MkLambda" -> "CapVal.Node(mk_lambda(st, sp_start, CapVal.Nodes(${args[0]}_list), capval_to_expr(st, ${args[1]})))"
-        // `( x: T, … ) -> body` typed lambda (t-47hc paren prep — DORMANT). args[0] = the
-        // PENTRY-list accumulator (MkParam-built, already typed List<ParamEntry> in the
-        // generated parser — passed directly like MkFnDecl), args[1] = the body scalar.
-        "MkLambdaTyped" -> "CapVal.Node(mk_lambda_typed(st, sp_start, ${args[0]}_list, capval_to_expr(st, ${args[1]})))"
-        // `( e )` grouping OR `()` empty tuple — args[0] is the OPT-SCALAR grouping expr (a
-        // `mut <e>: CapVal = CapVal.Nil` local, NOT a `_list` accumulator), passed as-is so
-        // mk_group_or_empty reads Nil→Tuple([]) / else→Grouping(e).
-        "MkGroupOrEmpty" -> "CapVal.Node(mk_group_or_empty(st, sp_start, ${args[0]}))"
-        // `( first, rest… )` tuple — args[0] is the SCALAR first element (a `let <first>` local),
-        // args[1] the REST list accumulator (`<rest>_list`); mk_tuple_fr prepends first.
-        "MkTupleFR" -> "CapVal.Node(mk_tuple_fr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
+        // The `(`-led paren family (MkLambdaTyped/MkLambda/MkTupleFR/
+        // MkGroupOrEmpty/MkParam) is feature-owned (features/closures/
+        // lowering, t-kd4y.3.5.3): the manifest branch above renders the
+        // adapter calls, captures wrapped by manifest_arg_spelling.
         "MkListComp" -> {
             let filt = if args.length == 4 { args[3] } else { "CapVal.Nil" }
             "CapVal.Node(mk_list_comp(st, sp_start, capval_to_expr(st, ${args[0]}), capval_tok_text(${args[1]}), capval_to_expr(st, ${args[2]}), ${filt}))"
@@ -2557,7 +2544,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "mk_enum_ctor" -> "CapVal.Node(mk_enum_ctor_expr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
         "mk_eqchain" -> "CapVal.Node(mk_eqchain_expr(st, CapVal.Toks(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
         "Unary" -> "CapVal.Node(unary_expr(st, ${args[0]}, ${args[1]}))"
-        "Grouping" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, ${args[0]}))))"
         "field_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(${args[0]}))))"
         "index_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, ${args[0]}))))"
         "call_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Call(st.missing_node(), ${args[0]}_list)))"
@@ -2688,7 +2674,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // MkUseBare / MkUsePkg / MkModule — feature-owned (features/modules);
         // MkUse was dead (no grammar reference).
         // MkEnumDecl / MkEVariant — feature-owned (features/enum_decl).
-        "MkParam" -> "mk_param(st, capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
         // MkTraitDecl / MkAssocType / MkTraitMethod — feature-owned
         // (features/trait_decl). MkAssocTypeDef stays until the impl family
         // flips: `impl_assoc` is the rule that references it.

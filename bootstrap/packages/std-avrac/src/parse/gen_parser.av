@@ -5,7 +5,7 @@
 // family; parse/tests/gen_parser_regen_test.av asserts it equals
 // emit_parser_file() so a grammar edit that isn't regenerated fails the suite.
 
-use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, error_stmt_of, fold_logical_expr, fold_nullish_expr, fold_pipe_expr, fold_postfix_with_expr, fold_type_union, gensym_token, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assign_expr, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_eqchain_expr, mk_export_decl, mk_expr_block, mk_field_access, mk_field_init, mk_fn_type, mk_force_unwrap, mk_generic_call_suffix, mk_grammar_block, mk_group_or_empty, mk_index_suffix, mk_inlist_expr, mk_inrange_expr, mk_is_expr, mk_lambda, mk_lambda_typed, mk_list_comp, mk_list_lit, mk_map_lit, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_param, mk_paren_type, mk_plain_name, mk_qualified, mk_qualified_type, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_struct_lit, mk_table_header, mk_table_lit, mk_table_row, mk_tagged_template, mk_template, mk_try_suffix, mk_tuple_fr, mk_tuple_index, mk_with_suffix, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, rebind_eq_expr, text_is_word, unary_expr}
+use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, error_stmt_of, fold_logical_expr, fold_nullish_expr, fold_pipe_expr, fold_postfix_with_expr, fold_type_union, gensym_token, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assign_expr, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_expr, mk_enum_ctor_suffix, mk_eqchain_expr, mk_export_decl, mk_expr_block, mk_field_access, mk_field_init, mk_fn_type, mk_force_unwrap, mk_generic_call_suffix, mk_grammar_block, mk_index_suffix, mk_inlist_expr, mk_inrange_expr, mk_is_expr, mk_list_comp, mk_list_lit, mk_map_lit, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_paren_type, mk_plain_name, mk_qualified, mk_qualified_type, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_struct_lit, mk_table_header, mk_table_lit, mk_table_row, mk_tagged_template, mk_template, mk_try_suffix, mk_tuple_index, mk_with_suffix, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, rebind_eq_expr, text_is_word, unary_expr}
 use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, MatchArm, ParamEntry, PatId, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, Variant, WhenArm}
 use features.modules.lowering.{module_build, use_bare_build, use_pkg_build}
 use features.struct_decl.lowering.{mk_field_abi, mk_shape_decl_abi, mk_type_decl_any_abi}
@@ -19,6 +19,7 @@ use features.parallel_stmt.lowering.{parallel_build}
 use features.spec_test.lowering.{given_block_build, spec_block_build, then_block_build}
 use features.let_stmt.lowering.{mk_const_binding_abi, mk_let_binding_abi, mk_let_destructure_abi, mk_mut_binding_abi}
 use features.component_decl.lowering.{mk_children_slot_abi, mk_children_slot_list_abi, mk_comp_body_marker_abi, mk_comp_config_abi, mk_comp_config_list_abi, mk_comp_config_pair_abi, mk_comp_field_abi, mk_component_block_abi, mk_component_def_abi, mk_component_paren_def_abi, mk_method_shorthand_abi, mk_raw_component_block_abi, mk_trait_list_abi}
+use features.closures.lowering.{mk_group_or_empty_abi, mk_lambda_abi, mk_lambda_typed_abi, mk_param_abi, mk_tuple_fr_abi}
 use features.match.lowering.{build_arm_abi, build_match_abi, build_when_arm_abi, build_when_default_abi, ident_pat_abi, mk_arm_return_abi, mk_match_expr_abi, mk_match_table_abi, mk_match_table_expr_abi, mk_variant_abi, mk_when_abi, mk_when_stmt_abi, opt_absent_abi, opt_present_abi, or_maybe_abi, pat_bool_abi, pat_neg_num_abi, pat_num_abi, pat_str_abi}
 use features.defer.lowering.{build_defer_abi, build_errdefer_abi}
 use features.return_stmt.lowering.{build_return_abi}
@@ -5069,166 +5070,6 @@ fn parse_list_comp(st: PState) -> CapVal {
     CapVal.Node(mk_list_comp(st, sp_start, capval_to_expr(st, b), capval_tok_text(v), capval_to_expr(st, c), f))
 }
 
-fn parse_paren_expr(st: PState) -> CapVal {
-    mut tried_spec = false
-    if lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) {
-        let sp_start = st.cur().pos
-        mut ps_list: List<ParamEntry> = []
-        let _ = st.advance()
-        let __bdiag1 = st.diags.length
-        let __bres1 = parse_param(st)
-        if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        ps_list.push(capval_to_pentry(st, __bres1))
-        while st.cur().tk == Tk.Comma {
-            let _ = st.advance()
-            let __bdiag1 = st.diags.length
-            let __bres1 = parse_param(st)
-            if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
-                st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-            }
-            ps_list.push(capval_to_pentry(st, __bres1))
-        }
-        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected `)`")
-        }
-        if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-            st.report("expected `->`")
-        }
-        let lb = parse_lambda_body(st)
-        return CapVal.Node(mk_lambda_typed(st, sp_start, ps_list, capval_to_expr(st, lb)))
-    }
-    if lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        mut s_cut = false
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        let sp_start = st.cur().pos
-        while true {
-            mut a_list: List<ExprId> = []
-            let _ = st.advance()
-            if starts_expression(st) {
-                let __modes_0 = st.modes
-                st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
-                a_list.push(capval_to_expr(st, parse_expression(st)))
-                st.set_modes(__modes_0)
-                while st.cur().tk == Tk.Comma {
-                    let _ = st.advance()
-                    a_list.push(capval_to_expr(st, parse_expression(st)))
-                }
-            }
-            if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-                st.report("expected `)`")
-            }
-            if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
-                st.report("expected `->`")
-            }
-            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
-            if !s_cut { break }
-            let lb = parse_lambda_body(st)
-            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-                return CapVal.Node(mk_lambda(st, sp_start, CapVal.Nodes(a_list), capval_to_expr(st, lb)))
-            }
-            break
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
-    }
-    if st.cur().tk == Tk.LeftParen {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        let sp_start = st.cur().pos
-        mut rest_list: List<ExprId> = []
-        let _ = st.advance()
-        let __modes_1 = st.modes
-        st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
-        let first = parse_expression(st)
-        st.set_modes(__modes_1)
-        if !(st.cur().tk == Tk.Comma) {
-            st.report("expected at least one repetition")
-        }
-        while st.cur().tk == Tk.Comma {
-            let _ = st.advance()
-            if starts_expression(st) {
-                let __modes_0 = st.modes
-                st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
-                rest_list.push(capval_to_expr(st, parse_expression(st)))
-                st.set_modes(__modes_0)
-            }
-        }
-        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected `)`")
-        }
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return CapVal.Node(mk_tuple_fr(st, sp_start, first, CapVal.Nodes(rest_list)))
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
-    }
-    if st.cur().tk == Tk.LeftParen {
-        let sp_start = st.cur().pos
-        mut e: CapVal = CapVal.Nil
-        let _ = st.advance()
-        if starts_expression(st) {
-            let __modes_0 = st.modes
-            st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
-            e = parse_expression(st)
-            st.set_modes(__modes_0)
-        }
-        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected `)` after expression")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        return CapVal.Node(mk_group_or_empty(st, sp_start, e))
-    }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_expected_expr())
-}
-
-fn parse_lambda_body(st: PState) -> CapVal {
-    if starts_block_expr(st) {
-        return parse_block_expr(st)
-    }
-    parse_expression(st)
-}
-
-fn parse_param(st: PState) -> CapVal {
-    mut pt: CapVal = CapVal.Nil
-    let pname = CapVal.Tok(st.advance())
-    if st.cur().tk == Tk.Colon {
-        let _ = st.advance()
-        if !(starts_type_expr(st)) {
-            st.report("expected parameter type after `:`")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        st.set_abort_prop(false)
-        let __rres1 = parse_type_expr(st)
-        if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
-            return CapVal.Node(st.error_node_silent())
-        }
-        pt = __rres1
-    }
-    mk_param(st, capval_tok_text(pname), pt, capval_present(pt))
-}
-
 fn parse_table_cell(st: PState) -> CapVal {
     if starts_qualified_expr(st) {
         return parse_qualified_expr(st)
@@ -5417,6 +5258,166 @@ fn parse_quote_expr(st: PState) -> CapVal {
     let body = __rres2
     st.set_modes(__modes_2)
     call_with_build_sp(st, sp_start, mk_quote_abi, [k, body])
+}
+
+fn parse_paren_expr(st: PState) -> CapVal {
+    mut tried_spec = false
+    if lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) {
+        let sp_start = st.cur().pos
+        mut ps_list: List<ParamEntry> = []
+        let _ = st.advance()
+        let __bdiag1 = st.diags.length
+        let __bres1 = parse_param(st)
+        if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        ps_list.push(capval_to_pentry(st, __bres1))
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            let __bdiag1 = st.diags.length
+            let __bres1 = parse_param(st)
+            if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
+                st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+            }
+            ps_list.push(capval_to_pentry(st, __bres1))
+        }
+        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+            st.report("expected `)`")
+        }
+        if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+            st.report("expected `->`")
+        }
+        let lb = parse_lambda_body(st)
+        return call_with_build_sp(st, sp_start, mk_lambda_typed_abi, [CapVal.PEntries(ps_list), lb])
+    }
+    if lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        mut s_cut = false
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        let sp_start = st.cur().pos
+        while true {
+            mut a_list: List<ExprId> = []
+            let _ = st.advance()
+            if starts_expression(st) {
+                let __modes_0 = st.modes
+                st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
+                a_list.push(capval_to_expr(st, parse_expression(st)))
+                st.set_modes(__modes_0)
+                while st.cur().tk == Tk.Comma {
+                    let _ = st.advance()
+                    a_list.push(capval_to_expr(st, parse_expression(st)))
+                }
+            }
+            if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+                st.report("expected `)`")
+            }
+            if st.cur().tk == Tk.Arrow { let _ = st.advance() } else {
+                st.report("expected `->`")
+            }
+            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
+            if !s_cut { break }
+            let lb = parse_lambda_body(st)
+            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
+                return call_with_build_sp(st, sp_start, mk_lambda_abi, [CapVal.Nodes(a_list), lb])
+            }
+            break
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().tk == Tk.LeftParen {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        let sp_start = st.cur().pos
+        mut rest_list: List<ExprId> = []
+        let _ = st.advance()
+        let __modes_1 = st.modes
+        st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
+        let first = parse_expression(st)
+        st.set_modes(__modes_1)
+        if !(st.cur().tk == Tk.Comma) {
+            st.report("expected at least one repetition")
+        }
+        while st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+            if starts_expression(st) {
+                let __modes_0 = st.modes
+                st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
+                rest_list.push(capval_to_expr(st, parse_expression(st)))
+                st.set_modes(__modes_0)
+            }
+        }
+        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+            st.report("expected `)`")
+        }
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return call_with_build_sp(st, sp_start, mk_tuple_fr_abi, [first, CapVal.Nodes(rest_list)])
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if st.cur().tk == Tk.LeftParen {
+        let sp_start = st.cur().pos
+        mut e: CapVal = CapVal.Nil
+        let _ = st.advance()
+        if starts_expression(st) {
+            let __modes_0 = st.modes
+            st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
+            e = parse_expression(st)
+            st.set_modes(__modes_0)
+        }
+        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+            st.report("expected `)` after expression")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        return call_with_build_sp(st, sp_start, mk_group_or_empty_abi, [e])
+    }
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
+fn parse_lambda_body(st: PState) -> CapVal {
+    if starts_block_expr(st) {
+        return parse_block_expr(st)
+    }
+    parse_expression(st)
+}
+
+fn parse_param(st: PState) -> CapVal {
+    mut pt: CapVal = CapVal.Nil
+    let pname = CapVal.Tok(st.advance())
+    if st.cur().tk == Tk.Colon {
+        let _ = st.advance()
+        if !(starts_type_expr(st)) {
+            st.report("expected parameter type after `:`")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        st.set_abort_prop(false)
+        let __rres1 = parse_type_expr(st)
+        if st.abort_prop || capval_is_error_expr(st, __rres1) || capval_is_error_stmt(st, __rres1) {
+            return CapVal.Node(st.error_node_silent())
+        }
+        pt = __rres1
+    }
+    mk_param_abi(st, [pname, pt])
 }
 
 fn parse_spawn_expr(st: PState) -> CapVal {
@@ -6677,14 +6678,6 @@ fn starts_list_comp(st: PState) -> bool {
     st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
-fn starts_paren_expr(st: PState) -> bool {
-    lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen
-}
-
-fn starts_param(st: PState) -> bool {
-    st.cur().tk == Tk.Identifier
-}
-
 fn starts_table_cell(st: PState) -> bool {
     st.cur().tk == Tk.At || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || st.cur().tk == Tk.Template || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace
 }
@@ -6703,6 +6696,14 @@ fn starts_quote_arm_expr(st: PState) -> bool {
 
 fn starts_quote_expr(st: PState) -> bool {
     st.cur().text == "quote"
+}
+
+fn starts_paren_expr(st: PState) -> bool {
+    lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen
+}
+
+fn starts_param(st: PState) -> bool {
+    st.cur().tk == Tk.Identifier
 }
 
 fn starts_spawn_expr(st: PState) -> bool {

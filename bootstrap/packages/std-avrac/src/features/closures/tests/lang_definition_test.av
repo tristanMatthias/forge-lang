@@ -1,0 +1,80 @@
+// The paren-family LanguageFeature definitions (features/closures/mod.av +
+// features/tuples/mod.av): closures_lang carries the whole `(`-led
+// alternation (paren_expr / lambda_body / param) + ALL FIVE manifest rows
+// (the no-orphans validator demands the spelling gram own its rows);
+// tuples_lang carries the Tuple hooks alone — the t-kd4y.3.5.3 flip's
+// guard: ONE definition set in the feature dirs, zero spine copies, and
+// the retired engine builds (Grouping / MkTuple) DELETED, not moved (the
+// Break/Continue/Return purity precedent).
+use @std.avrac.features.closures.{closures_lang}
+use @std.avrac.features.tuples.{tuples_lang}
+use @std.avrac.features.{feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.parse.{oracle_expr}
+
+spec "paren family as LanguageFeatures" {
+    then "titles, docs, and editor snippets are carried" {
+        let c = closures_lang()
+        let t = tuples_lang()
+        c.title.length > 0 && c.docs.contains("closure") && c.snippet.contains("->")
+            && t.title.length > 0
+    }
+    then "the declared rules reach the composed whole-program view" {
+        let prog = render_grammar(avra_program_grammar())
+        let frag = render_grammar(feature_gram(closures_lang()))
+        frag.contains("MkLambdaTyped(ps, lb)")
+            && prog.contains("MkLambdaTyped(ps, lb)")
+            && prog.contains("MkLambda(a, lb)")
+            && prog.contains("MkTupleFR(first, rest)")
+            && prog.contains("MkGroupOrEmpty(e)")
+            && prog.contains("MkParam(pname, pt)")
+    }
+    then "the five rows ride the manifest and NOTHING is left central" {
+        mut lt = ""
+        mut la = ""
+        mut tf = ""
+        mut ge = ""
+        mut pa = ""
+        for b in feature_builders() {
+            let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
+            if b.name == "MkLambdaTyped" { lt = row }
+            if b.name == "MkLambda" { la = row }
+            if b.name == "MkTupleFR" { tf = row }
+            if b.name == "MkGroupOrEmpty" { ge = row }
+            if b.name == "MkParam" { pa = row }
+        }
+        lt == "expr/2/spanned/mk_lambda_typed_abi/features.closures.lowering"
+            && la == "expr/2/spanned/mk_lambda_abi/features.closures.lowering"
+            && tf == "expr/2/spanned/mk_tuple_fr_abi/features.closures.lowering"
+            && ge == "expr/1/spanned/mk_group_or_empty_abi/features.closures.lowering"
+            && pa == "pentry/2/flat/mk_param_abi/features.closures.lowering"
+            && central_build_kind("MkLambdaTyped") == ""
+            && central_build_kind("MkLambda") == ""
+            && central_build_kind("MkTupleFR") == ""
+            && central_build_kind("MkGroupOrEmpty") == ""
+            && central_build_kind("MkParam") == ""
+    }
+    then "the retired engine builds are GONE — no manifest row, no central kind" {
+        mut dead_rows = 0
+        for b in feature_builders() {
+            if b.name == "Grouping" || b.name == "MkTuple" { dead_rows = dead_rows + 1 }
+        }
+        dead_rows == 0
+            && central_build_kind("Grouping") == ""
+            && central_build_kind("MkTuple") == ""
+    }
+}
+
+// The representative paren shapes, parsed by the PRODUCTION engine — the
+// dispatch order (typed-lambda, untyped-lambda, tuple, group) is semantic.
+spec "paren shapes parse to the expected trees" {
+    then "canonical renders of representative forms" {
+        (oracle_expr("()") ?? "<parse error>") == "(tuple ())"
+            && (oracle_expr("(x)") ?? "<parse error>") == "(group x)"
+            && (oracle_expr("(1, 2)") ?? "<parse error>") == "(tuple (1, 2))"
+            && (oracle_expr("(x,)") ?? "<parse error>") == "(tuple (x))"
+            && (oracle_expr("(a, b) -> 3") ?? "<parse error>") == "(lambda (a, b) 3)"
+            && (oracle_expr("(x: int) -> 7") ?? "<parse error>") == "(lambda (x:int) 7)"
+            && (oracle_expr("() -> 9") ?? "<parse error>") == "(lambda () 9)"
+    }
+}

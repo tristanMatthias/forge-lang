@@ -64,6 +64,12 @@ will fail if no such binding is in scope).
 
 ## Pipeline placement
 
+- The grammar rules live in `closures_lang`'s `grammar {}` block
+  (`features/closures/mod.av`): `paren_expr` is ONE alternation spanning
+  typed/untyped lambdas, `(a, b)` tuples, `(expr)` grouping and `()`, plus
+  the shared `param` rule — with all five lowerings (`MkLambdaTyped`,
+  `MkLambda`, `MkTupleFR`, `MkGroupOrEmpty`, `MkParam`) feature-owned in
+  `features/closures/lowering/` (t-kd4y.3.5.3).
 - Parser produces `Expr.Lambda(params, body)`.
 - The `it`-wrap pass runs inline in the parser during method-call
   argument parsing (see `wrap_in_it_lambda` + the call sites that

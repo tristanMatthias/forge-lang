@@ -42,14 +42,14 @@ fn emit_rule(grammar_src: string, rule: string) -> string {
 // diagnostic when the cap correctly leaves cells behind.
 fn bounded_g() -> string {
     "r = \"[\" ( h:paren )+ \"|\" ( c:paren )*{#h} -> MkListLit(c)\n" +
-    "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+    "paren = \"(\" e:NUMBER \")\" -> MkGroupOrEmpty(e)"
 }
 
 // The identical grammar WITHOUT the bound — the control. Any difference between the two
 // on the same input is the cap and nothing else.
 fn unbounded_g() -> string {
     "r = \"[\" ( h:paren )+ \"|\" ( c:paren )* -> MkListLit(c)\n" +
-    "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+    "paren = \"(\" e:NUMBER \")\" -> MkGroupOrEmpty(e)"
 }
 
 spec "t-47hc.28: the bound caps the repetition at the header's width" {
@@ -73,7 +73,7 @@ spec "t-47hc.28: the bound caps the repetition at the header's width" {
         // Reachable only via a `*` header (a `+` header cannot be empty); pinned here
         // because it is the boundary the emitted `>=` guard turns on.
         let g = "r = \"[\" ( h:paren )* \"|\" ( c:paren )*{#h} -> MkListLit(c)\n" +
-                "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+                "paren = \"(\" e:NUMBER \")\" -> MkGroupOrEmpty(e)"
         run_render(g, "[|(7)(8)]") == "(list ())"
     }
 }
@@ -107,7 +107,7 @@ spec "t-47hc.28: the emitted parser is the executor's twin" {
 // into the group, or this — the headline use case — is unparseable.
 fn nested_g() -> string {
     "r = \"[\" ( h:paren )+ \"|\" ( ( c:paren )*{#h} \";\" )* -> MkListLit(c)\n" +
-    "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+    "paren = \"(\" e:NUMBER \")\" -> MkGroupOrEmpty(e)"
 }
 
 spec "t-47hc.28: a bound INSIDE a repeating group sees the enclosing branch" {
@@ -135,12 +135,12 @@ spec "t-47hc.28: `+` with a zero cap takes zero iterations, matching the emitted
         // Unless the forced iteration honours the cap, the two engines disagree here —
         // reachable whenever the bound names a `*` capture that matched nothing.
         let g = "r = \"[\" ( h:paren )* \"|\" ( c:paren )+{#h} -> MkListLit(c)\n" +
-                "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+                "paren = \"(\" e:NUMBER \")\" -> MkGroupOrEmpty(e)"
         run_render(g, "[|(7)(8)]") == "(list ())"
     }
     then "a positive cap still takes its full count" {
         let g = "r = \"[\" ( h:paren )* \"|\" ( c:paren )+{#h} -> MkListLit(c)\n" +
-                "paren = \"(\" e:NUMBER \")\" -> Grouping(e)"
+                "paren = \"(\" e:NUMBER \")\" -> MkGroupOrEmpty(e)"
         run_render(g, "[(1)(2)|(7)(8)(9)]") == "(list ((group 7), (group 8)))"
     }
 }

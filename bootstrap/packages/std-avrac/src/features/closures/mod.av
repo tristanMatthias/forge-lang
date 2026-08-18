@@ -1,20 +1,59 @@
 // dir-as-module (g2eo.1): no `mod` decls — codegen.av + parser.av
 // auto-load as siblings, surface flat at `features.closures.{...}`.
 // `emit_lambda` and parser helpers are in scope without self-imports.
-use core.{feature_new, Feature, ExprId}
+use core.{ExprId}
+use features.grammar.{parse_grammar}
+use features.closures.lowering.{closures_builds}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use typeck.{check_expr, tc_bind_params, tc_check_signature_arity_top, tc_enter, tc_er, tc_exit, tc_first_unannotated_param, tc_param_types}
 
-/// Register the `(x, y) -> body` lambda + closure feature.
-/// Captures referenced bindings from the enclosing scope; spec
-/// Axis 28.
-export fn closures_feature() -> Feature {
-    feature_new("lambda") with {
-        expr_tag: Expr.Lambda([], ExprId(0)),
-        emit_expr: emit_lambda,
-        resolve_expr: closure_resolve,
-        check_expr: closure_check,
+/// `(x, y) -> body` lambdas + the whole `(`-led paren family — the
+/// definition carries it all (t-kd4y.3.5.3): `paren_expr` is ONE
+/// alternation spanning typed/untyped lambdas, the first+rest tuple, and
+/// the group-or-empty twin, so one gram owns all five rows (the
+/// no-orphans validator demands it; tuples_lang carries the Tuple hooks
+/// beside it). The shared `param` rule moves here too — its build
+/// (MkParam) needed a gram owner, lambdas are its expression-side
+/// consumer, and fn/trait/impl/component reference it cross-fragment by
+/// name exactly as they always did. `gram_family = "expr"` folds the
+/// rules into every expression view via avra_expr_core; the spine's unary
+/// ladder references `paren_expr` by name. Captures referenced bindings
+/// from the enclosing scope; spec Axis 28.
+export fn closures_lang() -> LanguageFeature {
+    LanguageFeature closures_def {
+        name = "lambda",
+        title = "closures — lambdas and the paren family",
+        docs = """
+`(x) -> body` (or `(x: int) -> body`) declares a closure capturing
+referenced bindings from the enclosing scope. The same `(`-led surface
+covers `(expr)` grouping, the empty tuple `()`, and `(a, b)` tuples —
+the arrow and the mandatory tuple comma disambiguate.
+""",
+        // The rules move VERBATIM from the spine (the F4014 history lives
+        // on the untyped branch's comments): the peeks decide ENTRY by
+        // SCAN, the `@cut` stops a malformed body committing, and the
+        // dispatch ORDER (typed-lambda, untyped-lambda, tuple, group) is
+        // semantic — pinned on emitted source by the paren guard specs.
+        gram = grammar {
+  paren_expr   = @peek(lparen_ident_colon) @peek(paren_arrow_ahead) "(" @onfail(bail) ps:param ( "," @onfail(bail) ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
+               | @try @peek(paren_lambda_ahead) "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
+               | @try "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
+               | "(" ( @on(allow_dot_postfix) e:expression )? @require ")"
+                 @expect(")", "expected `)` after expression") -> MkGroupOrEmpty(e)
+  lambda_body  = block_expr | expression
+  param        = pname:IDENT ( ":" @require pt:type_expr )?
+                 @expect("IDENT", "expected parameter name")
+                 @expect("type_expr", "expected parameter type after `:`") -> MkParam(pname, pt)
+        },
+        builders = closures_builds(),
+        snippet = r"(${1:x}) -> ${2:body}",
+        expr_tag = Expr.Lambda([], ExprId(0)),
+        emit_expr = emit_lambda,
+        resolve_expr = closure_resolve,
+        check_expr = closure_check,
+        gram_family = "expr",
     }
+    closures_def
 }
 
 /// Resolver hook for `Lambda`. Opens a fresh scope, declares
