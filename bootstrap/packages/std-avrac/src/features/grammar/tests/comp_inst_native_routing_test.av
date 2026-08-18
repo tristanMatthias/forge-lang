@@ -156,11 +156,12 @@ spec "t-47hc.5.1: the instantiation BODY rule is routed, and passes its value th
     then "the nested arms build ComponentBlocks, and the method arm builds a Function" {
         // The kind-plumbing trap the sibling slices document: a mis-kinded repeat
         // coerces its entries through capval_to_expr. The nested bodies are statement
-        // lists and the method body is one too.
+        // lists and the method body is one too. Post-flip (t-kd4y.3.3.5) the
+        // builds spell as their manifest ABI adapters.
         let body = block_item_fn(decl_src())
-        body.contains("mk_component_block_g(st,") &&
-            body.contains("mk_raw_component_block_g(st,") &&
-            body.contains("mk_method_shorthand_g(st,") &&
+        body.contains("mk_component_block_abi(st, [") &&
+            body.contains("mk_raw_component_block_abi(st, [") &&
+            body.contains("mk_method_shorthand_abi(st, [") &&
             body.contains("capval_to_stmt(st,")
     }
 }
