@@ -1,0 +1,56 @@
+// The trait_decl feature's LOWERINGS — ABI fns + manifest rows in the
+// closure-safe lowering submodule the generated parser imports directly
+// (t-kd4y.3, the Batch A shape). Only features.grammar + core are imported,
+// so the F4012 import-closure invariant holds by construction; the feature's
+// passes/hooks and its gram stay in ../.
+//
+// The rows keep their grammar-side names (`MkTraitDecl` / `MkAssocType` /
+// `MkTraitMethod`), because the row name IS the gram reference — the flip
+// touches no rule text and no spine copy.
+//
+// WHAT DID NOT COME WITH THEM, and why the ledger says so at their new
+// homes: `MkAssocTypeDef` is referenced by `impl_assoc` (features/impl_decl)
+// and `MkTraitList` by `comp_implements` (the component §-view). A supplied
+// builder must be referenced by the gram that carries it
+// (builder_validation_error's orphan contract), so those two rows belong to
+// the features whose rules spell them — impl (t-kd4y.3.3.4) and component
+// (t-kd4y.3.3.5) — not to `trait` on the strength of their names.
+
+use core.{Stmt, ValueType, TypeParamEntry, type_expr_to_vtype}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_tok_text, capval_present, capval_to_stmt_list, capval_to_pentry_list, capval_to_texpr}
+
+/// `trait Name { member* }` (`MkTraitDecl`).
+export fn trait_decl_build(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, Stmt.TraitDecl(capval_tok_text(vals[0]), capval_to_stmt_list(vals[1])))
+}
+
+/// `type Name` — a trait associated-type member (`MkAssocType`). The
+/// IMPL-side twin (`type Name = Concrete`, MkAssocTypeDef) fills the same
+/// `Stmt.AssocType` row's type in instead of leaving it Unknown, and lives
+/// with the impl gram that references it.
+export fn assoc_type_build(st: PState, vals: List<CapVal>) -> CapVal {
+    capval_stmt_val(st, Stmt.AssocType(capval_tok_text(vals[0]), ValueType.Unknown))
+}
+
+/// `fn name ( params? ) ( "->" ret )? ( "{" body "}" )?` — a trait method
+/// member (`MkTraitMethod`). A present brace body ⇒ default method
+/// (Function, PLAIN name — trait defaults are not mangled); absent ⇒
+/// signature-only ExternFn. The `{` capture (vals[3]) is presence-tested,
+/// never read: it exists to tell an empty default body from no body at all.
+export fn trait_method_build(st: PState, vals: List<CapVal>) -> CapVal {
+    let ret_vt = if capval_present(vals[2]) { type_expr_to_vtype(capval_to_texpr(st, vals[2])) } else { ValueType.Void }
+    let params = capval_to_pentry_list(vals[1])
+    if capval_present(vals[3]) {
+        let no_tp: List<TypeParamEntry> = []
+        capval_stmt_val(st, Stmt.Function(capval_tok_text(vals[0]), no_tp, params, ret_vt, capval_to_stmt_list(vals[4])))
+    } else {
+        capval_stmt_val(st, Stmt.ExternFn(capval_tok_text(vals[0]), params, ret_vt))
+    }
+}
+
+/// ALL of the trait feature's rows — one list per feature.
+export fn trait_builds() -> List<BuilderBind> {
+    bind_rows("features.trait_decl.lowering", [bind_row("MkTraitDecl", "stmt", 2, false, "trait_decl_build", trait_decl_build),
+     bind_row("MkAssocType", "stmt", 1, false, "assoc_type_build", assoc_type_build),
+     bind_row("MkTraitMethod", "stmt", 5, false, "trait_method_build", trait_method_build)])
+}

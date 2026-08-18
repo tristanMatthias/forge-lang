@@ -204,8 +204,11 @@ spec "t-47hc slice 10.13: `trait` and `impl` are routed onto the production path
         // The trap this slice hit four separate times: an executor-only build passes every
         // interpreter-driven parity spec above and emits nothing usable.
         let src = decl_src_routing()
-        src.contains("mk_trait_decl(") && src.contains("mk_trait_method(") &&
-            src.contains("mk_assoc_type(") && src.contains("mk_impl(") && src.contains("mk_method(")
+        // The trait family's cores are feature-owned now (t-kd4y.3.3.3) —
+        // the generated parser calls their ABI adapters by the manifest's
+        // export names; `impl`'s are still engine-central (t-kd4y.3.3.4).
+        src.contains("trait_decl_build(") && src.contains("trait_method_build(") &&
+            src.contains("assoc_type_build(") && src.contains("mk_impl(") && src.contains("mk_method(")
     }
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {

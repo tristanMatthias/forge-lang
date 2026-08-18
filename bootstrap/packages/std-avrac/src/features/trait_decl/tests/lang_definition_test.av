@@ -1,0 +1,56 @@
+// The trait LanguageFeature definition (features/trait_decl/mod.av): the
+// conversion off the legacy `register(reg, trait_decl_feature())` path
+// (t-kd4y.3.3.3). The definition carries title/docs/snippet, its keywords
+// DERIVE from the declared grammar, its rules still reach the composed
+// declaration view through the decl-fragment registry (family "" — the gram
+// here is the validation + docs surface for rules composed there), and its
+// three lowerings ride the manifest under their grammar-side names.
+use @std.avrac.features.trait_decl.{trait_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders, builder_validation_error}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, rule_index_of}
+use @std.avrac.list_ops.{list_contains_str}
+
+spec "trait as a LanguageFeature" {
+    then "title, docs, and editor snippet are carried" {
+        let f = trait_lang()
+        f.name == "trait_decl" && f.title.length > 0
+            && f.docs.contains("DEFAULT") && f.snippet.contains("trait")
+    }
+    then "keywords derive from the declared grammar" {
+        let kws = feature_keywords(trait_lang())
+        list_contains_str(kws, "trait") && list_contains_str(kws, "type")
+            && list_contains_str(kws, "fn")
+    }
+    then "the definition's gram DEFINES the trait rule set (by rule index, not text)" {
+        // What the no-orphans validator reads: a supplied builder must be
+        // referenced by THIS gram. The member rules are part of it, which is
+        // why MkAssocType/MkTraitMethod can live here at all.
+        let g = feature_gram(trait_lang())
+        rule_index_of(g, "trait_decl") >= 0 && rule_index_of(g, "trait_member") >= 0
+            && rule_index_of(g, "assoc_member") >= 0 && rule_index_of(g, "method_member") >= 0
+    }
+    then "the manifest is coherent with the gram that carries it" {
+        builder_validation_error(trait_lang()) == ""
+    }
+    then "the whole-program view lowers through the feature's builds" {
+        // The rule text is untouched by the flip — the row name IS the gram
+        // reference — so the composed view still spells MkTraitDecl, and the
+        // engine no longer knows it.
+        let prod = render_grammar(avra_program_grammar())
+        prod.contains("-> MkTraitDecl(") && prod.contains("-> MkAssocType(")
+            && prod.contains("-> MkTraitMethod(")
+    }
+    then "the three rows ride the manifest, flat, from the feature's lowering module" {
+        // Flat, not spanned: `trait` and its members are span-free on BOTH
+        // engines — the retired central arms stamped nothing.
+        mut rows = ""
+        for b in feature_builders() {
+            if b.name == "MkTraitDecl" || b.name == "MkAssocType" || b.name == "MkTraitMethod" {
+                rows = rows + "${b.name}=${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.module}.${b.export_name} "
+            }
+        }
+        rows == "MkTraitDecl=stmt/2/flat/features.trait_decl.lowering.trait_decl_build " +
+                "MkAssocType=stmt/1/flat/features.trait_decl.lowering.assoc_type_build " +
+                "MkTraitMethod=stmt/5/flat/features.trait_decl.lowering.trait_method_build "
+    }
+}
