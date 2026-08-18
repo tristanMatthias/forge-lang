@@ -116,15 +116,16 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
 
     then "subjectless when arms and their default are generated, not hand delegated" {
         // Post-flip (t-kd4y.3) the arm lowerings are the match feature's
-        // typed builders, spelled as their derived adapter ABI calls; the
-        // when FOLD (mk_when) stays central (span-threading — the recorded
-        // wide-migration boundary).
+        // typed builders, spelled as their derived adapter ABI calls — and
+        // since t-kd4y.3.5.2 the when FOLD is feature-owned too (MkWhen on
+        // match_builds, a spanned row), so it spells as its
+        // call_with_build_sp adapter call.
         let src = emit_all()
         src.contains("fn parse_when_expr(st: PState) -> CapVal {") &&
         src.contains("fn parse_when_arm(st: PState) -> CapVal {") &&
         src.contains("build_when_arm_abi(st, [cond, body])") &&
         src.contains("build_when_default_abi(st, [body])") &&
-        src.contains("mk_when(st, sp_start, CapVal.WArms(a_list))")
+        src.contains("call_with_build_sp(st, sp_start, mk_when_abi, [CapVal.WArms(a_list)])")
     }
 
     then "lambda expression and block bodies recurse entirely through generated rules" {
