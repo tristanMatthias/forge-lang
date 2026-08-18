@@ -2,8 +2,8 @@
 // feature whole: syntax, docs, editor surface, hooks, and the grammar rule
 // the statement views compose (gram_family = "stmt", t-47hc.8). The
 // lowering (build_while) is feature-owned via the builder manifest with a
-// `spanned` row — the engine stamps the statement's SrcPos at the `while`
-// keyword; the typed fn never sees the span.
+// `spanned` row — the ADAPTER stamps the statement's SrcPos at the `while`
+// keyword (st.build_sp); the typed fn never sees the span.
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling (emit_while).
 use core.{vtype_render_full, vtype_eq, vtype_is_unknown}
 use features.eval.{error_result}
@@ -14,8 +14,8 @@ use features.grammar.{parse_grammar}
 use features.while_stmt.lowering.{while_builds}
 
 /// `while cond { body }`. Pure shape — the SrcPos stamp at the `while`
-/// keyword rides the bind's `spanned` row (the engine wraps the emitted
-/// call in mk_stamp_stmt_at), never this fn. Home in the feature file
+/// keyword rides the bind's `spanned` row (the ADAPTER stamps itself at
+/// st.build_sp via mk_stamp_stmt_at), never this fn. Home in the feature file
 /// (t-47hc.8 dissolution) — the engine's checked-in `_gb_` adapter imports
 /// it back.
 /// Resolver hook for `while`. Resolves the condition first, then

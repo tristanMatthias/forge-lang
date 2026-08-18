@@ -6,7 +6,7 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt, ExprId, StmtId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_tok_text}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_tok_text, mk_stamp_stmt_at}
 
 export fn build_for(v: string, lo: ExprId, hi: ExprId?, body: StmtId) -> Stmt {
     if hi == null { Stmt.ForIn(v, lo, body) } else { Stmt.For(v, lo, hi!, body) }
@@ -19,11 +19,11 @@ export fn build_for_abi(st: PState, vals: List<CapVal>) -> CapVal {
     let v = capval_tok_text(vals[0])
     let lo = capval_to_expr(st, vals[1])
     let body = capval_to_stmt(st, vals[3])
-    capval_stmt_val(st, build_for(v, lo, capval_to_expr_opt(st, vals[2]), body))
+    // spanned row: stamp at st.build_sp — the `for` keyword, mk_for_loop's
+    // add_stmt_at anchor (both the For and ForIn shapes); -1 = span-free exec.
+    mk_stamp_stmt_at(st, st.build_sp, capval_stmt_val(st, build_for(v, lo, capval_to_expr_opt(st, vals[2]), body)))
 }
 
 export fn for_builds() -> List<BuilderBind> {
-    // spanned — the stamp lands at the `for` keyword, mk_for_loop's
-    // add_stmt_at anchor (both the For and ForIn shapes).
     bind_rows("features.for_stmt.lowering", [bind_row("build_for", "stmt", 4, true, "build_for_abi", build_for_abi)])
 }

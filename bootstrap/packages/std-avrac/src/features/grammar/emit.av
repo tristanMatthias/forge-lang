@@ -2283,7 +2283,14 @@ export fn derived_import_lines_for(src: string, binds: List<BuildKindRow>, gramm
     // offset rescans are O(n^2) — both took the gen-check driver to a
     // 13.8GB F4014 before this shape.
     let scan = scan_import_names(src)
-    let calls = scan.calls
+    mut calls = scan.calls
+    // A `spanned` row's adapter is passed BARE to call_with_build_sp — a
+    // word, not a call — so a manifest export_name found among the scanned
+    // words imports exactly as its called form would. Word presence is the
+    // guard: a row nothing in this family references stays unimported.
+    for b in binds {
+        if str_in(scan.words, b.export_name) && !str_in(calls, b.export_name) { calls.push(b.export_name) }
+    }
     mut gram_names: List<string> = []
     mut core_names: List<string> = []
     mut foreign_mods: List<string> = []
@@ -2487,22 +2494,18 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // below keep receiving raw labels and their own baked spellings.
         mut spelled: List<string> = []
         for a in args { spelled.push(manifest_arg_spelling(g, seq, a)) }
-        // A `spanned` bind threads the owning rule's entry byte, by KIND:
-        // - "stmt": stamp AROUND the adapter via the engine's
-        //   mk_stamp_stmt_at (identical add_leaf → record_pos order to the
-        //   central add_stmt_at cores, so IR is byte-identical). The
-        //   executor needs no twin: its central arms pass `0 - 1` for
-        //   these builds, which a bare adapter call already reproduces.
-        // - otherwise (the Batch B expression rows): thread sp_start INTO
-        //   the adapter via call_with_build_sp — st.build_sp for the
-        //   duration of the build, reset after. The executor's manifest
-        //   consult calls the adapter bare, so exec reads the -1 default:
-        //   byte_span_none, the same deliberate span-free behavior its
-        //   central sp_start arms encode as `0 - 1`.
+        // A `spanned` bind threads the owning rule's entry byte INTO the
+        // adapter via call_with_build_sp — st.build_sp for the duration of
+        // the build, reset after. ONE protocol for both kinds: where the
+        // span lands is the ADAPTER's decision (a While stamps its stmt row
+        // via mk_stamp_stmt_at(st, st.build_sp, …); a When places a
+        // ByteSpan on the expr node it builds; MkWhenStmt-class rows stamp
+        // an INTERIOR node their stmt wrapper never carries — the shape the
+        // retired per-kind stamp wrap could not express). The executor's
+        // manifest consult calls the adapter bare, so exec reads the -1
+        // default: byte_span_none / no record_pos, the same deliberate
+        // span-free behavior its central sp_start arms encode as `0 - 1`.
         if b.spanned {
-            if b.kind == "stmt" {
-                return "mk_stamp_stmt_at(st, sp_start, ${b.export_name}(st, [${join_args(spelled)}]))"
-            }
             return "call_with_build_sp(st, sp_start, ${b.export_name}, [${join_args(spelled)}])"
         }
         return "${b.export_name}(st, [${join_args(spelled)}])"

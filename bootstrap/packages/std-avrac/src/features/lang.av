@@ -121,15 +121,16 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
         if !builder_kind_supported(b.kind) {
             return "feature `${fname}`: builder `${b.name}` declares unknown kind `${b.kind}`"
         }
-        // `spanned` has exactly TWO defined protocols, by kind: "stmt" rows
-        // stamp AROUND the adapter (mk_stamp_stmt_at — coerces to StmtId),
-        // "expr" rows thread the rule-entry byte INTO the adapter
-        // (call_with_build_sp → st.build_sp, the Batch B expression-span
-        // row). Any other kind has no span story — a spanned "variant"/
-        // "arm"/… bind would silently do nothing on one engine and
-        // coerce-fail on the other; reject it here.
+        // `spanned` has ONE protocol: the generated parser threads the
+        // owning rule's entry byte into the adapter as st.build_sp
+        // (call_with_build_sp), and the ADAPTER decides where the span
+        // lands — a stmt row stamps itself via mk_stamp_stmt_at, an expr
+        // row places a ByteSpan on the node it builds. The fence stays at
+        // stmt+expr: no other kind's CapVal carries a span slot, so a
+        // spanned "variant"/"arm"/… bind would read st.build_sp into a
+        // value with nowhere to put it; reject it here.
         if b.spanned && b.kind != "stmt" && b.kind != "expr" {
-            return "feature `${fname}`: builder `${b.name}` declares `spanned` with kind `${b.kind}` — span protocols exist for `stmt` (stamp wrap) and `expr` (st.build_sp) builders only"
+            return "feature `${fname}`: builder `${b.name}` declares `spanned` with kind `${b.kind}` — the span protocol (st.build_sp) exists for `stmt` and `expr` builders only"
         }
         // ANY central-name shadow is rejected — same-kind included (contract
         // 3 above). The historical check rejected only a KIND mismatch,
