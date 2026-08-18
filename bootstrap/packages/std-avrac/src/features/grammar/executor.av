@@ -555,15 +555,18 @@ export type BuilderBind = {
     name: string,
     kind: string,
     arity: int,
-    // Span-stamped lowering (t-kd4y.3 span row): the EMITTED call is wrapped
-    // `mk_stamp_stmt_at(st, sp_start, <adapter>)` and the owning rule captures
-    // `sp_start` at entry, so the generated parser records the statement's
-    // SrcPos exactly as the central While/If/ForLoop cores did. The EXECUTOR
-    // path is untouched — the interpreter's central arms pass `0 - 1`
-    // (span-free) for these builds, and a bare adapter call reproduces that.
-    // The typed build fn itself never sees the span: features own the AST
-    // shape, the engine owns the side-table. Only kind "stmt" may set this
-    // (validated at registry build — mk_stamp_stmt_at is statement-typed).
+    // Span-threaded lowering (t-kd4y.3 span rows) — TWO protocols, by kind.
+    // "stmt": the EMITTED call is wrapped `mk_stamp_stmt_at(st, sp_start,
+    // <adapter>)` and the owning rule captures `sp_start` at entry, so the
+    // generated parser records the statement's SrcPos exactly as the central
+    // While/If/ForLoop cores did; the adapter never sees the span. "expr"
+    // (Batch B): the EMITTED call rides `call_with_build_sp`, which carries
+    // the rule-entry byte on `st.build_sp` for the duration of the build —
+    // an adapter that wants it reads the field. The EXECUTOR path is
+    // untouched either way: its central arms pass `0 - 1` (span-free) for
+    // these builds, and a bare adapter call — reading build_sp's -1 default
+    // on the expr protocol — reproduces that. Only kinds "stmt" and "expr"
+    // may set this (validated at registry build, features/lang.av).
     spanned: bool,
     module: string,
     export_name: string,
