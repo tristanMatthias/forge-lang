@@ -1,0 +1,55 @@
+// The table-family LanguageFeature definition (t-kd4y.3.5.5):
+// table_lit_lang carries the whole family — the three rules and the
+// three rows (the no-orphans validator demands the gram spelling the
+// builds own them). The engine copies are DELETED, not moved. Tables
+// desugar to ListLit-of-StructLit in the BUILDS, so no expr hooks ride
+// this definition — list/struct own the downstream passes.
+use @std.avrac.features.table_lit.{table_lit_lang}
+use @std.avrac.features.{feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.parse.{oracle_expr}
+
+spec "table family as a LanguageFeature" {
+    then "title, docs, and editor snippet are carried" {
+        let t = table_lit_lang()
+        t.title.length > 0 && t.docs.contains("header") && t.snippet.contains("table")
+    }
+    then "the declared rules reach the composed whole-program view" {
+        let prog = render_grammar(avra_program_grammar())
+        let frag = render_grammar(feature_gram(table_lit_lang()))
+        frag.contains("MkTableLit(rows)")
+            && prog.contains("MkTableLit(rows)")
+            && prog.contains("MkTableHeader(rt, h)")
+            && prog.contains("MkTableRow(v)")
+    }
+    then "the three rows ride the manifest and NOTHING is left central" {
+        mut tl = ""
+        mut th = ""
+        mut tr = ""
+        for b in feature_builders() {
+            let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
+            if b.name == "MkTableLit" { tl = row }
+            if b.name == "MkTableHeader" { th = row }
+            if b.name == "MkTableRow" { tr = row }
+        }
+        tl == "expr/1/spanned/mk_table_lit_abi/features.table_lit.lowering"
+            && th == "expr/2/flat/mk_table_header_abi/features.table_lit.lowering"
+            && tr == "expr/1/flat/mk_table_row_abi/features.table_lit.lowering"
+            && central_build_kind("MkTableLit") == ""
+            && central_build_kind("MkTableHeader") == ""
+            && central_build_kind("MkTableRow") == ""
+    }
+}
+
+// Representative shapes through the PRODUCTION engine. A table renders as
+// the ListLit-of-StructLit it desugars to; the duplicate-column and
+// row-width diagnostics stay build-owned.
+spec "table shapes parse to the expected trees" {
+    then "a two-column table builds rows as struct literals" {
+        let r = oracle_expr("table<Point> { x | y\n 1 | 2\n 3 | 4 }") ?? "<parse error>"
+        r.contains("Point") && r.contains("1") && r.contains("4") && !r.contains("error")
+    }
+    then "an empty-header table is an empty list" {
+        (oracle_expr("table { }") ?? "<parse error>") == "(list ())"
+    }
+}

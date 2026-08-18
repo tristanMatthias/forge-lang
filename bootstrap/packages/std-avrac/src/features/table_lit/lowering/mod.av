@@ -1,0 +1,90 @@
+// The table feature's LOWERINGS (t-kd4y.3.5.5): `table [<Row>] { … }` —
+// the outer literal, the header, and the per-row build. One gram owns
+// all three rows (`table_lit` spells the header and rows through its
+// sub-rules — the no-orphans validator demands it). Imports ONLY
+// features.grammar + core (F4012).
+//
+// MkTableLit is `spanned` (the `table` keyword byte); the header and row
+// builds are span-free — the header yields CapVal.Nil (its whole job is
+// pushing the TableCtx the row build reads; it must not mint an arena
+// row) and each row INTERNS its StructLit exactly as the retired hand's
+// alloc_leaf did.
+use core.{Expr, ExprId, FieldInit, byte_span}
+use features.grammar.{PState, CapVal, BuilderBind, TableCtx, bind_row, bind_rows, capval_to_node_list, capval_tok_text, capval_tok_texts}
+
+/// Reports the hand's duplicate-column error here, at the same point the
+/// hand did (immediately after the header loop), so the diagnostic order
+/// across a table with BOTH a duplicate column and a bad row width
+/// matches. Pushes the context EVEN ON ERROR so the outer build's pop
+/// stays balanced.
+export fn mk_table_header(st: PState, rtcap: CapVal, hcap: CapVal) -> CapVal {
+    let cols = capval_tok_texts(hcap)
+    mut di = 0
+    while di < cols.length {
+        mut dj = di + 1
+        while dj < cols.length {
+            if cols[di] == cols[dj] {
+                st.push_table_ctx(TableCtx { row_type: capval_tok_text(rtcap), cols })
+                return CapVal.Node(st.error_node("duplicate table column `${cols[di]}`"))
+            }
+            dj = dj + 1
+        }
+        di = di + 1
+    }
+    st.push_table_ctx(TableCtx { row_type: capval_tok_text(rtcap), cols })
+    CapVal.Nil
+}
+
+export fn mk_table_header_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_table_header(st, vals[0], vals[1])
+}
+
+/// ONE data row → the `Expr.StructLit` the hand built, field names from
+/// the header and values from this row's cells, left to right. INTERNS
+/// (`intern_expr_leaf`), matching the hand's `alloc_leaf` for the row
+/// node. The cell-count check lives here, not in the outer build,
+/// because only here are the row's OWN cells visible (a flat cross-row
+/// cell capture cannot express it — the t-qhbz defect).
+export fn mk_table_row(st: PState, vcap: CapVal) -> ExprId {
+    let cells = capval_to_node_list(vcap)
+    if st.table_cols.length == 0 { return st.error_node("table row outside a table header") }
+    let ctx = st.table_cols[st.table_cols.length - 1]
+    let n = ctx.cols.length
+    if cells.length != n {
+        return st.error_node("table row has ${string(cells.length)} cell(s) but the header declares ${string(n)} column(s)")
+    }
+    mut inits: List<FieldInit> = []
+    mut ci = 0
+    while ci < n {
+        inits.push(FieldInit { name: ctx.cols[ci], value_id: cells[ci] })
+        ci = ci + 1
+    }
+    st.store.intern_expr_leaf(Expr.StructLit(ctx.row_type, inits))
+}
+
+export fn mk_table_row_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_table_row(st, vals[0]))
+}
+
+/// The whole `table [<Row>] { … }` literal → `Expr.ListLit(rows)`,
+/// spanned from the `table` keyword (the hand's `alloc_at(…, sp_start)`).
+/// A table whose header names NO columns is an empty `ListLit` — the
+/// hand returned one the moment `header_count == 0`, without looking at
+/// a single row.
+export fn mk_table_lit(st: PState, sp_start: int, rowscap: CapVal) -> ExprId {
+    let empty_header = st.table_cols.length > 0 && st.table_cols[st.table_cols.length - 1].cols.length == 0
+    st.pop_table_ctx()
+    let rows = if empty_header { [] } else { capval_to_node_list(rowscap) }
+    st.store.add_expr(Expr.ListLit(rows), byte_span(sp_start, st.cur().pos), [])
+}
+
+export fn mk_table_lit_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_table_lit(st, st.build_sp, vals[0]))
+}
+
+/// ALL of the table family's rows.
+export fn table_lit_builds() -> List<BuilderBind> {
+    bind_rows("features.table_lit.lowering", [bind_row("MkTableLit", "expr", 1, true, "mk_table_lit_abi", mk_table_lit_abi),
+     bind_row("MkTableHeader", "expr", 2, false, "mk_table_header_abi", mk_table_header_abi),
+     bind_row("MkTableRow", "expr", 1, false, "mk_table_row_abi", mk_table_row_abi)])
+}

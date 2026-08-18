@@ -914,8 +914,6 @@ export fn unflipped_builds() -> List<string> {
      // feature may only supply builders its OWN gram references.
      "MkSplice", "MkSpliceStruct",
      "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName",
-     // t-kd4y.3.5.5 tables
-     "MkTableLit", "MkTableHeader", "MkTableRow",
      // t-kd4y.3.5.6 ident-led + struct/with + enum-ctor + block-expr
      "MkStructLit", "MkWithSuffix", "MkGrammarBlock", "MkTaggedTemplate",
      "MkQualExpr", "mk_enum_ctor", "MkEnumCtorSuffix", "MkFieldInit",
@@ -957,7 +955,7 @@ export fn central_build_kind(bn: string) -> string {
             or "MkTemplate" or "MkTrySuffix" or "MkCatchSuffix" or "MkOptChain" or "MkTupleIndex"
             or "MkFieldAccess" or "MkIndexSuffix" or "MkCallSuffix" or "MkGenericCallSuffix"
             or "MkEnumCtorSuffix" or "MkOptMethodCall" or "MkForceUnwrap" or "MkCallArg" or "MkStructLit"
-            or "MkGrammarBlock" or "MkTaggedTemplate" or "MkTableHeader" or "MkTableRow" or "MkTableLit"
+            or "MkGrammarBlock" or "MkTaggedTemplate"
             or "MkPrimaryFail" -> "expr"
         "ExprStmt" or "Block" -> "stmt"
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
