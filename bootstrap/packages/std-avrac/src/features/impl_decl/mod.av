@@ -1,10 +1,24 @@
-// dir-as-module (g2eo.1): parser.av auto-loads as a sibling, surfaces flat at `features.impl_decl.{...}`
-use core.{feature_new, Feature}
+// dir-as-module (g2eo.1): grammar.av + lowering/ auto-load as siblings,
+// surface flat at `features.impl_decl.{...}`
+use features.{composed}
+use features.impl_decl.lowering.{impl_builds}
 
-/// Register the `impl` block feature. Picks up the `impl` keyword
-/// (both inherent — `impl Type { ... }` — and trait —
-/// `impl Trait for Type { ... }`) and routes to the parser's
-/// `parse_impl_declaration`.
-export fn impl_decl_feature() -> Feature {
-    feature_new("impl_decl")
+/// The `impl` block feature. Owns the `impl` keyword (both inherent —
+/// `impl Type { ... }` — and trait — `impl Trait for Type { ... }`), its
+/// method + associated-type-definition rules, and their lowerings.
+export fn impl_decl_lang() -> LanguageFeature {
+    LanguageFeature impl_def {
+        name = "impl_decl",
+        title = "impl — attach methods to a type",
+        docs = """
+`impl Type { fn method(self) { ... } }` adds methods to a type; each is
+lowered to a top-level `Type__method` whose `self` receiver is typed as the
+impl's owner. `impl Trait for Type { ... }` implements a trait for a type.
+Multiple blocks for one type are allowed and merge at link time.
+""",
+        gram = composed([avra_impl_decl_grammar()]),
+        builders = impl_builds(),
+        snippet = r"impl ${1:Type} {\n    ${2:body}\n}",
+    }
+    impl_def
 }

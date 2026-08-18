@@ -4015,19 +4015,6 @@ export fn literal_node(st: PState, t: Token) -> ExprId {
 }
 
 /// Apply a build helper / node constructor, returning a `CapVal` so the
-fn retype_self_param(st: PState, params: List<ParamEntry>, target: string) -> List<ParamEntry> {
-    if params.length == 0 { return params }
-    if params[0].name != "self" { return params }
-    let self_vt = vtype_from_name(target)
-    mut out: List<ParamEntry> = [ParamEntry { name: "self", vtype: self_vt, ty_id: st.store.ingest_type(self_vt, byte_span_none()) }]
-    mut i = 1
-    while i < params.length {
-        out.push(params[i])
-        i = i + 1
-    }
-    out
-}
-
 fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PState) -> CapVal {
     // Feature-supplied lowerings (t-kd4y.3): a name central_build_kind does
     // not know belongs to the manifest, and the central arms below shrink
@@ -4312,7 +4299,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkSpliceArm" if args.length == 1 -> mk_splice_arm(st, env.get(args[0]))
         // ── Declaration builds (target: Stmt, ps3t.6.5.7) — the non-generic
         //    arms delegate to SHARED constructor cores (mk_param / mk_fn_decl /
-        //    mk_field / mk_type_decl / … / mk_impl), so apply_build and the
+        //    mk_field / mk_type_decl / … / mk_trait_decl), so apply_build and the
         //    generated static whole-program parser build byte-identical trees.
         //    The GENERIC arms (extra type-param list) stay inline — the 6.5.11
         //    whole-program grammar has no generic-decl slice. ──
@@ -4348,9 +4335,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // and a supplied builder must be referenced by the gram that carries
         // it, so the row belongs to whoever owns that rule.
         "MkAssocTypeDef" if args.length == 2 -> mk_assoc_type_def(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
-        // ── Impl declaration builds (target: Stmt, ps3t.6.5.7) ──
-        "MkMethod" if args.length == 4 -> mk_method(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), capval_to_stmt_list(env.get(args[3])))
-        "MkImpl" if args.length == 3 -> mk_impl(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])), capval_to_stmt_list(env.get(args[2])))
+        // ── Impl declaration builds — feature-owned (features/impl_decl
+        //    lowering, t-kd4y.3.3.4): `MkImpl` / `MkMethod` dispatch through
+        //    the manifest, so no central arm survives here. ──
         // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7) ──
         "MkExtern" if args.length == 3 -> mk_extern_fn(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])))
         "MkExport" if args.length == 1 -> mk_export_decl(st, env.get(args[0]))
@@ -5685,32 +5672,6 @@ export fn mk_param(st: PState, name: string, pt_cv: CapVal, has_pt: bool) -> Cap
 export fn mk_assoc_type_def(st: PState, name: string, ty_cv: CapVal) -> CapVal {
     let ty = type_expr_to_vtype(capval_to_texpr(st, ty_cv))
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.AssocType(name, ty)))
-}
-
-/// `fn name ( params? ) ( "->" ret )? { body }` — one impl method, built with
-/// its PLAIN name (the `MkMethod` build's core); MkImpl re-keys it to the
-/// mangled `Type__method` where the impl target is in scope.
-export fn mk_method(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
-    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
-    let no_tp: List<TypeParamEntry> = []
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Function(name, no_tp, params, ret_vt, body)))
-}
-
-/// `impl Type { … }` / `impl Trait for Type { … }` — the `MkImpl` build's core.
-/// The mangling TARGET is the `for` type when present, else the header type;
-/// each plain-named method is re-keyed to `target__method` and its `self`
-/// receiver retyped to the target — the two context-dependent steps.
-export fn mk_impl(st: PState, header: string, for_cv: CapVal, has_for: bool, methods: List<StmtId>) -> CapVal {
-    let target = if has_for { capval_tok_text(for_cv) } else { header }
-    let impl_name = if has_for { "${header}:${target}" } else { header }
-    mut mangled_ids: List<StmtId> = []
-    for id in methods {
-        match st.store.stmts.get(id) {
-            .Function(nm, tp, ps, rv, bd) -> mangled_ids.push(st.store.stmts.add_leaf(Stmt.Function(method_mangled_name(target, nm), tp, retype_self_param(st, ps, target), rv, bd)))
-            _ -> mangled_ids.push(id)
-        }
-    }
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Impl(impl_name, mangled_ids)))
 }
 
 /// Generated-parser twin of the `MkArm` executor build.

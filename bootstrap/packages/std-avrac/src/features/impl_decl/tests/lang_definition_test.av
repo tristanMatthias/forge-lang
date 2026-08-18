@@ -1,0 +1,56 @@
+// The impl LanguageFeature definition (features/impl_decl/mod.av): the
+// definition carries title/docs/snippet, its keywords DERIVE from the
+// declared grammar, its rules reach the composed decl views from the
+// feature's own file, and its lowerings ride the manifest — the
+// t-kd4y.3.3.4 flip's guard. MkImpl/MkMethod keep their gram-side names
+// (the row name IS the gram ref), so what proves the flip is where they
+// DISPATCH: the manifest, with no central classification left behind.
+use @std.avrac.features.impl_decl.{impl_decl_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders, builder_validation_error}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+
+fn manifest_row_desc(name: string) -> string {
+    mut row = ""
+    for b in feature_builders() {
+        if b.name == name { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.module}.${b.export_name}" }
+    }
+    row
+}
+
+spec "impl as a LanguageFeature" {
+    then "the keywords derive from the declared grammar" {
+        // `impl`, its `for` clause, the associated-type definition's `type`,
+        // and the method's `fn` — every identifier-shaped literal the two
+        // rules spell, derived rather than declared twice.
+        let kws = feature_keywords(impl_decl_lang())
+        kws.length == 4 && kws[0] == "impl" && kws[1] == "for" && kws[2] == "type" && kws[3] == "fn"
+    }
+    then "title, docs, and editor snippet are carried" {
+        let f = impl_decl_lang()
+        f.title.length > 0 && f.docs.contains("Type__method") && f.snippet.contains("impl")
+    }
+    then "the definition's builders validate against its own gram" {
+        // Every build name the gram references resolves (feature-first, then
+        // the engine's central rows for the shared wrappers it borrows —
+        // MkDocAnnotated, MkAssocTypeDef), no orphan rows, no shadowing.
+        builder_validation_error(impl_decl_lang()) == ""
+    }
+    then "MkImpl and MkMethod ride the manifest, owned by the feature" {
+        manifest_row_desc("MkImpl") == "stmt/3/flat/features.impl_decl.lowering.impl_build" &&
+            manifest_row_desc("MkMethod") == "stmt/4/flat/features.impl_decl.lowering.method_build"
+    }
+    then "the engine carries no impl classification any more" {
+        // The purity-ledger half of the flip: a central row left behind would
+        // mean the interpreter lowered through the engine while the generated
+        // parser called the feature adapter.
+        central_build_kind("MkImpl") == "" && central_build_kind("MkMethod") == ""
+    }
+    then "the declared rules reach the whole-program view from the feature file" {
+        let own = render_grammar(feature_gram(impl_decl_lang()))
+        let prod = render_grammar(avra_program_grammar())
+        own.contains("-> MkImpl(itn, ifortn, imethods)") &&
+            prod.contains("-> MkImpl(itn, ifortn, imethods)") &&
+            own.contains("-> MkMethod(imname, imparams, imret, imbody)") &&
+            prod.contains("-> MkMethod(imname, imparams, imret, imbody)")
+    }
+}
