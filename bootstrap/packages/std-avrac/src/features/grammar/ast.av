@@ -43,8 +43,25 @@ export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr, builder_
 /// that HAVE the manifest (gen_*_file entries, the Parser's cached-grammar
 /// build) — never fetched per analysis call (feature_builders() re-runs the
 /// feature factories; see the #1232 rc-strict RSS regression).
+/// Stamp a grammar with the builder manifest rows its feature-owned builds
+/// resolve through — and VALIDATE it, because stamping is the moment the
+/// kind-dependent checks become decidable.
+///
+/// `parse_grammar` runs those checks too, but a feature FRAGMENT is parsed
+/// before any manifest exists, so `@onfail(drop)`'s statement-repetition check
+/// DEFERS there (`rule_result_kind_known`) instead of rejecting on the lenient
+/// "expr" default. Deferral is only sound if the check is actually re-run once
+/// the answer exists; doing it here rather than at the two call sites keeps it
+/// free of a bypass path — a stamped grammar cannot exist unvalidated. A
+/// violation is a compiled-in grammar contract breach, so it dies as an F9999
+/// exactly like `grammar_checked`'s parse gate.
 export fn grammar_with_builder_kinds(g: Grammar, rows: List<BuildKindRow>) -> Grammar {
-    Grammar { name: g.name, rules: g.rules, rule_idx: g.rule_idx, builder_kinds: rows }
+    let stamped = Grammar { name: g.name, rules: g.rules, rule_idx: g.rule_idx, builder_kinds: rows }
+    let err = validate_grammar_kinds(stamped)
+    if err != "" {
+        grammar_startup_fail("compiled-in grammar failed to parse: ${err}")
+    }
+    stamped
 }
 
 /// One production `name = body`, where `body` is always an Alt.
@@ -887,8 +904,6 @@ export fn unflipped_builds() -> List<string> {
      // t-kd4y.3.2.3 let family (let/mut/const/destructure)
      "MkLetBinding", "MkMutBinding", "MkConstBinding", "MkDestructure",
      "MkLet", "MkMut", "MkConst",
-     // t-kd4y.3.2.5 spec/given/then
-     "MkSpecBlock", "MkGivenBlock", "MkThenBlock",
      // t-kd4y.3.3.1 fn + extern decls (+ param plumbing)
      "MkFnDecl", "MkExtern", "MkParam", "MkTypeParam", "MkWhereParam",
      // t-kd4y.3.3.2 type + shape decls (+ field rows)
@@ -1005,7 +1020,7 @@ export fn central_build_kind(bn: string) -> string {
             or "MkAssocTypeDef"
             or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
             or "MkLetBinding" or "MkMutBinding" or "MkConstBinding" or "MkDestructure"
-            or "MkSpecBlock" or "MkGivenBlock" or "MkThenBlock" or "MkComponentDef"
+            or "MkComponentDef"
             or "MkComponentParenDef" or "MkComponentBlock" or "MkRawComponentBlock" or "MkMethodShorthand" or "MkCompField" -> "stmt"
         "MkAnn" -> "ann"
         "MkParam" -> "pentry"
@@ -1036,6 +1051,88 @@ export fn central_build_kind(bn: string) -> string {
 /// "expr". Grammar analysis (accumulator typing, alternation kind
 /// inference) keeps this leniency; exact membership questions go to
 /// `central_build_kind`, manifest validation to features/lang.av.
+/// Does this build name RESOLVE — engine-central table, or the grammar's own
+/// stamped manifest rows? `build_kind_with` answers the lenient "expr" default
+/// for a name it cannot place, which is indistinguishable from a genuine expr
+/// build; kind-dependent VALIDATION needs the exact question (t-kd4y.3.2.5).
+export fn build_kind_resolves(rows: List<BuildKindRow>, bn: string, arity: int) -> bool {
+    if central_build_kind(bn) != "" { return true }
+    manifest_row(rows, bn, arity) != null
+}
+
+/// Is `name`'s result kind DERIVABLE from what this grammar alone knows?
+///
+/// A rule's kind bottoms out in the kind of the build its branches call, and a
+/// FEATURE-owned build answers out of `g.builder_kinds` — rows a fragment only
+/// carries once stamped. Parsed on its own, a feature fragment therefore reads
+/// its own lowerings as the lenient "expr" default, and a validator that
+/// rejected on that would fail a CORRECT grammar the moment its family flipped
+/// (the `@onfail(drop)` check did exactly this to features/spec_test). This is
+/// the same "do not reject on a defaulted kind" principle `validate_onfail_drop`
+/// already applies to cross-fragment rule refs, made decidable instead of
+/// approximated by "is the rule local".
+///
+/// Mirrors `rule_kind_v` / `node_kind` / `seq_kind` arm for arm — a new kind
+/// source there needs its knownness answer here.
+export fn rule_result_kind_known(g: Grammar, name: string) -> bool {
+    rule_kind_known(g, name, [])
+}
+
+export fn rule_kind_known(g: Grammar, name: string, visited: List<string>) -> bool {
+    // A cycle and an external ref both resolve to a DECLARED default in
+    // `rule_kind_v`, so both are known answers, not guesses.
+    if str_in(visited, name) { return true }
+    let r = emit_lookup_rule(g, name)
+    if r.name == "" { return true }
+    mut v2: List<string> = []
+    for x in visited { v2.push(x) }
+    v2.push(name)
+    node_kind_known(g, r.body, v2)
+}
+
+/// `node_kind`'s twin: an alternation takes the FIRST branch with a kind, so
+/// knownness is that same branch's.
+export fn node_kind_known(g: Grammar, node: GNode, visited: List<string>) -> bool {
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                if seq_kind(g, b, visited) != "" { return seq_kind_known(g, b, visited) }
+            }
+            true
+        }
+    }
+}
+
+/// `seq_kind`'s twin.
+export fn seq_kind_known(g: Grammar, seq: GSeq, visited: List<string>) -> bool {
+    match seq.build {
+        .Call(bn, bargs) -> build_kind_resolves(g.builder_kinds, bn, bargs.length)
+        .Var(vn) -> {
+            for it in seq.items {
+                if it.label == vn {
+                    match it.prim {
+                        .Ref(rn) -> return rule_kind_known(g, rn, visited)
+                        _ -> {}
+                    }
+                }
+            }
+            true
+        }
+        .None -> {
+            mut sig: List<GItem> = []
+            for gi in seq.items {
+                if !prim_is_pred_e(gi.prim) { sig.push(gi) }
+            }
+            if sig.length == 1 && rep_is_one(sig[0].rep) {
+                match sig[0].prim {
+                    .Ref(rn) -> rule_kind_known(g, rn, visited)
+                    _ -> true
+                }
+            } else { true }
+        }
+    }
+}
+
 export fn build_kind_with(rows: List<BuildKindRow>, bn: string, arity: int) -> string {
     let k = central_build_kind(bn)
     if k != "" { return k }

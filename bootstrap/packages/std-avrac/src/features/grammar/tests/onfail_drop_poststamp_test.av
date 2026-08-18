@@ -1,0 +1,82 @@
+// WHY: t-kd4y.3.2.5 — `@onfail(drop)`'s statement-repetition check has TWO
+// decision points, and the second one is what makes the first one safe.
+//
+// `parse_grammar` validates a grammar the moment it is parsed. A FEATURE
+// fragment (features/spec_test/grammar.av and every later family's) is parsed
+// BEFORE its builder-manifest rows are stamped on, so a build the feature owns
+// answers the lenient "expr" default there — indistinguishable from a genuine
+// expr build. Rejecting on that would fail CORRECT grammars, so
+// `rule_result_kind_known` makes the check DEFER when the kind is not
+// derivable.
+//
+// Deferring is only sound if the check actually RUNS once the answer exists.
+// `grammar_with_builder_kinds` is that point: stamping is when a feature build's
+// kind becomes decidable, so it re-runs the kind validations and rejects there.
+// These specs pin both halves — the deferral must not swallow a real violation,
+// and a correct fragment must survive stamping.
+use @std.avrac.features.spec_test.{avra_spec_grammar}
+use @std.avrac.features.grammar.{parse_grammar, grammar_checked, grammar_with_builder_kinds, builder_kind_rows, validate_grammar_kinds, rule_result_kind, rule_result_kind_known, Grammar, BuilderBind, PState, CapVal}
+
+fn nil_build(st: PState, vals: List<CapVal>) -> CapVal { CapVal.Nil }
+
+fn bind(name: string, kind: string, arity: int) -> BuilderBind {
+    BuilderBind { name: name, kind: kind, arity: arity, spanned: false, module: "t", export_name: "t", build: nil_build }
+}
+
+/// A drop whose repetition references a rule built by `MkToy` — a name NO
+/// central table knows, so its kind is underivable until a manifest says.
+fn toy_src() -> string {
+    "outer = \"o\" \"{\" @onfail(drop) body:item* \"}\" -> MkOuter(body)\n" +
+    "item  = \"i\" -> MkToy(item)\n"
+}
+
+fn toy_gram() -> Grammar { grammar_checked(parse_grammar(toy_src())) }
+
+spec "@onfail(drop): the parse-time check DEFERS on an underivable kind" {
+    then "the toy grammar parses — the drop is not rejected on the \"expr\" default" {
+        // If the deferral were missing, parse_grammar would reject this
+        // outright (MkToy reads as "expr"), and grammar_checked would F9999.
+        toy_gram().rules.length == 2
+    }
+
+    then "`item`'s kind is genuinely NOT derivable before stamping" {
+        // The precise reason the check defers — not merely that it happens to.
+        !rule_result_kind_known(toy_gram(), "item")
+    }
+}
+
+spec "@onfail(drop): stamping re-runs the check and REJECTS a real violation" {
+    then "an \"expr\"-kinded drop reference is rejected once the manifest says so" {
+        // The violation the deferral would otherwise swallow: after stamping,
+        // `item` is decidably an expr rule, so the drop has no statement-list
+        // loop to mint the `(error)` row it wants to drop.
+        let stamped = Grammar {
+            name: toy_gram().name, rules: toy_gram().rules, rule_idx: toy_gram().rule_idx,
+            builder_kinds: builder_kind_rows([bind("MkOuter", "stmt", 1), bind("MkToy", "expr", 1)]),
+        }
+        let err = validate_grammar_kinds(stamped)
+        err.contains("@onfail(drop)") && err.contains("outer") && err.contains("item")
+    }
+
+    then "the SAME reference is accepted when the manifest kinds it a statement" {
+        // The positive control: identical grammar, one row different. Without
+        // it, the spec above would pass on a validator that rejects everything.
+        let stamped = Grammar {
+            name: toy_gram().name, rules: toy_gram().rules, rule_idx: toy_gram().rule_idx,
+            builder_kinds: builder_kind_rows([bind("MkOuter", "stmt", 1), bind("MkToy", "stmt", 1)]),
+        }
+        validate_grammar_kinds(stamped) == "" && rule_result_kind(stamped, "item") == "stmt"
+    }
+}
+
+spec "the production spec-test fragment survives stamping" {
+    then "`spec_decl`'s drop over `spec_item` validates once its rows are on" {
+        // The live case this mechanism exists for: MkGivenBlock is a feature
+        // build, so `spec_item` is underivable at fragment-parse time and
+        // resolves to "stmt" only after stamping. The compiler builds at all
+        // only because this passes, but pin it explicitly.
+        let rows = builder_kind_rows([bind("MkSpecBlock", "stmt", 2), bind("MkGivenBlock", "stmt", 2), bind("MkThenBlock", "stmt", 2)])
+        let g = grammar_with_builder_kinds(avra_spec_grammar(), rows)
+        validate_grammar_kinds(g) == "" && rule_result_kind(g, "spec_item") == "stmt"
+    }
+}

@@ -27,7 +27,7 @@ use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GA
 use features.grammar.{code_at, is_space_code, is_ident_start_code, is_ident_cont_code}
 use features.grammar.{build_rule_index}
 use features.grammar.{rep_is_one, grep_is_multi, onfail_policy_supported, onfail_policy_takes_capture}
-use features.grammar.{gprim_ref_name, emit_lookup_rule, rule_result_kind}
+use features.grammar.{gprim_ref_name, emit_lookup_rule, rule_result_kind, rule_result_kind_known}
 use features.grammar.{list_labels_of, node_has_onfail}
 use diagnostics.{diag_ice, render_diagnostic}
 
@@ -1194,10 +1194,27 @@ fn check_gate_node(g: Grammar, node: GNode, rule: string) -> string {
 /// would parse clean and do NOTHING, which is the silent-no-op class every other marker
 /// validator exists to reject.
 ///
-/// Checked only for a rule DEFINED in this grammar. Fragments are parsed before the merge
-/// (features/*/grammar.av), so a cross-fragment reference resolves to `rule_kind_v`'s
-/// default rather than its real kind, and rejecting on that would fail a correct grammar.
-/// Every `drop` today names a same-fragment rule, so the check is live where it is spent.
+/// Checked only for a rule DEFINED in this grammar whose kind is actually DERIVABLE here.
+/// Fragments are parsed before the merge (features/*/grammar.av), so a cross-fragment
+/// reference resolves to `rule_kind_v`'s default rather than its real kind, and rejecting
+/// on that would fail a correct grammar. `rule_kind_known` extends the same principle to
+/// the other defaulted answer: a FEATURE-owned build's kind lives in the manifest, which a
+/// fragment does not carry until stamped, so a flipped family's rules would otherwise read
+/// as the lenient "expr" and be rejected (t-kd4y.3.2.5 — features/spec_test hit exactly
+/// this). Where the kind IS derivable the check is live, as before.
+/// The kind-DEPENDENT grammar validations, re-runnable once a manifest is in
+/// hand. `parse_grammar` runs these too, but a FEATURE fragment is parsed
+/// BEFORE its builder rows are stamped, so `rule_result_kind_known` defers there
+/// rather than rejecting on the lenient "expr" default (see
+/// `validate_onfail_drop`). Deferring is only sound if the check actually RUNS
+/// once the answer exists — so `grammar_with_builder_kinds` calls this on every
+/// stamped grammar, which is the point where a genuinely `"expr"`-kinded
+/// `@onfail(drop)` reference becomes decidable and must be rejected. Returns ""
+/// when clean, so specs can exercise every rejection without a child process.
+export fn validate_grammar_kinds(g: Grammar) -> string {
+    validate_onfail_drop(g)
+}
+
 fn validate_onfail_drop(g: Grammar) -> string {
     for rule in g.rules {
         let e = check_drop_node(g, rule.body, rule.name)
@@ -1213,7 +1230,7 @@ fn check_drop_node(g: Grammar, node: GNode, rule: string) -> string {
                 for it in b.items {
                     if it.onfail == "drop" {
                         let nm = gprim_ref_name(it.prim)
-                        if nm != "" && emit_lookup_rule(g, nm).name != "" && rule_result_kind(g, nm) != "stmt" {
+                        if nm != "" && emit_lookup_rule(g, nm).name != "" && rule_result_kind_known(g, nm) && rule_result_kind(g, nm) != "stmt" {
                             return "`@onfail(drop)` needs a STATEMENT repetition (rule `${rule}`) — `${nm}` builds a `${rule_result_kind(g, nm)}`, and only the statement-list loop mints the `(error)` row there would be to drop"
                         }
                     }
