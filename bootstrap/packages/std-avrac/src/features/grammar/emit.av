@@ -2670,13 +2670,12 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // the 2-arg call and passes the type-param list where the variants go. That
         // asymmetry is why the executor's generic arms were dormant capability with no
         // emit twin (t-47hc slice 10, t-myz7); both now call one shared core.
-        "MkFnDecl" if args.length == 5 -> "mk_fn_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list, ${args[3]}, capval_present(${args[3]}), ${args[4]}_list)"
-        "MkFnDecl" if args.length == 6 -> "mk_fn_decl_where_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list, ${args[3]}, capval_present(${args[3]}), ${args[4]}_list, ${args[5]}_list)"
-        "MkWhereParam" -> "mk_where_param(capval_tok_text(${args[0]}), ${args[1]}_list)"
+        // The FN family (MkFnDecl / MkWhereParam / MkExtern / MkTypeParam)
+        // is manifest-owned (features/fn_decl + features/generics lowering,
+        // t-kd4y.3.3.1) — emit_call_build finds its rows before these
+        // central templates.
         "MkTypeDeclAny" -> "mk_type_decl_any(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list, ${args[3]}, capval_present(${args[3]}), ${args[4]}, capval_present(${args[4]}), ${args[5]}_list)"
         "MkTypeDecl" if args.length == 3 -> "mk_type_decl_g(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}_list)"
-        "MkTypeParam" -> "mk_type_param(capval_tok_text(${args[0]}), ${args[1]}, capval_present(${args[1]}))"
-        "MkExtern" -> "mk_extern_fn(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}))"
         "MkShapeDecl" -> "mk_shape_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkExport" -> "mk_export_decl(st, ${args[0]})"
         "MkStampAt" -> "mk_stamp_stmt_at(st, sp_start, ${args[0]})"
@@ -2705,7 +2704,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "MkComponentParenDef" -> "mk_component_paren_def_g(st, capval_tok_text(${args[0]}), CapVal.PEntries(${args[1]}_list), capval_tok_texts(${args[2]}), ${args[3]}, ${args[4]}_list)"
         "MkAnn" -> "mk_ann_g(capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
-        "MkFnDecl" -> "mk_fn_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list, ${args[2]}, capval_present(${args[2]}), ${args[3]}_list)"
         "MkTypeDecl" -> "mk_type_decl(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
         // MkImpl / MkMethod — feature-owned (features/impl_decl, t-kd4y.3.3.4).
         // MkUseBare / MkUsePkg / MkModule — feature-owned (features/modules);

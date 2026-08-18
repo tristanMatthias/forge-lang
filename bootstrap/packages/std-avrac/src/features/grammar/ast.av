@@ -899,8 +899,6 @@ export fn engine_core_builds() -> List<string> {
 /// and the domain lint keeps the remainder exact.
 export fn unflipped_builds() -> List<string> {
     [
-     // t-kd4y.3.3.1 fn + extern decls (+ param plumbing)
-     "MkFnDecl", "MkExtern", "MkParam", "MkTypeParam", "MkWhereParam",
      // t-kd4y.3.3.2 type + shape decls (+ field rows)
      "MkTypeDecl", "MkTypeDeclAny", "MkShapeDecl", "MkField", "MkTypeAlias",
      "MkTypeRHS",
@@ -934,9 +932,13 @@ export fn unflipped_builds() -> List<string> {
      "MkSpawn", "MkIsolated", "MkChannel",
      // t-kd4y.3.5.2 when/match/if expression forms
      "MkWhen", "MkMatchExpr", "MkIfExpr",
-     // t-kd4y.3.5.3 paren family (closures/tuple)
+     // t-kd4y.3.5.3 paren family (closures/tuple). `MkParam` re-grouped
+     // here from the fn flip (t-kd4y.3.3.1): its `param` rule is PINNED to
+     // the shared base (fragment_registry_test — lambdas, trait methods,
+     // and impl methods all reference it), so the row belongs to whoever
+     // takes the paren/lambda machinery, not to fn_decl.
      "MkTuple", "MkLambda", "MkLambdaTyped", "MkGroupOrEmpty", "MkTupleFR",
-     "Grouping",
+     "Grouping", "MkParam",
      // t-kd4y.3.5.4 collections
      "MkListLit", "MkListComp", "MkMapLit",
      // t-kd4y.3.5.5 tables
@@ -1000,7 +1002,7 @@ export fn central_build_kind(bn: string) -> string {
         "MkChildrenSlot" -> "cslot"
         // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
         // except the component CapVals (MkParam → PEntry, MkField → Field).
-        "MkFnDecl" or "MkExtern" or "MkShapeDecl" or "MkExport" or "MkTypeDecl"
+        "MkShapeDecl" or "MkExport" or "MkTypeDecl"
             or "MkTypeDeclAny"
             or "MkAssocTypeDef"
             or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
@@ -1008,9 +1010,6 @@ export fn central_build_kind(bn: string) -> string {
             or "MkComponentParenDef" or "MkComponentBlock" or "MkRawComponentBlock" or "MkMethodShorthand" or "MkCompField" -> "stmt"
         "MkAnn" -> "ann"
         "MkParam" -> "pentry"
-        // `MkWhereParam` yields the SAME TypeParamEntry a `tparam` does — a where entry is
-        // a type parameter that names its bounds after the parameter list instead of inside
-        // it — so it must classify identically or the accumulator's element coercion drifts.
         // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
         // name string with a `~` prefix, so it must classify as `tok` and flow through
         // `capval_tok_text` exactly as a bare IDENT does.
@@ -1022,7 +1021,6 @@ export fn central_build_kind(bn: string) -> string {
         "MkCompBodyMarker" -> "tok"
         "MkCompConfigList" -> "ccfgs"
         "MkChildrenSlotList" -> "cslots"
-        "MkTypeParam" or "MkWhereParam" -> "tparam"
         "MkField" -> "field"
         "TyUnion" or "MkFn" or "TyDyn" or "TyList" or "TyParen"
             or "MkNamed" or "MkQualified" -> "type"

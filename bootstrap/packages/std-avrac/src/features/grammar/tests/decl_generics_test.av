@@ -26,7 +26,7 @@ use @std.avrac.core.{render_stmt_id}
 fn gen_grammar_src() -> string {
     "grammar Decl {\n" +
     "  decl          = fn_decl | type_decl | enum_decl\n" +
-    "  fn_decl       = \"fn\" fname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, tparams, params, ret, body)\n" +
+    "  fn_decl       = \"fn\" fname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, tparams, params, ret, body, pad_wp)\n" +
     "  type_decl     = \"type\" tname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, tparams, fields)\n" +
     "  enum_decl     = \"enum\" edname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(edname, tparams, vars)\n" +
     "  tparam        = tpname:IDENT ( \":\" bound:IDENT )? -> MkTypeParam(tpname, bound)\n" +

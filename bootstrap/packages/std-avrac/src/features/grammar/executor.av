@@ -4235,21 +4235,19 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    MkWhenStmt / MkArmReturn / the table pair, features/match
         //    lowering — t-kd4y.3 Batch B): the manifest dispatches them. ──
         "MkSpliceArm" if args.length == 1 -> mk_splice_arm(st, env.get(args[0]))
-        // ── Declaration builds (target: Stmt, ps3t.6.5.7) — the non-generic
-        //    arms delegate to SHARED constructor cores (mk_param / mk_fn_decl /
-        //    mk_field / mk_type_decl / … / mk_trait_decl), so apply_build and the
-        //    generated static whole-program parser build byte-identical trees.
-        //    The GENERIC arms (extra type-param list) stay inline — the 6.5.11
-        //    whole-program grammar has no generic-decl slice. ──
+        // ── Declaration builds (target: Stmt, ps3t.6.5.7) — the arms
+        //    delegate to SHARED constructor cores (mk_param / mk_field /
+        //    mk_type_decl / …), so apply_build and the generated static
+        //    whole-program parser build byte-identical trees. The FN family
+        //    is feature-owned now (MkFnDecl/6, MkWhereParam, MkExtern —
+        //    features/fn_decl lowering; MkTypeParam — features/generics
+        //    lowering; t-kd4y.3.3.1): the manifest dispatches them, and the
+        //    §2 oracle-era MkFnDecl/4 and /5 arms were DELETED with the flip
+        //    (toys re-point at /6 with Nil-padded tparam/where captures).
+        //    `MkParam` stays central: its `param` rule lives in the SHARED
+        //    base (lambdas, trait methods, and impl methods reference it),
+        //    grouped with the paren family's flip (t-kd4y.3.5.3). ──
         "MkParam" if args.length == 2 -> mk_param(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])))
-        "MkTypeParam" if args.length == 2 -> mk_type_param(capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])))
-        "MkFnDecl" if args.length == 4 -> mk_fn_decl(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])), capval_to_stmt_list(env.get(args[3])))
-        // Generic form: `fn name < tparams > ( params? ) ( "->" ret )? { body }`.
-        // Args shift by one for the type-param list (args[1]); the rest match the
-        // 4-arg form. Shares mk_fn_decl_g with the emitted parser.
-        "MkFnDecl" if args.length == 5 -> mk_fn_decl_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_pentry_list(env.get(args[2])), env.get(args[3]), capval_present(env.get(args[3])), capval_to_stmt_list(env.get(args[4])))
-        "MkFnDecl" if args.length == 6 -> mk_fn_decl_where_g(st, capval_tok_text(env.get(args[0])), capval_to_tparam_list(env.get(args[1])), capval_to_pentry_list(env.get(args[2])), env.get(args[3]), capval_present(env.get(args[3])), capval_to_stmt_list(env.get(args[4])), capval_to_tparam_list(env.get(args[5])))
-        "MkWhereParam" -> mk_where_param(capval_tok_text(env.get(args[0])), capval_tok_list(env.get(args[1])))
         "MkField" if args.length == 2 -> mk_field(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
         "MkTypeDecl" if args.length == 2 -> mk_type_decl(st, capval_tok_text(env.get(args[0])), capval_to_field_list(env.get(args[1])))
         // Generic struct: `type Name < tparams > = { field* }` — the type-param
@@ -4276,8 +4274,9 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // ── Impl declaration builds — feature-owned (features/impl_decl
         //    lowering, t-kd4y.3.3.4): `MkImpl` / `MkMethod` dispatch through
         //    the manifest, so no central arm survives here. ──
-        // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7) ──
-        "MkExtern" if args.length == 3 -> mk_extern_fn(st, capval_tok_text(env.get(args[0])), capval_to_pentry_list(env.get(args[1])), env.get(args[2]), capval_present(env.get(args[2])))
+        // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7).
+        //    `MkExtern` is feature-owned (features/fn_decl lowering,
+        //    t-kd4y.3.3.1). ──
         "MkExport" if args.length == 1 -> mk_export_decl(st, env.get(args[0]))
         // Span-free in the interpreter (`0 - 1`), exactly like Block / While / MkIfExpr:
         // the oracle records no positions.
@@ -4960,13 +4959,10 @@ export fn mk_block(st: PState, sp_start: int, body: List<StmtId>) -> CapVal {
 }
 
 
-/// `fn name ( params? ) ( "->" ret )? { body }` (the `MkFnDecl` build's core,
-/// non-generic slice). Absent return type defaults to Void.
-export fn mk_fn_decl(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
-    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
-    let no_tp: List<TypeParamEntry> = []
-    CapVal.SNode(st.store.stmts.add(Stmt.Function(name, no_tp, params, ret_vt, body), fn_decl_edges(st, ret_vt), byte_span_none()))
-}
+// The fn cores (mk_fn_decl_g / mk_fn_decl_where_g / mk_where_param /
+// mk_extern_fn) moved to features/fn_decl/lowering, and mk_type_param to
+// features/generics/lowering (t-kd4y.3.3.1); the §2 oracle-era MkFnDecl/4
+// core died with its arm. Only the shared edge helper stays.
 
 /// A `Stmt.Function`'s walker edge set: EXACTLY one `TypeRef` for the bare return-type
 /// field. Body rows are id payloads and contribute no edges — the hand's
@@ -4982,7 +4978,10 @@ export fn mk_fn_decl(st: PState, name: string, params: List<ParamEntry>, ret_cv:
 ///
 /// Void counts: a fn with no declared return still ingests a row for `Void` and carries
 /// its TypeRef, exactly as the hand does, so `fn c() { return }` is non-leaf too.
-fn fn_decl_edges(st: PState, ret_vt: ValueType) -> NodeEdges {
+/// EXPORTED (t-kd4y.3.3.1): the fn feature's lowering drives the same edge
+/// set as `mk_method_shorthand_g` here — shared row choreography, one
+/// implementation.
+export fn fn_decl_edges(st: PState, ret_vt: ValueType) -> NodeEdges {
     NodeEdges { refs: [NodeRef.TypeRef(st.store.ingest_type(ret_vt, byte_span_none()))] }
 }
 
@@ -4992,86 +4991,17 @@ export fn mk_type_decl(st: PState, name: string, fields: List<FieldEntry>) -> Ca
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, no_tp, fields)))
 }
 
-/// The GENERIC siblings of the three decl cores above. Each is the same node with a
-/// real type-param list instead of the empty one — extracted so the executor and the
+/// The GENERIC sibling of the plain type-decl core above — the same node with a
+/// real type-param list instead of the empty one, extracted so the executor and the
 /// EMITTED parser call ONE constructor rather than the executor building the node
 /// inline (which it did, arity-guarded) and emit having no twin at all. That asymmetry
 /// is why the generic arms were executor-only dormant capability: emit dispatches on
 /// build NAME, so a 3-arg `MkEnumDecl` in a grammar would have rendered the 2-arg call
 /// and passed the type-param list where the variants go. Cores + arity-guarded emit
 /// arms close it in lockstep (t-47hc slice 10, ticket t-myz7).
-export fn mk_fn_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
-    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
-    // Same edge set as the non-generic core — the type-param list is a payload, not an edge.
-    CapVal.SNode(st.store.stmts.add(Stmt.Function(name, tps, params, ret_vt, body), fn_decl_edges(st, ret_vt), byte_span_none()))
-}
-
 /// `type Name < tparam* > = { field* }` (the 3-arg `MkTypeDecl` build's core).
 export fn mk_type_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, fields: List<FieldEntry>) -> CapVal {
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, tps, fields)))
-}
-
-/// ONE `where` entry — `T: Trait1 + Trait2` (the `MkWhereParam` build's core).
-///
-/// Distinct from `mk_type_param` because the two positions differ in exactly one way:
-/// an angle-bracket parameter carries at most ONE bound (parse_type_param_entries), a
-/// where entry carries a `+`-joined list (parse_where_bounds). The joiner is the hand's
-/// literal `" + "`, and the entry it yields is the same `TypeParamEntry` shape, so
-/// `mk_fn_decl_where_g` can merge the two lists without knowing which is which.
-export fn mk_where_param(name: string, bounds: List<Token>) -> CapVal {
-    mut acc = ""
-    mut i = 0
-    for t in bounds {
-        if i > 0 { acc = acc + " + " + t.text } else { acc = t.text }
-        i = i + 1
-    }
-    CapVal.TParam(TypeParamEntry { name: name, bounds: acc })
-}
-
-/// `fn name < tp > ( params ) -> ret where wp { body }` — the `MkFnDecl` build with a
-/// WHERE CLAUSE (t-47hc.5).
-///
-/// The clause is not sugar for more angle-bracket parameters: it MERGES into them, and
-/// a name it mentions that the angle brackets did not declare is APPENDED as a fresh
-/// entry — `parse_where_clause` folding `merge_type_param_bound` over its entries, which
-/// is the behaviour reproduced here rather than re-derived. Merging on the grammar side
-/// is what lets the routed `fn_decl` own a form it previously had to hand back: nothing
-/// in the DSL can express "amend an earlier capture", so the fold has to live in a build.
-export fn mk_fn_decl_where_g(st: PState, name: string, tps: List<TypeParamEntry>, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>, wheres: List<TypeParamEntry>) -> CapVal {
-    mut merged = tps
-    for w in wheres {
-        merged = grammar_merge_type_param_bound(merged, w.name, w.bounds)
-    }
-    mk_fn_decl_g(st, name, merged, params, ret_cv, has_ret, body)
-}
-
-/// The hand's `merge_type_param_bound` (features/fn_decl/parser.av), duplicated for the
-/// same reason `base_pred` duplicates `is_callable`: `parse_grammar` is reachable from
-/// comptime macro expansion, and a cross-module non-`@comptime` callee there resolves to
-/// a type_marker (F4005). Behaviour is pinned to the hand's by the routing parity spec,
-/// not by the call graph.
-fn grammar_merge_type_param_bound(params: List<TypeParamEntry>, name: string, bounds: string) -> List<TypeParamEntry> {
-    mut out: List<TypeParamEntry> = []
-    mut found = false
-    for e in params {
-        if e.name == name {
-            let m = if e.bounds == "" { bounds } else { e.bounds + " + " + bounds }
-            out.push(TypeParamEntry { name: e.name, bounds: m })
-            found = true
-        } else {
-            out.push(e)
-        }
-    }
-    if !found { out.push(TypeParamEntry { name: name, bounds: bounds }) }
-    out
-}
-
-/// `name ( ":" bound )?` — ONE generic type parameter (the `MkTypeParam` build's core).
-/// A single trait bound only, matching parse_type_param_entries; absent => "" (unbounded).
-/// Multi-bound `T: A + B` is a where-clause and out of scope.
-export fn mk_type_param(name: string, bound_cv: CapVal, has_bound: bool) -> CapVal {
-    let bound = if has_bound { capval_tok_text(bound_cv) } else { "" }
-    CapVal.TParam(TypeParamEntry { name: name, bounds: bound })
 }
 
 /// The WHOLE `type Name < tp > = …` declaration — every form the hand's
@@ -5117,19 +5047,6 @@ export fn mk_type_decl_any(st: PState, name: string, tps: List<TypeParamEntry>, 
         .Union(_, _) -> CapVal.SNode(st.store.stmts.add(Stmt.UnionAliasDecl(name, vt), NodeEdges { refs: [NodeRef.TypeRef(ty_id)] }, byte_span_none()))
         _ -> CapVal.SNode(st.store.stmts.add(Stmt.NewtypeDecl(name, vt), NodeEdges { refs: [NodeRef.TypeRef(ty_id)] }, byte_span_none()))
     }
-}
-
-/// `extern fn name ( params? ) ( "->" ret )?` — a bodyless FFI signature
-/// (the `MkExtern` build's core). An absent return type defaults to Void, matching
-/// `parse_extern_declaration`.
-///
-/// Extracted for the same reason the generic decl cores were (slice 10.2): the executor
-/// had this build inline and emit had NO twin at all, so a grammar naming `MkExtern`
-/// worked in the interpreter — which is why decl_export_extern_test passes — and would
-/// have produced nothing usable in the generated parser. One core, both engines.
-export fn mk_extern_fn(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool) -> CapVal {
-    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ExternFn(name, params, ret_vt)))
 }
 
 /// `shape Name = { field* }` (the `MkShapeDecl` build's core) — the STRUCTURAL sibling

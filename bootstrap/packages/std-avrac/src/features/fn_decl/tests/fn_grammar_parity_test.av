@@ -67,10 +67,10 @@ spec "t-47hc slice 10.6: `extern fn` is native, in BOTH engines" {
             agrees("extern fn abrt()\n")
     }
 
-    then "emit renders the shared core — the half that was missing" {
+    then "emit renders the manifest adapter — the half that was missing" {
         // The executor-only state would still have passed the parity assertions above,
         // since those run the interpreter. This is the half that was absent.
-        emit_parser_source(avra_program_grammar()).contains("mk_extern_fn(st, capval_tok_text(ename)")
+        emit_parser_source(avra_program_grammar()).contains("mk_extern_fn_abi(st, [ename, CapVal.PEntries(eparams_list), eret])")
     }
 }
 

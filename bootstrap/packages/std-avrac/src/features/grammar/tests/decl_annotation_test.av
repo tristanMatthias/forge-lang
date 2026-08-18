@@ -25,7 +25,7 @@ fn ann_grammar_src() -> string {
     "  declaration    = annotated_decl | member\n" +
     "  annotated_decl = ( \"@\" anames:IDENT )+ inner:member -> MkAnnotated(anames, inner)\n" +
     "  member         = fn_decl | type_decl | enum_decl\n" +
-    "  fn_decl        = \"fn\" fname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, params, ret, body)\n" +
+    "  fn_decl        = \"fn\" fname:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(fname, pad_tp, params, ret, body, pad_wp)\n" +
     "  type_decl      = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, fields)\n" +
     "  enum_decl      = \"enum\" edname:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(edname, tparams, vars)\n" +
     "  field          = fldname:IDENT \":\" ftype:type_expr -> MkField(fldname, ftype)\n" +

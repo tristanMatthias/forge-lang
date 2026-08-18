@@ -1,10 +1,32 @@
-// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
-// surface flat at `features.fn_decl.{...}`.
-use core.{feature_new, Feature}
+// dir-as-module (g2eo.1): parser.av + codegen.av + grammar.av auto-load as
+// siblings, surface flat at `features.fn_decl.{...}` (avra_fn_decl_grammar
+// is in scope without a self-import); the manifest rows live in lowering/
+// (t-kd4y.3.3.1).
+use features.{composed}
+use features.fn_decl.lowering.{fn_builds}
 
-/// Register the `fn` declaration feature. Routes the `fn`
-/// keyword to the parser's `parse_function_declaration`. Codegen
-/// for function bodies and call sites lives in `codegen.av`.
-export fn fn_decl_feature() -> Feature {
-    feature_new("fn_decl")
+/// `fn` — the definition carries the feature whole (t-kd4y.3.3.1): syntax,
+/// docs, editor surface, and the THREE lowerings its fragment spells
+/// (MkFnDecl / MkWhereParam / MkExtern — the extern rule lives in this
+/// fragment, so its row rides here exactly as MkDestructure rides
+/// let_lang). `gram_family` stays "" — the fn rules are DECLARATION rules,
+/// composed by the decl view + fragment registry and referenced from the
+/// alternations by name. No stmt hooks: `Stmt.Function` codegen, resolve,
+/// and typeck are core passes, exactly as the retired hookless
+/// `feature_new("fn_decl")` register left them.
+export fn fn_lang() -> LanguageFeature {
+    LanguageFeature fn_def {
+        name = "fn_decl",
+        title = "fn — function declarations",
+        docs = """
+`fn name(params) -> Ret { body }` declares a function; `export fn` makes
+it public. Generics ride an optional `<T, U: Bound>` list, and a `where`
+clause merges extra bounds into it (`fn f<T>(x: T) -> T where T: Ord`).
+An absent return type means the function returns nothing (`Void`).
+""",
+        gram = composed([avra_fn_decl_grammar()]),
+        builders = fn_builds(),
+        snippet = r"fn ${1:name}(${2:params}) {\n    ${3:body}\n}",
+    }
+    fn_def
 }
