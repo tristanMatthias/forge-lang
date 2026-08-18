@@ -31,8 +31,21 @@ spec "fn family as LanguageFeatures" {
             && g.title.length > 0 && g.docs.contains("monomorphizes")
     }
     then "the declared rules reach the composed whole-program view" {
+        // Rule DEFINITIONS, not renders: rendered output can contain a
+        // rule-body REFERENCE even when the definition is absent, so the
+        // availability check reads g.rules directly; the render checks then
+        // pin the builds those definitions spell.
+        mut fn_def = false
+        mut ex_def = false
+        mut tp_def = false
+        for r in avra_program_grammar().rules {
+            if r.name == "fn_decl" { fn_def = true }
+            if r.name == "extern_decl" { ex_def = true }
+            if r.name == "tparam" { tp_def = true }
+        }
         let prog = render_grammar(avra_program_grammar())
-        prog.contains("MkFnDecl(name, tparams, params, ret, body, wp)")
+        fn_def && ex_def && tp_def
+            && prog.contains("MkFnDecl(name, tparams, params, ret, body, wp)")
             && prog.contains("MkWhereParam(wn, wb)")
             && prog.contains("MkExtern(ename, eparams, eret)")
             && prog.contains("MkTypeParam(tpn, tpb)")

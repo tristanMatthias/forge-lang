@@ -98,8 +98,10 @@ export component LanguageFeature {
 }
 
 /// Register every built-in language feature with the compiler's
-/// dispatch registry. Called once during compiler init; each
-/// feature module exposes a `<name>_feature()` builder. Order
+/// dispatch registry. Called once during compiler init. Migrated
+/// features expose a `<name>_lang()` LanguageFeature definition
+/// (registered via the `language_features()` list); the legacy
+/// remainder still exposes `<name>_feature()` builders. Order
 /// doesn't matter — features dispatch by AST tag, not declaration
 /// position.
 /// Returns the composed builder manifest alongside registration so
