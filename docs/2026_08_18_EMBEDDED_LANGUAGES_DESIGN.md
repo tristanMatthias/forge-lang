@@ -41,7 +41,11 @@ not a requirement.)
 
 ## 2. The two-sided contract
 
-### The author side (package `@acme/sql`)
+Naming note, used consistently below: the *package* is `acme/sql`; the
+*import path* is `@acme.sql` — the same package-directory vs import-path
+mapping the tree already uses (`packages/std-avrac` ↔ `use @std.avrac.…`).
+
+### The author side (package `acme/sql`, imported as `@acme.sql`)
 
 ```avra
 // The AST is ordinary Avra types — the author's own. No standard node set.
@@ -53,11 +57,26 @@ export enum SqlExpr { Eq(col: string, v: SqlVal), ... }
 fn build_select(cols: List<Token>, t: Token, w: SqlExpr?) -> Select { ... }
 
 export grammar Sql {
+  // The FIRST rule is the start symbol — the engine's existing Nystrom
+  // convention (Grammar's own contract), reused verbatim: executor entry,
+  // the block's result type (§3.4), and the metadata entry (§3.1) all key
+  // off it. No separate start-rule declaration.
   select   = "SELECT" cols:column ("," cols:column)* "FROM" t:IDENT
              ("WHERE" w:sql_expr)? -> build_select(cols, t, w)
   sql_expr = c:IDENT "=" v:splice<SqlVal> -> build_eq(c, v)   // §3.3
   ...
 }
+
+// Repeated-capture semantics are the ENGINE'S EXISTING contract, stated
+// here because the builder signatures depend on it: a label captured under
+// `*`/`+` (including through an enclosing repeating group) accumulates in
+// source order into the corresponding List<...> parameter — `SELECT a, b, c`
+// delivers cols = [a, b, c]. The same label repeated across separate
+// non-repeating items stays a last-wins scalar. An optional capture
+// (`(… w:sql_expr)?`) not taken delivers the typed absent value (`T?` =
+// null). Under error recovery, captures follow the malformed-corpus
+// discipline: a recovered rule delivers what it accumulated before the
+// report, and the differential harness pins both engines to agree.
 
 // Optional: semantic validation over the built AST, run at comptime (§3.5).
 export fn check_select(s: Select) -> List<Diag> { ... }
@@ -112,9 +131,28 @@ raw up to the balanced closing brace (`rawbrace_scan` — the sub-language's
 tokens must not be pre-chewed by Avra's parser beyond brace balancing), and
 (c) be the ONLY way user syntax enters a program — the non-goal boundary.
 Mechanism: the `expr_keyword` registry seam, generalized from compiled-in
-features to package-registered grammars. Acceptance: a package exports a
-grammar under a keyword; an importing file uses the block; a NON-importing
-file gets a plain "unknown identifier," proving no global namespace pollution.
+features to package-registered grammars.
+
+**One metadata entry is the source of truth** for the binding — the grammar's
+export declares it, the package metadata carries it, and registration reads
+nothing else:
+
+    { keyword: "sql",              // the consumer-facing block keyword —
+                                   // EXACT, case-sensitive match; declared
+                                   // by the grammar export, not derived
+                                   // from the grammar's name
+      grammar: Sql,                // whose FIRST rule is the entry (§2)
+      produces: "@acme::sql::Select",   // the block's result type (§3.4)
+      splices: [...],              // the declared splice types (§3.3)
+      check: "@acme::sql::check_select" }  // optional comptime hook (§3.5)
+
+Registration is scoped to the importing compilation unit — a non-importing
+file must be unable to observe it, independent of compilation order. Two
+imports binding the SAME keyword in one unit is a resolution ERROR naming
+both packages, never a silent winner. Acceptance: a package exports a grammar
+under a keyword; an importing file uses the block; a NON-importing file gets
+a plain "unknown identifier" (order-independence spec-tested by compiling the
+two files in both orders); the collision error is spec-tested.
 
 ### 3.2 Author-typed ASTs through the capture pipeline — the load-bearing gap
 
@@ -160,8 +198,29 @@ author-defined semantic checks — the grammar names an ordinary fn
 (`check: fn(Select) -> List<Diag>`) run at comptime over the built value
 ("column does not exist"), its diagnostics flowing through the same mapping.
 Mechanism: comptime evaluation (`@comptime`/eval) + `GDiag` byte positions.
+
+Two contracts this imposes, stated so they are designed rather than
+discovered:
+
+- **The check fn runs under the comptime sandbox.** It is invoked THROUGH
+  the comptime machinery and therefore subject to the same purity checker
+  and loop/memory budgets as any `@comptime` fn — the purity scan must
+  cover check hooks even though they carry no annotation (they are
+  comptime-invoked by registration). Network, filesystem, randomness, and
+  unknown `extern fn` calls are rejected exactly as the existing purity
+  policy rejects them; nothing about being a grammar hook relaxes it.
+- **Semantic errors need SPANS, so author ASTs must be able to carry them.**
+  A `Select` of bare strings cannot point at the offending column. The
+  contract: the marshalling can deliver block-relative spans alongside
+  captured values wherever the author wants them (the carrier — span-bearing
+  wrapper values vs span fields the signature opts into vs a check-hook
+  context mapping values to spans — is §5 decision 6), and `Diag` carries a
+  block-relative span that the engine maps to the host position. An author
+  who declines spans still gets whole-block-positioned diagnostics.
+
 Acceptance: a semantic error in embedded SQL renders exactly like a native
-Avra error, pointing INTO the block at the right column.
+Avra error, pointing INTO the block at the right line:col; a check fn that
+attempts I/O is rejected by the purity gate with a clear error.
 
 ### 3.6 Package distribution — the metadata registration gap
 
@@ -193,7 +252,11 @@ mechanism-vs-mechanics PR discipline:
    with ONE parse error at the host line and ONE typed splice. Every gap
    touched shallowly — §3.1 minimal registration, §3.2 for a single struct,
    §3.3 for one splice type, §3.4 for one produces-type, §3.5 parse errors
-   only. Nothing deep until this proves the shape end-to-end.
+   only. Negative cases are part of the skeleton, not deferred: a
+   WRONG-TYPED splice (asserting the F1xxx code AND its host-expression
+   position) and an INCOMPATIBLE result assignment (`let q: WrongType = …`,
+   asserting F1000 at the block) — the §3.3/§3.4 contracts are only proven
+   by their rejections. Nothing deep until this proves the shape end-to-end.
 2. **Slice per gap** (§3.2 first — it is load-bearing for everything), each
    its own PR: mechanism first and byte-identical where possible, then usage.
 3. **SQL as the acceptance demo**: a small real `@acme/sql` package lands as
@@ -219,6 +282,12 @@ mechanism-vs-mechanics PR discipline:
    re-lex with Avra's lexer; is `${}` recognized by the block scanner itself
    (template-style, two-byte lead) or by the grammar? Recommendation:
    scanner-level, matching string interpolation.
+6. **The span carrier for author ASTs** (§3.5) — how a capture's
+   block-relative span reaches the author's values: span-bearing wrapper
+   values (`Sp<T>` the marshalling fills), plain span fields the build-fn
+   signature opts into, or a check-hook context mapping values to spans.
+   Recommendation: decide in the skeleton alongside decision 4 — the two
+   share the marshalling seam.
 
 ## 6. What this is NOT (scope fences)
 
