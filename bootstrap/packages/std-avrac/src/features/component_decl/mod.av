@@ -1,10 +1,31 @@
-// dir-as-module (g2eo.1): no `mod` decls — parser.av + expand.av
-// auto-load as siblings, surface flat at `features.component_decl.{...}`.
-use core.{feature_new, Feature}
+// dir-as-module (g2eo.1): no `mod` decls — parser.av + expand.av +
+// grammar.av auto-load as siblings, surface flat at
+// `features.component_decl.{...}`; the manifest rows live in lowering/
+// (t-kd4y.3.3.5).
+use features.{composed}
+use features.component_decl.lowering.{component_builds}
 
-/// Register the `component` declaration feature. Data components
-/// expand into struct + factory + method fns — see `expand.av`;
-/// @expand-annotated defs route through the comptime macro pipeline.
-export fn component_decl_feature() -> Feature {
-    feature_new("component_decl")
+/// `component` — the definition carries the feature whole (t-kd4y.3.3.5):
+/// syntax, docs, editor surface, and ALL THIRTEEN lowerings its fragment
+/// spells. Data components expand into struct + factory + method fns — see
+/// `expand.av`; @expand-annotated defs route through the comptime macro
+/// pipeline. `gram_family` stays "" — declaration rules, composed by the
+/// decl view + fragment registry. No stmt hooks: expansion is the comptime
+/// pipeline's, exactly as the retired hookless register left it.
+export fn component_lang() -> LanguageFeature {
+    LanguageFeature component_def {
+        name = "component_decl",
+        title = "component — declarative component definitions",
+        docs = """
+`component Name [implements A, B] { config { … } children { … }
+body: TokenStream? … }` declares a component; `component Name inst { … }`
+(or the bare `Name inst { … }` once the name is registered) instantiates
+it. Config pairs ride `key value` or `key = expr`; a `body: TokenStream`
+component captures its instance body verbatim.
+""",
+        gram = composed([avra_component_grammar()]),
+        builders = component_builds(),
+        snippet = r"component ${1:Name} {\n    ${2:body}\n}",
+    }
+    component_def
 }

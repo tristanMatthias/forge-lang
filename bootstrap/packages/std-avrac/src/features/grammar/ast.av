@@ -907,17 +907,6 @@ export fn unflipped_builds() -> List<string> {
      // (builder_validation_error's orphan contract). Ownership follows the
      // referencing rule, never the name.
      "MkAssocTypeDef",
-     // t-kd4y.3.3.5 component decls. `MkTraitList` is grouped here for the
-     // same reason: its one reference is `comp_implements` — the component
-     // header's `implements A, B` clause — so it flips with component.
-     // `MkMethodShorthand` is here for that reason too: its ONLY reference is
-     // `comp_block_item`, the component INSTANCE body, not anything `impl`
-     // parses.
-     "MkMethodShorthand",
-     "MkComponentDef", "MkComponentParenDef", "MkComponentBlock",
-     "MkRawComponentBlock", "MkCompField", "MkCompBodyMarker",
-     "MkCompConfig", "MkCompConfigPair", "MkCompConfigList",
-     "MkChildrenSlot", "MkChildrenSlotList", "MkTraitList",
      // t-kd4y.3.4 splices — the quote family's rules moved and MkQuote /
      // MkQuoteType / MkQuoteArm flipped with them; the splice builds stay
      // central because the rules that reference them did NOT move: `~` is a
@@ -994,16 +983,11 @@ export fn central_build_kind(bn: string) -> string {
         // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
         "MkSpliceArm" -> "arm"
         "MkFieldInit" -> "finit"
-        "MkCompConfig" -> "ccfg"
-        "MkCompConfigPair" -> "cpair"
-        "MkChildrenSlot" -> "cslot"
         // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
         // except the component CapVals (MkParam → PEntry, MkField → Field).
         "MkExport"
             or "MkAssocTypeDef"
-            or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc"
-            or "MkComponentDef"
-            or "MkComponentParenDef" or "MkComponentBlock" or "MkRawComponentBlock" or "MkMethodShorthand" or "MkCompField" -> "stmt"
+            or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc" -> "stmt"
         "MkAnn" -> "ann"
         "MkParam" -> "pentry"
         // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
@@ -1013,10 +997,6 @@ export fn central_build_kind(bn: string) -> string {
         // sibling atom, not a name-slot splice (t-47hc.4.3).
         "MkSpliceType" -> "type"
         "MkSpliceName" or "MkPlainName" -> "tok"
-        "MkTraitList" -> "toks"
-        "MkCompBodyMarker" -> "tok"
-        "MkCompConfigList" -> "ccfgs"
-        "MkChildrenSlotList" -> "cslots"
         "TyUnion" or "MkFn" or "TyDyn" or "TyList" or "TyParen"
             or "MkNamed" or "MkQualified" -> "type"
         _ -> ""
