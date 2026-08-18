@@ -1,13 +1,27 @@
 // WHY: trait declarations — `trait Name { fn method(self) -> Type }`.
 //
-// dir-as-module (g2eo.1): parser.av + typeck.av + codegen.av auto-load
-// as siblings, surface flat at `features.trait_decl.{...}`.
-use core.{feature_new, Feature}
+// dir-as-module (g2eo.1): grammar.av + typeck.av + codegen.av + lowering/
+// auto-load as siblings, surface flat at `features.trait_decl.{...}`.
+use features.{composed}
+use features.trait_decl.lowering.{trait_builds}
 
-/// Register the `trait` declaration feature. Routes the `trait`
-/// keyword to the parser's `parse_trait_declaration`. Type-checking
-/// for `impl Trait for Type` and dyn dispatch live in `typeck.av`
-/// and `codegen.av`.
-export fn trait_decl_feature() -> Feature {
-    feature_new("trait_decl")
+/// The `trait` declaration feature. Its rules compose through the decl
+/// fragment registry (avra_trait_decl_grammar, family "" — the gram here is
+/// the validation + docs surface for rules composed there); its lowerings
+/// travel with it (t-kd4y.3.3.3). Type-checking for `impl Trait for Type`
+/// and dyn dispatch live in `typeck.av` and `codegen.av`.
+export fn trait_lang() -> LanguageFeature {
+    LanguageFeature trait_def {
+        name = "trait_decl",
+        title = "trait — a named set of requirements a type can satisfy",
+        docs = """
+`trait Name { … }` declares requirements: associated types (`type Item`)
+and methods. A method with a body is a DEFAULT (implementors may override);
+one without is a signature an `impl Name for T` block must supply.
+""",
+        gram = composed([avra_trait_decl_grammar()]),
+        builders = trait_builds(),
+        snippet = r"trait ${1:Name} { fn ${2:method}(self) }",
+    }
+    trait_def
 }
