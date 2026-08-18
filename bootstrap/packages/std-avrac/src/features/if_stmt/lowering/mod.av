@@ -6,12 +6,13 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt, ExprId, StmtId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, capval_to_stmt_opt}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, capval_to_stmt_opt, mk_stamp_stmt_at}
 
 export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
 
 export fn build_if_abi(st: PState, vals: List<CapVal>) -> CapVal {
-    capval_stmt_val(st, build_if(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1]), capval_to_stmt_opt(st, vals[2])))
+    // spanned row: stamp at st.build_sp (the `if` keyword; -1 = span-free exec).
+    mk_stamp_stmt_at(st, st.build_sp, capval_stmt_val(st, build_if(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1]), capval_to_stmt_opt(st, vals[2]))))
 }
 
 export fn if_builds() -> List<BuilderBind> {

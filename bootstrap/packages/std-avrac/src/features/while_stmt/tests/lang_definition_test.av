@@ -32,9 +32,9 @@ spec "while as a LanguageFeature" {
         prod.contains("build_while(") && !prod.contains("-> While(")
     }
     then "build_while rides the manifest as the first SPANNED stmt row" {
-        // spanned: the generated parser stamps the While's SrcPos at the
-        // `while` keyword via the engine's mk_stamp_stmt_at wrap; the
-        // interpreter path stays span-free. The typed fn never sees the span.
+        // spanned: the generated parser threads the `while` keyword's byte
+        // as st.build_sp and the ADAPTER stamps the While's SrcPos there;
+        // the interpreter path stays span-free. The typed fn never sees it.
         mut row = ""
         for b in feature_builders() {
             if b.name == "build_while" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }

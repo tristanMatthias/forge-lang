@@ -127,11 +127,11 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
         builder_validation_error_for("toy", grammar_checked(g), pair) == ""
     }
     then "a `spanned` builder of a kind with NO span protocol is rejected" {
-        // Two protocols exist: "stmt" stamp-wraps (mk_stamp_stmt_at),
-        // "expr" threads st.build_sp (Batch B). Any other kind has no span
-        // story; the registry gate names it. (Pre-Batch B this spec pinned
-        // the rejection of spanned "expr" — that is a defined protocol now,
-        // covered by the Batch B spec below.)
+        // ONE protocol exists — st.build_sp via call_with_build_sp, legal
+        // for "stmt" and "expr" rows (the adapter decides where the span
+        // lands). Any other kind has no span story; the registry gate
+        // names it. (Pre-Batch B this spec pinned the rejection of spanned
+        // "expr" — that is a defined protocol now, covered below.)
         let g = grammar {
             top  = a:leaf -> Spanny(a)
             leaf = "ztok" -> Zed()
@@ -142,7 +142,7 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ]
         let err = builder_validation_error_for("toy", grammar_checked(g), spanny)
-        err.contains("Spanny") && err.contains("spanned") && err.contains("span protocols")
+        err.contains("Spanny") && err.contains("spanned") && err.contains("span protocol")
     }
     then "shadowing a central name is rejected — different kind" {
         // Block: the ENGINE-CORE central "stmt" row — a block is engine
@@ -267,8 +267,9 @@ spec "t-kd4y.3: the production manifest is duplicate-free" {
 
 spec "t-kd4y.3 Batch B: the expression-span row — `spanned` on an expr-kind bind" {
     then "validation ACCEPTS a spanned expr row and still rejects span-less kinds" {
-        // "stmt" stamps around the adapter, "expr" threads st.build_sp into
-        // it; anything else has no span protocol and stays a startup error.
+        // "stmt" and "expr" rows both read st.build_sp (the adapter owns
+        // placement); anything else has no span protocol and stays a
+        // startup error.
         let ok = [
             bind_spanned("Phantom", "expr", 1, "features.toy", "phantom_build"),
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
@@ -278,7 +279,7 @@ spec "t-kd4y.3 Batch B: the expression-span row — `spanned` on an expr-kind bi
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ]
         builder_validation_error_for("toy", toy_gram(), ok) == "" &&
-            builder_validation_error_for("toy", toy_gram(), bad).contains("span protocols")
+            builder_validation_error_for("toy", toy_gram(), bad).contains("span protocol")
     }
     then "the generated parser threads sp_start INTO a spanned expr adapter" {
         // The rule fn captures the entry byte (`let sp_start = st.cur().pos`)
@@ -294,13 +295,18 @@ spec "t-kd4y.3 Batch B: the expression-span row — `spanned` on an expr-kind bi
         src.contains("call_with_build_sp(st, sp_start, phantom_build, [") &&
             src.contains("let sp_start = st.cur().pos")
     }
-    then "a spanned STMT row still stamp-wraps — the Batch A protocol is untouched" {
+    then "a spanned STMT row rides the SAME protocol — call_with_build_sp, stamp inside the adapter" {
+        // The per-kind stamp wrap is retired: a stmt adapter that wants the
+        // Batch A SrcPos stamps itself (mk_stamp_stmt_at(st, st.build_sp, …)),
+        // and a stmt row whose span belongs to an INTERIOR node (MkWhenStmt's
+        // shape) is now expressible at all.
         let rows = builder_kind_rows([
             bind_spanned("Phantom", "stmt", 1, "features.toy", "phantom_build"),
             bind("Zed", "expr", 0, "features.toy", "zed_build"),
         ])
         let src = emit_parser_source(grammar_with_builder_kinds(toy_gram(), rows))
-        src.contains("mk_stamp_stmt_at(st, sp_start, phantom_build(st, [")
+        src.contains("call_with_build_sp(st, sp_start, phantom_build, [") &&
+            !src.contains("mk_stamp_stmt_at(st, sp_start, phantom_build(st, [")
     }
     then "call_with_build_sp: the span rides st.build_sp for the call and resets after" {
         mut st = new_pstate("x")

@@ -75,13 +75,14 @@ spec "grammar emitter: renders the whole-program generated static parser" {
     then "the control-flow builds lower to the SHARED statement cores" {
         let src = emit_all()
         // `while` / `if` / `for` are manifest-owned with `spanned` rows
-        // (t-47hc.8): the engine wraps the span-free adapter in
-        // mk_stamp_stmt_at at the rule's entry byte — the same add_leaf →
-        // record_pos order the central mk_* cores performed. The destructure
-        // form keeps its central core (mk_for_destructure).
-        src.contains("mk_stamp_stmt_at(st, sp_start, build_while_abi(st, [c, body]))") &&
-        src.contains("mk_stamp_stmt_at(st, sp_start, build_if_abi(st, [c, t, e]))") &&
-        src.contains("mk_stamp_stmt_at(st, sp_start, build_for_abi(st, [v, lo, hi, body]))") &&
+        // (t-47hc.8): the rule-entry byte rides st.build_sp into the
+        // adapter (call_with_build_sp), and the ADAPTER stamps itself via
+        // mk_stamp_stmt_at — the same add_leaf → record_pos order the
+        // central mk_* cores performed. The destructure form keeps its
+        // central core (mk_for_destructure).
+        src.contains("call_with_build_sp(st, sp_start, build_while_abi, [c, body])") &&
+        src.contains("call_with_build_sp(st, sp_start, build_if_abi, [c, t, e])") &&
+        src.contains("call_with_build_sp(st, sp_start, build_for_abi, [v, lo, hi, body])") &&
         src.contains("mk_for_destructure(st, sp_start, fb, coll, body)")
     }
 

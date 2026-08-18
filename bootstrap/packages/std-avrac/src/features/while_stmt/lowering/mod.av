@@ -6,17 +6,17 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt, ExprId, StmtId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, mk_stamp_stmt_at}
 
 export fn build_while(c: ExprId, body: StmtId) -> Stmt { Stmt.While(c, body) }
 
 export fn build_while_abi(st: PState, vals: List<CapVal>) -> CapVal {
-    capval_stmt_val(st, build_while(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1])))
+    // spanned row: the adapter owns its span placement — stamp the While at
+    // st.build_sp (the `while` keyword; -1 on the interpreter path, which
+    // stays span-free like its retired central arm).
+    mk_stamp_stmt_at(st, st.build_sp, capval_stmt_val(st, build_while(capval_to_expr(st, vals[0]), capval_to_stmt(st, vals[1]))))
 }
 
 export fn while_builds() -> List<BuilderBind> {
-    // spanned: the generated parser stamps the While at the `while` keyword
-    // (rule entry) via mk_stamp_stmt_at; the interpreter path stays
-    // span-free like its retired central arm.
     bind_rows("features.while_stmt.lowering", [bind_row("build_while", "stmt", 2, true, "build_while_abi", build_while_abi)])
 }
