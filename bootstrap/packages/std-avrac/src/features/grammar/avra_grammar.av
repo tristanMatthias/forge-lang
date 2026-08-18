@@ -166,11 +166,8 @@ export fn avra_expr_spine_grammar() -> Grammar {
                    @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
   template_lit = t:TEMPLATE -> MkTemplate(t)
   brace_expr   = @peek(brace_map) map_literal | block_expr
-  // The VALUE propagates, like `field_init`'s: `{ "a": , … }` built a map entry over an
-  // error node instead of aborting the literal and its enclosing fn.
-  map_literal  = "{" ( k:expression @require ":" @onfail(bail) v:expression ( "," )? )* @require "}"
-                 @expect(":", "expected `:` after map key")
-                 @expect("}", "expected `}` after map") -> MkMapLit(k, v)
+  // `map_literal` lives with the map_lit feature (gram_family = "expr",
+  // t-kd4y.3.5.4) — `brace_expr` above dispatches to it by name.
   // t-47hc.33 — the postfix chain.
   //
   // Each form reproduces the postfix-step ENTRY GUARD exactly:
@@ -298,22 +295,10 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // if_expr + else_tail live with the if feature (features/if_stmt's
   // avra_if_expr_grammar, composed into if_lang's gram — t-kd4y.3.5.2);
   // referenced from the ladder above by name, like iflet_expr always was.
-  // PREDICTIVE, by the same scan `paren_expr` uses. The `@try` rewound the cursor to
-  // before `[`, so a malformed comprehension failed the list-LITERAL branch's closer with
-  // the cursor sitting ON `for`, and statement-level resync then parsed a for-LOOP out of
-  // the leftovers — `[a for]` came back as two `(error)` rows and a `(for-in …)` against
-  // the pinned one. `parse_list_elements` never gets there: it CONSUMES `for` before
-  // aborting, so its resync starts after it. Control that isolates it: `[a while]` and
-  // `[a return]` already agreed, because only `for` is a token that
-  // had already been eaten.
-  list_expr    = @peek(list_comp_ahead) "[" @require cb:list_comp @require "]"
-                 @expect("list_comp", "expected a comprehension body")
-                 @expect("]", "expected `]` after list") -> cb
-               | "[" ( a:expression ( @peek(comma_not_rbracket) "," @onfail(bail) a:expression )* ( "," )? )? @require "]"
-                 @expect("]", "expected `]` after list") -> MkListLit(a)
-  list_comp    = b:expression "for" @require v:IDENT @require "in" c:expression ( "if" f:expression )?
-                 @expect("IDENT", "expected variable name after `for`")
-                 @expect("in", "expected `in` after loop variable") -> MkListComp(b, v, c, f)
+  // The `[`-led family (list_expr / list_comp) lives with the list_lit
+  // feature (gram_family = "expr", t-kd4y.3.5.4) — referenced from the
+  // ladder above by name; the comp-branch resync history rides the rules'
+  // own comments there.
   // The `(`-led paren family (paren_expr / lambda_body) lives with the
   // closures feature (gram_family = "expr", t-kd4y.3.5.3) — referenced
   // from the ladder above by name. The F4014 exponential-backtracking

@@ -53,6 +53,12 @@ inline (i64 for primitives, ptr for heap-allocated types).
 
 ## Pipeline placement
 
+- The grammar rules live in `list_lit_lang`'s `grammar {}` block
+  (`features/list_lit/mod.av`): `list_expr` is ONE alternation covering
+  the literal and the `list_comp` comprehension branch, with both
+  lowerings (`MkListLit`, `MkListComp`) feature-owned in
+  `features/list_lit/lowering/` (t-kd4y.3.5.4; `list_comp_lang` carries
+  the ListComp hooks beside it).
 - Parser produces `Expr.ListLit(elements: List<ExprId>)`.
 - Resolve walks every element expression.
 - Type-check unifies element types — first non-Unknown element

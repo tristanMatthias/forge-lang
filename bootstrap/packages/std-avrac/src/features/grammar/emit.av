@@ -544,12 +544,6 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
     name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
         name == "fold_with" || name == "fold_postfix_with" || name == "mk_assign" || name == "rebind_eq" ||
         name == "mk_enum_ctor" ||
-        // `[ … ]` list literal + comprehension capture sp_start at their OWNING RULE's
-        // entry byte (t-47hc.4, DORMANT). That anchor is the `[` for MkListLit (built in
-        // list_expr, rule entry = `[`) but the BODY's first byte for MkListComp (built in
-        // the list_comp sub-rule, entered AFTER `[` is consumed) — the two-level span
-        // asymmetry matching hand parse_list_expr (@ `[`) vs parse_list_elements (@ body).
-        name == "MkListLit" || name == "MkListComp" ||
         name == "MkExprBlock" ||
         // `( a, b, … )` tuple spans sp_start = the `(` byte (t-47hc paren prep, DORMANT) —
         // its owning rule enters at `(`, like MkListLit's at `[`.
@@ -580,7 +574,6 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
         // with_suffix rule enters there, and rebind_with reads the partial node's `.hi`
         // to stamp each rebuilt `With` in a chained `a with { } with { }`.
         name == "MkWithSuffix" ||
-        name == "MkMapLit" ||
         name == "MkSplice" ||
         name == "MkSpliceStruct" ||
         name == "MkQualExpr" ||
@@ -2521,21 +2514,12 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "rebind_eq" -> "CapVal.Node(rebind_eq_expr(st, sp_start, ${args[0]}, ${args[1]}))"
         "mk_is" -> "CapVal.Node(mk_is_expr(st, ${args[0]}))"
         "mk_inlist" -> "CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(${args[0]}_list)))"
-        // `[ … ]` list literal + comprehension (t-47hc.4 — DORMANT builds; see executor
-        // mk_list_lit/mk_list_comp). `a` is the comma-list repetition accumulator (like
-        // mk_inlist's). Both span at sp_start = their OWNING RULE's entry byte: the `[`
-        // for MkListLit (built in list_expr), but the BODY's first byte for MkListComp
-        // (built in the list_comp sub-rule entered after `[`). MkListComp's body/v/coll
-        // are scalars; the optional `filt` (arity 4) is Nil when the `( if … )?` is absent.
-        "MkListLit" -> "CapVal.Node(mk_list_lit(st, sp_start, CapVal.Nodes(${args[0]}_list)))"
         // The `(`-led paren family (MkLambdaTyped/MkLambda/MkTupleFR/
-        // MkGroupOrEmpty/MkParam) is feature-owned (features/closures/
-        // lowering, t-kd4y.3.5.3): the manifest branch above renders the
-        // adapter calls, captures wrapped by manifest_arg_spelling.
-        "MkListComp" -> {
-            let filt = if args.length == 4 { args[3] } else { "CapVal.Nil" }
-            "CapVal.Node(mk_list_comp(st, sp_start, capval_to_expr(st, ${args[0]}), capval_tok_text(${args[1]}), capval_to_expr(st, ${args[2]}), ${filt}))"
-        }
+        // MkGroupOrEmpty/MkParam — t-kd4y.3.5.3) and the collections
+        // (MkListLit/MkListComp/MkMapLit — t-kd4y.3.5.4) are feature-owned
+        // (features/closures, features/list_lit, features/map_lit
+        // lowerings): the manifest branch above renders the adapter calls,
+        // captures wrapped by manifest_arg_spelling.
         "MkExprBlock" -> "mk_expr_block(st, sp_start, CapVal.SNodes(${args[0]}_list))"
         "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
         // Contextual enum ctor `.Variant`/`.Variant(args)` (Phase 3a-7 slice 4): `v` is
@@ -2604,7 +2588,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "MkGrammarBlock" -> "CapVal.Node(mk_grammar_block(st, sp_start, ${args[0]}))"
         "MkStructLit" -> "CapVal.Node(mk_struct_lit(st, sp_start, ${args[0]}, CapVal.FInits(${args[1]}_list)))"
         "MkTaggedTemplate" -> "CapVal.Node(mk_tagged_template(st, sp_start, ${args[0]}, ${args[1]}))"
-        "MkMapLit" -> "CapVal.Node(mk_map_lit(st, sp_start, CapVal.Nodes(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
         "MkSplice" -> "CapVal.Node(mk_splice(st, sp_start, ${args[0]}))"
         "MkSpliceStruct" -> "CapVal.Node(mk_splice_struct(st, sp_start, ${args[0]}, CapVal.FInits(${args[1]}_list)))"
         // Native `postfix_suffix` steps (t-47hc.33). No `sp_start` arg — the builder
