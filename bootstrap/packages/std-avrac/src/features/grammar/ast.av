@@ -914,13 +914,6 @@ export fn unflipped_builds() -> List<string> {
      // feature may only supply builders its OWN gram references.
      "MkSplice", "MkSpliceStruct",
      "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName",
-     // t-kd4y.3.5.3 paren family (closures/tuple). `MkParam` re-grouped
-     // here from the fn flip (t-kd4y.3.3.1): its `param` rule is PINNED to
-     // the shared base (fragment_registry_test — lambdas, trait methods,
-     // and impl methods all reference it), so the row belongs to whoever
-     // takes the paren/lambda machinery, not to fn_decl.
-     "MkTuple", "MkLambda", "MkLambdaTyped", "MkGroupOrEmpty", "MkTupleFR",
-     "Grouping", "MkParam",
      // t-kd4y.3.5.4 collections
      "MkListLit", "MkListComp", "MkMapLit",
      // t-kd4y.3.5.5 tables
@@ -952,8 +945,7 @@ export fn unflipped_builds() -> List<string> {
 /// ledger like every other central name; the domain lint expects exactly
 /// this set to be ledgered-but-tableless.
 export fn central_tableless_builds() -> List<string> {
-    ["MkAnnotated", "MkGroupOrEmpty", "MkNone",
-     "MkStampAt", "MkTupleFR"]
+    ["MkAnnotated", "MkNone", "MkStampAt"]
 }
 
 export fn central_build_kind(bn: string) -> string {
@@ -963,8 +955,7 @@ export fn central_build_kind(bn: string) -> string {
             or "mk_inlist" or "mk_inrange" or "mk_enum_ctor" or "mk_eqchain" or "MkListLit"
             or "MkListComp"
             or "MkExprBlock"
-            or "MkTuple" or "MkLambda" or "MkLambdaTyped"
-            or "Unary" or "Grouping" or "field_suffix" or "index_suffix" or "call_suffix"
+            or "Unary" or "field_suffix" or "index_suffix" or "call_suffix"
             or "MkWithSuffix" or "MkMapLit" or "MkSplice" or "MkSpliceStruct" or "MkQualExpr"
             or "MkTemplate" or "MkTrySuffix" or "MkCatchSuffix" or "MkOptChain" or "MkTupleIndex"
             or "MkFieldAccess" or "MkIndexSuffix" or "MkCallSuffix" or "MkGenericCallSuffix"
@@ -979,13 +970,11 @@ export fn central_build_kind(bn: string) -> string {
         // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
         "MkSpliceArm" -> "arm"
         "MkFieldInit" -> "finit"
-        // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target
-        // except the component CapVals (MkParam → PEntry, MkField → Field).
+        // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target.
         "MkExport"
             or "MkAssocTypeDef"
             or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc" -> "stmt"
         "MkAnn" -> "ann"
-        "MkParam" -> "pentry"
         // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
         // name string with a `~` prefix, so it must classify as `tok` and flow through
         // `capval_tok_text` exactly as a bare IDENT does.

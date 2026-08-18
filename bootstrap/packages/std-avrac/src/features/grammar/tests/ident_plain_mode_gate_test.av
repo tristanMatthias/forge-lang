@@ -30,13 +30,13 @@ use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr}
 // A header that parses its subject with the mode OFF — the `match`/`if`/`while` shape,
 // reduced to the two tokens that matter. `sub` accepts an identifier ONLY if
 // `ident_plain` admits it, so a decline is observable as a failed parse.
-const G_OFF: string = "r = \"if\" @off(allow_struct_lit) c:sub \"{\" \"}\" -> Grouping(c)\n" +
-    "sub = @peek(ident_plain) n:IDENT -> Grouping(n)"
+const G_OFF: string = "r = \"if\" @off(allow_struct_lit) c:sub \"{\" \"}\" -> MkGroupOrEmpty(c)\n" +
+    "sub = @peek(ident_plain) n:IDENT -> MkGroupOrEmpty(n)"
 
 // The same grammar with the mode left ON (its default), so the sibling struct-literal
 // branch is live and `ident_plain` must keep declining.
-const G_ON: string = "r = c:sub \"{\" \"}\" -> Grouping(c)\n" +
-    "sub = @peek(ident_plain) n:IDENT -> Grouping(n)"
+const G_ON: string = "r = c:sub \"{\" \"}\" -> MkGroupOrEmpty(c)\n" +
+    "sub = @peek(ident_plain) n:IDENT -> MkGroupOrEmpty(n)"
 
 fn parses(grammar_src: string, input: string) -> bool {
     let g = parse_grammar(grammar_src)
@@ -65,7 +65,7 @@ spec "t-47hc.31: with allow_struct_lit ON the predicate still declines" {
     then "a bare identifier with no `{` is plain either way — the control" {
         // Without this, the spec above could be green because the grammar is broken
         // rather than because the predicate declined.
-        parses("r = c:sub -> Grouping(c)\nsub = @peek(ident_plain) n:IDENT -> Grouping(n)", "Foo")
+        parses("r = c:sub -> MkGroupOrEmpty(c)\nsub = @peek(ident_plain) n:IDENT -> MkGroupOrEmpty(n)", "Foo")
     }
 }
 

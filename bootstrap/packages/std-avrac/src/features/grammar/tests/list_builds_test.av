@@ -30,7 +30,7 @@ fn emit_rule(grammar_src: string, rule: string) -> string {
 // captures), so empty/single/multi are uniform (Nil -> []). Elements are a node-producing
 // sub-rule (`paren` -> Grouping) because append_node collects Expr NODES, not bare
 // terminal tokens — exactly as the real list_expr's `a:expression` yields Expr nodes.
-fn lit_g() -> string { "r = \"[\" ( a:paren ( \",\" a:paren )* )? \"]\" -> MkListLit(a)\n paren = \"(\" e:NUMBER \")\" -> Grouping(e)" }
+fn lit_g() -> string { "r = \"[\" ( a:paren ( \",\" a:paren )* )? \"]\" -> MkListLit(a)\n paren = \"(\" e:NUMBER \")\" -> MkGroupOrEmpty(e)" }
 // The comprehension grammar (no filter): `[ body for v in coll ]`. MkListComp is built
 // in the `cbody` SUB-RULE entered AFTER `[`, so its rule-entry sp_start anchors at the
 // BODY expression — matching the hand parse_list_elements (span @ first element, NOT the

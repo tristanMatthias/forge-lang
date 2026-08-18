@@ -54,7 +54,7 @@ fn ann_grammar_src() -> string {
     "  factor         = l:un ( op:(\"*\" | \"/\") r:un )* -> fold_binary(l, op, r)\n" +
     "  un             = op:(\"!\" | \"-\") operand:un -> Unary(op, operand) | primary\n" +
     "  primary        = NUMBER | STRING | \"true\" | \"false\" | IDENT\n" +
-    "                 | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "                 | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> MkGroupOrEmpty(e)\n" +
     "}"
 }
 

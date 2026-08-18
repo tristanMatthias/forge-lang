@@ -41,9 +41,9 @@ fn rule_src(grammar_src: string, rule: string) -> string {
 
 // `dot_postfix_ok` is a BASE predicate — deliberately chosen over a mode flag so the
 // emitted guard has to route through `base_pred`, which is the lockstep property.
-const G_BASE = "r = \"[\" @on_if(dot_postfix_ok, allow_it_sugar) e:NUMBER \"]\" -> Grouping(e)"
+const G_BASE = "r = \"[\" @on_if(dot_postfix_ok, allow_it_sugar) e:NUMBER \"]\" -> MkGroupOrEmpty(e)"
 // A MODE predicate, to prove the other emit shape.
-const G_MODE = "r = \"[\" @on_if(allow_struct_lit, allow_dot_postfix) e:NUMBER \"]\" -> Grouping(e)"
+const G_MODE = "r = \"[\" @on_if(allow_struct_lit, allow_dot_postfix) e:NUMBER \"]\" -> MkGroupOrEmpty(e)"
 
 spec "t-47hc.34: `@on_if(pred, flag)` parses and is validated in BOTH halves" {
     then "a well-formed marker is accepted" {
@@ -112,19 +112,19 @@ spec "t-47hc.34: the emitted set is GUARDED, and the guard is the shared one" {
         // That is engine divergence of exactly the kind this marker exists to prevent, and
         // it is invisible to every test that only exercises a multi-item sequence.
         // Both sites now share `mode_on_set_line`, so a guard cannot be added to one only.
-        let s = rule_src("r = @on_if(at_quote_top, allow_it_sugar) child\nchild = n:NUMBER -> Grouping(n)", "r")
+        let s = rule_src("r = @on_if(at_quote_top, allow_it_sugar) child\nchild = n:NUMBER -> MkGroupOrEmpty(n)", "r")
         s.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
             s.contains("st.modes.quote_depth == 0") &&
             s.index_of("st.modes.quote_depth == 0") < s.index_of("modes_with_flag_on")
     }
     then "and an unconditional `@on` on that SAME path stays unguarded" {
-        let s = rule_src("r = @on(allow_it_sugar) child\nchild = n:NUMBER -> Grouping(n)", "r")
+        let s = rule_src("r = @on(allow_it_sugar) child\nchild = n:NUMBER -> MkGroupOrEmpty(n)", "r")
         s.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") && !s.contains("if st.modes.quote_depth")
     }
     then "an UNCONDITIONAL `@on` is emitted exactly as before — no guard" {
         // Byte-identity for every production grammar depends on this: `@on` must not
         // acquire an `if` just because `@on_if` now exists.
-        let s = rule_src("r = \"[\" @on(allow_it_sugar) e:NUMBER \"]\" -> Grouping(e)", "r")
+        let s = rule_src("r = \"[\" @on(allow_it_sugar) e:NUMBER \"]\" -> MkGroupOrEmpty(e)", "r")
         s.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
             !s.contains("if base_pred") && !s.contains("if st.modes.allow_struct_lit")
     }
@@ -146,35 +146,35 @@ spec "t-47hc.34: the interpreter honours the gate in both directions" {
         // rather than from anything internal. `dot_postfix_ok` consults the postfix BASE,
         // unseeded here, so the predicate is FALSE: the flag must stay off, the guarded
         // arm must decline, and the STRING-expecting fallback must reject a NUMBER.
-        let g = parse_grammar("r = \"[\" @on_if(dot_postfix_ok, allow_it_sugar) t:inner \"]\" -> Grouping(t)\n" +
-            "inner = @when(allow_it_sugar) a:NUMBER -> Grouping(a)\n" +
-            "      | @fallback b:STRING -> Grouping(b)")
+        let g = parse_grammar("r = \"[\" @on_if(dot_postfix_ok, allow_it_sugar) t:inner \"]\" -> MkGroupOrEmpty(t)\n" +
+            "inner = @when(allow_it_sugar) a:NUMBER -> MkGroupOrEmpty(a)\n" +
+            "      | @fallback b:STRING -> MkGroupOrEmpty(b)")
         g.error == "" && run_grammar_expr(g.grammar, "[ 7 ]").had_error
     }
     then "and the UNCONDITIONAL `@on` on the same grammar accepts it — the control" {
         // Identical but for the marker. If this also failed, the assertion above would be
         // proving nothing (the grammar could simply be broken); if this passed while the
         // one above did too, the gate would not be gating.
-        let g = parse_grammar("r = \"[\" @on(allow_it_sugar) t:inner \"]\" -> Grouping(t)\n" +
-            "inner = @when(allow_it_sugar) a:NUMBER -> Grouping(a)\n" +
-            "      | @fallback b:STRING -> Grouping(b)")
+        let g = parse_grammar("r = \"[\" @on(allow_it_sugar) t:inner \"]\" -> MkGroupOrEmpty(t)\n" +
+            "inner = @when(allow_it_sugar) a:NUMBER -> MkGroupOrEmpty(a)\n" +
+            "      | @fallback b:STRING -> MkGroupOrEmpty(b)")
         g.error == "" && !run_grammar_expr(g.grammar, "[ 7 ]").had_error
     }
     then "a TRUE predicate performs the set — the other direction" {
         // `at_quote_top` is true at quote_depth 0, i.e. always in a bare run. Same
         // grammar, predicate true, so the NUMBER-accepting arm must win.
-        let g = parse_grammar("r = \"[\" @on_if(at_quote_top, allow_it_sugar) t:inner \"]\" -> Grouping(t)\n" +
-            "inner = @when(allow_it_sugar) a:NUMBER -> Grouping(a)\n" +
-            "      | @fallback b:STRING -> Grouping(b)")
+        let g = parse_grammar("r = \"[\" @on_if(at_quote_top, allow_it_sugar) t:inner \"]\" -> MkGroupOrEmpty(t)\n" +
+            "inner = @when(allow_it_sugar) a:NUMBER -> MkGroupOrEmpty(a)\n" +
+            "      | @fallback b:STRING -> MkGroupOrEmpty(b)")
         g.error == "" && !run_grammar_expr(g.grammar, "[ 7 ]").had_error
     }
     then "and the set is RESTORED after the item, not leaked" {
         // A sibling read AFTER the marked item must see the flag back off.
-        let g = parse_grammar("r = \"[\" @on_if(at_quote_top, allow_it_sugar) t:inner \"]\" u:after -> Grouping(t)\n" +
-            "inner = @when(allow_it_sugar) a:NUMBER -> Grouping(a)\n" +
-            "      | @fallback b:STRING -> Grouping(b)\n" +
-            "after = @when(allow_it_sugar) c:STRING -> Grouping(c)\n" +
-            "      | @fallback d:NUMBER -> Grouping(d)")
+        let g = parse_grammar("r = \"[\" @on_if(at_quote_top, allow_it_sugar) t:inner \"]\" u:after -> MkGroupOrEmpty(t)\n" +
+            "inner = @when(allow_it_sugar) a:NUMBER -> MkGroupOrEmpty(a)\n" +
+            "      | @fallback b:STRING -> MkGroupOrEmpty(b)\n" +
+            "after = @when(allow_it_sugar) c:STRING -> MkGroupOrEmpty(c)\n" +
+            "      | @fallback d:NUMBER -> MkGroupOrEmpty(d)")
         // `after` takes NUMBER only when the flag is OFF again. A leak would demand STRING.
         g.error == "" && !run_grammar_expr(g.grammar, "[ 7 ] 9").had_error
     }

@@ -1,4 +1,4 @@
-// WHY: t-47hc paren spend — the last two DORMANT primitives, proven together on the
+// WHY: t-47hc paren spend — the last two paren primitives, proven together on the
 // non-factored paren grammar (the shape the spend flips avra_expr_grammar to):
 //   (1) @peek(lparen_ident_colon) — the position-0 twin of @peek(ident_colon): checks
 //       `( IDENT :` from BEFORE `(`, so the typed-lambda branch is a LEADING guard of an
@@ -6,7 +6,7 @@
 //       the `(` byte (mirroring the hand parse_paren_expr's alloc_at @ `(`). Factoring into a
 //       paren_tail sub-rule would span from AFTER `(` — a latent diagnostic divergence the
 //       span-blind main gates (diff-test IR / GENPASS) wouldn't catch.
-//   (2) MkGroupOrEmpty — the empty-tuple / grouping build the EMITTER needs: `MkTuple(a)`
+//   (2) MkGroupOrEmpty — the empty-tuple / grouping build the EMITTER needs: a single-list tuple build
 //       can't build `()` (the emitter only declares `a_list` for a repetition-captured label),
 //       so `"(" ( @on e:expression )? ")" -> MkGroupOrEmpty(e)` routes the opt-scalar e:
 //       Nil → Tuple([]), else → Grouping(e).
@@ -18,9 +18,9 @@
 // mandatory tuple comma (so `(x)` rolls back to grouping via the #995 Plus-in-@try guard),
 // and the nested `( rest )?` tolerates a comma with no element after it (the trailing case)
 // — mirroring the hand parse_tuple_rest's `while ',' { advance; if ')' break; parse }`.
-// DORMANT: avra_expr_grammar still has @hand(paren_expr) → regen byte-identical (emit-gen-check
-// GENPASS). Structural proof via the interpreter (sp_start = 0-1, span-free); spans validated
-// by cold CI at the spend.
+// SPENT (t-kd4y.3.5.3): the production paren_expr lives in features/closures with these
+// exact shapes, rows feature-owned in features/closures/lowering. Structural proof via the
+// interpreter (span-free); the emit pins assert the manifest-adapter lowering.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_rule_fn}
 use @std.avrac.core.{render_expr_id}
 
@@ -118,9 +118,9 @@ fn emit_paren() -> string {
 }
 
 spec "t-47hc paren spend: the emitter lowers both primitives correctly (spend-ready)" {
-    then "MkGroupOrEmpty lowers to a mk_group_or_empty call spanned at sp_start (build_uses_sp_start)" {
+    then "MkGroupOrEmpty lowers to its spanned manifest adapter (build_uses_sp_start)" {
         let s = emit_paren()
-        s.contains("mk_group_or_empty(st, sp_start,") && s.contains("let sp_start = st.cur().pos")
+        s.contains("call_with_build_sp(st, sp_start, mk_group_or_empty_abi, [e])") && s.contains("let sp_start = st.cur().pos")
     }
     then "@peek(lparen_ident_colon) lowers to the shared lookahead_ok guard" {
         emit_paren().contains("lookahead_ok(\"lparen_ident_colon\", st)")

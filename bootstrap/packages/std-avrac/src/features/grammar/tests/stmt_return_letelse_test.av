@@ -54,7 +54,7 @@ fn stmt_grammar_src() -> string {
     "  postfix     = base:primary ( sf:suffix )* -> fold_postfix(base, sf)\n" +
     "  suffix      = \"(\" ( ca:expression ( \",\" ca:expression )* )? \")\" -> call_suffix(ca)\n" +
     "  primary     = NUMBER | STRING | \"true\" | \"false\" | IDENT\n" +
-    "              | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "              | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> MkGroupOrEmpty(e)\n" +
     "}"
 }
 

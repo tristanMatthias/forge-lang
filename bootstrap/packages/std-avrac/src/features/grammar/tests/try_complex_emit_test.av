@@ -11,8 +11,8 @@ use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn}
 fn tail_g() -> string {
     "grammar PT {\n" +
     "  paren_tail = @try ( @on(allow_dot_postfix) a:expression ( \",\" a:expression )* )? \")\" \"->\" lb:expression -> MkLambda(a, lb)\n" +
-    "             | @try @on(allow_dot_postfix) a:expression ( \",\" a:expression )+ ( \",\" )? \")\" -> MkTuple(a)\n" +
-    "             | @on(allow_dot_postfix) e:expression \")\" -> Grouping(e)\n" +
+    "             | @try @on(allow_dot_postfix) first:expression ( \",\" rest:expression )+ ( \",\" )? \")\" -> MkTupleFR(first, rest)\n" +
+    "             | @on(allow_dot_postfix) e:expression \")\" -> MkGroupOrEmpty(e)\n" +
     "  expression = IDENT\n" +
     "}"
 }
@@ -36,11 +36,14 @@ spec "t-47hc GAP-3: complex @try branches lower to correct generated code" {
     then "no dead `if false` scaffolding is emitted" {
         !emit_tail().contains("if false")
     }
-    then "the untyped-lambda build reads the accumulator via CapVal.Nodes(a_list)" {
-        emit_tail().contains("mk_lambda(st, sp_start, CapVal.Nodes(a_list)")
+    then "the untyped-lambda build rides the manifest adapter over the accumulator" {
+        // MkLambda is feature-owned (features/closures lowering,
+        // t-kd4y.3.5.3): a spanned row, so the call threads sp_start via
+        // call_with_build_sp and the repetition arrives CapVal.Nodes-wrapped.
+        emit_tail().contains("call_with_build_sp(st, sp_start, mk_lambda_abi, [CapVal.Nodes(a_list), lb])")
     }
-    then "the tuple arm builds mk_tuple over the same accumulator" {
-        emit_tail().contains("mk_tuple(st, sp_start, CapVal.Nodes(a_list))")
+    then "the tuple arm rides its manifest adapter with the first+rest split" {
+        emit_tail().contains("call_with_build_sp(st, sp_start, mk_tuple_fr_abi, [first, CapVal.Nodes(rest_list)])")
     }
     then "the rollback scaffold restores store, cursor, and hygiene counter in order" {
         // Leaving no trace is what `@try` MEANS. Order is the load-bearing part —
