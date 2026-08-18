@@ -74,6 +74,35 @@ fn make_pair_struct(field_name: string) -> Stmt {
 }
 ```
 
+## Ownership (t-kd4y.3.4)
+
+The three rules — `quote_expr`, `quote_type_expr`, `quote_arm_expr` —
+are declared ONCE, in `mod.av`'s `quote_lang()` gram, and reach every
+composed expression view through `feature_expr_grammar_fragments`
+(`gram_family = "expr"`). The engine's expression *ladder* still owns
+the DISPATCH — `unary`'s `@peek(quote_arm)` / `@peek(quote_type)`
+alternatives and the unguarded catch-all, in that order — because which
+primaries the ladder tries, and in what order, is engine structure.
+
+The lowerings live in `lowering/`: `mk_quote` / `mk_quote_type` /
+`mk_quote_arm` plus their ABI adapters and three `spanned` manifest rows
+under the existing `MkQuote` / `MkQuoteType` / `MkQuoteArm` build names.
+The engine's central executor arms, emit templates, and `central_build_kind`
+rows for those names are gone; the generated parser calls the adapters
+through `call_with_build_sp` and derives its `use
+features.quote_expr.lowering.{…}` import from the manifest.
+
+`lowering/` imports ONLY `features.grammar` + `core` — the generated
+parser imports it, and widening the parse closure (e.g. by importing the
+feature module itself, which pulls in `lower.av`'s typeck/codegen edges)
+re-enters modules whose derives already ran and F4012s on the metadata
+library path.
+
+The splice builds (`MkSplice`, `MkSpliceStruct`, `MkSpliceType`,
+`MkSpliceName`, `MkSpliceArm`, `MkPlainName`) are still engine-central:
+their rules are branches of `unary` and `type_atom`, which did not move,
+and a feature may only supply builders its own gram references.
+
 ## Where quote is used
 
 Avra's primary consumer is the AST-macro pipeline (Components V2 /

@@ -4124,9 +4124,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "MkChannel" if args.length == 2 -> mk_channel(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkExprBlock" if args.length == 1 -> mk_expr_block(st, 0 - 1, env.get(args[0]))
-        "MkQuoteArm" if args.length == 4 -> mk_quote_arm(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3]))
-        "MkQuoteType" if args.length == 2 -> mk_quote_type(st, 0 - 1, env.get(args[0]), env.get(args[1]))
-        "MkQuote" if args.length == 2 -> mk_quote(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkSpawn" if args.length == 1 -> mk_spawn(st, 0 - 1, env.get(args[0]))
         "MkIsolated" if args.length == 1 -> mk_isolated(st, 0 - 1, env.get(args[0]))
         "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
@@ -4564,97 +4561,12 @@ export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
 
 /// Grammar-native `spawn { ... }`, preserving the hand parser's span and
 /// walker-opaque body id.
-/// Grammar-native `quote { … }` / `quote stmt|stmts|decl { … }` (t-bwjg).
-///
-/// The BLOCK-BODIED kinds only. The two
-/// non-block kinds — `quote type { <type> }` (a TypeLit carrier) and `quote arm
-/// { pat -> body }` (a synthetic single-armed MatchExpr envelope) — are declined by
-/// `@peek(quote_type)` and `@peek(quote_arm)`, each routed to its own native rule, so
-/// this build never sees either.
-///
-/// `kind_cv` is the OPTIONAL kind keyword; absent means the default, `"expr"`.
-/// `Expr.Quote`'s body is an ExprId SCALAR and is
-/// walker-opaque, so this allocs as a LEAF with no child refs. Adding an edge here
-/// would give the walker a child that was never registered.
-/// Grammar-native `quote type { <type> }` (t-bwjg slice 4b).
-///
-/// The two spans are
-/// deliberately different: the inner `Expr.TypeLit` carrier spans from the `{`,
-/// while the outer
-/// `Expr.Quote` spans from the `quote` keyword. `lb_cv` is the captured `{` token, which
-/// is the only way the build can recover that inner byte.
-///
-/// NOTE the deliberate difference from `mk_channel`, the other build that carries a
-/// type: channel INGESTS its element (`ingest_type` + a `NodeRef.TypeRef` edge).
-/// `quote type` does NOT — it is a plain alloc with
-/// no refs — so ingesting here would add a type-table row and a walker edge,
-/// and the IR would diverge.
-/// Grammar-native `quote arm { pat (if guard)? -> body ,? }` (t-bwjg slice 4b).
-///
-/// The arm is wrapped in a SYNTHETIC
-/// single-armed `Expr.MatchExpr` so the `Quote(kind, body)` shape stays uniform across
-/// every kind; the lowering pass picks the arm back out via the `arm` discriminator.
-///
-/// THREE things here are byte-identity-critical:
-///
-/// 1. The synthetic subject is `intern_expr_leaf`, NOT `add_expr` — an interned
-///    row, so repeated
-///    `quote arm`s share one `Expr.None`. Using add_expr would mint a fresh row each
-///    time and the arena would diverge.
-/// 2. The edge set is EXACTLY `[PatRef(pat_id)]`. `MatchArm` is a MIXED walker node:
-///    only the pattern is a walked child, while guard and body ride as walker-opaque
-///    `ExprId` scalars, and the subject is opaque too. Adding any of them would hand the
-///    walker a different child set — the same rule mk_match_expr documents.
-/// 3. The inner MatchExpr spans from the `{`,
-///    while the outer Quote spans from the `quote` keyword.
-export fn mk_quote_arm(st: PState, sp_start: int, lb_cv: CapVal, pat_cv: CapVal, guard_cv: CapVal, body_cv: CapVal) -> CapVal {
-    let pat_id = capval_to_pat(st, pat_cv)
-    let guard = if capval_present(guard_cv) { capval_to_expr(st, guard_cv) } else { null }
-    let arm = MatchArm {
-        pattern: st.store.pats.get(pat_id),
-        pattern_id: pat_id,
-        guard_id: guard,
-        body_id: capval_to_expr(st, body_cv)
-    }
-    let arms: List<MatchArm> = [arm]
-    let subject_id = st.store.intern_expr_leaf(Expr.None)
-    let edges: List<NodeRef> = [NodeRef.PatRef(pat_id)]
-    let lb = capval_tok_pos(lb_cv)
-    let inner = st.store.add_expr(
-        Expr.MatchExpr(subject_id, arms),
-        if lb < 0 { byte_span_none() } else { byte_span(lb, st.cur().pos) },
-        edges
-    )
-    CapVal.Node(st.store.add_expr(
-        Expr.Quote("arm", inner),
-        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
-        []
-    ))
-}
-
-export fn mk_quote_type(st: PState, sp_start: int, lb_cv: CapVal, t_cv: CapVal) -> CapVal {
-    let vt = type_expr_to_vtype(capval_to_texpr(st, t_cv))
-    let lb = capval_tok_pos(lb_cv)
-    let body = st.store.add_expr(
-        Expr.TypeLit(vt),
-        if lb < 0 { byte_span_none() } else { byte_span(lb, st.cur().pos) },
-        []
-    )
-    CapVal.Node(st.store.add_expr(
-        Expr.Quote("type", body),
-        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
-        []
-    ))
-}
-
-export fn mk_quote(st: PState, sp_start: int, kind_cv: CapVal, body_cv: CapVal) -> CapVal {
-    let kind = if capval_present(kind_cv) { capval_tok_text(kind_cv) } else { "expr" }
-    CapVal.Node(st.store.add_expr(
-        Expr.Quote(kind, capval_to_expr(st, body_cv)),
-        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
-        []
-    ))
-}
+// The `quote` cores (mk_quote / mk_quote_type / mk_quote_arm) moved to
+// features/quote_expr/lowering with their MkQuote / MkQuoteType / MkQuoteArm
+// manifest rows (t-kd4y.3.4). They were the LAST readers of the executor's
+// `0 - 1` sp_start convention for this family; the rows are `spanned`, so the
+// generated parser threads the rule-entry byte as st.build_sp and the
+// interpreter's bare adapter call reads the same -1 default.
 
 export fn mk_spawn(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
     CapVal.Node(st.store.add_expr(

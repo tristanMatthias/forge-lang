@@ -1,0 +1,104 @@
+// The quote LanguageFeature definition (features/quote_expr/mod.av): the
+// definition carries title/docs/snippet, its keywords DERIVE from the
+// declared grammar, and the declared rules reach the composed expression +
+// whole-program views through feature_expr_grammar_fragments — t-kd4y.3.4's
+// guard, and the EXPRESSION-family twin of return_stmt's: ONE definition in
+// the feature file, zero spine copies.
+//
+// This is the pattern prover for every expression family that follows, so
+// the proof obligations are spelled out as separate thens rather than
+// folded together:
+//   1. render lockstep — every rule the feature declares appears in the
+//      composed views VERBATIM, so the move changed no rule text;
+//   2. the engine LADDER kept its dispatch — `unary` still names the three
+//      quote rules, peek-guards first, and the ladder itself did not move;
+//   3. the lowering is feature-owned — three `spanned` expr rows, and the
+//      engine's central table no longer classifies the names at all.
+// The EMITTED-SOURCE ordering proof (the #1028 dead-branch class) lives
+// with its oracle in features/grammar/tests/quote_expr_native_test.av.
+use @std.avrac.features.quote_expr.{quote_lang}
+use @std.avrac.features.quote_expr.lowering.{quote_builds}
+use @std.avrac.features.{feature_keywords, feature_gram, builder_validation_error}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_expr_grammar, central_build_kind}
+
+fn has(xs: List<string>, s: string) -> bool {
+    for x in xs { if x == s { return true } }
+    false
+}
+
+/// Every `name = body` line of a rendered grammar — render_grammar emits one
+/// per rule, so this is the rule set as text.
+fn rule_lines(src: string) -> List<string> {
+    mut out: List<string> = []
+    for line in src.split("\n") {
+        if line.contains(" = ") { out.push(line) }
+    }
+    out
+}
+
+/// The lockstep itself: every rule the feature declares must appear, byte for
+/// byte, in the composed view. A rule that drifted (or a spine copy that was
+/// left behind and diverged) fails here.
+fn rules_reach(view: string) -> bool {
+    let mine = rule_lines(render_grammar(feature_gram(quote_lang())))
+    if mine.length != 3 { return false }
+    for r in mine {
+        if !view.contains(r) { return false }
+    }
+    true
+}
+
+spec "quote as a LanguageFeature" {
+    then "the keywords derive from the declared grammar" {
+        // Derived, never declared twice: the kind words and the two routing
+        // words are literal terminals of the three rules.
+        let kws = feature_keywords(quote_lang())
+        has(kws, "quote") && has(kws, "stmt") && has(kws, "stmts") &&
+        has(kws, "decl") && has(kws, "type") && has(kws, "arm")
+    }
+    then "title, docs, and editor snippet are carried" {
+        let f = quote_lang()
+        f.title.length > 0 && f.docs.contains("quote_depth") && f.snippet.contains("quote")
+    }
+    then "the feature declares exactly the three quote rules" {
+        let mine = render_grammar(feature_gram(quote_lang()))
+        mine.contains("quote_type_expr = ") && mine.contains("quote_arm_expr = ") &&
+        mine.contains("quote_expr = ") &&
+        rule_lines(mine).length == 3
+    }
+    then "the declared rules reach the composed expression view, spelling and all" {
+        rules_reach(render_grammar(avra_expr_grammar()))
+    }
+    then "and the whole-program view, through the same fragment registry" {
+        rules_reach(render_grammar(avra_program_grammar()))
+    }
+    then "the ENGINE LADDER kept the dispatch it always had" {
+        // Only the rules moved. `unary` — precedence ladder, engine structure —
+        // still lives in the spine and still names all three quote primaries;
+        // the two peek-guarded alternatives still precede the unguarded
+        // catch-all in the composed text, which is what the emitted-source
+        // ordering spec then proves on the generated parser.
+        let prod = render_grammar(avra_program_grammar())
+        let arm = prod.index_of("quote_arm_expr ")
+        let ty = prod.index_of("quote_type_expr ")
+        let plain = prod.index_of("base:quote_expr ")
+        arm >= 0 && ty >= 0 && plain >= 0 && arm < plain && ty < plain
+    }
+    then "the lowerings are feature-owned, and the engine forgot the names" {
+        // The flip's two halves. Rows: three `spanned` expr binds under the
+        // EXISTING build names, so no rule text moved with them. Engine: the
+        // central table classifies none of the three any more — which is also
+        // what `builder_validation_error` requires (a supplied builder that
+        // shadowed a central name is rejected outright).
+        let rows = quote_builds()
+        mut spanned_expr = 0
+        for b in rows {
+            if b.kind == "expr" && b.spanned && b.module == "features.quote_expr.lowering" { spanned_expr = spanned_expr + 1 }
+        }
+        rows.length == 3 && spanned_expr == 3 &&
+        central_build_kind("MkQuote") == "" &&
+        central_build_kind("MkQuoteType") == "" &&
+        central_build_kind("MkQuoteArm") == "" &&
+        builder_validation_error(quote_lang()) == ""
+    }
+}

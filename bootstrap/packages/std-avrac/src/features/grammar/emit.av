@@ -549,7 +549,7 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
         name == "MkMatchExpr" ||
         // MkIfExpr spans from the `if` keyword — hand parse_if_expression's sp_start.
         name == "MkIfExpr" ||
-        name == "MkQuote" || name == "MkQuoteType" || name == "MkQuoteArm" || name == "MkExprBlock" || name == "MkSpawn" || name == "MkIsolated" ||
+        name == "MkExprBlock" || name == "MkSpawn" || name == "MkIsolated" ||
         // `( a, b, … )` tuple spans sp_start = the `(` byte (t-47hc paren prep, DORMANT) —
         // its owning rule enters at `(`, like MkListLit's at `[`.
         name == "MkTuple" ||
@@ -2558,9 +2558,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         }
         "MkChannel" -> "mk_channel(st, sp_start, ${args[0]}, ${args[1]})"
         "MkExprBlock" -> "mk_expr_block(st, sp_start, CapVal.SNodes(${args[0]}_list))"
-        "MkQuoteArm" -> "mk_quote_arm(st, sp_start, ${args[0]}, ${args[1]}, ${args[2]}, ${args[3]})"
-        "MkQuoteType" -> "mk_quote_type(st, sp_start, ${args[0]}, ${args[1]})"
-        "MkQuote" -> "mk_quote(st, sp_start, ${args[0]}, ${args[1]})"
         "MkSpawn" -> "mk_spawn(st, sp_start, ${args[0]})"
         "MkIsolated" -> "mk_isolated(st, sp_start, ${args[0]})"
         "MkWhen" -> "mk_when(st, sp_start, CapVal.WArms(${args[0]}_list))"

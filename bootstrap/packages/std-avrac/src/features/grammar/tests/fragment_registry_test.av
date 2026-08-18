@@ -8,15 +8,21 @@
 // other fragments (a clean union with a well-defined start symbol) — so this
 // spec is the gate that keeps the modular assembly honest, not a snapshot.
 use @std.avrac.features.{feature_grammar_fragments}
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_type_grammar, avra_program_grammar, compose_fragments, fragment_rule_conflicts, feature_decl_grammar_fragments, Grammar}
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_expr_spine_grammar, avra_type_grammar, avra_program_grammar, compose_fragments, fragment_rule_conflicts, feature_decl_grammar_fragments, Grammar}
 
 // The shared cross-cutting base (owned by no single feature) followed by every
 // per-feature fragment the registry collects — the composer's full input.
 fn shared_plus_features() -> List<Grammar> {
     // The interpreter expression view deliberately composes the type family so
     // typed-lambda params resolve in-grammar. Fragment disjointness must inspect
-    // the expression CORE/dispatch view plus the type fragment exactly once.
-    mut all: List<Grammar> = [avra_expr_dispatch_grammar(), avra_type_grammar()]
+    // the expression SPINE plus the type fragment exactly once — the SPINE, not
+    // the dispatch view, since t-kd4y.3.4: the expression views now fold the
+    // expr-family fragments in themselves (as the decl edge has always folded
+    // the decl ones), so passing a composed view here would count every
+    // migrated expression rule twice and the union property would report a
+    // conflict that does not exist. The spine is exactly "the rules no feature
+    // owns", which is what this property is about.
+    mut all: List<Grammar> = [avra_expr_spine_grammar(), avra_type_grammar()]
     for g in feature_grammar_fragments() {
         all.push(g)
     }
@@ -115,6 +121,9 @@ spec "t-47hc.8: feature grammar-fragment registry assembles cleanly" {
         let all = shared_plus_features()
         let c = compose_fragments(all)
         c.rules.length == total_rules(all)
-            && c.rules[0].name == avra_expr_dispatch_grammar().rules[0].name
+            && c.rules[0].name == avra_expr_spine_grammar().rules[0].name
+            // …and the dispatch view still LEADS with the same start rule, so
+            // splitting spine from composed core moved no start symbol.
+            && avra_expr_dispatch_grammar().rules[0].name == avra_expr_spine_grammar().rules[0].name
     }
 }

@@ -5,7 +5,11 @@ use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_gr
 // t-47hc.8 — the statement-family registry: every feature whose gram declares
 // `gram_family = "stmt"`, in registration order. The statement views fold it
 // in below, so a statement keyword's rules live ONLY in its feature file.
-use features.{feature_stmt_grammar_fragments}
+// t-kd4y.3.4 added its EXPRESSION twin: every feature whose gram declares
+// `gram_family = "expr"`, folded in by `avra_expr_core`, so an expression
+// keyword's rules live ONLY in its feature file while the ladder that
+// DISPATCHES to them stays here.
+use features.{feature_stmt_grammar_fragments, feature_expr_grammar_fragments}
 // t-47hc slice 9 — the DECL-keyword grammar fragments, each owned by the feature
 // that owns the keyword (the same colocation `match` already has for
 // patterns). Imported here rather than assembled in features/mod.av because this
@@ -24,7 +28,15 @@ use features.parallel_stmt.{avra_parallel_grammar}
 use features.generics.{avra_generics_grammar}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
-fn avra_expr_core() -> Grammar {
+///
+/// The ENGINE's own expression rules: the precedence ladder, the postfix
+/// chain, the primary dispatch skeleton, and `table_cell` — structure, not
+/// syntax any one feature owns. NO feature fragments are folded in here;
+/// `avra_expr_core` below composes those on top. The two are split so the
+/// disjointness property (spine ∩ feature fragments = ∅) stays checkable as
+/// expression families migrate out (t-kd4y.3.4/.3.5) — this function is what
+/// SHRINKS with each flip, and what must eventually be ladder-only.
+export fn avra_expr_spine_grammar() -> Grammar {
     let gp = grammar {
   expression    = assignment
   // `@onfail(bail)` on the LHS: without it a FAILED left operand
@@ -254,45 +266,18 @@ fn avra_expr_core() -> Grammar {
                  @expect("IDENT", "expected a variant name after `.`", F0040)
                  @expect(")", "expected `)` after arguments") -> mk_enum_ctor(v, a)
   channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
-  // t-bwjg — `quote { … }` and the block-bodied kinds. `quote type { <type> }` and
-  // ALL THREE quote shapes are native now: this rule owns the block-bodied kinds, while
-  // @peek(quote_type)/@peek(quote_arm) route the two whose body is not a block —
-  // a TypeLit carrier and a synthetic single-armed MatchExpr envelope respectively.
-  // @bump(quote_depth) is the bump/restore around the body, which is
-  // what the splice branches (@when(at_quote_top) / @when(in_quote_body))
-  // read — so a NESTED quote still sees the right depth.
-  // `quote type { <type> }` — native as of slice 4b. @bump wraps the TYPE parse so a
-  // splice inside it (`quote type { ~T }`, quote_splice_type_ident_test) still sees a
-  // nonzero depth; the braces themselves do not care.
-  // Every mandatory terminal is `@require`d with the exact pinned wording. Unrequired,
-  // a missing `{` reported a generic "expected {" and the rule CARRIED ON — parsing an
-  // empty type and then reporting the missing `}` too, so `quote type` alone came out
-  // three diagnostics where one is pinned.
-  quote_type_expr = "quote" "type" @require lb:"{" @require @bump(quote_depth) t:type_expr @require "}"
-                    @expect("{", "expected `{` after `quote type`")
-                    @expect("type_expr", "expected a type inside `quote type { ... }`")
-                    @expect("}", "expected `}` after the type in `quote type`") -> MkQuoteType(lb, t)
-  // `quote arm { pat (if guard)? -> body ,? }` — the last quote shape, native as of
-  // slice 4b. `pattern_or` is the same rule the match families use; the trailing comma
-  // is optional exactly as parse_quote_arm_body allows it.
-  // Same treatment as quote_type_expr, and the pattern position is the same shape as
-  // its type position: `@require` under the `@bump`, so a missing pattern aborts with
-  // `parse_pattern_or`'s message instead of reporting a generic F0040 and
-  // then the missing `->` on top of it.
-  quote_arm_expr = "quote" "arm" @require lb:"{" @require @bump(quote_depth) p:pattern_or ( "if" g:expression )? @require "->" b:expression ( "," )? @require "}"
-                   @expect("{", "expected `{` after `quote arm`")
-                   @expect("pattern_or", "expected `.`, `_`, literal, or type pattern to start pattern")
-                   @expect("->", "expected `->` after pattern in quote arm")
-                   @expect("}", "expected `}` after quote arm body") -> MkQuoteArm(lb, p, g, b)
-  // `@require body:block_expr` (the spawn_expr idiom, FIRST = `{` so the gate
-  // is narrow): without it a truncated header (`quote`, `quote stmt`, an
-  // unknown kind word) DIVERGED across the engines — the exec leg's
-  // block_expr report stuck and the outer recovery reported again (1 vs 2),
-  // and emit dropped the precise report entirely, keeping only the outer
-  // cascade. With the gate both engines own ONE `expected `{`` report and
-  // fail the rule cleanly (t-rd44; probed over all eight malformed forms).
-  quote_expr   = "quote" ( k:("stmt" | "stmts" | "decl") )? @bump(quote_depth) @require body:block_expr
-                 @expect("{", "expected `{` to open the quote body") -> MkQuote(k, body)
+  // The `quote` family lives with its feature (features/quote_expr, gram_family
+  // = "expr", t-kd4y.3.4): quote_expr / quote_type_expr / quote_arm_expr are ONE
+  // definition each in features/quote_expr/mod.av and reach every expression view
+  // through feature_expr_grammar_fragments below. The three references above —
+  // @peek(quote_arm) / @peek(quote_type) / the unguarded catch-all, in that order —
+  // are the ENGINE LADDER's dispatch and stay here: which primaries `unary` tries,
+  // and in what order, is spine structure. The rules they name are not.
+  //
+  // The `unary` splice branches above stay too, and they READ what the moved
+  // rules write: `@bump(quote_depth)` wraps every quote body, so
+  // `@when(at_quote_top)` sees bitnot and `@when(in_quote_body)` sees a splice
+  // — a COUNTER, so a nested quote still resolves at the right depth.
   spawn_expr   = "spawn" @require body:block_expr
                  @expect("{", "expected `{` after spawn") -> MkSpawn(body)
   // Same gate, same reason — `isolated` truncated diverged 1 vs 2 exactly
@@ -466,6 +451,18 @@ fn avra_expr_core() -> Grammar {
   null_cell    = n:( "null" | "none" ) -> n
     }
     grammar_checked(gp)
+}
+
+/// The expression family as every view consumes it: the engine spine above,
+/// then every feature-owned expression fragment the registry collects.
+/// Composed rather than concatenated by hand for the same reason
+/// `avra_decl_edge_grammar` composes its decl fragments — a feature's rules
+/// bind by NAME against the merged rule set, so the ladder can reference
+/// `quote_expr` without defining it.
+fn avra_expr_core() -> Grammar {
+    mut frags: List<Grammar> = [avra_expr_spine_grammar()]
+    for g in feature_expr_grammar_fragments() { frags.push(g) }
+    compose_fragments(frags)
 }
 
 /// The §2 expression grammar the INTERPRETER runs (run_grammar_expr / the
