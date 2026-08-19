@@ -5698,3 +5698,150 @@ fn logicop_sym(op: LogicOp) -> string {
         .Or -> "||"
     }
 }
+
+// ── t-kd4y.3.5.7 REGEN BRIDGE — DELETE AFTER `--emit-regen-parsers` ──
+// The checked-in gen_parser.av still imports these under their engine
+// names; the regenerated parser calls the manifest adapters instead.
+// These are verbatim copies of the feature-lowering cores, kept ONLY so
+// the pre-regen compiler builds. Two-phase, same discipline as a seed
+// bridge: build → regen → delete this block → build.
+export fn fold_logical_expr(st: PState, sp_start: int, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let ops = capval_toks(opcap)
+    let rs = capval_nodes(rcap)
+    let m = if ops.length < rs.length { ops.length } else { rs.length }
+    mut i = 0
+    while i < m {
+        let hi = if i + 1 < m { ops[i + 1].pos } else { st.cur().pos }
+        acc = st.store.add_expr(Expr.Logical(acc, bridge_logicop_of(ops[i].text), rs[i]), byte_span(sp_start, hi), [])
+        i = i + 1
+    }
+    acc
+}
+fn bridge_logicop_of(sym: string) -> LogicOp {
+    if sym == "||" || sym == "or" { return LogicOp.Or }
+    LogicOp.And
+}
+export fn fold_nullish_expr(st: PState, sp_start: int, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let ops = capval_toks(opcap)
+    let rs = capval_nodes(rcap)
+    let m = if ops.length < rs.length { ops.length } else { rs.length }
+    mut i = 0
+    while i < m {
+        let hi = if i + 1 < m { ops[i + 1].pos } else { st.cur().pos }
+        acc = st.store.add_expr(Expr.NullCoalesce(acc, rs[i]), byte_span(sp_start, hi), [])
+        i = i + 1
+    }
+    acc
+}
+export fn fold_pipe_expr(st: PState, sp_start: int, lcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let sp = byte_span(sp_start, st.cur().pos)
+    for rid in capval_nodes(rcap) {
+        acc = match st.store.exprs.get(rid) {
+            .Call(callee, args) -> {
+                if bridge_pipe_has_ph(st, args) {
+                    st.store.add_expr(Expr.Call(callee, bridge_pipe_repl(st, args, acc)), sp, [])
+                } else {
+                    mut prepended: List<ExprId> = [acc]
+                    for a in args { prepended.push(a) }
+                    st.store.add_expr(Expr.Call(callee, prepended), sp, [])
+                }
+            }
+            _ -> st.store.add_expr(Expr.Call(rid, [acc]), sp, [])
+        }
+    }
+    acc
+}
+fn bridge_pipe_has_ph(st: PState, args: List<ExprId>) -> bool {
+    for a in args {
+        match st.store.exprs.get(a) {
+            .Ident(n) -> if n == "_" { return true }
+            _ -> {}
+        }
+    }
+    false
+}
+fn bridge_pipe_repl(st: PState, args: List<ExprId>, repl: ExprId) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for a in args {
+        let is_ph = match st.store.exprs.get(a) {
+            .Ident(n) -> n == "_"
+            _ -> false
+        }
+        if is_ph { out.push(repl) } else { out.push(a) }
+    }
+    out
+}
+export fn mk_assign_expr(st: PState, sp_start: int, lcap: CapVal, rcap: CapVal) -> ExprId {
+    let l = capval_to_expr(st, lcap)
+    match rcap {
+        .Nil -> l
+        _ -> {
+            let r = capval_to_expr(st, rcap)
+            let sp = byte_span(sp_start, st.cur().pos)
+            match st.store.exprs.get(l) {
+                .Ident(name) -> st.store.add_expr(Expr.Assign(name, r), sp, [])
+                .FieldAccess(obj, field) -> st.store.add_expr(Expr.FieldAssign(obj, field, r), sp, [])
+                _ -> st.error_node("invalid assignment target")
+            }
+        }
+    }
+}
+export fn rebind_eq_expr(st: PState, sp_start: int, basecap: CapVal, tailcap: CapVal) -> ExprId {
+    let base = capval_to_expr(st, basecap)
+    match tailcap {
+        .Nil -> base
+        _ -> bridge_rebind_missing(st, sp_start, capval_to_expr(st, tailcap), base)
+    }
+}
+fn bridge_rebind_missing(st: PState, sp_start: int, tail_id: ExprId, base: ExprId) -> ExprId {
+    let sp = byte_span(sp_start, st.cur().pos)
+    match st.store.exprs.get(tail_id) {
+        .IsCheck(_, v) -> st.store.add_expr(Expr.IsCheck(base, v), sp, [])
+        .InCheck(_, items) -> st.store.add_expr(Expr.InCheck(base, items), sp, [])
+        .Logical(ge, op, le) -> {
+            let ge2 = bridge_rebind_bin(st, sp_start, ge, base)
+            let le2 = bridge_rebind_bin(st, sp_start, le, base)
+            st.store.add_expr(Expr.Logical(ge2, op, le2), sp, [])
+        }
+        .Binary(l, op, r) -> st.store.add_expr(Expr.Binary(bridge_rebind_missing(st, sp_start, l, base), op, r), sp, [])
+        _ -> base
+    }
+}
+fn bridge_rebind_bin(st: PState, sp_start: int, id: ExprId, base: ExprId) -> ExprId {
+    match st.store.exprs.get(id) {
+        .Binary(_, op, r) -> st.store.add_expr(Expr.Binary(base, op, r), byte_span(sp_start, st.cur().pos), [])
+        _ -> id
+    }
+}
+export fn mk_is_expr(st: PState, vcap: CapVal) -> ExprId {
+    st.store.exprs.add_leaf(Expr.IsCheck(st.missing_node(), capval_tok_text(vcap)))
+}
+export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
+    st.store.exprs.add_leaf(Expr.InCheck(st.missing_node(), capval_to_node_list(acap)))
+}
+export fn mk_inrange_expr(st: PState, scap: CapVal, ecap: CapVal) -> ExprId {
+    let s = capval_to_expr(st, scap)
+    let e = capval_to_expr(st, ecap)
+    let ge = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Ge, s))
+    let le = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Le, e))
+    st.store.exprs.add_leaf(Expr.Logical(ge, LogicOp.And, le))
+}
+export fn mk_eqchain_expr(st: PState, opcap: CapVal, rcap: CapVal) -> ExprId {
+    fold_binary_expr(st, CapVal.Node(st.missing_node()), opcap, rcap)
+}
+export fn unary_expr(st: PState, opcap: CapVal, opndcap: CapVal) -> ExprId {
+    let operand = capval_to_expr(st, opndcap)
+    match opcap {
+        .Tok(t) -> st.store.add_expr(Expr.Unary(bridge_unop_of(t.text), operand), byte_span(t.pos, st.cur().pos), [])
+        _ -> st.store.exprs.add_leaf(Expr.Unary(bridge_unop_of(capval_tok_text(opcap)), operand))
+    }
+}
+fn bridge_unop_of(sym: string) -> UnOp {
+    if sym == "!" { return UnOp.Not }
+    if sym == "not" { return UnOp.Not }
+    if sym == "~" { return UnOp.BitNot }
+    UnOp.Neg
+}
