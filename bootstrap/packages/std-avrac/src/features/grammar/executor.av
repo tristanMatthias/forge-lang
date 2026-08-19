@@ -4134,10 +4134,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    dispatches them. The shared definition core
         //    (mk_component_def_with_params) stays below, exported — its
         //    registration hooks close over the host Parser. ──
-        // EXPRESSION `match subj { arms }` (t-47hc.25). The interpreter has no
-        // sequence-start byte, so -1 => byte_span_none, matching every sibling build.
-        // `if c { … } else …` (t-47hc.24). An ABSENT else arrives as CapVal.Nil, which
-        // mk_if_expr turns into the hand's synthesized empty (Void) block.
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
         "mk_enum_ctor" if args.length == 2 -> CapVal.Node(mk_enum_ctor_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))

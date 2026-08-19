@@ -121,11 +121,17 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // match_builds, a spanned row), so it spells as its
         // call_with_build_sp adapter call.
         let src = emit_all()
+        // The MkWhen adapter pin is scoped to parse_when_expr's OWN body:
+        // parse_match_expr spells the same call_with_build_sp shape, so a
+        // full-source contains() would keep passing if when_expr regressed
+        // while match_expr stayed correct (CodeRabbit find on #1277).
+        let g = avra_expr_dispatch_grammar()
+        let when_fn = emit_rule_fn(g, rule_named(g, "when_expr"))
         src.contains("fn parse_when_expr(st: PState) -> CapVal {") &&
         src.contains("fn parse_when_arm(st: PState) -> CapVal {") &&
         src.contains("build_when_arm_abi(st, [cond, body])") &&
         src.contains("build_when_default_abi(st, [body])") &&
-        src.contains("call_with_build_sp(st, sp_start, mk_when_abi, [CapVal.WArms(a_list)])")
+        when_fn.contains("call_with_build_sp(st, sp_start, mk_when_abi, [CapVal.WArms(a_list)])")
     }
 
     then "lambda expression and block bodies recurse entirely through generated rules" {
