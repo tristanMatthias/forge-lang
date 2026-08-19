@@ -20,10 +20,24 @@ spec "collections as LanguageFeatures" {
             && m.title.length > 0 && m.snippet.contains("{")
     }
     then "the declared rules reach the composed whole-program view" {
+        // Structural presence FIRST: a rendered grammar can contain a name as
+        // a mere body reference, so rule DEFINITIONS are asserted on
+        // avra_program_grammar().rules (the same discipline as the decl-
+        // fragment specs). The render containments stay as the action-
+        // SPELLING pins on top of that.
+        mut le_def = false
+        mut lc_def = false
+        mut ml_def = false
+        for r in avra_program_grammar().rules {
+            if r.name == "list_expr" { le_def = true }
+            if r.name == "list_comp" { lc_def = true }
+            if r.name == "map_literal" { ml_def = true }
+        }
         let prog = render_grammar(avra_program_grammar())
         let lfrag = render_grammar(feature_gram(list_lit_lang()))
         let mfrag = render_grammar(feature_gram(map_lit_lang()))
-        lfrag.contains("MkListLit(a)")
+        le_def && lc_def && ml_def
+            && lfrag.contains("MkListLit(a)")
             && mfrag.contains("MkMapLit(k, v)")
             && prog.contains("MkListLit(a)")
             && prog.contains("MkListComp(b, v, c, f)")
