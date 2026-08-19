@@ -39,7 +39,7 @@ fn perr(gsrc: string) -> string { parse_grammar(gsrc).error }
 // lookahead holds → branch 1 fires (consumes `foo : bar`, wraps foo in Grouping); on a
 // bare `foo` it fails → branch 1 is skipped and branch 2 (bare ident) fires. The distinct
 // results (`(group foo)` vs `foo`) prove @peek gates branch selection, not just FIRST.
-fn peek_g() -> string { "r = @peek(ident_colon) x:IDENT \":\" IDENT -> Grouping(x)\n  | x:IDENT -> x" }
+fn peek_g() -> string { "r = @peek(ident_colon) x:IDENT \":\" IDENT -> MkGroupOrEmpty(x)\n  | x:IDENT -> x" }
 
 spec "t-47hc: @peek(ident_colon) — parse-time acceptance + validation" {
     then "a valid @peek is accepted" {

@@ -122,13 +122,13 @@ spec "t-47hc: @peek(ident_lbrace) lookahead" {
     }
     then "IDENT followed by `{` takes the gated branch" {
         // `x {` — the shape `~Name { … }` hinges on. The gated branch consumes the IDENT.
-        let gp = parse_grammar("r = @peek(ident_lbrace) n:IDENT -> Grouping(n) | n:NUMBER -> Grouping(n)")
+        let gp = parse_grammar("r = @peek(ident_lbrace) n:IDENT -> MkGroupOrEmpty(n) | n:NUMBER -> MkGroupOrEmpty(n)")
         !run_grammar_expr(gp.grammar, "x {").had_error
     }
     then "IDENT NOT followed by `{` does NOT take it" {
         // `x +` — falls past the gated branch, and NUMBER cannot match an IDENT either,
         // so the rule fails. That failure IS the evidence the lookahead discriminated.
-        let gp = parse_grammar("r = @peek(ident_lbrace) n:IDENT -> Grouping(n) | n:NUMBER -> Grouping(n)")
+        let gp = parse_grammar("r = @peek(ident_lbrace) n:IDENT -> MkGroupOrEmpty(n) | n:NUMBER -> MkGroupOrEmpty(n)")
         run_grammar_expr(gp.grammar, "x +").had_error
     }
 }
@@ -202,16 +202,16 @@ spec "t-47hc.30: postfix-BASE predicates" {
         // loop — and branch_pred_ok then runs it with `postfix_base` still at the
         // arena's NULL NICHE. Ids are 1-based, so dereferencing that reads index -1.
         // Gated branch + ungated sibling: the sibling is what must match.
-        let gp = parse_grammar("r = @when(base_callable) n:NUMBER -> Grouping(n) | m:NUMBER -> Grouping(m)")
+        let gp = parse_grammar("r = @when(base_callable) n:NUMBER -> MkGroupOrEmpty(n) | m:NUMBER -> MkGroupOrEmpty(m)")
         !run_grammar_expr(gp.grammar, "7").had_error
     }
     then "the same holds for the other base predicate" {
-        let gp = parse_grammar("r = @when(base_upper_ident) n:NUMBER -> Grouping(n) | m:NUMBER -> Grouping(m)")
+        let gp = parse_grammar("r = @when(base_upper_ident) n:NUMBER -> MkGroupOrEmpty(n) | m:NUMBER -> MkGroupOrEmpty(m)")
         !run_grammar_expr(gp.grammar, "7").had_error
     }
     then "a SOLE base-gated branch fails cleanly rather than dereferencing the niche" {
         // No sibling to fall through to: the rule must report, not read out of bounds.
-        let gp = parse_grammar("r = @when(base_callable) n:NUMBER -> Grouping(n)")
+        let gp = parse_grammar("r = @when(base_callable) n:NUMBER -> MkGroupOrEmpty(n)")
         run_grammar_expr(gp.grammar, "7").had_error
     }
 }
@@ -225,7 +225,7 @@ spec "t-47hc.30: postfix-BASE predicates" {
 
 fn bumped_src(inner: string) -> string {
     // The bump scopes the GROUP, so the predicate inside observes the incremented value.
-    "r = \"[\" @bump(quote_depth) ( ${inner} ) \"]\" -> Grouping(x)"
+    "r = \"[\" @bump(quote_depth) ( ${inner} ) \"]\" -> MkGroupOrEmpty(x)"
 }
 
 spec "t-47hc.32: @bump(counter) scoped counter mode" {
@@ -272,7 +272,7 @@ spec "t-47hc.32: @bump(counter) scoped counter mode" {
     }
     then "and the bump is RESTORED — outside it, in_quote_body is false again" {
         // Same item gated OUTSIDE the bumped group: depth is back to 0, so it must fail.
-        let gp = parse_grammar("r = \"[\" @bump(quote_depth) ( a:NUMBER ) \"]\" @when(in_quote_body) b:NUMBER -> Grouping(a)")
+        let gp = parse_grammar("r = \"[\" @bump(quote_depth) ( a:NUMBER ) \"]\" @when(in_quote_body) b:NUMBER -> MkGroupOrEmpty(a)")
         run_grammar_expr(gp.grammar, "[ 7 ] 8").had_error
     }
 }

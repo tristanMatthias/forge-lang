@@ -48,7 +48,7 @@ fn cf_grammar_src() -> string {
     "  factor        = l:unary ( op:(\"*\" | \"/\") r:unary )* -> fold_binary(l, op, r)\n" +
     "  unary         = op:(\"!\" | \"-\") operand:unary -> Unary(op, operand) | primary\n" +
     "  primary       = NUMBER | STRING | \"true\" | \"false\" | IDENT\n" +
-    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> Grouping(e)\n" +
+    "                | \"(\" e:expression \")\" @expect(\")\", \"expected ')'\") @recover(sync_to: \")\") -> MkGroupOrEmpty(e)\n" +
     "}"
 }
 

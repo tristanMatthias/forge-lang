@@ -30,9 +30,9 @@ fn rule_src(grammar_src: string, rule: string) -> string {
 
 // `tail`'s first branch takes `..`; the fallback owns everything else, including the
 // error message for a token that starts neither.
-const FB_G = "r = \"[\" t:tail -> Grouping(t)\n" +
+const FB_G = "r = \"[\" t:tail -> MkGroupOrEmpty(t)\n" +
     "tail = \"..\" e:NUMBER \"]\" -> e\n" +
-    "     | @fallback c:\"]\" @expect(\"]\", \"expected `]` after index\") -> Grouping(c)"
+    "     | @fallback c:\"]\" @expect(\"]\", \"expected `]` after index\") -> MkGroupOrEmpty(c)"
 
 spec "t-47hc.33: `@fallback` is the unconditional tail" {
     then "the guarded branch still wins when its FIRST matches" {
@@ -61,20 +61,20 @@ spec "t-47hc.33: `@fallback` is the unconditional tail" {
 
 spec "t-47hc.33: `@fallback` placement is validated, not assumed" {
     then "a branch ordered AFTER the fallback is rejected as unreachable" {
-        let e = err_of("r = @fallback a:NUMBER -> Grouping(a) | b:STRING -> Grouping(b)")
+        let e = err_of("r = @fallback a:NUMBER -> MkGroupOrEmpty(a) | b:STRING -> MkGroupOrEmpty(b)")
         e.contains("@fallback") && e.contains("LAST")
     }
     then "two fallbacks are rejected" {
-        err_of("r = a:NUMBER -> Grouping(a) | @fallback b:STRING -> Grouping(b) | @fallback c:STRING -> Grouping(c)")
+        err_of("r = a:NUMBER -> MkGroupOrEmpty(a) | @fallback b:STRING -> MkGroupOrEmpty(b) | @fallback c:STRING -> MkGroupOrEmpty(c)")
             .contains("more than one")
     }
     then "`@try` and `@fallback` cannot mark the same branch" {
         // A speculative branch rolls back so a SIBLING can run; the tail is the last
         // resort. Marking both is a contradiction, not a compound behaviour.
-        rejects("r = a:NUMBER -> Grouping(a) | @try @fallback b:STRING -> Grouping(b)")
+        rejects("r = a:NUMBER -> MkGroupOrEmpty(a) | @try @fallback b:STRING -> MkGroupOrEmpty(b)")
     }
     then "a lone fallback branch is fine — last of one is still last" {
-        !rejects("r = @fallback a:NUMBER -> Grouping(a)")
+        !rejects("r = @fallback a:NUMBER -> MkGroupOrEmpty(a)")
     }
     then "`@try` on a SIBLING branch is rejected too — not just the same branch" {
         // emit_dispatch gates its fallback tail on `!has_spec`, so a speculative sibling
@@ -82,15 +82,15 @@ spec "t-47hc.33: `@fallback` placement is validated, not assumed" {
         // the executor's fallback loop still runs unconditionally. On input matching no
         // branch the interpreter would report the fallback's `@expect` and the generated
         // parser the alternation's generic message. Reject rather than diverge.
-        let e = err_of("r = @try \"a\" \"b\" -> Grouping(a) | @fallback c:STRING -> Grouping(c)")
+        let e = err_of("r = @try \"a\" \"b\" -> MkGroupOrEmpty(a) | @fallback c:STRING -> MkGroupOrEmpty(c)")
         e.contains("@try") && e.contains("@fallback")
     }
     then "and the rejection is specific to that pair, not to @try alone" {
-        !rejects("r = @try a:NUMBER b:NUMBER -> Grouping(a) | c:STRING -> Grouping(c)")
+        !rejects("r = @try a:NUMBER b:NUMBER -> MkGroupOrEmpty(a) | c:STRING -> MkGroupOrEmpty(c)")
     }
     then "an unmarked grammar is untouched" {
         // Byte-identity: no production grammar writes `@fallback` yet, so the emitted
         // parsers must be exactly what they were.
-        !rejects("r = a:NUMBER -> Grouping(a) | b:STRING -> Grouping(b)")
+        !rejects("r = a:NUMBER -> MkGroupOrEmpty(a) | b:STRING -> MkGroupOrEmpty(b)")
     }
 }

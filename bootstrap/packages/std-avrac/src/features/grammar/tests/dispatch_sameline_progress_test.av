@@ -34,8 +34,8 @@ fn rule_src(grammar_src: string, rule: string) -> string {
 // NUMBER on the same line as `[` takes branch 1, and a NUMBER on the NEXT line must fall
 // through to branch 2 — which cannot match it, making the parse error the evidence that
 // the branch was skipped rather than entered-and-failed.
-const SAMELINE_G = "r = \"[\" g:gate \"]\" -> Grouping(g)\n" +
-    "gate = ^a:NUMBER -> Grouping(a) | s:STRING -> Grouping(s)"
+const SAMELINE_G = "r = \"[\" g:gate \"]\" -> MkGroupOrEmpty(g)\n" +
+    "gate = ^a:NUMBER -> MkGroupOrEmpty(a) | s:STRING -> MkGroupOrEmpty(s)"
 
 spec "t-47hc.33: `^` gates BRANCH SELECTION, not just the item" {
     then "a same-line token takes the ^-led branch" {
@@ -56,19 +56,19 @@ spec "t-47hc.33: `^` gates BRANCH SELECTION, not just the item" {
     then "an UNMARKED branch guard is untouched — no stray line test" {
         // Byte-identity: every production grammar today is unmarked at this position,
         // so the wrap must be inert unless `^` is actually written.
-        !rule_src("r = \"[\" g:gate \"]\" -> Grouping(g)\ngate = a:NUMBER -> Grouping(a)", "gate")
+        !rule_src("r = \"[\" g:gate \"]\" -> MkGroupOrEmpty(g)\ngate = a:NUMBER -> MkGroupOrEmpty(a)", "gate")
             .contains("to_linecol")
     }
 }
 
 // `suffix` can decline without consuming (its `@try` branch rolls back to zero
 // width). The loop over it lives in `r`.
-const MIXED_G = "r = b:NUMBER ( p:suffix )* -> Grouping(b)\n" +
-    "suffix = s:STRING -> Grouping(s) | @try NUMBER STRING"
+const MIXED_G = "r = b:NUMBER ( p:suffix )* -> MkGroupOrEmpty(b)\n" +
+    "suffix = s:STRING -> MkGroupOrEmpty(s) | @try NUMBER STRING"
 
 spec "t-47hc.33: the no-progress break survives a rule going PARTLY native" {
     then "a purely speculative rule loops with the break — the established shape" {
-        rule_src("r = b:NUMBER ( p:suffix )* -> Grouping(b)\nsuffix = @try NUMBER STRING", "r")
+        rule_src("r = b:NUMBER ( p:suffix )* -> MkGroupOrEmpty(b)\nsuffix = @try NUMBER STRING", "r")
             .contains("__rep_before")
     }
     then "and it is STILL emitted once the rule grows a native alternative" {
@@ -82,7 +82,7 @@ spec "t-47hc.33: the no-progress break survives a rule going PARTLY native" {
     then "a fully NATIVE repeated rule still emits no break" {
         // The narrow case must stay narrow: a native alternative always consumes when
         // its FIRST holds, so the loop needs no guard and the emitted text is unchanged.
-        !rule_src("r = b:NUMBER ( p:suffix )* -> Grouping(b)\nsuffix = s:STRING -> Grouping(s)", "r")
+        !rule_src("r = b:NUMBER ( p:suffix )* -> MkGroupOrEmpty(b)\nsuffix = s:STRING -> MkGroupOrEmpty(s)", "r")
             .contains("__rep_before")
     }
 }

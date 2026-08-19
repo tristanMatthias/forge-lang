@@ -2237,6 +2237,32 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if close + 2 >= st.toks.length { return false }
         return tok_starts_expr_leaf(st.toks[close + 2])
     }
+    if cond == "paren_comma_ahead" {
+        // The TUPLE branch's gate (t-kd4y.3.5.3): a TOP-LEVEL `,` inside the
+        // balanced group. Without it the @try tuple branch parsed the whole
+        // interior, failed at the missing comma, rolled back, and the group
+        // branch parsed it AGAIN — 2x per nesting level, so `((((…))))` cost
+        // 2^depth interior parses (measured doubling per level on bs2 AND the
+        // pinned seed; 13.4GB F4014 at depth 28 — pinned by the
+        // paren_backtrack_guard specs). Same nesting-aware walk as
+        // comp_paren_shape: brackets and braces tracked, so a comma inside a
+        // nested `f(a, b)` / `[1, 2]` / `{ … }` cannot claim the group.
+        if st.cur().tk != Tk.LeftParen { return false }
+        mut depth = 0
+        mut i = st.pos
+        while i < st.toks.length {
+            let t = st.toks[i]
+            if t.tk == Tk.LeftParen || t.tk == Tk.LeftBracket || t.tk == Tk.LeftBrace { depth = depth + 1 }
+            else if t.tk == Tk.RightParen || t.tk == Tk.RightBracket || t.tk == Tk.RightBrace {
+                depth = depth - 1
+                if depth == 0 { return false }
+                if depth < 0 { return false }
+            }
+            else if depth == 1 && t.tk == Tk.Comma { return true }
+            i = i + 1
+        }
+        return false
+    }
     if cond == "paren_arrow_ahead" {
         // The TYPED branch's gate: `( … ) ->` and nothing more. The body check above is
         // deliberately absent, because the two branches are choosing against different
@@ -4106,20 +4132,20 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkCatchSuffix" if args.length == 3 -> CapVal.Node(mk_catch_suffix(st, env.get(args[0]), env.get(args[1]), env.get(args[2])))
         // `( a, b, … )` tuple (t-47hc paren prep — DORMANT; interpreter oracle, sp_start
         // = 0 - 1 span-free, exactly like MkListLit).
-        "MkTuple" if args.length == 1 -> CapVal.Node(mk_tuple(st, 0 - 1, env.get(args[0])))
+        // The `(`-led paren family (MkLambdaTyped / MkLambda / MkTupleFR /
+        // MkGroupOrEmpty / MkParam) is feature-owned (features/closures
+        // lowering, t-kd4y.3.5.3): the manifest dispatches them. The §2
+        // oracle-era MkTuple and Grouping convenience builds were DELETED
+        // with the flip (toys re-point at MkTupleFR / MkGroupOrEmpty).
         // `( … ) -> body` untyped lambda (t-47hc paren prep — DORMANT; interpreter oracle,
         // sp_start = 0 - 1 span-free). args[0] = the param-name capture, args[1] = the body.
-        "MkLambda" if args.length == 2 -> CapVal.Node(mk_lambda(st, 0 - 1, env.get(args[0]), capval_to_expr(st, env.get(args[1]))))
         // `( x: T, … ) -> body` typed lambda (t-47hc paren prep — DORMANT; interpreter
         // oracle, sp_start = 0 - 1). args[0] = the PENTRY-list capture (MkParam-built),
         // args[1] = the body. capval_to_pentry_list is the same converter MkFnDecl uses.
-        "MkLambdaTyped" if args.length == 2 -> CapVal.Node(mk_lambda_typed(st, 0 - 1, capval_to_pentry_list(env.get(args[0])), capval_to_expr(st, env.get(args[1]))))
         // `( e )` grouping OR `()` empty tuple (t-47hc paren spend). args[0] = the OPT-SCALAR
         // grouping expr — env.get yields CapVal.Nil when absent → Tuple([]), else Grouping(e).
-        "MkGroupOrEmpty" if args.length == 1 -> CapVal.Node(mk_group_or_empty(st, 0 - 1, env.get(args[0])))
         // `( first, rest… )` tuple built from a SCALAR first + a REST list (t-47hc paren
         // spend). args[0] = the mandatory-comma-preceded first element, args[1] = the rest.
-        "MkTupleFR" if args.length == 2 -> CapVal.Node(mk_tuple_fr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkListComp" if args.length == 3 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), CapVal.Nil))
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
         "MkExprBlock" if args.length == 1 -> mk_expr_block(st, 0 - 1, env.get(args[0]))
@@ -4137,12 +4163,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
         "mk_enum_ctor" if args.length == 2 -> CapVal.Node(mk_enum_ctor_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))
-        "Grouping" if args.length == 1 -> {
-            // Preserve the parenthesisation node so the produced AST matches
-            // the hand-written parser (which wraps `(e)` in Expr.Grouping),
-            // not merely a grouping-normalised form.
-            CapVal.Node(st.store.exprs.add_leaf(Expr.Grouping(capval_to_expr(st, env.get(args[0])))))
-        }
         "field_suffix" if args.length == 1 -> {
             // A partial FieldAccess with a sentinel receiver; fold_postfix
             // rebinds the receiver to the accumulated base.
@@ -4223,18 +4243,17 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    lowering — t-kd4y.3 Batch B): the manifest dispatches them. ──
         "MkSpliceArm" if args.length == 1 -> mk_splice_arm(st, env.get(args[0]))
         // ── Declaration builds (target: Stmt, ps3t.6.5.7) — the arms
-        //    delegate to SHARED constructor cores (mk_param / mk_field /
-        //    mk_type_decl / …), so apply_build and the generated static
-        //    whole-program parser build byte-identical trees. The FN family
-        //    is feature-owned now (MkFnDecl/6, MkWhereParam, MkExtern —
-        //    features/fn_decl lowering; MkTypeParam — features/generics
-        //    lowering; t-kd4y.3.3.1): the manifest dispatches them, and the
-        //    §2 oracle-era MkFnDecl/4 and /5 arms were DELETED with the flip
-        //    (toys re-point at /6 with Nil-padded tparam/where captures).
-        //    `MkParam` stays central: its `param` rule lives in the SHARED
-        //    base (lambdas, trait methods, and impl methods reference it),
-        //    grouped with the paren family's flip (t-kd4y.3.5.3). ──
-        "MkParam" if args.length == 2 -> mk_param(st, capval_tok_text(env.get(args[0])), env.get(args[1]), capval_present(env.get(args[1])))
+        //    delegate to SHARED constructor cores, so apply_build and the
+        //    generated static whole-program parser build byte-identical
+        //    trees. The FN family is feature-owned now (MkFnDecl/6,
+        //    MkWhereParam, MkExtern — features/fn_decl lowering; MkTypeParam
+        //    — features/generics lowering; t-kd4y.3.3.1): the manifest
+        //    dispatches them, and the §2 oracle-era MkFnDecl/4 and /5 arms
+        //    were DELETED with the flip (toys re-point at /6 with Nil-padded
+        //    tparam/where captures). `MkParam` went with the paren family
+        //    (features/closures lowering, t-kd4y.3.5.3) — the `param` rule
+        //    lives in closures' gram; fn/trait/impl/component reference it
+        //    cross-fragment by name. ──
         // The TYPE family is feature-owned too (MkTypeDeclAny / MkShapeDecl /
         // MkField — features/struct_decl lowering, t-kd4y.3.3.2): the
         // manifest dispatches them, and the §2 oracle-era MkTypeDecl/2, /3,
@@ -4939,17 +4958,6 @@ export fn mk_module_doc(st: PState, sp_start: int, docs: List<Token>) -> CapVal 
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, noop_id)))
 }
 
-/// `name ( ":" type )?` — a fn parameter (the `MkParam` build's core). An
-/// UN-annotated param defaults to Int (parse_param_list's default, NOT Unknown).
-export fn mk_param(st: PState, name: string, pt_cv: CapVal, has_pt: bool) -> CapVal {
-    let pvt = if has_pt { type_expr_to_vtype(capval_to_texpr(st, pt_cv)) } else { ValueType.Int }
-    // Type-carrying parameter positions maintain the F1d dual exactly like
-    // Parser.param_entry_typed: even the default Int owns a real orphan type
-    // row, while syntax-only ParamEntry producers explicitly leave ty_id null.
-    let ty_id = st.store.ingest_type(pvt, byte_span_none())
-    CapVal.PEntry(ParamEntry { name: name, vtype: pvt, ty_id: ty_id })
-}
-
 /// `type Name = Concrete` — the IMPL-side associated type (the `MkAssocTypeDef` build's
 /// core). Same `Stmt.AssocType` row as the trait-side member (`MkAssocType`, feature-owned
 /// in features/trait_decl/lowering), with the type FILLED IN rather than left Unknown: a
@@ -5469,104 +5477,6 @@ export fn mk_map_lit(st: PState, sp_start: int, kcap: CapVal, vcap: CapVal) -> E
         i = i + 1
     }
     st.store.add_expr(Expr.MapLit(ids), byte_span(sp_start, st.cur().pos), [])
-}
-
-/// `( a, b, … )` tuple (t-47hc paren_expr flip prep — DORMANT build, proven by a test
-/// grammar; not yet wired into avra_expr_grammar). Structural twin of mk_list_lit:
-/// `Expr.Tuple` and `Expr.ListLit` are the SAME shape (one `List<ExprId>` child), so
-/// the `acap` comma-list capture becomes the element list identically (empty/single/
-/// multi uniform, Nil → []). Spanned [sp_start, next-token) exactly like the hand
-/// parse_paren_expr alloc_at(Expr.Tuple, sp_start) (mod.av:2324/2362) — sp_start is the
-/// `(` byte (emit) or 0-1 span-free (interpreter oracle). Like ListLit, `Expr.Tuple`'s
-/// id-list child is walker-opaque, and the hand alloc_at passes `[]` edges for every
-/// compound node → empty edges here is byte-identical.
-export fn mk_tuple(st: PState, sp_start: int, acap: CapVal) -> ExprId {
-    st.store.add_expr(Expr.Tuple(capval_to_node_list(acap)), byte_span(sp_start, st.cur().pos), [])
-}
-
-/// The untyped-lambda param conversion, kept LOCAL rather than exported from a core
-/// module: adding a new `export` to a universally-imported
-/// module risks the diff-test monomorphization-ORDERING
-/// trap (a new exported symbol in a core module reorders monomorphized types in CI's
-/// hermetic build → non-byte-identical, invisible locally). Keeping the copy in this
-/// LEAF module sidesteps that. Extract
-/// the bare name from each param expr (Ident/QualifiedIdent → name, else "_"); the
-/// UNTYPED-lambda position carries no type syntax (the typed `(x: int)` path goes
-/// through parse_param_list), so every row is `vtype: Unknown, ty_id: none`.
-fn lambda_exprs_to_params(st: PState, ids: List<ExprId>) -> List<ParamEntry> {
-    mut out: List<ParamEntry> = []
-    for id in ids {
-        let name = match st.store.exprs.get(id) {
-            .Ident(n) -> n
-            .QualifiedIdent(n) -> n
-            _ -> "_"
-        }
-        out.push(ParamEntry { name: name, vtype: ValueType.Unknown, ty_id: none })
-    }
-    out
-}
-
-/// `( x ) -> body` / `( a, b ) -> body` / `() -> body` UNTYPED lambda (t-47hc paren_expr
-/// flip prep — DORMANT build, proven by a test grammar; not yet wired into
-/// avra_expr_grammar). Mirrors the hand parse_paren_expr's `alloc_at(Expr.Lambda(
-/// exprs_to_params(combined_ids), body), sp_start)` (mod.av:2321/2358/2373): the params
-/// come from PARSED exprs (bare Ident names — `(x)` is ambiguous with `(expr)` grouping
-/// until the `->` is seen), converted by lambda_exprs_to_params; `body` is the lambda
-/// body ExprId. sp_start = the `(` byte (emit) or 0-1 span-free (interpreter oracle);
-/// alloc_at passes `[]` edges for every compound node → empty edges here is byte-
-/// identical. The TYPED `(x: int) ->` path is a separate primitive (parse_param_list).
-export fn mk_lambda(st: PState, sp_start: int, params_cap: CapVal, body: ExprId) -> ExprId {
-    let params = lambda_exprs_to_params(st, capval_to_node_list(params_cap))
-    st.store.add_expr(Expr.Lambda(params, body), byte_span(sp_start, st.cur().pos), [])
-}
-
-/// `( expr )` grouping OR `()` empty tuple (t-47hc paren spend). The paren_tail's final
-/// branch `( @on(allow_dot_postfix) e:expression )? ")" -> MkGroupOrEmpty(e)` captures `e`
-/// as an OPT-SCALAR — `CapVal.Nil` when the optional expression is absent. Mirrors the hand
-/// parse_paren_expr's two no-comma-no-arrow outcomes: `()` → `alloc_at(Expr.Tuple([]),
-/// sp_start)` (mod.av:2324) and `(x)` → `alloc_at(Expr.Grouping(x), sp_start)` (mod.av:2375).
-/// This is the empty/grouping twin the EMITTER needs: `MkTuple(a)` cannot build the empty
-/// tuple because the emitter only declares `<label>_list` for a repetition-captured label,
-/// so a build reading an UNCAPTURED `a` references an undeclared `a_list` — the empty case
-/// routes here on the opt-scalar `e` instead. sp_start = the `(` byte (emit) or 0-1 span-free
-/// (interpreter oracle); `[]` edges match alloc_at for every compound node (byte-identical).
-export fn mk_group_or_empty(st: PState, sp_start: int, e: CapVal) -> ExprId {
-    match e {
-        .Nil -> st.store.add_expr(Expr.Tuple([]), byte_span(sp_start, st.cur().pos), [])
-        _ -> st.store.add_expr(Expr.Grouping(capval_to_expr(st, e)), byte_span(sp_start, st.cur().pos), [])
-    }
-}
-
-/// `( a, b, … )` tuple from a FIRST element + a REST list (t-47hc paren spend). Distinct
-/// from mk_tuple, which takes a single accumulated list: the paren tuple branch
-/// `"(" @on first:expression ( "," ( @on rest:expression )? )+ ")"` keeps the FIRST element
-/// as a SCALAR capture (`first`) and the remainder as a list (`rest`), then PREPENDS. This
-/// sidesteps the executor capture pitfall a single-list `MkTuple(a)` hits here — a TOP-LEVEL
-/// One `a` mixed with a nested list `a` drops the first element when the nested repetition
-/// matches 0 times (e.g. `(x,)`). The `+` enforces the mandatory tuple comma (so `(x)` rolls
-/// back to grouping via the #995 Plus-in-@try guard) and the nested `( rest )?` tolerates a
-/// trailing comma with no element after it. Building Tuple([first] + rest) is byte-identical
-/// to the hand parse_paren_expr's `[expr] ++ parse_tuple_rest` (mod.av:2354/2360), covering
-/// `(x,)` / `(x,y)` / `(x,y,)` / `(x,y,z)` uniformly. sp_start = the `(` byte; `[]` edges
-/// match alloc_at.
-export fn mk_tuple_fr(st: PState, sp_start: int, first: CapVal, rest_cap: CapVal) -> ExprId {
-    mut ids: List<ExprId> = [capval_to_expr(st, first)]
-    for id in capval_to_node_list(rest_cap) { ids.push(id) }
-    st.store.add_expr(Expr.Tuple(ids), byte_span(sp_start, st.cur().pos), [])
-}
-
-/// `( x: T, y: U ) -> body` TYPED lambda (t-47hc paren_expr flip prep — DORMANT). The
-/// TYPED twin of mk_lambda: its params come from PENTRIES (name:type pairs built by the
-/// existing MkParam via the grammar-native `param = pname:IDENT ( ":" pt:type_expr )?`
-/// rule) rather than from bare Ident exprs, so it takes a `List<ParamEntry>` directly —
-/// the same capval_to_pentry_list contract MkFnDecl / MkMethod use. Mirrors the hand
-/// parse_paren_expr's typed-lambda alloc_at(Expr.Lambda(params, body), sp_start)
-/// (mod.av:2338), where params come from parse_param_list. sp_start = the `(` byte
-/// (emit) or 0-1 span-free (interpreter oracle); `[]` edges match alloc_at, byte-
-/// identical. The UNTYPED `(x) ->` path is mk_lambda; the two are distinguished at the
-/// grammar level (@peek(ident_colon) picks the typed branch), never here.
-export fn mk_lambda_typed(st: PState, sp_start: int, params: List<ParamEntry>, body: ExprId) -> ExprId {
-    st.store.add_expr(Expr.Lambda(params, body), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// `[ body for v in collection ( if filter )? ]` comprehension (t-47hc.4 — DORMANT).

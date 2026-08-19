@@ -1,11 +1,9 @@
-// WHY: t-47hc (paren_expr flip prep) — the DORMANT untyped-lambda BUILD (mk_lambda),
-// proven here via a test grammar BEFORE it is spent to nativize the lambda branches of
-// @hand(paren_expr). The build is referenced by NO production grammar yet, so
-// emit-gen-check + diff-test stay byte-identical (the #988 dormant-primitive discipline:
-// build the primitive, prove it, spend it later). Both sides are exercised: the
-// INTERPRETER (run_grammar_expr) builds the real Expr.Lambda (render-checked), and the
-// EMITTER (emit_rule_fn) lowers the same build to a mk_lambda call in the generated
-// static parser.
+// WHY: t-47hc (paren_expr flip prep, spent by t-kd4y.3.5.3) — the untyped-lambda
+// BUILD (MkLambda), proven on a toy grammar. LIVE now: the row is feature-owned
+// (features/closures/lowering), paren_expr spells it in production, and both
+// engines resolve it through the manifest — the INTERPRETER (run_grammar_expr)
+// builds the real Expr.Lambda (render-checked), the EMITTER (emit_rule_fn)
+// lowers it to the spanned manifest adapter (call_with_build_sp + mk_lambda_abi).
 //
 // mk_lambda mirrors the hand parse_paren_expr's alloc_at(Expr.Lambda(exprs_to_params(
 // ids), body), sp_start) (mod.av:2321/2358/2373): the param names come from PARSED exprs
@@ -38,7 +36,7 @@ fn emit_rule(grammar_src: string, rule: string) -> string {
 // The optional-comma-list makes 0/1/N params uniform (Nil -> []).
 fn lam_g() -> string { "r = \"(\" ( p:pid ( \",\" p:pid )* )? \")\" \"->\" b:NUMBER -> MkLambda(p, b)\npid = IDENT" }
 
-spec "t-47hc: DORMANT lambda build (mk_lambda) — interpreter builds Expr.Lambda" {
+spec "t-47hc: lambda build (MkLambda) — interpreter builds Expr.Lambda" {
     then "a multi-param lambda builds Expr.Lambda with names in source order" {
         run_render(lam_g(), "(x, y) -> 5") == "(lambda (x, y) 5)"
     }
@@ -50,13 +48,13 @@ spec "t-47hc: DORMANT lambda build (mk_lambda) — interpreter builds Expr.Lambd
     }
 }
 
-spec "t-47hc: DORMANT lambda build (mk_lambda) — emitter lowers to a mk_lambda call" {
-    then "the emitter lowers MkLambda to a mk_lambda call spanned at sp_start" {
+spec "t-47hc: lambda build (MkLambda) — emitter lowers to the manifest adapter" {
+    then "the emitter lowers MkLambda to its spanned manifest adapter" {
         let src = emit_rule(lam_g(), "r")
-        src.contains("mk_lambda(st, sp_start,") && src.contains("let sp_start = st.cur().pos")
+        src.contains("call_with_build_sp(st, sp_start, mk_lambda_abi, [CapVal.Nodes(p_list), b])") && src.contains("let sp_start = st.cur().pos")
     }
-    then "the emitted MkLambda passes the param accumulator (p_list) and the body via capval_to_expr" {
+    then "the param accumulator is declared and Nodes-wrapped into the adapter" {
         let src = emit_rule(lam_g(), "r")
-        src.contains("CapVal.Nodes(p_list)") && src.contains("capval_to_expr(st,")
+        src.contains("mut p_list: List<ExprId> = []") && src.contains("CapVal.Nodes(p_list)")
     }
 }

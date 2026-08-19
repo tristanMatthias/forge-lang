@@ -1,0 +1,112 @@
+// The closures feature's LOWERINGS — the whole `(`-led paren family
+// (t-kd4y.3.5.3): typed/untyped lambdas, the first+rest tuple, the
+// group-or-empty twin, and the shared `param` entry build. One gram owns
+// them all because `paren_expr` is ONE alternation (the no-orphans
+// validator demands the gram referencing a build own its row) — the
+// let_lang/MkDestructure precedent, with tuples_lang converting hook-only
+// beside it. Imports ONLY features.grammar + core (F4012).
+//
+// All four NODE rows are `spanned`, anchored at the `(` byte; the
+// interpreter's bare adapter call reads the -1 span-free default the
+// retired `0 - 1` arms encoded. MkParam is span-free (a ParamEntry value).
+use core.{Expr, ExprId, ParamEntry, ValueType, byte_span, byte_span_none}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_node_list, capval_to_pentry_list, capval_to_texpr, capval_tok_text}
+use core.{type_expr_to_vtype}
+
+/// The untyped-lambda param conversion, kept LOCAL: extract the bare name
+/// from each param expr (Ident/QualifiedIdent → name, else "_"); the
+/// UNTYPED-lambda position carries no type syntax, so every row is
+/// `vtype: Unknown, ty_id: none`.
+fn lambda_exprs_to_params(st: PState, ids: List<ExprId>) -> List<ParamEntry> {
+    mut out: List<ParamEntry> = []
+    for id in ids {
+        let name = match st.store.exprs.get(id) {
+            .Ident(n) -> n
+            .QualifiedIdent(n) -> n
+            _ -> "_"
+        }
+        out.push(ParamEntry { name: name, vtype: ValueType.Unknown, ty_id: none })
+    }
+    out
+}
+
+/// `( x ) -> body` / `( a, b ) -> body` / `() -> body` UNTYPED lambda. The
+/// params come from PARSED exprs (bare Ident names — `(x)` is ambiguous
+/// with `(expr)` grouping until the `->` is seen); `[]` edges match the
+/// retired hand's alloc_at for every compound node.
+export fn mk_lambda(st: PState, sp_start: int, params_cap: CapVal, body: ExprId) -> ExprId {
+    let params = lambda_exprs_to_params(st, capval_to_node_list(params_cap))
+    st.store.add_expr(Expr.Lambda(params, body), byte_span(sp_start, st.cur().pos), [])
+}
+
+export fn mk_lambda_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_lambda(st, st.build_sp, vals[0], capval_to_expr(st, vals[1])))
+}
+
+/// `( x: T, y: U ) -> body` TYPED lambda — its params come from PENTRIES
+/// (built by MkParam below) rather than bare Ident exprs. The two branches
+/// are distinguished at the grammar level (`@peek(lparen_ident_colon)`),
+/// never here.
+export fn mk_lambda_typed(st: PState, sp_start: int, params: List<ParamEntry>, body: ExprId) -> ExprId {
+    st.store.add_expr(Expr.Lambda(params, body), byte_span(sp_start, st.cur().pos), [])
+}
+
+export fn mk_lambda_typed_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_lambda_typed(st, st.build_sp, capval_to_pentry_list(vals[0]), capval_to_expr(st, vals[1])))
+}
+
+/// `( expr )` grouping OR `()` empty tuple. `e` is an OPT-SCALAR —
+/// `CapVal.Nil` when the optional expression is absent: `()` →
+/// `Expr.Tuple([])`, `(x)` → `Expr.Grouping(x)` — the empty/grouping twin
+/// the EMITTER needs (a single-list tuple build cannot express the empty
+/// case, since only repetition-captured labels declare accumulators).
+export fn mk_group_or_empty(st: PState, sp_start: int, e: CapVal) -> ExprId {
+    match e {
+        .Nil -> st.store.add_expr(Expr.Tuple([]), byte_span(sp_start, st.cur().pos), [])
+        _ -> st.store.add_expr(Expr.Grouping(capval_to_expr(st, e)), byte_span(sp_start, st.cur().pos), [])
+    }
+}
+
+export fn mk_group_or_empty_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_group_or_empty(st, st.build_sp, vals[0]))
+}
+
+/// `( a, b, … )` tuple from a FIRST element + a REST list. Keeping the
+/// first element as a SCALAR capture sidesteps the executor capture
+/// pitfall a single-list build hits (a top-level One mixed with a nested
+/// list drops the first element when the nested repetition matches 0
+/// times, e.g. `(x,)`); the grammar's `+` enforces the mandatory tuple
+/// comma so `(x)` rolls back to grouping.
+export fn mk_tuple_fr(st: PState, sp_start: int, first: CapVal, rest_cap: CapVal) -> ExprId {
+    mut ids: List<ExprId> = [capval_to_expr(st, first)]
+    for id in capval_to_node_list(rest_cap) { ids.push(id) }
+    st.store.add_expr(Expr.Tuple(ids), byte_span(sp_start, st.cur().pos), [])
+}
+
+export fn mk_tuple_fr_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_tuple_fr(st, st.build_sp, vals[0], vals[1]))
+}
+
+/// `name ( ":" type )?` — a fn parameter (the `MkParam` build's core). An
+/// UN-annotated param defaults to Int (the retired parse_param_list's
+/// default, NOT Unknown). Type-carrying parameter positions maintain the
+/// F1d dual: even the default Int owns a real orphan type row, while
+/// syntax-only ParamEntry producers explicitly leave ty_id null.
+export fn mk_param(st: PState, name: string, pt_cv: CapVal, has_pt: bool) -> CapVal {
+    let pvt = if has_pt { type_expr_to_vtype(capval_to_texpr(st, pt_cv)) } else { ValueType.Int }
+    let ty_id = st.store.ingest_type(pvt, byte_span_none())
+    CapVal.PEntry(ParamEntry { name: name, vtype: pvt, ty_id: ty_id })
+}
+
+export fn mk_param_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_param(st, capval_tok_text(vals[0]), vals[1], capval_present(vals[1]))
+}
+
+/// ALL of the paren family's rows.
+export fn closures_builds() -> List<BuilderBind> {
+    bind_rows("features.closures.lowering", [bind_row("MkLambdaTyped", "expr", 2, true, "mk_lambda_typed_abi", mk_lambda_typed_abi),
+     bind_row("MkLambda", "expr", 2, true, "mk_lambda_abi", mk_lambda_abi),
+     bind_row("MkTupleFR", "expr", 2, true, "mk_tuple_fr_abi", mk_tuple_fr_abi),
+     bind_row("MkGroupOrEmpty", "expr", 1, true, "mk_group_or_empty_abi", mk_group_or_empty_abi),
+     bind_row("MkParam", "pentry", 2, false, "mk_param_abi", mk_param_abi)])
+}
