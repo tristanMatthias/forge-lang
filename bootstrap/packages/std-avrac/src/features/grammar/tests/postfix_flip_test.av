@@ -60,7 +60,26 @@
 // zero-width gates run between dispatch entry and sub-rule entry, so the
 // frozen base is byte-identical to the retired inline form's.
 
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar}
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, emit_parser_source, Grammar}
+
+/// The emitted ENTRY GUARD (`fn starts_<name>`) of one rule, cut from the
+/// full emitted source. A SINGLE-branch rule's leading zero-width gates
+/// (peeks, base preds, the same-line `^`) are emitted HERE — the guard the
+/// dispatcher consults — not into the parse fn's body, so gate pins must
+/// anchor on this and not on rule_src (a multi-branch rule keeps its
+/// branch conditions inline, which is why the unwrap/catch pins read the
+/// body). Empty string when the rule has no emitted guard.
+fn guard_src(name: string) -> string {
+    let s = emit_parser_source(avra_expr_dispatch_grammar())
+    let start = s.index_of("fn starts_${name}(")
+    if start < 0 { return "" }
+    // index_of has no from-offset arity — cut the tail first, then find the
+    // guard fn's closing brace inside it.
+    let rest = s.substring(start, s.length)
+    let end = rest.index_of("\n}")
+    if end < 0 { return rest }
+    rest.substring(0, end)
+}
 
 fn rule_src(name: string) -> string {
     let g = avra_expr_dispatch_grammar()
@@ -112,7 +131,7 @@ spec "t-47hc.33: `expr?.field` is grammar-native" {
     }
     then "it is gated by the lookahead, not by the `?.` token alone" {
         // Without the peek the branch would swallow `?.m(args)` and build the wrong node.
-        rule_src("optchain_suffix").contains("lookahead_ok(\"qdot_plain_field\", st)")
+        guard_src("optchain_suffix").contains("lookahead_ok(\"qdot_plain_field\", st)")
     }
     then "the field terminal is FIELDNAME — a reserved-keyword field is native too" {
         // Was IDENT, which is `Tk.Identifier` ALONE and therefore NARROWER than
@@ -171,8 +190,12 @@ spec "t-47hc.33: the chain base is frozen at step ENTRY" {
             rule_src("catch_suffix").contains("st.snap_postfix_step()")
     }
     then "and the freeze is the FIRST statement — before anything can recurse" {
+        // Anchored on the `[` consume: the single-branch rule's gates live
+        // in its starts_ guard, so the body opens with the snap and then
+        // advances — nothing may run between them.
         let s = rule_src("index_suffix")
-        s.index_of("st.snap_postfix_step()") < s.index_of("if ")
+        let snap = s.index_of("st.snap_postfix_step()")
+        snap >= 0 && snap < s.index_of("let _ = st.advance()")
     }
     then "the DISPATCHER has no freeze of its own — only zero-width gates run before a sub-rule snaps" {
         // postfix_suffix carries no builds, so the mechanism gives it no snap; the
@@ -199,7 +222,7 @@ spec "t-47hc.33: `expr[i]` / `expr[a..b]` are grammar-native" {
         rule_src("index_suffix").contains("mk_index_suffix_abi(st, [")
     }
     then "the index expression is same-line gated — a `[` on a NEW line is a list literal" {
-        rule_src("index_suffix").contains("to_linecol(st.toks[st.pos - 1].pos).line")
+        guard_src("index_suffix").contains("to_linecol(st.toks[st.pos - 1].pos).line")
     }
     then "the two closing-`]` messages are the hand parser's, kept distinct" {
         // One arm in the hand, two sequences here: @expect keys on the token, so each
@@ -277,7 +300,7 @@ spec "t-47hc.33: `t.0` is grammar-native" {
         // sibling — comptime expansion writes `.field` everywhere, so the whole compiler
         // stops building. That failure mode is invisible to build-quick, --emit-gen-check
         // and diff-test alike; the peek is what keeps the two `.` readings apart.
-        rule_src("tuple_suffix").contains("lookahead_ok(\"dot_number\", st)")
+        guard_src("tuple_suffix").contains("lookahead_ok(\"dot_number\", st)")
     }
 }
 
@@ -381,15 +404,15 @@ spec "t-47hc.33: `Type.Variant(args)` is grammar-native" {
         rule_src("enum_ctor_suffix").contains("mk_enum_ctor_suffix_abi(st, [")
     }
     then "it is gated on the SHAPE — `.` IDENT `(`" {
-        rule_src("enum_ctor_suffix").contains("lookahead_ok(\"dot_enum_ctor\", st)")
+        guard_src("enum_ctor_suffix").contains("lookahead_ok(\"dot_enum_ctor\", st)")
     }
     then "and on the BASE reading as a type name" {
         // Without this, `obj.method(1)` — a lowercase receiver — would build an EnumCtor
         // instead of a Call. That is a different node, not a different spelling.
-        rule_src("enum_ctor_suffix").contains("base_pred(\"base_upper_ident\", st)")
+        guard_src("enum_ctor_suffix").contains("base_pred(\"base_upper_ident\", st)")
     }
     then "and it carries the `.` arm's whole entry guard" {
-        rule_src("enum_ctor_suffix").contains("base_pred(\"dot_postfix_ok\", st)")
+        guard_src("enum_ctor_suffix").contains("base_pred(\"dot_postfix_ok\", st)")
     }
     then "the ctor rule is dispatched BEFORE the plain-field rule" {
         // Both families lead with `.`. dot_plain_field DECLINES when a `(` follows a
@@ -418,7 +441,7 @@ spec "t-47hc.33: `expr?.m(args)` is grammar-native" {
         // The hand gates the call on `current_line == prev_line`: a `(` opening the NEXT
         // line is a new statement, and the `?.` reading stays a plain chain. This peek is
         // the exact complement of qdot_plain_field's last clause.
-        rule_src("optcall_suffix").contains("lookahead_ok(\"qdot_method_call\", st)")
+        guard_src("optcall_suffix").contains("lookahead_ok(\"qdot_method_call\", st)")
     }
     then "the method-call rule is dispatched BEFORE the plain-chain rule" {
         // Both lead with `?.`. They are disjoint only because the two peeks test the same
