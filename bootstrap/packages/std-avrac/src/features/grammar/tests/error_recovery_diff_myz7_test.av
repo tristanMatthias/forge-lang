@@ -1,0 +1,209 @@
+// One slice of the error-recovery differential corpus (t-kdyj.13).
+// The corpus was ONE file whose unit process measured 8.4GB resident —
+// each un-paired in-process oracle call builds a fresh store + registry
+// (~30MB) and arena memory is process-permanent, so the ONLY bound the
+// runner offers is fewer cases per PROCESS: per-scenario files, spread
+// across shard processes by the stride batcher. Oracle helpers + the
+// engine-pinning WHYs live in ONE home: parse/differential.av
+// (@std.avrac.parse). Specs are VERBATIM from the original file.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.parse.{CDEF, agree, agree_all, agree_bad, agree_error, agree_pos, agree_tree, dbrace, default_path, errcodes, errmsgs, exec_oracle, mode_env, msgs_agree_bad, pin, pin_pos, pin_tree, poslist, poslist_from, rdiags, rtree, rtree_at, sig_has_parse_code, static_raw, tpl_src, tree_agrees_everywhere, mode_parse, ModeRun, rendered}
+
+spec "t-myz7: statement-position `if let` agrees with the hand on the TREE" {
+    then "the plain statement form agrees" {
+        agree_all("fn f(x: int?) -> int {\n mut t = 0\n if let v = x { t = v }\n t\n}")
+    }
+
+    then "a statement-only `else` arm agrees — `return` inside the else" {
+        agree_all("fn f(x: int?) -> int {\n mut t = 0\n if let v = x { t = v } else { return 0 - 1 }\n t\n}") &&
+            agree_all("fn g(x: int?) -> int {\n if let v = x { return v } else { return 0 }\n}")
+    }
+
+    then "the malformed statement forms recover identically" {
+        agree_bad("fn f(x: int?) -> int {\n if let = x { 1 }\n 0\n}") &&
+            agree_bad("fn f(x: int?) -> int {\n if let v x { 1 }\n 0\n}")
+    }
+}
+
+spec "t-myz7: an annotated / doc-commented component agrees with the hand" {
+    // `tree_agrees_everywhere`, NOT `agree_all`, for the valid forms: `agree_all`
+    // compares errcode signatures, which on VALID input is empty-vs-empty and would
+    // pass even if the three paths built DIFFERENT trees. Raised in review, and
+    // correct — the whole point of this spec is the tree the new `wrapped_inner`
+    // branch produces.
+    then "the valid annotated and doc-commented forms build the same TREE everywhere" {
+        tree_agrees_everywhere("@expand(expand_cli)\ncomponent cli {}") &&
+        tree_agrees_everywhere("@inline\ncomponent cli {}") &&
+        tree_agrees_everywhere("/// docs\ncomponent cli {}") &&
+        agree_all("@expand(expand_cli)\ncomponent cli {}") &&
+        agree_all("@inline\ncomponent cli {}") &&
+        agree_all("/// docs\ncomponent cli {}")
+    }
+
+    then "an annotation with no declaration after it still reports, identically" {
+        agree_bad("@expand(expand_cli)\n") &&
+            agree_bad("@inline\n") &&
+            agree_all("@inline\n") &&
+            tree_agrees_everywhere("@inline\n")
+    }
+
+    then "a malformed annotated component recovers the same way" {
+        agree_bad("@inline\ncomponent {}") &&
+            agree_bad("@inline\ncomponent cli {") &&
+            agree_all("@inline\ncomponent {}") &&
+            tree_agrees_everywhere("@inline\ncomponent {}")
+    }
+
+    // `doc_decl` shares the changed `wrapped_inner`, so its malformed forms need the
+    // same coverage as the annotation ones — also raised in review.
+    then "a malformed DOC-commented component recovers the same way" {
+        agree_bad("/// docs\ncomponent {}") &&
+            agree_bad("/// docs\ncomponent cli {") &&
+            tree_agrees_everywhere("/// docs\ncomponent {}")
+    }
+}
+
+spec "t-myz7: `primary_base`'s residue — the feature-form seam and the F0040 path" {
+    then "a `grammar { … }` literal builds the same TREE on all three paths" {
+        tree_agrees_everywhere("fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
+            // …and every path agrees on the DIAGNOSTIC signature, with no parse-phase
+            // code in it. Without this the tree assertion alone would accept a fixture
+            // that never parsed — see `sig_has_parse_code`.
+            agree_all("fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}") &&
+            !sig_has_parse_code(exec_oracle("fn g() -> int {\n let gp = grammar {\n  r = \"a\"\n }\n 0\n}"))
+    }
+
+    then "a `table { … }` literal builds the same TREE on all three paths" {
+        tree_agrees_everywhere("fn t() -> int {\n let x = table { }\n 0\n}") &&
+            agree_all("fn t() -> int {\n let x = table { }\n 0\n}") &&
+            // This one is genuinely diagnostic-FREE, so pin that exactly rather than
+            // settling for the weaker no-parse-code bar the `grammar` case needs.
+            exec_oracle("fn t() -> int {\n let x = table { }\n 0\n}") == ""
+    }
+
+    // The delegate's OTHER job, and the one the `@hand(postfix_suffix)` retirement
+    // proves is easy to miss: owning a DIAGNOSTIC. `parse_leaf_common(false)` handles
+    // only the splice and the prefix operators — which the grammar's own `unary` /
+    // `@when(at_quote_top)` branches already own — so everything else is
+    // `parse_primary`, whose residue is `error[F0040]: expected expression` for a token
+    // that starts no expression. Deleting the leaf without an `@fallback` carrying that
+    // message would leave nobody reporting it, exactly as deleting `postfix_suffix`
+    // once left the trailing-dot `expected field name` unowned.
+    then "a token that starts NO expression reports EXACTLY F0040, and recovers identically" {
+        agree_bad("fn f() -> int {\n let v = )\n 0\n}") &&
+            agree_all("fn f() -> int {\n let v = )\n 0\n}") &&
+            tree_agrees_everywhere("fn f() -> int {\n let v = )\n 0\n}") &&
+            // The exact signature, not merely "some equal nonzero set". Raised in
+            // review and correct: `agree_bad` requires only a nonzero EQUAL count and
+            // `agree_all` only an equal LIST, so all three paths emitting some other
+            // code — or emitting F0040 twice — would pass. This spec's whole subject is
+            // the F0040 path, so it asserts F0040, once, on the oracle.
+            exec_oracle("fn f() -> int {\n let v = )\n 0\n}") == "F0040 "
+    }
+
+    // The control. Without it the three assertions above could all be satisfied by a
+    // harness that agrees with itself everywhere, which is this file's standing
+    // vacuity failure mode.
+    then "a plain function — the control — agrees, and is diagnostic-free" {
+        tree_agrees_everywhere("fn f() -> int { 1 }") &&
+            agree_all("fn f() -> int { 1 }") &&
+            exec_oracle("fn f() -> int { 1 }") == ""
+    }
+}
+
+spec "t-myz7: the `table { … }` literal recovers == hand on every abort path" {
+    then "a header that runs to EOF reports identically on all three paths" {
+        // EOF while the HEADER IS STILL OPEN. The earlier form of this fixture ended
+        // `…table { a\n 0\n}` — that lone `}` CLOSES THE TABLE and leaves the `fn` body
+        // unclosed, so it measured fn-body EOF recovery and never reached
+        // `parse_table_literal`'s unterminated exit at all. Measured, the difference is
+        // the whole point of the case:
+        //
+        //   …table { a\n 0\n}   error[F0001]: expected `}` after function body
+        //   …table { a          error[F0001]: expected `}` to close table   ← this path
+        //                       error[F0001]: expected `}` after function body
+        //
+        // Both agree on all three paths, which is exactly why the wrong one stayed green.
+        let src = "fn t() -> int {\n let x = table { a"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src)
+    }
+
+    then "a row NARROWER than the header names both widths" {
+        let src = "fn t() -> int {\n let x = table { a | b\n  1\n }\n 0\n}"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src) &&
+            // The exact message, not merely "some equal set" — this is the assertion the
+            // F-code signature cannot make.
+            errmsgs(mode_env("exec"), src).contains("table row has 1 cell(s) but the header declares 2 column(s)")
+    }
+
+    then "a row WIDER than the header names both widths" {
+        let src = "fn t() -> int {\n let x = table { a\n  1 | 2\n }\n 0\n}"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src) &&
+            errmsgs(mode_env("exec"), src).contains("table row has 2 cell(s) but the header declares 1 column(s)")
+    }
+
+    then "a duplicate column name is rejected, naming the column" {
+        let src = "fn t() -> int {\n let x = table { a | a\n  1 | 2\n }\n 0\n}"
+        msgs_agree_bad(src) &&
+            agree_all(src) &&
+            tree_agrees_everywhere(src) &&
+            errmsgs(mode_env("exec"), src).contains("duplicate table column `a`")
+    }
+
+    // The two VALID shapes. They belong in this corpus because the flip's risk is not
+    // only "fails to report" — it is equally "reports where the hand accepts", and a
+    // rule gated on the wrong entry test would reject exactly these.
+    then "a TYPED `table<Row> { … }` parses clean on all three paths" {
+        let src = "fn t() -> int {\n let x = table<Row> { a\n  1\n }\n 0\n}"
+        tree_agrees_everywhere(src) &&
+            agree_all(src) &&
+            exec_oracle(src) == ""
+    }
+
+    // cell_mode is SAVED and RESTORED around the row loop precisely so a table inside a
+    // cell leaves the outer table's mode intact. Nothing asserted it before.
+    //
+    // BOTH tables carry a row type deliberately. The first draft used bare `table { … }`
+    // and failed the diagnostic-free bar — measured, the cause is TYPECK, not parsing:
+    // an untyped table with columns is `F1042 table literal has no row type`, once per
+    // table. The fixture parsed perfectly. Ascribing the row types keeps the assertion
+    // at the strict `== ""` bar instead of weakening it to `!sig_has_parse_code`, so a
+    // future parse-phase regression here cannot hide behind a tolerated diagnostic.
+    then "a row's LAST cell does not swallow the next row's leading sign" {
+        // `@on(cell_mode)` is a PER-ITEM marker, so the repeated cell needs its own —
+        // the hand sets `self.cell_mode = true` around the WHOLE row loop. With it on
+        // only the first cell, cells 2..N parse with cell_mode OFF, and
+        // `parse_binary_pratt_g_id` refuses a cross-line `+`/`-` ONLY while cell_mode is
+        // set, so `2` at the end of a row could take the next row's `-3` as a binary
+        // operand and silently merge two rows into one.
+        //
+        // THE NOTE THAT USED TO SIT HERE IS RETRACTED, and worth keeping so the
+        // retraction is legible. It read: "this case passes both before and after that
+        // fix — I could not construct an input where the missing marker actually
+        // diverged … it is NOT a fail-before/pass-after witness". That was true of the
+        // engines it was measured against (emit and the hand), and false of the one it
+        // was not: the EXECUTOR had no cell_mode guard on its binary ladder at all, so
+        // this exact input folded `2 - 3` into one cell and reported "row has 3 cell(s)
+        // but the header declares 2 column(s)". It became a fail-before/pass-after
+        // witness the moment t-47hc.4.1 pointed this corpus at emit-vs-exec, and the fix
+        // is `cell_mode_blocks_binary` in executor.av. The lesson generalises: "I could
+        // not construct a diverging input" is a statement about the oracles in reach,
+        // never about the property.
+        let src = "type R2 = { a: int, b: int }\nfn t() -> int {\n let x = table<R2> { a | b\n  1 | 2\n  -3 | 4\n }\n 0\n}"
+        agree_all(src) && exec_oracle(src) == ""
+    }
+
+    then "a table NESTED in a cell leaves the outer table's cell_mode intact" {
+        let src = "fn t() -> int {\n let x = table<Row> { a | b\n  1 | table<Inner> { c\n   2\n  }\n }\n 0\n}"
+        tree_agrees_everywhere(src) &&
+            agree_all(src) &&
+            exec_oracle(src) == ""
+    }
+}

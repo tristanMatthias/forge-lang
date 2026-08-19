@@ -1269,8 +1269,9 @@ export fn retry_bounded_cmd(cmd: string, avail_mb: int) -> string {
 /// churn during the retry (hosted runner agents alone hold ~700MB).
 /// SIZED FROM THE FIRST BOUNDED RUN'S MEASUREMENTS (2026-08-19, runs
 /// 32199097036/55): the drained fleet box offered 9407MB, and the whale
-/// shard (error_recovery_differential_test's batch — the documented
-/// ~8.3GB fixture) stopped at the 1536-reserve ceiling of 7871MB while
+/// shard (the error-recovery differential corpus — measured 8.4GB as
+/// ONE file; split per scenario since, t-kdyj.13, so no shard should
+/// reach this class again) stopped at the 1536-reserve ceiling of 7871MB while
 /// still climbing. 768 puts the ceiling at ~8.6GB there — above the
 /// whale's need, still a hard stop well under the box — where 1536 was
 /// 400MB too greedy and turned a fits-when-drained shard into a

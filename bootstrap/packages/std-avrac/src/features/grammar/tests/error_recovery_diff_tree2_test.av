@@ -1,0 +1,143 @@
+// One slice of the error-recovery differential corpus (t-kdyj.13).
+// The corpus was ONE file whose unit process measured 8.4GB resident —
+// each un-paired in-process oracle call builds a fresh store + registry
+// (~30MB) and arena memory is process-permanent, so the ONLY bound the
+// runner offers is fewer cases per PROCESS: per-scenario files, spread
+// across shard processes by the stride batcher. Oracle helpers + the
+// engine-pinning WHYs live in ONE home: parse/differential.av
+// (@std.avrac.parse). Specs are VERBATIM from the original file.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.parse.{CDEF, agree, agree_all, agree_bad, agree_error, agree_pos, agree_tree, dbrace, default_path, errcodes, errmsgs, exec_oracle, mode_env, msgs_agree_bad, pin, pin_pos, pin_tree, poslist, poslist_from, rdiags, rtree, rtree_at, sig_has_parse_code, static_raw, tpl_src, tree_agrees_everywhere, mode_parse, ModeRun, rendered}
+
+spec "t-47hc.3: recovery-TREE shape == exec oracle (invalid corpus) — part 2/3" {
+    // The TREE half of the instantiation corpus above. This is the half that
+    // actually caught the enum_decl routing regression (t-myz7.2): the F-code
+    // signatures can agree while the RECOVERED TREE diverges, because the hand
+    // aborts to Stmt.Error and synchronizes where a tolerant native branch
+    // builds a partial node. agree_bad also refuses a SILENT DROP — invalid
+    // source that parses with no diagnostic on either path.
+    // THE HIGHEST-VALUE ASSERTIONS IN THE SLICE. These four are VALID input —
+    // they parse clean, so they cannot live in `agree_bad`, which requires a
+    // diagnostic. They are the exact cases a TOKEN-LEVEL rewrite of the config
+    // -pair peeks would get wrong, and the reason those scans are shared cores
+    // (chars.av) rather than re-derived: the native rule and the hand must
+    // reach the same verdict on each, and the tree is the proof.
+    //
+    //   -5          the number test reads the first BYTE, so this is NOT a
+    //               config value — it falls through and `key -5` becomes a
+    //               binary expression statement in the block body
+    //   /* c */     the scans skip whitespace ONLY, never comments, so the
+    //               string never registers as a value
+    //   r"s"        a raw string leads with `r`, not `"`
+    //   trueish     the keyword test is a PREFIX match, so this DOES read as
+    //               a config pair whose value is the identifier `trueish`
+    then "the four config-pair divergences parse identically to the hand" {
+        agree_tree("component C inst { key -5 }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { key /* c */ \"v\" }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { key r\"s\" }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { key trueish }\nfn f() -> int { 1 }")
+    }
+
+    // These four were ONCE declined by the native rule and handed back to the hand.
+    // They are ROUTED now — `comp_block_item` carries all four arms (raw-named,
+    // raw-bare, nested-named, nested-bare, method shorthand) with `declaration` as the
+    // honest unguarded tail. Measured: the four forms compile with BOTH production
+    // leaves refused (`AVRA_REFUSE_HAND_LEAF='*'`), 0 refusals.
+    //
+    // The assertions stay exactly as they are. They were written as a
+    // declined-vs-hand parity check and they now serve as the routed-vs-hand parity
+    // check — the same claim either way, and the one that would go red if a future
+    // change to those arms drifted from `parse_comp_block_body`.
+    then "PROBE: a native instantiation BODY survives (statements not dropped)" {
+        agree_tree("component C inst { key \"v\"\n  let z = 1\n  foo()\n}\nfn f() -> int { 1 }")
+    }
+
+    then "the declined body forms still match the hand exactly" {
+        agree_tree("component C inst { nested name { } }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { nested { } }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { run() { } }\nfn f() -> int { 1 }") &&
+        agree_tree("component C inst { component D e { } }\nfn f() -> int { 1 }")
+    }
+
+    then "malformed component INSTANTIATIONS recover to the same tree" {
+        agree_bad("component C inst { key = }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { key = 1\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst {\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { nested name }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { run() {\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { let x }\nfn f() -> int { 1 }") &&
+        // The TREE half of the four declined arms — the half that actually caught
+        // the enum_decl routing regression (t-myz7.2): F-codes can agree while the
+        // recovered tree diverges, because the hand aborts to Stmt.Error and
+        // synchronizes where a tolerant native branch builds a partial node.
+        agree_bad("component C inst { nested name { let x } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { nested { let x } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { run() { let x } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { component }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst { component D }\nfn f() -> int { 1 }")
+    }
+
+    then "malformed decl WRAPPERS recover to the same tree" {
+        // Every form here was checked to actually REPORT on both paths before being
+        // added. An earlier draft of this block also listed `export\nfn f()`,
+        // `export let x = 1` and `/// orphan doc\nfn f()` as malformed — they are
+        // VALID (the wrapper attaches to the declaration on the next line), so
+        // `agree_bad`, which requires both parsers to report, failed on them. The
+        // parsers were right and the corpus entry was wrong; those moved to the
+        // valid-input tree pin below.
+        agree_bad("export export fn g() -> int { 1 }\nfn f() -> int { 1 }") &&
+        // A bare `@`, an unterminated arg list, an empty arg, a stray close paren.
+        // t-47hc.5: was `native_tree_agrees_hand_differs` — see the note in the
+        // three-path spec above.
+        agree_bad("@\nfn f() -> int { 1 }") &&
+        agree_bad("@foo(\nfn f() -> int { 1 }") &&
+        agree_bad("@foo(,)\nfn f() -> int { 1 }") &&
+        agree_bad("@foo)\nfn f() -> int { 1 }") &&
+        // An annotation with NOTHING following it — the wrapper's recursive call into
+        // `parse_declaration` hits EOF, which is the edge a routed rule is most likely
+        // to get wrong (it must abort, not build a wrapper around nothing).
+        agree_bad("@foo") &&
+        // A malformed INNER declaration under a wrapper: the diagnostic must come from
+        // the inner decl, not be swallowed by the prefix that wraps it.
+        agree_bad("export enum { A }\nfn f() -> int { 1 }") &&
+        // ...and under a STACK of wrappers, since they nest by recursion.
+        agree_bad("@foo\nexport enum { A }\nfn f() -> int { 1 }") &&
+        // t-47hc Phase 4, routing `///` / `//!` / `@annotation`: the doc-led halves of
+        // the same classes — a malformed inner under a doc line, a module doc followed
+        // by a stray token (the wrapper must not swallow it), and a malformed
+        // annotation under a doc line (the stacked-wrapper rollback path).
+        agree_bad("/// doc\nfn ( ) -> int { 1 }\nfn f() -> int { 1 }") &&
+        agree_bad("//! mdoc\n* 5\nfn f() -> int { 1 }") &&
+        agree_bad("/// doc\n@foo(\nfn f() -> int { 1 }")
+    }
+    // The VALID half of the wrapper family. `agree_bad` cannot cover these — nothing
+    // reports — but routing must preserve their SHAPE, and a wrapper that silently
+    // stopped attaching to the following declaration would be a wrong-tree bug with no
+    // diagnostic anywhere. That is exactly the failure mode the t-47hc discipline says
+    // is invisible on valid input, so it needs its own pin.
+    then "well-formed decl wrappers build the same tree" {
+        agree_tree("export fn g() -> int { 1 }\nfn f() -> int { 1 }") &&
+        agree_tree("/// a doc comment\nfn f() -> int { 1 }") &&
+        agree_tree("//! a module doc\nfn f() -> int { 1 }") &&
+        agree_tree("@foo\nfn f() -> int { 1 }") &&
+        agree_tree("@foo(1, 2)\nfn f() -> int { 1 }") &&
+        // The stack, in both orders — the recursion means order is observable.
+        agree_tree("@foo\nexport fn g() -> int { 1 }\nfn f() -> int { 1 }") &&
+        agree_tree("/// doc\n@foo\nexport fn g() -> int { 1 }\nfn f() -> int { 1 }")
+    }
+    // The TREE half for `enum` — see the F-code block above. A partial enum node (a
+    // nameless declaration, a variant list truncated at the first bad variant) has the
+    // same F-codes as hand's `(error)` and a different tree, so both halves are needed.
+    then "malformed enum recovers to the same tree" {
+        agree_bad("enum { A, B }\nfn f() -> int { 1 }") &&
+        agree_bad("enum E\nfn f() -> int { 1 }") &&
+        agree_bad("enum E {\nfn f() -> int { 1 }") &&
+        agree_bad("enum E { A,\nfn f() -> int { 1 }") &&
+        agree_bad("enum E { A(x: ) }\nfn f() -> int { 1 }") &&
+        agree_bad("enum E { A( }\nfn f() -> int { 1 }") &&
+        agree_bad("enum E< { A }\nfn f() -> int { 1 }") &&
+        agree_bad("enum E<T { A }\nfn f() -> int { 1 }") &&
+        agree_bad("enum E { 5 }\nfn f() -> int { 1 }")
+    }
+}

@@ -160,8 +160,10 @@ tests are not sufficient. Run these, in this order:
    resolved that way), but it must be confirmed against the hand parser and then
    allowlisted by exact rule + branch pair in `is_intended_shadow` — never by
    loosening the predicate. Missing this is what turned #1029 red in CI.
-5. `features/grammar/tests/error_recovery_differential_test.av` — the recovery
-   TREE oracle, not just F-codes.
+5. `features/grammar/tests/error_recovery_diff_*_test.av` — the recovery
+   TREE oracle, not just F-codes. One corpus, split per scenario
+   (t-kdyj.13 — as a single file its unit process measured 8.4GB);
+   the shared oracle helpers live in `parse/differential.av`.
 6. Isolate-run any negative/diagnostic test you touched: **diff-test does not
    cover the error text of invalid programs**. Note also that once the DSL
    errors, the flip falls back to the authoritative hand parser, which then owns

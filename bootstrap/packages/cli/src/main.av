@@ -3197,8 +3197,9 @@ fn ceiling_stopped_victims(shards: List<Shard>) -> List<Shard> {
 
 // F4014 self-stop recovery (t-d91l): a mid-suite ceiling stop is usually BOX
 // PRESSURE, not the shard's own defect — the F4014 grant shrinks while the
-// pool runs wide, and a whale batch (error_recovery_differential_test peaks
-// ~8.3GB, 4.6x the admission model, strict and normal alike) trips it exactly
+// pool runs wide, and a whale batch (the error-recovery differential corpus
+// peaked ~8.4GB as one file — split per scenario since, t-kdyj.13; each
+// slice is ~1.3-1.7GB) trips it exactly
 // when siblings are co-resident. The pool has drained by the time this runs,
 // so one solo re-dispatch gives the victim the quiet box — the same room the
 // historic width-1 dispatch gave every shard implicitly. The shard command's
