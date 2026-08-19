@@ -19,7 +19,7 @@ spec "operator families as LanguageFeatures" {
         let pp = pipe_op_lang()
         let eq = eq_chain_lang()
         let un = unary_op_lang()
-        lg.title.length > 0 && lg.docs.contains("short-circuit")
+        lg.title.contains("short-circuit") && lg.docs.contains("evaluates")
             && pp.docs.contains("pipe") && eq.docs.contains("equality")
             && un.docs.contains("Prefix") && un.snippet.contains("!")
     }

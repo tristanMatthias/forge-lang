@@ -5,10 +5,10 @@
 // family; parse/tests/gen_parser_regen_test.av asserts it equals
 // emit_parser_file() so a grammar edit that isn't regenerated fails the suite.
 
-use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, error_stmt_of, fold_logical_expr, fold_nullish_expr, fold_pipe_expr, fold_postfix_with_expr, fold_type_union, gensym_token, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assign_expr, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_suffix, mk_eqchain_expr, mk_export_decl, mk_expr_block, mk_field_access, mk_fn_type, mk_force_unwrap, mk_generic_call_suffix, mk_grammar_block_abi, mk_index_suffix, mk_inlist_expr, mk_inrange_expr, mk_is_expr, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_paren_type, mk_plain_name, mk_qualified_type, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_tagged_template, mk_template, mk_try_suffix, mk_tuple_index, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, rebind_eq_expr, text_is_word, unary_expr}
+use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, error_stmt_of, fold_postfix_with_expr, fold_type_union, gensym_token, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_suffix, mk_export_decl, mk_expr_block, mk_field_access, mk_fn_type, mk_force_unwrap, mk_generic_call_suffix, mk_grammar_block_abi, mk_index_suffix, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_paren_type, mk_plain_name, mk_qualified_type, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_tagged_template, mk_template, mk_try_suffix, mk_tuple_index, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, text_is_word}
 use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, MatchArm, ParamEntry, PatId, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, Variant, WhenArm}
 use features.modules.lowering.{mk_qualified_abi, module_build, use_bare_build, use_pkg_build}
-use features.struct_decl.lowering.{mk_enum_ctor_abi, mk_field_abi, mk_field_init_abi, mk_shape_decl_abi, mk_struct_lit_abi, mk_type_decl_any_abi}
+use features.struct_decl.lowering.{mk_assign_abi, mk_enum_ctor_abi, mk_field_abi, mk_field_init_abi, mk_shape_decl_abi, mk_struct_lit_abi, mk_type_decl_any_abi, rebind_eq_abi}
 use features.generics.lowering.{mk_type_param_abi}
 use features.enum_decl.lowering.{enum_decl_build, evariant_build}
 use features.fn_decl.lowering.{mk_extern_fn_abi, mk_fn_decl_abi, mk_where_param_abi}
@@ -21,6 +21,10 @@ use features.let_stmt.lowering.{mk_const_binding_abi, mk_let_binding_abi, mk_let
 use features.component_decl.lowering.{mk_children_slot_abi, mk_children_slot_list_abi, mk_comp_body_marker_abi, mk_comp_config_abi, mk_comp_config_list_abi, mk_comp_config_pair_abi, mk_comp_field_abi, mk_component_block_abi, mk_component_def_abi, mk_component_paren_def_abi, mk_method_shorthand_abi, mk_raw_component_block_abi, mk_trait_list_abi}
 use features.closures.lowering.{mk_group_or_empty_abi, mk_lambda_abi, mk_lambda_typed_abi, mk_param_abi, mk_tuple_fr_abi}
 use features.table_lit.lowering.{mk_table_header_abi, mk_table_lit_abi, mk_table_row_abi}
+use features.eq_chain.lowering.{mk_eqchain_abi}
+use features.is_keyword.lowering.{mk_is_abi}
+use features.in_operator.lowering.{mk_inlist_abi, mk_inrange_abi}
+use features.unary_op.lowering.{unary_abi}
 use features.match.lowering.{build_arm_abi, build_match_abi, build_when_arm_abi, build_when_default_abi, ident_pat_abi, mk_arm_return_abi, mk_match_expr_abi, mk_match_table_abi, mk_match_table_expr_abi, mk_variant_abi, mk_when_abi, mk_when_stmt_abi, opt_absent_abi, opt_present_abi, or_maybe_abi, pat_bool_abi, pat_neg_num_abi, pat_num_abi, pat_str_abi}
 use features.defer.lowering.{build_defer_abi, build_errdefer_abi}
 use features.return_stmt.lowering.{build_return_abi}
@@ -35,6 +39,9 @@ use features.with_expr.lowering.{mk_with_suffix_abi}
 use features.spawn_expr.lowering.{mk_spawn_abi}
 use features.isolated_expr.lowering.{mk_isolated_abi}
 use features.channels.lowering.{mk_channel_abi}
+use features.null_safety.lowering.{fold_nullish_abi}
+use features.logical_op.lowering.{fold_logical_abi}
+use features.pipe_op.lowering.{fold_pipe_abi}
 
 // generated recursive-descent parser for grammar `grammar`
 fn binary_lbp_g(t: Token) -> int {
@@ -3594,152 +3601,14 @@ fn parse_expression(st: PState) -> CapVal {
     parse_assignment(st)
 }
 
-fn parse_assignment(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    mut r: CapVal = CapVal.Nil
-    let __bdiag0 = st.diags.length
-    let __bres0 = parse_pipe(st)
-    if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    let l = __bres0
-    if st.cur().tk == Tk.Equal {
-        let _ = st.advance()
-        r = parse_assignment(st)
-    }
-    CapVal.Node(mk_assign_expr(st, sp_start, l, r))
-}
-
-fn parse_pipe(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    mut r_list: List<ExprId> = []
-    let l = parse_null_coalesce(st)
-    while st.cur().tk == Tk.PipeGt {
-        let _ = st.advance()
-        r_list.push(capval_to_expr(st, parse_pipe_arg(st)))
-    }
-    CapVal.Node(fold_pipe_expr(st, sp_start, l, CapVal.Nodes(r_list)))
-}
-
-fn parse_pipe_arg(st: PState) -> CapVal {
-    let __m = st.modes
-    st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
-    let __r = parse_logic_or(st)
-    st.set_modes(__m)
-    __r
-}
-
-fn parse_null_coalesce(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    let l = parse_logic_or(st)
-    if !(st.cur().tk == Tk.QuestionQuestion) { return l }
-    mut ops: List<Token> = []
-    mut rs: List<ExprId> = []
-    while st.cur().tk == Tk.QuestionQuestion {
-        ops.push(st.advance())
-        rs.push(capval_to_expr(st, parse_logic_or(st)))
-    }
-    CapVal.Node(fold_nullish_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
-}
-
-fn parse_logic_or(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    let l = parse_logic_and(st)
-    if !(st.cur().tk == Tk.PipePipe || st.cur().text == "or") { return l }
-    mut ops: List<Token> = []
-    mut rs: List<ExprId> = []
-    while st.cur().tk == Tk.PipePipe || st.cur().text == "or" {
-        ops.push(st.advance())
-        rs.push(capval_to_expr(st, parse_logic_and(st)))
-    }
-    CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
-}
-
-fn parse_logic_and(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    let l = parse_equality(st)
-    if !(st.cur().tk == Tk.AmpAmp || st.cur().text == "and") { return l }
-    mut ops: List<Token> = []
-    mut rs: List<ExprId> = []
-    while st.cur().tk == Tk.AmpAmp || st.cur().text == "and" {
-        ops.push(st.advance())
-        rs.push(capval_to_expr(st, parse_equality(st)))
-    }
-    CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))
-}
-
-fn parse_equality(st: PState) -> CapVal {
-    let sp_start = st.cur().pos
-    mut tail: CapVal = CapVal.Nil
-    let base = parse_bitor(st)
-    if starts_eq_tail(st) {
-        tail = parse_eq_tail(st)
-    }
-    CapVal.Node(rebind_eq_expr(st, sp_start, base, tail))
-}
-
 fn parse_eq_tail(st: PState) -> CapVal {
-    if st.cur().text == "is" {
-        let _ = st.advance()
-        if st.cur().tk == Tk.Dot { let _ = st.advance() } else {
-            st.report("expected `.Variant` after `is`")
-        }
-        let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
-            st.report_ident("expected `IDENT`")
-            CapVal.Tok(st.cur())
-        }
-        return CapVal.Node(mk_is_expr(st, v))
+    if starts_is_tail(st) {
+        return parse_is_tail(st)
     }
-    if st.cur().text == "in" {
-        let _ = st.advance()
-        let ir = parse_in_rhs(st)
-        return ir
+    if starts_in_tail(st) {
+        return parse_in_tail(st)
     }
-    if st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual {
-        mut op_list: List<Token> = []
-        mut r_list: List<ExprId> = []
-        if !(st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual) {
-            st.report("expected at least one repetition")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        while st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual {
-            op_list.push(st.advance())
-            r_list.push(capval_to_expr(st, parse_bitor(st)))
-        }
-        return CapVal.Node(mk_eqchain_expr(st, CapVal.Toks(op_list), CapVal.Nodes(r_list)))
-    }
-    CapVal.Node(st.error_node_expected_expr())
-}
-
-fn parse_in_rhs(st: PState) -> CapVal {
-    if st.cur().tk == Tk.LeftBracket {
-        mut a_list: List<ExprId> = []
-        let _ = st.advance()
-        if starts_expression(st) {
-            a_list.push(capval_to_expr(st, parse_expression(st)))
-            while st.cur().tk == Tk.Comma {
-                let _ = st.advance()
-                a_list.push(capval_to_expr(st, parse_expression(st)))
-            }
-        }
-        if st.cur().tk == Tk.RightBracket { let _ = st.advance() } else {
-            st.report("expected `]`")
-        }
-        return CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(a_list)))
-    }
-    if starts_bitor(st) {
-        let s = parse_bitor(st)
-        if st.cur().tk == Tk.DotDot { let _ = st.advance() } else {
-            st.report("expected `..` in range expression after `in`")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        let e = parse_bitor(st)
-        return CapVal.Node(mk_inrange_expr(st, s, e))
-    }
-    CapVal.Node(st.error_node_expected_expr())
+    parse_eqchain_tail(st)
 }
 
 fn parse_bitor(st: PState) -> CapVal { parse_binary_pratt_g(st, 10) }
@@ -3764,16 +3633,6 @@ fn parse_unary(st: PState) -> CapVal {
     out
 }
 fn parse_unary_chain(st: PState) -> CapVal {
-    if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" {
-        let op = CapVal.Tok(st.advance())
-        let operand = parse_unary(st)
-        return CapVal.Node(unary_expr(st, op, operand))
-    }
-    if st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) {
-        let op = CapVal.Tok(st.advance())
-        let operand = parse_unary(st)
-        return CapVal.Node(unary_expr(st, op, operand))
-    }
     if st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) {
         let sp_start = st.cur().pos
         mut f_list: List<FieldInit> = []
@@ -3804,6 +3663,9 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let _ = st.advance()
         let t = parse_unary(st)
         return CapVal.Node(mk_splice(st, sp_start, t))
+    }
+    if starts_unary_prefix(st) {
+        return parse_unary_prefix(st)
     }
     if (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) {
         let sp_start = st.cur().pos
@@ -5481,6 +5343,167 @@ fn parse_channel_expr(st: PState) -> CapVal {
     call_with_build_sp(st, sp_start, mk_channel_abi, [elem, cap])
 }
 
+fn parse_assignment(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    mut r: CapVal = CapVal.Nil
+    let __bdiag0 = st.diags.length
+    let __bres0 = parse_pipe(st)
+    if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let l = __bres0
+    if st.cur().tk == Tk.Equal {
+        let _ = st.advance()
+        r = parse_assignment(st)
+    }
+    call_with_build_sp(st, sp_start, mk_assign_abi, [l, r])
+}
+
+fn parse_equality(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    mut tail: CapVal = CapVal.Nil
+    let base = parse_bitor(st)
+    if starts_eq_tail(st) {
+        tail = parse_eq_tail(st)
+    }
+    call_with_build_sp(st, sp_start, rebind_eq_abi, [base, tail])
+}
+
+fn parse_null_coalesce(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    let l = parse_logic_or(st)
+    if !(st.cur().tk == Tk.QuestionQuestion) { return l }
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().tk == Tk.QuestionQuestion {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_logic_or(st)))
+    }
+    call_with_build_sp(st, sp_start, fold_nullish_abi, [l, CapVal.Toks(ops), CapVal.Nodes(rs)])
+}
+
+fn parse_logic_or(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    let l = parse_logic_and(st)
+    if !(st.cur().tk == Tk.PipePipe || st.cur().text == "or") { return l }
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().tk == Tk.PipePipe || st.cur().text == "or" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_logic_and(st)))
+    }
+    call_with_build_sp(st, sp_start, fold_logical_abi, [l, CapVal.Toks(ops), CapVal.Nodes(rs)])
+}
+
+fn parse_logic_and(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    let l = parse_equality(st)
+    if !(st.cur().tk == Tk.AmpAmp || st.cur().text == "and") { return l }
+    mut ops: List<Token> = []
+    mut rs: List<ExprId> = []
+    while st.cur().tk == Tk.AmpAmp || st.cur().text == "and" {
+        ops.push(st.advance())
+        rs.push(capval_to_expr(st, parse_equality(st)))
+    }
+    call_with_build_sp(st, sp_start, fold_logical_abi, [l, CapVal.Toks(ops), CapVal.Nodes(rs)])
+}
+
+fn parse_pipe(st: PState) -> CapVal {
+    let sp_start = st.cur().pos
+    mut r_list: List<ExprId> = []
+    let l = parse_null_coalesce(st)
+    while st.cur().tk == Tk.PipeGt {
+        let _ = st.advance()
+        r_list.push(capval_to_expr(st, parse_pipe_arg(st)))
+    }
+    call_with_build_sp(st, sp_start, fold_pipe_abi, [l, CapVal.Nodes(r_list)])
+}
+
+fn parse_pipe_arg(st: PState) -> CapVal {
+    let __m = st.modes
+    st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
+    let __r = parse_logic_or(st)
+    st.set_modes(__m)
+    __r
+}
+
+fn parse_eqchain_tail(st: PState) -> CapVal {
+    mut op_list: List<Token> = []
+    mut r_list: List<ExprId> = []
+    if !(st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual) {
+        st.report("expected at least one repetition")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    while st.cur().tk == Tk.EqualEqual || st.cur().tk == Tk.BangEqual {
+        op_list.push(st.advance())
+        r_list.push(capval_to_expr(st, parse_bitor(st)))
+    }
+    mk_eqchain_abi(st, [CapVal.Toks(op_list), CapVal.Nodes(r_list)])
+}
+
+fn parse_is_tail(st: PState) -> CapVal {
+    let _ = st.advance()
+    if st.cur().tk == Tk.Dot { let _ = st.advance() } else {
+        st.report("expected `.Variant` after `is`")
+    }
+    let v = if st.cur().tk == Tk.Identifier { CapVal.Tok(st.advance()) } else {
+        st.report_ident("expected `IDENT`")
+        CapVal.Tok(st.cur())
+    }
+    mk_is_abi(st, [v])
+}
+
+fn parse_in_tail(st: PState) -> CapVal {
+    let _ = st.advance()
+    let ir = parse_in_rhs(st)
+    ir
+}
+
+fn parse_in_rhs(st: PState) -> CapVal {
+    if st.cur().tk == Tk.LeftBracket {
+        mut a_list: List<ExprId> = []
+        let _ = st.advance()
+        if starts_expression(st) {
+            a_list.push(capval_to_expr(st, parse_expression(st)))
+            while st.cur().tk == Tk.Comma {
+                let _ = st.advance()
+                a_list.push(capval_to_expr(st, parse_expression(st)))
+            }
+        }
+        if st.cur().tk == Tk.RightBracket { let _ = st.advance() } else {
+            st.report("expected `]`")
+        }
+        return mk_inlist_abi(st, [CapVal.Nodes(a_list)])
+    }
+    if starts_bitor(st) {
+        let s = parse_bitor(st)
+        if st.cur().tk == Tk.DotDot { let _ = st.advance() } else {
+            st.report("expected `..` in range expression after `in`")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        let e = parse_bitor(st)
+        return mk_inrange_abi(st, [s, e])
+    }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
+fn parse_unary_prefix(st: PState) -> CapVal {
+    if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" {
+        let op = CapVal.Tok(st.advance())
+        let operand = parse_unary(st)
+        return unary_abi(st, [op, operand])
+    }
+    if st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) {
+        let op = CapVal.Tok(st.advance())
+        let operand = parse_unary(st)
+        return unary_abi(st, [op, operand])
+    }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
 fn parse_type_expr(st: PState) -> CapVal {
     mut r_list: List<TypeExpr> = []
     let l = parse_type_atom(st)
@@ -6387,7 +6410,7 @@ fn starts_name_or_splice(st: PState) -> bool {
 }
 
 fn starts_declaration(st: PState) -> bool {
-    st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "export" || st.cur().tk == Tk.DocComment || st.cur().tk == Tk.ModDocComment || lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) || st.cur().text == "break" || st.cur().text == "continue" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "shape" || st.cur().text == "enum" || st.cur().text == "type" || st.cur().text == "extern" || st.cur().text == "fn" || st.cur().text == "trait" || st.cur().text == "impl" || st.cur().text == "export" || st.cur().tk == Tk.DocComment || st.cur().tk == Tk.ModDocComment || lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().text == "spec" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) || st.cur().text == "break" || st.cur().text == "continue" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_export_decl(st: PState) -> bool {
@@ -6403,7 +6426,7 @@ fn starts_doc_decl(st: PState) -> bool {
 }
 
 fn starts_docable_decl(st: PState) -> bool {
-    st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "impl" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "export" || st.cur().tk == Tk.DocComment || lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "spec" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().tk == Tk.ModDocComment || lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) || st.cur().text == "break" || st.cur().text == "continue" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "impl" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "export" || st.cur().tk == Tk.DocComment || lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "spec" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().tk == Tk.ModDocComment || lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) || st.cur().text == "break" || st.cur().text == "continue" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_mdoc_decl(st: PState) -> bool {
@@ -6415,7 +6438,7 @@ fn starts_annot_decl(st: PState) -> bool {
 }
 
 fn starts_annotable_decl(st: PState) -> bool {
-    st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "impl" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "export" || st.cur().tk == Tk.DocComment || lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "spec" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().tk == Tk.ModDocComment || lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) || st.cur().text == "break" || st.cur().text == "continue" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.cur().text == "fn" || st.cur().text == "type" || st.cur().text == "enum" || st.cur().text == "trait" || st.cur().text == "extern" || st.cur().text == "shape" || st.cur().text == "impl" || lookahead_ok("comp_inst_shape", st) && (lookahead_ok("comp_inst_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_paren_shape", st) && (lookahead_ok("comp_paren_shape", st) && (st.cur().text == "component")) || lookahead_ok("comp_implements_inst", st) && (lookahead_ok("comp_implements_inst", st) && (st.cur().text == "component")) || st.cur().text == "component" || st.cur().text == "use" || st.cur().text == "mod" || st.cur().text == "export" || st.cur().tk == Tk.DocComment || lookahead_ok("annot_lead", st) && (st.cur().tk == Tk.At) || lookahead_ok("let_destructure", st) && (st.cur().text == "let") || st.cur().text == "let" || st.cur().text == "mut" || st.cur().text == "const" || st.cur().text == "spec" || st.cur().text == "select" || st.cur().text == "parallel" || st.cur().tk == Tk.ModDocComment || lookahead_ok("bare_comp_inst_raw", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("bare_comp_inst", st) && (st.cur().tk == Tk.Identifier) || st.cur().text == "break" || st.cur().text == "continue" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || lookahead_ok("for_destructure", st) && (st.cur().text == "for") || st.cur().text == "for" || st.cur().text == "while" || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || st.cur().text == "defer" || st.cur().text == "errdefer" || st.cur().text == "return" || lookahead_ok("stmt_block", st) && (st.cur().tk == Tk.LeftBrace) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_annot(st: PState) -> bool {
@@ -6603,7 +6626,7 @@ fn starts_stmt_block(st: PState) -> bool {
 }
 
 fn starts_expression(st: PState) -> bool {
-    st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_eq_tail(st: PState) -> bool {
@@ -6611,7 +6634,7 @@ fn starts_eq_tail(st: PState) -> bool {
 }
 
 fn starts_bitor(st: PState) -> bool {
-    st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_tagged_template(st: PState) -> bool {
@@ -6631,7 +6654,7 @@ fn starts_postfix_suffix(st: PState) -> bool {
 }
 
 fn starts_call_arg(st: PState) -> bool {
-    st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_block_expr(st: PState) -> bool {
@@ -6675,7 +6698,7 @@ fn starts_list_expr(st: PState) -> bool {
 }
 
 fn starts_list_comp(st: PState) -> bool {
-    st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_map_literal(st: PState) -> bool {
@@ -6687,7 +6710,7 @@ fn starts_table_lit(st: PState) -> bool {
 }
 
 fn starts_table_row(st: PState) -> bool {
-    st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_struct_lit_expr(st: PState) -> bool {
@@ -6720,6 +6743,18 @@ fn starts_isolated_expr(st: PState) -> bool {
 
 fn starts_channel_expr(st: PState) -> bool {
     st.cur().text == "channel"
+}
+
+fn starts_is_tail(st: PState) -> bool {
+    st.cur().text == "is"
+}
+
+fn starts_in_tail(st: PState) -> bool {
+    st.cur().text == "in"
+}
+
+fn starts_unary_prefix(st: PState) -> bool {
+    st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde)
 }
 
 fn starts_type_expr(st: PState) -> bool {
@@ -6795,7 +6830,7 @@ fn starts_num_pat(st: PState) -> bool {
 }
 
 fn starts_match_when_arm(st: PState) -> bool {
-    st.cur().text == "_" || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.cur().text == "_" || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_match_arm(st: PState) -> bool {
@@ -6815,7 +6850,7 @@ fn starts_when_expr(st: PState) -> bool {
 }
 
 fn starts_when_arm(st: PState) -> bool {
-    st.cur().text == "_" || st.cur().text == "else" || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.cur().text == "_" || st.cur().text == "else" || st.modes.quote_depth > 0 && lookahead_ok("tilde_ident_lbrace", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_match_table_stmt(st: PState) -> bool {

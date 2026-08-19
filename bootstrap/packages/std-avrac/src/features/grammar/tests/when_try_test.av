@@ -132,10 +132,10 @@ spec "t-47hc.13: @try-with-builds — labels + build now accepted (GAP3)" {
         src.contains("let o = ") && src.contains("let v = ")
     }
     then "the emitted @try branch applies the build on commit (not the build-less s_last)" {
-        // Unary lowers via emit_call_build's `unary_expr(...)` — the committed value is
+        // Unary lowers via its manifest adapter `unary_abi(...)` — the committed value is
         // the BUILD, reading the labels bound above, not the recognizer's `s_last`.
         let src = emit_rule("r = @try o:\"-\" v:NUMBER -> Unary(o, v) | NUMBER", "r")
-        src.contains("unary_expr(")
+        src.contains("unary_abi(")
     }
     then "the interpreter's @try-with-build rolls back cleanly (no env leak)" {
         // `1`: branch 1 (@try `stale:NUMBER STRING`) binds stale=1, then FAILS on the
