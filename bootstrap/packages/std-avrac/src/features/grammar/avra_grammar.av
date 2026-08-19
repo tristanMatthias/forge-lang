@@ -501,13 +501,15 @@ export fn avra_decl_dispatch_grammar() -> Grammar {
 /// generic args + nullable `T<A>?`. SELF-CONTAINED — types don't embed value
 /// expressions. The entry `type_expr` mirrors parse_type_expr (left-assoc
 /// union over type atoms).
-export fn avra_type_grammar() -> Grammar {
-    // The type SPINE keeps only the dispatch skeleton (`type_atom`) and the
-    // splice atom (splice doctrine: `~` is referenced from the engine
-    // ladder, so its build stays central) — every owned rule lives in its
-    // feature's "type"-family fragment (t-kd4y.3.5.10), composed here the
-    // way the statement and expression views fold theirs. Consumers keep
-    // calling THIS fn; the split is internal.
+/// The type SPINE — exactly "the type rules no feature owns" (the dispatch
+/// skeleton `type_atom` and the splice atom; splice doctrine: `~` is
+/// referenced from the engine ladder, so its build stays central). Every
+/// owned rule lives in its feature's "type"-family fragment
+/// (t-kd4y.3.5.10). Exported for the disjointness properties, which must
+/// inspect spine + fragments each exactly ONCE — passing the composed
+/// `avra_type_grammar` view there double-counts every migrated type rule
+/// (the same reason the expression side exports its spine, t-kd4y.3.4).
+export fn avra_type_spine_grammar() -> Grammar {
     let gp = grammar {
   // t-47hc.4.3 — `~var` in TYPE position, as its own atom rather than a widened
   // `named_type`. `consume_name_or_splice`'s encoding is the
@@ -525,6 +527,14 @@ export fn avra_type_grammar() -> Grammar {
   splice_type = @when(in_quote_body) "~" sn:IDENT ( opt:"?" )? -> MkSpliceType(sn, opt)
   type_atom  = splice_type | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
     }
+    grammar_checked(gp)
+}
+
+export fn avra_type_grammar() -> Grammar {
+    // The composed TYPE VIEW: the spine plus every "type"-family feature
+    // fragment. Consumers keep calling THIS fn; the spine/view split is
+    // internal (t-kd4y.3.5.10).
+    //
     // compose contract: the FIRST fragment's start rule is the START SYMBOL,
     // and run_grammar_type execs rules[0] as the entry. The entry `type_expr`
     // is union_type's rule (ownership follows the referencing rule), so its
@@ -532,7 +542,7 @@ export fn avra_type_grammar() -> Grammar {
     // splice_type and gated the WHOLE view (type_equivalence_test went 0/8:
     // even `int` failed at the entry).
     mut frags: List<Grammar> = []
-    mut rest: List<Grammar> = [grammar_checked(gp)]
+    mut rest: List<Grammar> = [avra_type_spine_grammar()]
     for g in feature_type_grammar_fragments() {
         if g.rules.length > 0 && g.rules[0].name == "type_expr" {
             frags.push(g)
