@@ -6,8 +6,8 @@
 // closure — so the F4012 import-closure invariant holds by construction;
 // the feature's grammar fragment stays in ../grammar.av.
 //
-// Neither row is `spanned`: the retired central arms took no sp_start, so
-// both nodes are span-free `add_leaf` rows on BOTH engines.
+// No row here is `spanned`: the retired central arms took no sp_start, so
+// every node is a span-free `add_leaf` row on BOTH engines.
 //
 // `MkMethodShorthand` is NOT here despite the family ticket listing it: its
 // only grammar reference is `comp_block_item` (the component instance body),
@@ -63,9 +63,31 @@ fn retype_self_param(st: PState, params: List<ParamEntry>, target: string) -> Li
     out
 }
 
+/// `type Name = Concrete` — the IMPL-side associated type. Same
+/// `Stmt.AssocType` row as the trait-side member (`MkAssocType`,
+/// features/trait_decl/lowering), with the type FILLED IN rather than left
+/// Unknown: a trait DECLARES the association and an impl DEFINES it, and
+/// `render_stmt` already tells the two apart on exactly that field.
+///
+/// A separate build NAME rather than a second arity of `MkAssocType`,
+/// because emit dispatches on the name alone — a 2-arg call rendered
+/// through the 1-arg arm would put the type where nothing reads it,
+/// silently, in the generated parser only (t-gnk7). Here rather than
+/// trait_decl by the referencing-rule doctrine: `impl_assoc` (this
+/// feature's gram) is the rule that spells it.
+export fn mk_assoc_type_def(st: PState, name: string, ty_cv: CapVal) -> CapVal {
+    let ty = type_expr_to_vtype(capval_to_texpr(st, ty_cv))
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.AssocType(name, ty)))
+}
+
+export fn mk_assoc_type_def_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_assoc_type_def(st, capval_tok_text(vals[0]), vals[1])
+}
+
 /// The impl feature's rows — bound under the EXISTING `Mk` names, so the
 /// gram text is untouched by the flip (the row name IS the gram ref).
 export fn impl_builds() -> List<BuilderBind> {
     bind_rows("features.impl_decl.lowering", [bind_row("MkImpl", "stmt", 3, false, "impl_build", impl_build),
-     bind_row("MkMethod", "stmt", 4, false, "method_build", method_build)])
+     bind_row("MkMethod", "stmt", 4, false, "method_build", method_build),
+     bind_row("MkAssocTypeDef", "stmt", 2, false, "mk_assoc_type_def_abi", mk_assoc_type_def_abi)])
 }

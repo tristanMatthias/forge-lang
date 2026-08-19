@@ -31,19 +31,22 @@ spec "impl as a LanguageFeature" {
     }
     then "the definition's builders validate against its own gram" {
         // Every build name the gram references resolves (feature-first, then
-        // the engine's central rows for the shared wrappers it borrows —
-        // MkDocAnnotated, MkAssocTypeDef), no orphan rows, no shadowing.
+        // the engine's central rows for the shared wrapper it borrows —
+        // MkDocAnnotated), no orphan rows, no shadowing.
         builder_validation_error(impl_decl_lang()) == ""
     }
-    then "MkImpl and MkMethod ride the manifest, owned by the feature" {
+    then "MkImpl, MkMethod and MkAssocTypeDef ride the manifest, owned by the feature" {
         manifest_row_desc("MkImpl") == "stmt/3/flat/features.impl_decl.lowering.impl_build" &&
-            manifest_row_desc("MkMethod") == "stmt/4/flat/features.impl_decl.lowering.method_build"
+            manifest_row_desc("MkMethod") == "stmt/4/flat/features.impl_decl.lowering.method_build" &&
+            manifest_row_desc("MkAssocTypeDef") == "stmt/2/flat/features.impl_decl.lowering.mk_assoc_type_def_abi"
     }
     then "the engine carries no impl classification any more" {
         // The purity-ledger half of the flip: a central row left behind would
         // mean the interpreter lowered through the engine while the generated
-        // parser called the feature adapter.
+        // parser called the feature adapter. MkAssocTypeDef joined the flip
+        // in t-kd4y.3.7 (the last unflipped feature-owned build).
         central_build_kind("MkImpl") == "" && central_build_kind("MkMethod") == ""
+            && central_build_kind("MkAssocTypeDef") == ""
     }
     then "the declared rules reach the whole-program view from the feature file" {
         let own = render_grammar(feature_gram(impl_decl_lang()))

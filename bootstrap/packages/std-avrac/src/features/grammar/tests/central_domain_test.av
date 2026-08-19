@@ -94,6 +94,21 @@ spec "t-kd4y.3.1: the purity ledger classifies the central surface exactly" {
         //   MkAnnotatedArgs, feature-owned): toy vocabulary, the
         //   field_suffix class. Tableless, so it also rides
         //   central_tableless_builds.
-        engine_core_builds().length == 14
+        // The deliberate fifteenth-through-twentieth (t-kd4y.3.7, the drain's
+        // endpoint): the splice vocabulary — MkSplice / MkSpliceStruct /
+        //   MkSpliceArm / MkSpliceName / MkSpliceType / MkPlainName,
+        //   reclassified from the now-empty unflipped list. The rules that
+        //   spell them never left the engine (`~` branches of the spine
+        //   `unary` and the type spine's `splice_type`, `name_or_splice`
+        //   dispatch, the quote-arm machinery): the fold_postfix_with
+        //   rationale verbatim, six times.
+        engine_core_builds().length == 20
+    }
+    then "the drain is COMPLETE — no feature-owned build remains central" {
+        // t-kd4y.3's endpoint: every build the engine still carries is
+        // declared engine-core with a per-name rationale. A name appearing
+        // in unflipped_builds again is a regression against the
+        // everything-is-a-feature ruling, not a backlog entry.
+        unflipped_builds().length == 0
     }
 }
