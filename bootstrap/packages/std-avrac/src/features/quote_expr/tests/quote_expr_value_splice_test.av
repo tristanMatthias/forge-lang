@@ -13,9 +13,27 @@
 
 use @std.avrac.test_runner.{write_fixture_and_run}
 
+/// write_fixture_and_run + capture-on-failure: when the needle is absent,
+/// print the child's WHOLE output so a CI-only failure is diagnosable from
+/// the log. The t-kdyj.14 lesson, applied before the second occurrence
+/// instead of after: this spec failed seed-train-verify on #1275 (rc-strict
+/// green, same tree) with nothing but a bare contains()=false — while the
+/// run's [resources] summary showed critical pressure (1450 pressure
+/// deferrals, min avail 704MB), which is exactly the environment where a
+/// fixture's child compile gets ceiling-tripped or OOM-killed and its
+/// output is the report, not the program's prints.
+fn probe(path: string, src: string, needle: string) -> bool {
+    let out = write_fixture_and_run(path, src)
+    if !out.contains(needle) {
+        println("fixture ${path} missing `${needle}` — child output follows:")
+        println(out)
+    }
+    out.contains(needle)
+}
+
 spec "quote: `~(expr)` splices a computed value as a literal expression (rmzs GAP2)" {
     then "a computed STRING splices as a string-literal argument" {
-        let out = write_fixture_and_run("/tmp/avra_quote_expr_splice_str.av",
+        probe("/tmp/avra_quote_expr_splice_str.av",
             "use @std.avrac.core.{Stmt, StmtId}\n" +
             "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
             "@comptime\n" +
@@ -26,13 +44,12 @@ spec "quote: `~(expr)` splices a computed value as a literal expression (rmzs GA
             "}\n" +
             "@expand(build)\n" +
             "fn placeholder() {}\n" +
-            "fn main() {}\n")
-        out.contains("PREFIX-widget")
+            "fn main() {}\n", "PREFIX-widget")
     }
     then "a computed INT splices as a NUMBER literal (arithmetic proves it, not a string)" {
         // If the splice pasted a string, `+ 10` would not yield 13 — the result
         // pins that `~(1 + 2)` became the integer literal 3, an expression.
-        let out = write_fixture_and_run("/tmp/avra_quote_expr_splice_int.av",
+        probe("/tmp/avra_quote_expr_splice_int.av",
             "use @std.avrac.core.{Stmt, StmtId}\n" +
             "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
             "@comptime\n" +
@@ -42,13 +59,12 @@ spec "quote: `~(expr)` splices a computed value as a literal expression (rmzs GA
             "}\n" +
             "@expand(build)\n" +
             "fn placeholder() {}\n" +
-            "fn main() {}\n")
-        out.contains("13")
+            "fn main() {}\n", "13")
     }
     then "a computed FLOAT splices as a FloatLit (the double branch, not a truncated int)" {
         // A float-shaped number must become Expr.FloatLit so codegen emits a
         // `double`; 1.5 + 0.5 → 2.0, and 2.0 * 2.0 = 4.0 prints as a float.
-        let out = write_fixture_and_run("/tmp/avra_quote_expr_splice_float.av",
+        probe("/tmp/avra_quote_expr_splice_float.av",
             "use @std.avrac.core.{Stmt, StmtId}\n" +
             "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
             "@comptime\n" +
@@ -58,13 +74,12 @@ spec "quote: `~(expr)` splices a computed value as a literal expression (rmzs GA
             "}\n" +
             "@expand(build)\n" +
             "fn placeholder() {}\n" +
-            "fn main() {}\n")
-        // Distinctive prefix so the assertion can't be satisfied by stray "4"s in
-        // build/error output when the fixture fails — 2.0 * 2.0 = 4.
-        out.contains("g2float=4")
+            "fn main() {}\n", "g2float=4")
+        // Distinctive needle so the assertion can't be satisfied by stray "4"s
+        // in build/error output when the fixture fails — 2.0 * 2.0 = 4.
     }
     then "a computed BOOL splices as a bool literal (drives an if)" {
-        let out = write_fixture_and_run("/tmp/avra_quote_expr_splice_bool.av",
+        probe("/tmp/avra_quote_expr_splice_bool.av",
             "use @std.avrac.core.{Stmt, StmtId}\n" +
             "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
             "@comptime\n" +
@@ -74,7 +89,6 @@ spec "quote: `~(expr)` splices a computed value as a literal expression (rmzs GA
             "}\n" +
             "@expand(build)\n" +
             "fn placeholder() {}\n" +
-            "fn main() {}\n")
-        out.contains("bool_true_branch")
+            "fn main() {}\n", "bool_true_branch")
     }
 }

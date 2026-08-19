@@ -2689,19 +2689,9 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // The binding declarations are manifest-owned (features/let_stmt
         // lowering, t-kd4y.3.2.3) — emit_call_build finds their rows before
         // consulting these central templates.
-        "MkCompConfig" -> "mk_comp_config_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
-        "MkCompConfigPair" -> "mk_comp_config_pair_g(st, capval_tok_text(${args[0]}), capval_to_expr(st, ${args[1]}))"
-        "MkComponentBlock" -> "mk_component_block_g(st, capval_tok_text(${args[0]}), capval_tok_text(${args[1]}), ${args[2]}_list, ${args[3]}_list)"
-        "MkRawComponentBlock" -> "mk_raw_component_block_g(st, capval_tok_text(${args[0]}), capval_tok_text(${args[1]}), capval_tok_text(${args[2]}))"
-        "MkMethodShorthand" -> "mk_method_shorthand_g(st, capval_tok_text(${args[0]}), ${args[1]}_list)"
-        "MkChildrenSlot" -> "mk_children_slot_g(st, capval_tok_text(${args[0]}), ${args[1]})"
-        "MkCompField" -> "mk_comp_field_g(st, capval_tok_text(${args[0]}), ${args[1]}, ${args[2]}, capval_present(${args[2]}))"
-        "MkComponentDef" -> "mk_component_def_g(st, capval_tok_text(${args[0]}), capval_tok_texts(${args[1]}), ${args[2]}, ${args[3]}, capval_tok_text(${args[4]}), capval_present(${args[4]}), ${args[5]}_list)"
-        "MkTraitList" -> "mk_trait_list(CapVal.Toks(${args[0]}_list))"
-        "MkCompBodyMarker" -> "mk_comp_body_marker(st, capval_tok_text(${args[0]}))"
-        "MkCompConfigList" -> "mk_comp_config_list(CapVal.CCfgs(${args[0]}_list))"
-        "MkChildrenSlotList" -> "mk_children_slot_list(CapVal.CSlots(${args[0]}_list))"
-        "MkComponentParenDef" -> "mk_component_paren_def_g(st, capval_tok_text(${args[0]}), CapVal.PEntries(${args[1]}_list), capval_tok_texts(${args[2]}), ${args[3]}, ${args[4]}_list)"
+        // The COMPONENT family (all thirteen builds) is manifest-owned
+        // (features/component_decl lowering, t-kd4y.3.3.5) — emit_call_build
+        // finds its rows before these central templates.
         "MkAnn" -> "mk_ann_g(capval_tok_text(${args[0]}), ${args[1]}_list)"
         "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
         // MkImpl / MkMethod — feature-owned (features/impl_decl, t-kd4y.3.3.4).
@@ -3228,9 +3218,9 @@ fn kind_row(kind: string) -> KindRow {
     if kind == "finit" { return KindRow { coerce: "capval_to_finit", elem: "FieldInit", list_ctor: "CapVal.FInits" } }
     if kind == "warm" { return KindRow { coerce: "capval_to_when_arm", elem: "WhenArm", list_ctor: "CapVal.WArms" } }
     if kind == "sarm" { return KindRow { coerce: "capval_to_select_arm", elem: "SelectArm", list_ctor: "CapVal.SArms" } }
-    if kind == "ccfg" { return KindRow { coerce: "capval_to_comp_config", elem: "CompConfig", list_ctor: "" } }
-    if kind == "cpair" { return KindRow { coerce: "capval_to_comp_config_pair", elem: "CompConfigPair", list_ctor: "" } }
-    if kind == "cslot" { return KindRow { coerce: "capval_to_children_slot", elem: "ChildrenSlot", list_ctor: "" } }
+    if kind == "ccfg" { return KindRow { coerce: "capval_to_comp_config", elem: "CompConfig", list_ctor: "CapVal.CCfgs" } }
+    if kind == "cpair" { return KindRow { coerce: "capval_to_comp_config_pair", elem: "CompConfigPair", list_ctor: "CapVal.CPairs" } }
+    if kind == "cslot" { return KindRow { coerce: "capval_to_children_slot", elem: "ChildrenSlot", list_ctor: "CapVal.CSlots" } }
     if kind == "ann" { return KindRow { coerce: "capval_to_ann", elem: "Annotation", list_ctor: "" } }
     KindRow { coerce: "capval_to_expr", elem: "ExprId", list_ctor: "CapVal.Nodes" }
 }

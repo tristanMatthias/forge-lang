@@ -1,0 +1,100 @@
+// The component LanguageFeature definition (t-kd4y.3.3.5): component_lang
+// carries the whole fragment + all THIRTEEN manifest rows. `body_item`
+// stays central (fn/trait/impl method bodies reference it) and
+// `mk_component_def_with_params` stays central-exported (its registration
+// hooks close over the host Parser — a parse type no lowering may import).
+use @std.avrac.features.component_decl.{component_lang}
+use @std.avrac.features.{feature_keywords, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+
+spec "component as a LanguageFeature" {
+    then "the keyword derives from the declared grammar" {
+        mut has_component = false
+        for k in feature_keywords(component_lang()) {
+            if k == "component" { has_component = true }
+        }
+        has_component
+    }
+    then "the declared rules reach the composed whole-program view" {
+        // Rule DEFINITIONS first, rendered build text second: a dangling
+        // reference renders identically and the interpreter falls back
+        // silently (the #1028 dead-flip shape), so contains() alone cannot
+        // distinguish a composed rule from an unresolved name. Raised in
+        // review of #1275.
+        let prog_g = avra_program_grammar()
+        mut defined = 0
+        for r in prog_g.rules {
+            if r.name == "comp_header" { defined = defined + 1 }
+            if r.name == "component_decl" { defined = defined + 1 }
+            if r.name == "comp_block_item" { defined = defined + 1 }
+            if r.name == "comp_field" { defined = defined + 1 }
+        }
+        let prog = render_grammar(prog_g)
+        defined == 4
+            && prog.contains("MkComponentDef(n, ci, cfg, cs, bm, body)")
+            && prog.contains("MkComponentParenDef(pn, pps, pci, pcfg, pbody)")
+            && prog.contains("MkRawComponentBlock(rn, ri, rb)")
+            && prog.contains("MkMethodShorthand(m, mb)")
+            && prog.contains("MkCompField(f, ty, init)")
+    }
+    then "the decl-fragment registry serves the component rules" {
+        mut header = false
+        mut inst = false
+        mut field = false
+        for g in feature_decl_grammar_fragments() {
+            for r in g.rules {
+                if r.name == "comp_header" { header = true }
+                if r.name == "bare_comp_inst" { inst = true }
+                if r.name == "comp_field" { field = true }
+            }
+        }
+        header && inst && field
+    }
+    then "all thirteen rows ride the manifest with their exact kinds and arities" {
+        mut rows = 0
+        mut clean = true
+        for b in feature_builders() {
+            let row = "${b.name}/${b.kind}/${string(b.arity)}"
+            mut expect = ""
+            if b.name == "MkComponentDef" { expect = "MkComponentDef/stmt/6" }
+            if b.name == "MkComponentParenDef" { expect = "MkComponentParenDef/stmt/5" }
+            if b.name == "MkComponentBlock" { expect = "MkComponentBlock/stmt/4" }
+            if b.name == "MkRawComponentBlock" { expect = "MkRawComponentBlock/stmt/3" }
+            if b.name == "MkMethodShorthand" { expect = "MkMethodShorthand/stmt/2" }
+            if b.name == "MkCompField" { expect = "MkCompField/stmt/3" }
+            if b.name == "MkCompBodyMarker" { expect = "MkCompBodyMarker/tok/1" }
+            if b.name == "MkTraitList" { expect = "MkTraitList/toks/1" }
+            if b.name == "MkCompConfig" { expect = "MkCompConfig/ccfg/3" }
+            if b.name == "MkCompConfigPair" { expect = "MkCompConfigPair/cpair/2" }
+            if b.name == "MkCompConfigList" { expect = "MkCompConfigList/ccfgs/1" }
+            if b.name == "MkChildrenSlot" { expect = "MkChildrenSlot/cslot/2" }
+            if b.name == "MkChildrenSlotList" { expect = "MkChildrenSlotList/cslots/1" }
+            if expect != "" {
+                rows = rows + 1
+                if row != expect { clean = false }
+                if b.module != "features.component_decl.lowering" { clean = false }
+                if b.spanned { clean = false }
+            }
+        }
+        rows == 13 && clean
+    }
+    then "NOTHING component-shaped is left central" {
+        // All THIRTEEN — the same set the manifest spec above pins. The list
+        // was eleven for a while (MkComponentParenDef + MkRawComponentBlock
+        // missing), which left a stale central arm for either invisible to
+        // the guard its title promises. Raised in review of #1275.
+        central_build_kind("MkComponentDef") == ""
+            && central_build_kind("MkComponentParenDef") == ""
+            && central_build_kind("MkComponentBlock") == ""
+            && central_build_kind("MkRawComponentBlock") == ""
+            && central_build_kind("MkCompConfig") == ""
+            && central_build_kind("MkCompConfigPair") == ""
+            && central_build_kind("MkChildrenSlot") == ""
+            && central_build_kind("MkCompConfigList") == ""
+            && central_build_kind("MkChildrenSlotList") == ""
+            && central_build_kind("MkTraitList") == ""
+            && central_build_kind("MkCompBodyMarker") == ""
+            && central_build_kind("MkMethodShorthand") == ""
+            && central_build_kind("MkCompField") == ""
+    }
+}
