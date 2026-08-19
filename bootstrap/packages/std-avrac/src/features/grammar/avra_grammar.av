@@ -125,85 +125,42 @@ export fn avra_expr_spine_grammar() -> Grammar {
   brace_expr   = @peek(brace_map) map_literal | block_expr
   // `map_literal` lives with the map_lit feature (gram_family = "expr",
   // t-kd4y.3.5.4) — `brace_expr` above dispatches to it by name.
-  // t-47hc.33 — the postfix chain.
+  // t-47hc.33 — the postfix chain, as PURE DISPATCH (t-kd4y.3.5.8).
   //
-  // Each form reproduces the postfix-step ENTRY GUARD exactly:
-  // token + same-line (`^`) + mode reads.
-  postfix_suffix = @when(allow_dot_postfix) ^"!" -> MkForceUnwrap()
-                 | @when(allow_dot_postfix) ^"?" -> MkTrySuffix()
-                 | c:"catch" ( "(" @require b:IDENT @require ")" )? @require "{"
-                   @on(allow_dot_postfix) body:declaration* @require "}"
-                   @expect("IDENT", "expected error binding name after `catch (`")
-                   @expect(")", "expected `)` after catch binding")
-                   @expect("{", "expected `{` after catch")
-                   @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
-                 | @peek(qdot_method_call) "?." n:FIELDNAME "(" @on(allow_it_sugar) ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkOptMethodCall(n, a)
-                 | @peek(qdot_plain_field) "?." n:FIELDNAME -> MkOptChain(n)
-                 | @peek(dot_enum_ctor) @when(base_upper_ident) @when(dot_postfix_ok) "." n:FIELDNAME "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkEnumCtorSuffix(n, a)
-                 | @peek(dot_plain_field) @when(dot_postfix_ok) "." n:FIELDNAME -> MkFieldAccess(n)
-                 | ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
-                 | @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
-                 // A `.` that starts a postfix step but COMPLETES none. Every `.`-led branch
-                 // above is @peek-gated on a valid field name, so `a.` (trailing dot, or a dot
-                 // followed by anything unusable) satisfies none of them — and with no
-                 // fallback NO branch owns the
-                 // diagnostic and the stray `.` is re-read at statement level (F0001 vs
-                 // the pinned F0040, and a different recovery tree). @fallback makes this the
-                 // unguarded last native `.` branch, exactly as index_tail's `]` branch owns
-                 // the message for a token that starts neither of ITS forms.
-                 | @fallback @when(dot_postfix_ok) "." @require n:FIELDNAME @expect("FIELDNAME", "expected field name after `.`") -> MkFieldAccess(n)
-                 | ^"(" @on_if(base_field_access, allow_it_sugar) ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
-                 | @try @when(base_callable) "<" ( ta:type_expr ( "," ta:type_expr )* )? ">" "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" -> MkGenericCallSuffix(ta, a)
-  call_arg = @on(allow_dot_postfix) e:expression -> MkCallArg(e)
-  // The `f<T>(args)` branch is the ONE speculative form in the chain, and every marker on
-  // it is chosen against try_parse_generic_call (features/generics/parser.av) rather than
-  // against its `(`-led neighbour:
-  //   `@try` and NO `@cut`. `<` is also the comparison operator, so the branch must be
-  //     able to un-decide: `a < b` is not a generic call. try_parse_generic_call
-  //     backtracks on EVERY
-  //     failure past the `<` — a type list that doesn't close, a missing `(`, a bad arg
-  //     list, a missing `)` all hit the same `restore_state` — so there is no point at
-  //     which it owns its diagnostics, and a `@cut` would invent one. Placing a cut after
-  //     `">" "("` reads as the natural commit point and is exactly the divergence to
-  //     avoid: it would report on `f<int>(` + garbage where the rollback lets
-  //     the tokens re-read as a comparison chain.
-  //   No `@require` / `@expect` for the same reason: inside a `@try` before a cut they
-  //     degrade to plain reporting (the rollback already IS the abort), so they would be
-  //     dead markers that only suggest a commit point exists.
-  //   No `^`. The `[` and `(` branches are same-line gated; the `Tk.Less` arm is
-  //     not (`check(Tk.Less) && is_callable(result)` is the whole entry guard), so adding
-  //     one here would reject a line-broken turbofish that must be accepted.
-  //   `@when(base_callable)` is the `is_callable(result)` conjunct — Ident, QualifiedIdent
-  //     or FieldAccess. It reads the folded BASE, not a mode, which is why it is a
-  //     base_pred (executor.av) shared by both engines rather than a modes_flag.
-  //   The type list is OPTIONAL as a whole: parse_type_name_list returns early on `>`, so
-  //     `f<>(x)` parses, and a bare `ta:type_expr ( "," ta:type_expr )*` would reject it.
-  //   No `@on_if(base_field_access, allow_it_sugar)`. The plain-call branch carries it
-  //     because the `(` arm sets `allow_it_sugar = is_method || saved_it`;
-  //     try_parse_generic_call never touches the mode, so the sugar must stay at whatever
-  //     the enclosing context already had. `call_arg` is still the right body — the same
-  //     arg list is reached through parse_arg_list_ids, which sets allow_dot_postfix
-  //     and leaves the it-wrap to the same `allow_it_sugar` read mk_call_arg performs.
-  // FIELDNAME, not IDENT, in every field-name position (t-47hc.33.1). `consume_field_name`
-  // accepts a reserved-but-inactive keyword as well as an identifier, so `x.ref` /
-  // `x?.owned` / `Type.move(1)` are legal field access. The DSL
-  // could not spell that set: `IDENT` is `Tk.Identifier` alone (too narrow) and the coarse
-  // `KW` kind is EVERY keyword (far too wide, and it would swallow `x.if`, which is
-  // rejected). `FIELDNAME` reads the shared `tk_is_field_name` — `consume_field_name`'s
-  // own predicate —
-  // in the executor, and lowers to the same Tk pair in emit.
-  // MARKER ORDER IS LOAD-BEARING on the two `.`-led branches. `.field` and `.0` share a
-  // FIRST token, and the ambiguity guard exempts a pair only when the earlier branch LEADS
-  // with `@peek` — first_follow.seq_is_peek_led inspects `items[0].prim` and nothing else.
-  // Both guards are zero-width and ANDed, so `@peek @when` and `@when @peek` accept exactly
-  // the same inputs; only the first spelling tells the guard the overlap is resolved by
-  // LOOKAHEAD (which partitions the input) rather than by ambient state (which does not).
-  // Two sequences because the closing `]` message differs by whether a `..` was seen and
-  // `@expect` keys on the token. Dispatch is on `..` (FIRST), not speculation — the
-  // index expression is parsed exactly once. The `]` branch is `@fallback` so it owns
-  // the message for a token that starts NEITHER (`a[1 2]`).
-  index_tail  = ".." e:expression @require "]" @expect("]", "expected `]` after slice") -> e
-              | @fallback @require "]" @expect("]", "expected `]` after index") -> MkNone()
+  // Every suffix form lives with its feature — unwrap_suffix (`!`/`?`) +
+  // catch_suffix + optcall_suffix/optchain_suffix ride features/null_safety,
+  // enum_ctor_suffix rides features/struct_decl's enum_ctor_lang,
+  // tuple_suffix features/tuples, field_suffix (`.field` + the `@fallback`
+  // `.` diagnostic owner) features/struct_decl's field_access_lang, and
+  // index_suffix / call_suffix / call_arg / index_tail features/calls. The
+  // spine keeps only WHICH rules the chain tries, and in what order — the
+  // same skeleton/content split as `unary` and `eq_tail`.
+  //
+  // ORDER + the zero-width gates are load-bearing on the `.`-led branches:
+  // enum_ctor_suffix / tuple_suffix / field_suffix share the `.` FIRST, and
+  // the ambiguity guard exempts an overlapping pair only when the earlier
+  // branch LEADS with `@peek` (first_follow.seq_is_peek_led inspects
+  // items[0].prim and nothing else) — hence the explicit dispatch-level
+  // peeks, each duplicating the referenced rule's own leading gate
+  // (zero-width and ANDed, so the duplication accepts exactly the same
+  // inputs). field_suffix goes LAST of the three because its `@fallback`
+  // branch owns the diagnostic for a `.` that completes no step — sorted
+  // earlier it would swallow `.0` / `.Variant(` before their peeks ran.
+  // The `?.`-led pair is the same shape read in opposite directions:
+  // optcall_suffix leads with @peek(qdot_method_call), optchain_suffix
+  // takes the remainder. Every step build is chain-threaded
+  // (postfix_step_node), so each sub-rule gets the snap at ITS entry —
+  // between dispatch entry and sub-rule entry only zero-width gates run,
+  // so the frozen base is byte-identical to the retired inline form's.
+  postfix_suffix = unwrap_suffix
+                 | catch_suffix
+                 | @peek(qdot_method_call) optcall_suffix
+                 | optchain_suffix
+                 | @peek(dot_enum_ctor) enum_ctor_suffix
+                 | @peek(dot_number) tuple_suffix
+                 | field_suffix
+                 | index_suffix
+                 | call_suffix
   // At least ONE field: `parse_field_init_list` opens with
   // `consume_identifier("expected field name")?`, so `a with { 1 }` is an ERROR there.
   // A `@peek`-gated `*` made it optional instead — the loop took zero iterations, `with`
@@ -213,10 +170,10 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // `with_suffix` lives with the with feature (with_expr_lang,
   // gram_family = "expr", t-kd4y.3.5.6) — every unary branch's suffix
   // tail references it by name; fold_postfix_with stays engine-core.
-  // `variant_ctor` lives with the enum_ctor feature (features/struct_decl's
-  // enum_ctor_lang, gram_family = "expr", t-kd4y.3.5.6). The postfix
-  // `.Variant(args)` SUFFIX branch above stays with the chain until the
-  // .3.5.8 postfix flip.
+  // `variant_ctor` + the postfix `.Variant(args)` SUFFIX rule
+  // (enum_ctor_suffix) live with the enum_ctor feature (features/
+  // struct_decl's enum_ctor_lang, gram_family = "expr", t-kd4y.3.5.6 +
+  // .3.5.8).
   // channel_expr lives with its feature (features/channels, gram_family =
   // "expr", t-kd4y.3.5.1) — referenced from the ladder above by name.
   // The `quote` family lives with its feature (features/quote_expr, gram_family

@@ -1,0 +1,136 @@
+// The postfix-family LanguageFeature definitions (t-kd4y.3.5.8): twelve
+// rows across eight carriers — one NEW syntax-only feature (calls: the
+// apply forms + the shared call_arg + index_tail) and six conversions
+// that EMPTY init_features' legacy `Feature` remainder (try, catch,
+// optional_chain, optional_method_call, tuple_index, field_access), plus
+// enum_ctor_lang growing the `Type.Variant(args)` SUFFIX reading beside
+// its contextual `.Variant` rule. The engine keeps only the chain
+// MACHINERY: postfix_suffix as PURE DISPATCH, postfix_step_node /
+// snap_postfix_step / the step-name lists, apply_it_sugar, and MkNone.
+// The toy PARTIAL-suffix builds (field_suffix/index_suffix/call_suffix —
+// fold_postfix's user-grammar vocabulary) and MkExprBlock (spelled only
+// by the spine's block_expr) RECLASSIFIED engine-core, the
+// fold_postfix_with rationale.
+use @std.avrac.features.calls.{calls_lang}
+use @std.avrac.features.null_safety.{try_lang, catch_lang, optional_chain_lang, optional_method_call_lang}
+use @std.avrac.features.tuples.{tuple_index_lang}
+use @std.avrac.features.struct_decl.{field_access_lang}
+use @std.avrac.features.{feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.parse.{oracle_expr}
+
+spec "postfix families as LanguageFeatures" {
+    then "the new carrier and the six conversions have surface metadata" {
+        let ca = calls_lang()
+        let tr = try_lang()
+        let ct = catch_lang()
+        let oc = optional_chain_lang()
+        let om = optional_method_call_lang()
+        let ti = tuple_index_lang()
+        let fa = field_access_lang()
+        ca.title.contains("calls") && ca.docs.contains("speculatively")
+            && tr.docs.contains("propagates") && tr.snippet.contains("?")
+            && ct.docs.contains("fallback") && oc.docs.contains("non-null")
+            && om.docs.contains("it") && ti.docs.contains("positions")
+            && fa.docs.contains("field")
+    }
+    then "the suffix rules reach the composed whole-program view" {
+        let prog = render_grammar(avra_program_grammar())
+        prog.contains("MkForceUnwrap()") && prog.contains("MkTrySuffix()")
+            && prog.contains("MkCatchSuffix(c, b, body)")
+            && prog.contains("MkOptMethodCall(n, a)")
+            && prog.contains("MkOptChain(n)")
+            && prog.contains("MkEnumCtorSuffix(n, a)")
+            && prog.contains("MkTupleIndex(t)")
+            && prog.contains("MkFieldAccess(n)")
+            && prog.contains("MkIndexSuffix(i, t)")
+            && prog.contains("MkCallSuffix(a)")
+            && prog.contains("MkGenericCallSuffix(ta, a)")
+            && prog.contains("MkCallArg(e)")
+    }
+    then "the twelve rows ride the manifest and NOTHING is left central" {
+        mut owners = ""
+        for b in feature_builders() {
+            if b.name == "MkTrySuffix" || b.name == "MkForceUnwrap" || b.name == "MkCatchSuffix"
+                || b.name == "MkOptChain" || b.name == "MkOptMethodCall" || b.name == "MkTupleIndex"
+                || b.name == "MkFieldAccess" || b.name == "MkEnumCtorSuffix" || b.name == "MkIndexSuffix"
+                || b.name == "MkCallSuffix" || b.name == "MkGenericCallSuffix" || b.name == "MkCallArg" {
+                owners = owners + "${b.name}=${b.module}/${if b.spanned { "sp" } else { "flat" }} "
+            }
+        }
+        // ALL flat: every core threads the chain state (postfix_step_node /
+        // st.postfix_step_base), never st.build_sp — the chain loop's snap
+        // owns the span, so no row declares `spanned`.
+        owners.contains("MkTrySuffix=features.null_safety.lowering/flat")
+            && owners.contains("MkForceUnwrap=features.null_safety.lowering/flat")
+            && owners.contains("MkCatchSuffix=features.null_safety.lowering/flat")
+            && owners.contains("MkOptChain=features.null_safety.lowering/flat")
+            && owners.contains("MkOptMethodCall=features.null_safety.lowering/flat")
+            && owners.contains("MkTupleIndex=features.tuples.lowering/flat")
+            && owners.contains("MkFieldAccess=features.struct_decl.lowering/flat")
+            && owners.contains("MkEnumCtorSuffix=features.struct_decl.lowering/flat")
+            && owners.contains("MkIndexSuffix=features.calls.lowering/flat")
+            && owners.contains("MkCallSuffix=features.calls.lowering/flat")
+            && owners.contains("MkGenericCallSuffix=features.calls.lowering/flat")
+            && owners.contains("MkCallArg=features.calls.lowering/flat")
+            && central_build_kind("MkTrySuffix") == ""
+            && central_build_kind("MkForceUnwrap") == ""
+            && central_build_kind("MkCatchSuffix") == ""
+            && central_build_kind("MkOptChain") == ""
+            && central_build_kind("MkOptMethodCall") == ""
+            && central_build_kind("MkTupleIndex") == ""
+            && central_build_kind("MkFieldAccess") == ""
+            && central_build_kind("MkEnumCtorSuffix") == ""
+            && central_build_kind("MkIndexSuffix") == ""
+            && central_build_kind("MkCallSuffix") == ""
+            && central_build_kind("MkGenericCallSuffix") == ""
+            && central_build_kind("MkCallArg") == ""
+    }
+    then "the engine keeps the chain machinery and the toy-partial vocabulary" {
+        // The lowercase names are the DSL's fold_postfix PARTIAL builders
+        // (user-grammar vocabulary), NOT the production rules of the same
+        // names — builds and rules are separate namespaces. MkExprBlock and
+        // MkNone stay engine too (block_expr's build; the absent-optional
+        // marshalling value index_tail spells).
+        central_build_kind("field_suffix") == "expr"
+            && central_build_kind("index_suffix") == "expr"
+            && central_build_kind("call_suffix") == "expr"
+            && central_build_kind("MkExprBlock") == "expr"
+            && central_build_kind("fold_postfix") == "expr"
+            && central_build_kind("fold_postfix_with") == "expr"
+    }
+}
+
+// Representative postfix shapes through the PRODUCTION engine — every
+// flipped form exercised end-to-end.
+spec "postfix shapes parse to the expected trees" {
+    then "call, generic call, index, and slice build their nodes" {
+        let c = oracle_expr("f(1, 2)") ?? "<parse error>"
+        let g = oracle_expr("id<int>(x)") ?? "<parse error>"
+        let ix = oracle_expr("xs[0]") ?? "<parse error>"
+        let sl = oracle_expr("xs[1..3]") ?? "<parse error>"
+        !c.contains("error") && !g.contains("error") && !ix.contains("error") && !sl.contains("error")
+            && c.contains("f") && g.contains("id") && ix.contains("xs") && sl.contains("xs")
+    }
+    then "a `<` without a viable generic call stays a comparison" {
+        let cmp = oracle_expr("a < b") ?? "<parse error>"
+        !cmp.contains("error") && cmp.contains("a") && cmp.contains("b")
+    }
+    then "the null-safety chain forms build their nodes" {
+        let tr = oracle_expr("f()?") ?? "<parse error>"
+        let fu = oracle_expr("x!") ?? "<parse error>"
+        let oc = oracle_expr("obj?.field") ?? "<parse error>"
+        let om = oracle_expr("xs?.map(it * 2)") ?? "<parse error>"
+        !tr.contains("error") && !fu.contains("error") && !oc.contains("error") && !om.contains("error")
+            && oc.contains("field") && om.contains("map")
+    }
+    then "the `.`-led readings stay apart — field, tuple index, enum ctor" {
+        // Exact node kinds, not spellings: all three dispatch off the same `.`
+        // token, so the regression this pins is one reading swallowing another.
+        let fa = oracle_expr("p.name") ?? "<parse error>"
+        let ti = oracle_expr("t.0") ?? "<parse error>"
+        let ec = oracle_expr("Color.Green(9)") ?? "<parse error>"
+        fa == "(field p name)" && ti == "(tuple-idx t 0)"
+            && ec.contains("(ctor Color.Green") && ec.contains("9")
+    }
+}

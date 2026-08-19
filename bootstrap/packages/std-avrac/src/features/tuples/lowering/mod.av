@@ -1,0 +1,23 @@
+// The tuple-index LOWERING (t-kd4y.3.5.8): the postfix `.0` step's core +
+// ABI adapter + manifest row. The core threads the engine's chain state
+// (postfix_step_node reads the frozen step base), NOT st.build_sp — the
+// row is FLAT and the chain loop's snap owns the span. Imports ONLY
+// features.grammar + core (F4012).
+use core.{Expr, ExprId}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_tok_text, postfix_step_node}
+
+/// `expr.0` — tuple index (t-47hc.33 form 4). The hand takes the NUMBER lexeme and
+/// `int()`s it, so a float-shaped `.0.1` lexes as one NUMBER and would differ; the
+/// grammar terminal is the same NUMBER kind, so the same lexeme reaches `int` here.
+export fn mk_tuple_index(st: PState, tcap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.TupleIndex(st.postfix_step_base, int(capval_tok_text(tcap))))
+}
+
+export fn mk_tuple_index_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_tuple_index(st, vals[0]))
+}
+
+/// tuple_index_lang's row (its `tuple_suffix` rule spells it).
+export fn tuple_index_builds() -> List<BuilderBind> {
+    bind_rows("features.tuples.lowering", [bind_row("MkTupleIndex", "expr", 1, false, "mk_tuple_index_abi", mk_tuple_index_abi)])
+}

@@ -5,10 +5,10 @@
 // family; parse/tests/gen_parser_regen_test.av asserts it equals
 // emit_parser_file() so a grammar edit that isn't regenerated fails the suite.
 
-use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, error_stmt_of, fold_postfix_with_expr, fold_type_union, gensym_token, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assoc_type_def, mk_binary, mk_block, mk_call_arg, mk_call_suffix, mk_catch_suffix, mk_doc_annotated, mk_dyn_type, mk_enum_ctor_suffix, mk_export_decl, mk_expr_block, mk_field_access, mk_fn_type, mk_force_unwrap, mk_generic_call_suffix, mk_grammar_block_abi, mk_index_suffix, mk_module_doc, mk_named_type, mk_none_cap, mk_opt_chain, mk_opt_method_call, mk_paren_type, mk_plain_name, mk_qualified_type, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_tagged_template, mk_template, mk_try_suffix, mk_tuple_index, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, text_is_word}
+use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, error_stmt_of, fold_postfix_with_expr, fold_type_union, gensym_token, literal_node, lookahead_ok, mk_ann_g, mk_annotated_args_g, mk_assoc_type_def, mk_binary, mk_block, mk_doc_annotated, mk_dyn_type, mk_export_decl, mk_expr_block, mk_fn_type, mk_grammar_block_abi, mk_module_doc, mk_named_type, mk_none_cap, mk_paren_type, mk_plain_name, mk_qualified_type, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, mk_tagged_template, mk_template, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, text_is_word}
 use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, MatchArm, ParamEntry, PatId, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, Variant, WhenArm}
 use features.modules.lowering.{mk_qualified_abi, module_build, use_bare_build, use_pkg_build}
-use features.struct_decl.lowering.{mk_assign_abi, mk_enum_ctor_abi, mk_field_abi, mk_field_init_abi, mk_shape_decl_abi, mk_struct_lit_abi, mk_type_decl_any_abi, rebind_eq_abi}
+use features.struct_decl.lowering.{mk_assign_abi, mk_enum_ctor_abi, mk_enum_ctor_suffix_abi, mk_field_abi, mk_field_access_abi, mk_field_init_abi, mk_shape_decl_abi, mk_struct_lit_abi, mk_type_decl_any_abi, rebind_eq_abi}
 use features.generics.lowering.{mk_type_param_abi}
 use features.enum_decl.lowering.{enum_decl_build, evariant_build}
 use features.fn_decl.lowering.{mk_extern_fn_abi, mk_fn_decl_abi, mk_where_param_abi}
@@ -20,7 +20,10 @@ use features.spec_test.lowering.{given_block_build, spec_block_build, then_block
 use features.let_stmt.lowering.{mk_const_binding_abi, mk_let_binding_abi, mk_let_destructure_abi, mk_mut_binding_abi}
 use features.component_decl.lowering.{mk_children_slot_abi, mk_children_slot_list_abi, mk_comp_body_marker_abi, mk_comp_config_abi, mk_comp_config_list_abi, mk_comp_config_pair_abi, mk_comp_field_abi, mk_component_block_abi, mk_component_def_abi, mk_component_paren_def_abi, mk_method_shorthand_abi, mk_raw_component_block_abi, mk_trait_list_abi}
 use features.closures.lowering.{mk_group_or_empty_abi, mk_lambda_abi, mk_lambda_typed_abi, mk_param_abi, mk_tuple_fr_abi}
+use features.tuples.lowering.{mk_tuple_index_abi}
 use features.table_lit.lowering.{mk_table_header_abi, mk_table_lit_abi, mk_table_row_abi}
+use features.null_safety.lowering.{fold_nullish_abi, mk_catch_suffix_abi, mk_force_unwrap_abi, mk_opt_chain_abi, mk_opt_method_call_abi, mk_try_suffix_abi}
+use features.calls.lowering.{mk_call_arg_abi, mk_call_suffix_abi, mk_generic_call_suffix_abi, mk_index_suffix_abi}
 use features.eq_chain.lowering.{mk_eqchain_abi}
 use features.is_keyword.lowering.{mk_is_abi}
 use features.in_operator.lowering.{mk_inlist_abi, mk_inrange_abi}
@@ -39,7 +42,6 @@ use features.with_expr.lowering.{mk_with_suffix_abi}
 use features.spawn_expr.lowering.{mk_spawn_abi}
 use features.isolated_expr.lowering.{mk_isolated_abi}
 use features.channels.lowering.{mk_channel_abi}
-use features.null_safety.lowering.{fold_nullish_abi}
 use features.logical_op.lowering.{fold_logical_abi}
 use features.pipe_op.lowering.{fold_pipe_abi}
 
@@ -4248,314 +4250,31 @@ fn parse_brace_expr(st: PState) -> CapVal {
 }
 
 fn parse_postfix_suffix(st: PState) -> CapVal {
-    st.snap_postfix_step()
-    mut tried_spec = false
-    if st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) {
-        let _ = st.advance()
-        return CapVal.Node(mk_force_unwrap(st))
+    if starts_unwrap_suffix(st) {
+        return parse_unwrap_suffix(st)
     }
-    if st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) {
-        let _ = st.advance()
-        return CapVal.Node(mk_try_suffix(st))
+    if starts_catch_suffix(st) {
+        return parse_catch_suffix(st)
     }
-    if st.cur().text == "catch" {
-        mut body_list: List<StmtId> = []
-        mut b: CapVal = CapVal.Nil
-        let c = CapVal.Tok(st.advance())
-        if st.cur().tk == Tk.LeftParen {
-            let _ = st.advance()
-            if st.cur().tk == Tk.Identifier { b = CapVal.Tok(st.advance()) } else {
-                st.report_ident("expected error binding name after `catch (`")
-                st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-            }
-            if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-                st.report("expected `)` after catch binding")
-                st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-            }
-        }
-        if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
-            st.report("expected `{` after catch")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        let __modes_3 = st.modes
-        st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
-        let __pre_err = st.had_error
-        mut __any_err = __pre_err
-        while true {
-            if st.at_end() || st.cur().text == "}" { break }
-            let __sp = st.cur().pos
-            let __before_i = st.pos
-            st.clear_error()
-            let __cv = parse_declaration(st)
-            if st.had_error { __any_err = true }
-            if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
-                __any_err = true
-                st.synchronize_stmt()
-                if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
-                st.set_abort_prop(false)
-                let __elc = st.store.lines.to_linecol(__sp)
-                let __e = error_stmt_of(st, __cv)
-                st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
-                body_list.push(__e)
-                st.clear_error()
-                continue
-            }
-            let __sid = capval_to_stmt(st, __cv)
-            let __lc = st.store.lines.to_linecol(__sp)
-            st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
-            body_list.push(__sid)
-            if st.pos == __before_i { break }
-        }
-        if __any_err { st.note_had_error() }
-        st.set_modes(__modes_3)
-        if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
-            st.report("expected `}` after catch body")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        return CapVal.Node(mk_catch_suffix(st, c, b, CapVal.SNodes(body_list)))
+    if lookahead_ok("qdot_method_call", st) && (starts_optcall_suffix(st)) {
+        return parse_optcall_suffix(st)
     }
-    if lookahead_ok("qdot_method_call", st) && (st.cur().tk == Tk.QuestionDot) {
-        mut a_list: List<ExprId> = []
-        let _ = st.advance()
-        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
-            st.report("expected `FIELDNAME`")
-            CapVal.Tok(st.cur())
-        }
-        if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
-            st.report("expected `(`")
-        }
-        let __modes_3 = st.modes
-        st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
-        if starts_call_arg(st) {
-            let __bdiag0 = st.diags.length
-            let __bres0 = parse_call_arg(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
-                st.set_abort_prop(true)
-                st.set_modes(__modes_3)
-                return CapVal.Node(st.error_node_silent())
-            }
-            a_list.push(capval_to_expr(st, __bres0))
-            while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
-                let _ = st.advance()
-                let __bdiag1 = st.diags.length
-                let __bres1 = parse_call_arg(st)
-                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
-                    st.set_abort_prop(true)
-                    st.set_modes(__modes_3)
-                    return CapVal.Node(st.error_node_silent())
-                }
-                a_list.push(capval_to_expr(st, __bres1))
-            }
-            if st.cur().tk == Tk.Comma {
-                let _ = st.advance()
-            }
-        }
-        st.set_modes(__modes_3)
-        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected `)` after arguments")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        return CapVal.Node(mk_opt_method_call(st, n, CapVal.Nodes(a_list)))
+    if starts_optchain_suffix(st) {
+        return parse_optchain_suffix(st)
     }
-    if lookahead_ok("qdot_plain_field", st) && (st.cur().tk == Tk.QuestionDot) {
-        let _ = st.advance()
-        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
-            st.report("expected `FIELDNAME`")
-            CapVal.Tok(st.cur())
-        }
-        return CapVal.Node(mk_opt_chain(st, n))
+    if lookahead_ok("dot_enum_ctor", st) && (starts_enum_ctor_suffix(st)) {
+        return parse_enum_ctor_suffix(st)
     }
-    if lookahead_ok("dot_enum_ctor", st) && base_pred("base_upper_ident", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) {
-        mut a_list: List<ExprId> = []
-        let _ = st.advance()
-        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
-            st.report("expected `FIELDNAME`")
-            CapVal.Tok(st.cur())
-        }
-        if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
-            st.report("expected `(`")
-        }
-        if starts_call_arg(st) {
-            let __bdiag0 = st.diags.length
-            let __bres0 = parse_call_arg(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
-                st.set_abort_prop(true)
-                return CapVal.Node(st.error_node_silent())
-            }
-            a_list.push(capval_to_expr(st, __bres0))
-            while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
-                let _ = st.advance()
-                let __bdiag1 = st.diags.length
-                let __bres1 = parse_call_arg(st)
-                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
-                    st.set_abort_prop(true)
-                    return CapVal.Node(st.error_node_silent())
-                }
-                a_list.push(capval_to_expr(st, __bres1))
-            }
-            if st.cur().tk == Tk.Comma {
-                let _ = st.advance()
-            }
-        }
-        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected `)` after arguments")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        return CapVal.Node(mk_enum_ctor_suffix(st, n, CapVal.Nodes(a_list)))
+    if lookahead_ok("dot_number", st) && (starts_tuple_suffix(st)) {
+        return parse_tuple_suffix(st)
     }
-    if lookahead_ok("dot_plain_field", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) {
-        let _ = st.advance()
-        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
-            st.report("expected `FIELDNAME`")
-            CapVal.Tok(st.cur())
-        }
-        return CapVal.Node(mk_field_access(st, n))
+    if starts_field_suffix(st) {
+        return parse_field_suffix(st)
     }
-    if (st.cur().tk == Tk.LeftBracket) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) {
-        let _ = st.advance()
-        let i = parse_expression(st)
-        let t = parse_index_tail(st)
-        return CapVal.Node(mk_index_suffix(st, i, t))
+    if starts_index_suffix(st) {
+        return parse_index_suffix(st)
     }
-    if lookahead_ok("dot_number", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) {
-        let _ = st.advance()
-        let t = if (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) { CapVal.Tok(st.advance()) } else {
-            st.report("expected `NUMBER`")
-            CapVal.Tok(st.cur())
-        }
-        return CapVal.Node(mk_tuple_index(st, t))
-    }
-    if base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) {
-        let _ = st.advance()
-        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
-            st.report("expected field name after `.`")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-            CapVal.Tok(st.cur())
-        }
-        return CapVal.Node(mk_field_access(st, n))
-    }
-    if (st.cur().tk == Tk.LeftParen) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) {
-        mut a_list: List<ExprId> = []
-        let _ = st.advance()
-        let __modes_1 = st.modes
-        if base_pred("base_field_access", st) {
-            st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
-        }
-        if starts_call_arg(st) {
-            let __bdiag0 = st.diags.length
-            let __bres0 = parse_call_arg(st)
-            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
-                st.set_abort_prop(true)
-                st.set_modes(__modes_1)
-                return CapVal.Node(st.error_node_silent())
-            }
-            a_list.push(capval_to_expr(st, __bres0))
-            while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
-                let _ = st.advance()
-                let __bdiag1 = st.diags.length
-                let __bres1 = parse_call_arg(st)
-                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
-                    st.set_abort_prop(true)
-                    st.set_modes(__modes_1)
-                    return CapVal.Node(st.error_node_silent())
-                }
-                a_list.push(capval_to_expr(st, __bres1))
-            }
-            if st.cur().tk == Tk.Comma {
-                let _ = st.advance()
-            }
-        }
-        st.set_modes(__modes_1)
-        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected `)` after arguments")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        return CapVal.Node(mk_call_suffix(st, CapVal.Nodes(a_list)))
-    }
-    if base_pred("base_callable", st) && (st.cur().tk == Tk.Less) {
-        tried_spec = true
-        let s_pos = st.pos
-        let s_mark = st.store.mark()
-        let s_diags = st.diags.length
-        let s_err = st.had_error
-        let s_gensym = st.gensym_seq
-        let s_postfix = st.save_postfix_state()
-        mut ta_list: List<TypeExpr> = []
-        mut a_list: List<ExprId> = []
-        let _ = st.advance()
-        if starts_type_expr(st) {
-            ta_list.push(capval_to_texpr(st, parse_type_expr(st)))
-            while st.cur().tk == Tk.Comma {
-                let _ = st.advance()
-                ta_list.push(capval_to_texpr(st, parse_type_expr(st)))
-            }
-        }
-        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
-            st.report("expected `>`")
-        }
-        if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
-            st.report("expected `(`")
-        }
-        if starts_call_arg(st) {
-            let __bres0 = parse_call_arg(st)
-            a_list.push(capval_to_expr(st, __bres0))
-            while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
-                let _ = st.advance()
-                let __bres1 = parse_call_arg(st)
-                a_list.push(capval_to_expr(st, __bres1))
-            }
-            if st.cur().tk == Tk.Comma {
-                let _ = st.advance()
-            }
-        }
-        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected `)`")
-        }
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return CapVal.Node(mk_generic_call_suffix(st, ta_list, CapVal.Nodes(a_list)))
-        }
-        st.store.truncate_to_mark(s_mark)
-        st.restore_to(s_pos, s_diags, s_err)
-        st.set_gensym_seq(s_gensym)
-        st.restore_postfix_state(s_postfix)
-    }
-    if tried_spec { return CapVal.Nil }
-    CapVal.Node(st.error_node_expected_expr())
-}
-
-fn parse_call_arg(st: PState) -> CapVal {
-    let __modes_0 = st.modes
-    st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
-    let e = parse_expression(st)
-    st.set_modes(__modes_0)
-    CapVal.Node(mk_call_arg(st, e))
-}
-
-fn parse_index_tail(st: PState) -> CapVal {
-    if st.cur().tk == Tk.DotDot {
-        let _ = st.advance()
-        let e = parse_expression(st)
-        if st.cur().tk == Tk.RightBracket { let _ = st.advance() } else {
-            st.report("expected `]` after slice")
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        return e
-    }
-    if st.cur().tk == Tk.RightBracket { let _ = st.advance() } else {
-        st.report("expected `]` after index")
-        st.set_abort_prop(true)
-        return CapVal.Node(st.error_node_silent())
-    }
-    mk_none_cap(st)
+    parse_call_suffix(st)
 }
 
 fn parse_block_expr(st: PState) -> CapVal {
@@ -4993,6 +4712,16 @@ fn parse_param(st: PState) -> CapVal {
     mk_param_abi(st, [pname, pt])
 }
 
+fn parse_tuple_suffix(st: PState) -> CapVal {
+    st.snap_postfix_step()
+    let _ = st.advance()
+    let t = if (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) { CapVal.Tok(st.advance()) } else {
+        st.report("expected `NUMBER`")
+        CapVal.Tok(st.cur())
+    }
+    mk_tuple_index_abi(st, [t])
+}
+
 fn parse_list_expr(st: PState) -> CapVal {
     if lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) {
         let _ = st.advance()
@@ -5113,6 +4842,7 @@ fn parse_table_lit(st: PState) -> CapVal {
     }
     let _ = __bres1
     while starts_table_row(st) {
+        let __rep_before = st.pos
         let __bdiag0 = st.diags.length
         let __bres0 = parse_table_row(st)
         if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
@@ -5120,6 +4850,7 @@ fn parse_table_lit(st: PState) -> CapVal {
             return CapVal.Node(st.error_node_silent())
         }
         rows_list.push(capval_to_expr(st, __bres0))
+        if st.pos == __rep_before { break }
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}` to close table")
@@ -5240,6 +4971,69 @@ fn parse_variant_ctor(st: PState) -> CapVal {
         }
     }
     call_with_build_sp(st, sp_start, mk_enum_ctor_abi, [v, CapVal.Nodes(a_list)])
+}
+
+fn parse_enum_ctor_suffix(st: PState) -> CapVal {
+    st.snap_postfix_step()
+    mut a_list: List<ExprId> = []
+    let _ = st.advance()
+    let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
+        st.report("expected `FIELDNAME`")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
+        st.report("expected `(`")
+    }
+    if starts_call_arg(st) {
+        let __bdiag0 = st.diags.length
+        let __bres0 = parse_call_arg(st)
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        a_list.push(capval_to_expr(st, __bres0))
+        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
+            let _ = st.advance()
+            let __bdiag1 = st.diags.length
+            let __bres1 = parse_call_arg(st)
+            if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
+                st.set_abort_prop(true)
+                return CapVal.Node(st.error_node_silent())
+            }
+            a_list.push(capval_to_expr(st, __bres1))
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+        }
+    }
+    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+        st.report("expected `)` after arguments")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    mk_enum_ctor_suffix_abi(st, [n, CapVal.Nodes(a_list)])
+}
+
+fn parse_field_suffix(st: PState) -> CapVal {
+    st.snap_postfix_step()
+    if lookahead_ok("dot_plain_field", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) {
+        let _ = st.advance()
+        let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
+            st.report("expected `FIELDNAME`")
+            CapVal.Tok(st.cur())
+        }
+        return mk_field_access_abi(st, [n])
+    }
+    if st.cur().tk == Tk.Dot { let _ = st.advance() } else {
+        st.report("expected `.`")
+    }
+    let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
+        st.report_coded("F0040", "expected field name after `.`")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+        CapVal.Tok(st.cur())
+    }
+    mk_field_access_abi(st, [n])
 }
 
 fn parse_with_suffix(st: PState) -> CapVal {
@@ -5381,6 +5175,265 @@ fn parse_null_coalesce(st: PState) -> CapVal {
         rs.push(capval_to_expr(st, parse_logic_or(st)))
     }
     call_with_build_sp(st, sp_start, fold_nullish_abi, [l, CapVal.Toks(ops), CapVal.Nodes(rs)])
+}
+
+fn parse_optchain_suffix(st: PState) -> CapVal {
+    st.snap_postfix_step()
+    let _ = st.advance()
+    let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
+        st.report("expected `FIELDNAME`")
+        CapVal.Tok(st.cur())
+    }
+    mk_opt_chain_abi(st, [n])
+}
+
+fn parse_optcall_suffix(st: PState) -> CapVal {
+    st.snap_postfix_step()
+    mut a_list: List<ExprId> = []
+    let _ = st.advance()
+    let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
+        st.report("expected `FIELDNAME`")
+        CapVal.Tok(st.cur())
+    }
+    if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
+        st.report("expected `(`")
+    }
+    let __modes_3 = st.modes
+    st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
+    if starts_call_arg(st) {
+        let __bdiag0 = st.diags.length
+        let __bres0 = parse_call_arg(st)
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
+            st.set_abort_prop(true)
+            st.set_modes(__modes_3)
+            return CapVal.Node(st.error_node_silent())
+        }
+        a_list.push(capval_to_expr(st, __bres0))
+        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
+            let _ = st.advance()
+            let __bdiag1 = st.diags.length
+            let __bres1 = parse_call_arg(st)
+            if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
+                st.set_abort_prop(true)
+                st.set_modes(__modes_3)
+                return CapVal.Node(st.error_node_silent())
+            }
+            a_list.push(capval_to_expr(st, __bres1))
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
+        }
+    }
+    st.set_modes(__modes_3)
+    if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+        st.report("expected `)` after arguments")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    mk_opt_method_call_abi(st, [n, CapVal.Nodes(a_list)])
+}
+
+fn parse_unwrap_suffix(st: PState) -> CapVal {
+    st.snap_postfix_step()
+    if st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) {
+        let _ = st.advance()
+        return mk_force_unwrap_abi(st, [])
+    }
+    if st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) {
+        let _ = st.advance()
+        return mk_try_suffix_abi(st, [])
+    }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
+fn parse_catch_suffix(st: PState) -> CapVal {
+    st.snap_postfix_step()
+    mut body_list: List<StmtId> = []
+    mut b: CapVal = CapVal.Nil
+    let c = CapVal.Tok(st.advance())
+    if st.cur().tk == Tk.LeftParen {
+        let _ = st.advance()
+        if st.cur().tk == Tk.Identifier { b = CapVal.Tok(st.advance()) } else {
+            st.report_ident("expected error binding name after `catch (`")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+            st.report("expected `)` after catch binding")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+    }
+    if st.cur().tk == Tk.LeftBrace { let _ = st.advance() } else {
+        st.report("expected `{` after catch")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    let __modes_3 = st.modes
+    st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
+    let __pre_err = st.had_error
+    mut __any_err = __pre_err
+    while true {
+        if st.at_end() || st.cur().text == "}" { break }
+        let __sp = st.cur().pos
+        let __before_i = st.pos
+        st.clear_error()
+        let __cv = parse_declaration(st)
+        if st.had_error { __any_err = true }
+        if st.abort_prop || capval_is_error_expr(st, __cv) || capval_is_error_stmt(st, __cv) {
+            __any_err = true
+            st.synchronize_stmt()
+            if st.cur().pos == __sp && !st.at_end() { let _ = st.advance() }
+            st.set_abort_prop(false)
+            let __elc = st.store.lines.to_linecol(__sp)
+            let __e = error_stmt_of(st, __cv)
+            st.store.stmts.record_pos(__e, SrcPos { line: __elc.line, col: __elc.col, file: st.file })
+            body_list.push(__e)
+            st.clear_error()
+            continue
+        }
+        let __sid = capval_to_stmt(st, __cv)
+        let __lc = st.store.lines.to_linecol(__sp)
+        st.store.stmts.record_pos(__sid, SrcPos { line: __lc.line, col: __lc.col, file: st.file })
+        body_list.push(__sid)
+        if st.pos == __before_i { break }
+    }
+    if __any_err { st.note_had_error() }
+    st.set_modes(__modes_3)
+    if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
+        st.report("expected `}` after catch body")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    mk_catch_suffix_abi(st, [c, b, CapVal.SNodes(body_list)])
+}
+
+fn parse_index_suffix(st: PState) -> CapVal {
+    st.snap_postfix_step()
+    let _ = st.advance()
+    let i = parse_expression(st)
+    let t = parse_index_tail(st)
+    mk_index_suffix_abi(st, [i, t])
+}
+
+fn parse_index_tail(st: PState) -> CapVal {
+    if st.cur().tk == Tk.DotDot {
+        let _ = st.advance()
+        let e = parse_expression(st)
+        if st.cur().tk == Tk.RightBracket { let _ = st.advance() } else {
+            st.report("expected `]` after slice")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        return e
+    }
+    if st.cur().tk == Tk.RightBracket { let _ = st.advance() } else {
+        st.report("expected `]` after index")
+        st.set_abort_prop(true)
+        return CapVal.Node(st.error_node_silent())
+    }
+    mk_none_cap(st)
+}
+
+fn parse_call_suffix(st: PState) -> CapVal {
+    st.snap_postfix_step()
+    mut tried_spec = false
+    if (st.cur().tk == Tk.LeftParen) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) {
+        mut a_list: List<ExprId> = []
+        let _ = st.advance()
+        let __modes_1 = st.modes
+        if base_pred("base_field_access", st) {
+            st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
+        }
+        if starts_call_arg(st) {
+            let __bdiag0 = st.diags.length
+            let __bres0 = parse_call_arg(st)
+            if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
+                st.set_abort_prop(true)
+                st.set_modes(__modes_1)
+                return CapVal.Node(st.error_node_silent())
+            }
+            a_list.push(capval_to_expr(st, __bres0))
+            while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
+                let _ = st.advance()
+                let __bdiag1 = st.diags.length
+                let __bres1 = parse_call_arg(st)
+                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
+                    st.set_abort_prop(true)
+                    st.set_modes(__modes_1)
+                    return CapVal.Node(st.error_node_silent())
+                }
+                a_list.push(capval_to_expr(st, __bres1))
+            }
+            if st.cur().tk == Tk.Comma {
+                let _ = st.advance()
+            }
+        }
+        st.set_modes(__modes_1)
+        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+            st.report("expected `)` after arguments")
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        return mk_call_suffix_abi(st, [CapVal.Nodes(a_list)])
+    }
+    if base_pred("base_callable", st) && (st.cur().tk == Tk.Less) {
+        tried_spec = true
+        let s_pos = st.pos
+        let s_mark = st.store.mark()
+        let s_diags = st.diags.length
+        let s_err = st.had_error
+        let s_gensym = st.gensym_seq
+        let s_postfix = st.save_postfix_state()
+        mut ta_list: List<TypeExpr> = []
+        mut a_list: List<ExprId> = []
+        let _ = st.advance()
+        if starts_type_expr(st) {
+            ta_list.push(capval_to_texpr(st, parse_type_expr(st)))
+            while st.cur().tk == Tk.Comma {
+                let _ = st.advance()
+                ta_list.push(capval_to_texpr(st, parse_type_expr(st)))
+            }
+        }
+        if (st.cur().tk == Tk.Greater || st.cur().text == ">>") { let _ = (if st.cur().text == ">>" { st.split_gt() } else { st.advance() }) } else {
+            st.report("expected `>`")
+        }
+        if st.cur().tk == Tk.LeftParen { let _ = st.advance() } else {
+            st.report("expected `(`")
+        }
+        if starts_call_arg(st) {
+            let __bres0 = parse_call_arg(st)
+            a_list.push(capval_to_expr(st, __bres0))
+            while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
+                let _ = st.advance()
+                let __bres1 = parse_call_arg(st)
+                a_list.push(capval_to_expr(st, __bres1))
+            }
+            if st.cur().tk == Tk.Comma {
+                let _ = st.advance()
+            }
+        }
+        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+            st.report("expected `)`")
+        }
+        if st.diags.length == s_diags && st.had_error == s_err {
+            return mk_generic_call_suffix_abi(st, [CapVal.TExprs(ta_list), CapVal.Nodes(a_list)])
+        }
+        st.store.truncate_to_mark(s_mark)
+        st.restore_to(s_pos, s_diags, s_err)
+        st.set_gensym_seq(s_gensym)
+        st.restore_postfix_state(s_postfix)
+    }
+    if tried_spec { return CapVal.Nil }
+    CapVal.Node(st.error_node_expected_expr())
+}
+
+fn parse_call_arg(st: PState) -> CapVal {
+    let __modes_0 = st.modes
+    st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
+    let e = parse_expression(st)
+    st.set_modes(__modes_0)
+    mk_call_arg_abi(st, [e])
 }
 
 fn parse_logic_or(st: PState) -> CapVal {
@@ -5977,7 +6030,10 @@ fn parse_when_expr(st: PState) -> CapVal {
         st.report("expected `{`")
     }
     while starts_when_arm(st) {
-        a_list.push(capval_to_when_arm(st, parse_when_arm(st)))
+        let __rep_before = st.pos
+        let __rep_cv = parse_when_arm(st)
+        if st.pos == __rep_before { break }
+        a_list.push(capval_to_when_arm(st, __rep_cv))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}`")
@@ -6650,11 +6706,7 @@ fn starts_brace_expr(st: PState) -> bool {
 }
 
 fn starts_postfix_suffix(st: PState) -> bool {
-    st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().text == "catch" || lookahead_ok("qdot_method_call", st) && (st.cur().tk == Tk.QuestionDot) || lookahead_ok("qdot_plain_field", st) && (st.cur().tk == Tk.QuestionDot) || lookahead_ok("dot_enum_ctor", st) && base_pred("base_upper_ident", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || lookahead_ok("dot_plain_field", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || (st.cur().tk == Tk.LeftBracket) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) || lookahead_ok("dot_number", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || (st.cur().tk == Tk.LeftParen) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) || base_pred("base_callable", st) && (st.cur().tk == Tk.Less)
-}
-
-fn starts_call_arg(st: PState) -> bool {
-    lookahead_ok("tilde_ident_lbrace", st) && st.modes.quote_depth > 0 && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
+    st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.cur().text == "catch" || lookahead_ok("qdot_method_call", st) && (lookahead_ok("qdot_method_call", st) && (st.cur().tk == Tk.QuestionDot)) || lookahead_ok("qdot_plain_field", st) && (st.cur().tk == Tk.QuestionDot) || lookahead_ok("dot_enum_ctor", st) && (lookahead_ok("dot_enum_ctor", st) && base_pred("base_upper_ident", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot)) || lookahead_ok("dot_number", st) && (lookahead_ok("dot_number", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot)) || lookahead_ok("dot_plain_field", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || (st.cur().tk == Tk.LeftBracket) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) || (st.cur().tk == Tk.LeftParen) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) || base_pred("base_callable", st) && (st.cur().tk == Tk.Less)
 }
 
 fn starts_block_expr(st: PState) -> bool {
@@ -6693,6 +6745,10 @@ fn starts_param(st: PState) -> bool {
     st.cur().tk == Tk.Identifier
 }
 
+fn starts_tuple_suffix(st: PState) -> bool {
+    lookahead_ok("dot_number", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot)
+}
+
 fn starts_list_expr(st: PState) -> bool {
     lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket
 }
@@ -6725,6 +6781,14 @@ fn starts_variant_ctor(st: PState) -> bool {
     st.cur().tk == Tk.Dot
 }
 
+fn starts_enum_ctor_suffix(st: PState) -> bool {
+    lookahead_ok("dot_enum_ctor", st) && base_pred("base_upper_ident", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot)
+}
+
+fn starts_field_suffix(st: PState) -> bool {
+    lookahead_ok("dot_plain_field", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) || base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot)
+}
+
 fn starts_with_suffix(st: PState) -> bool {
     st.cur().text == "with"
 }
@@ -6743,6 +6807,30 @@ fn starts_isolated_expr(st: PState) -> bool {
 
 fn starts_channel_expr(st: PState) -> bool {
     st.cur().text == "channel"
+}
+
+fn starts_optchain_suffix(st: PState) -> bool {
+    lookahead_ok("qdot_plain_field", st) && (st.cur().tk == Tk.QuestionDot)
+}
+
+fn starts_optcall_suffix(st: PState) -> bool {
+    lookahead_ok("qdot_method_call", st) && (st.cur().tk == Tk.QuestionDot)
+}
+
+fn starts_unwrap_suffix(st: PState) -> bool {
+    st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)) || st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Question) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line))
+}
+
+fn starts_catch_suffix(st: PState) -> bool {
+    st.cur().text == "catch"
+}
+
+fn starts_index_suffix(st: PState) -> bool {
+    (st.cur().tk == Tk.LeftBracket) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line)
+}
+
+fn starts_call_arg(st: PState) -> bool {
+    lookahead_ok("tilde_ident_lbrace", st) && st.modes.quote_depth > 0 && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Tilde) || st.modes.quote_depth > 0 && (st.cur().tk == Tk.Tilde) || st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == "not" || st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) || (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) || st.cur().tk == Tk.String || (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) || st.cur().text == "null" || st.cur().text == "none" || st.cur().tk == Tk.Dot || lookahead_ok("match_subjectless", st) && (st.cur().text == "match") || lookahead_ok("match_table", st) && (st.cur().text == "match") || st.cur().text == "match" || lookahead_ok("if_let", st) && (st.cur().text == "if") || st.cur().text == "if" || st.cur().text == "spawn" || st.cur().text == "channel" || st.cur().text == "isolated" || st.cur().text == "when" || lookahead_ok("quote_arm", st) && (st.cur().text == "quote") || lookahead_ok("quote_type", st) && (st.cur().text == "quote") || st.cur().text == "quote" || lookahead_ok("list_comp_ahead", st) && (st.cur().tk == Tk.LeftBracket) || st.cur().tk == Tk.LeftBracket || lookahead_ok("brace_map", st) && (st.cur().tk == Tk.LeftBrace) || st.cur().tk == Tk.LeftBrace || st.cur().tk == Tk.At || lookahead_ok("lparen_ident_colon", st) && lookahead_ok("paren_arrow_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_lambda_ahead", st) && (st.cur().tk == Tk.LeftParen) || lookahead_ok("paren_comma_ahead", st) && (st.cur().tk == Tk.LeftParen) || st.cur().tk == Tk.LeftParen || st.cur().tk == Tk.Template || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "grammar") || lookahead_ok("ident_lbrace_feature", st) && (st.cur().text == "table") || lookahead_ok("ident_lbrace_plain", st) && st.modes.allow_struct_lit != 0 && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_template", st) && (st.cur().tk == Tk.Identifier) || lookahead_ok("ident_plain", st) && (st.cur().tk == Tk.Identifier)
 }
 
 fn starts_is_tail(st: PState) -> bool {

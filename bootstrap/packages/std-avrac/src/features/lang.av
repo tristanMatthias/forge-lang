@@ -9,7 +9,7 @@
 
 use core.{feature_new, Registry, register}
 use features.grammar.{grammar_literals, grammar_checked, grammar_startup_fail, compose_fragments, Grammar, GrammarParse, text_is_word}
-use features.grammar.{grammar_build_refs, central_build_kind, engine_build_kinds, str_in, BuilderBind}
+use features.grammar.{grammar_build_refs, central_build_kind, central_tableless_builds, engine_build_kinds, str_in, BuilderBind}
 use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
@@ -137,12 +137,12 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
         // which left a same-kind shadow validating clean while the two
         // engines' opposite consult orders picked different implementations
         // for it (CodeRabbit find on #1242).
-        if central_build_kind(b.name) != "" {
+        if is_central_build(b.name) {
             return "feature `${fname}`: builder `${b.name}` shadows an engine central build — migrate the lowering by deleting its central arms (the flip playbook), never by shadowing"
         }
     }
     for r in refs {
-        if central_build_kind(r.name) == "" && !supplies(builders, r.name) {
+        if !is_central_build(r.name) && !supplies(builders, r.name) {
             return "feature `${fname}`: rule `${r.rule}` references build `${r.name}` (${r.argc} arg(s)) which resolves to no builder — supply it in `builders` or use an engine build"
         }
     }
@@ -152,6 +152,19 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
 /// A declared kind the engine can classify — `central_build_kind`'s range.
 fn builder_kind_supported(k: string) -> bool {
     str_in(engine_build_kinds(), k)
+}
+
+/// "Engine build" — `central_build_kind`'s domain PLUS the tableless arms
+/// (MkNone / MkStampAt / MkAnnotated — arms with no kind row, deliberately:
+/// MkNone is the kind-free absent marker, and a kind row would poison
+/// alternation inference for every optional that uses it). ONE definition,
+/// read by BOTH the shadow check and the reference-resolution check: the kind
+/// proxy alone rejected features/calls' `index_tail -> MkNone()` in the refs
+/// loop (t-kd4y.3.5.8), and in the shadow loop it let a feature SUPPLY a
+/// builder named MkNone — which the manifest-first consult order in both
+/// engines would silently prefer over the engine arm.
+fn is_central_build(name: string) -> bool {
+    central_build_kind(name) != "" || str_in(central_tableless_builds(), name)
 }
 
 fn supplies(builders: List<BuilderBind>, name: string) -> bool {

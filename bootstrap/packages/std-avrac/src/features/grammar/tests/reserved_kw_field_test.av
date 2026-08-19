@@ -44,10 +44,12 @@ fn peek(cond: string, src: string) -> bool {
     lookahead_ok(cond, new_pstate(src))
 }
 
-fn postfix_rule_src() -> string {
+// The FIELDNAME lowering lives in `field_suffix` — feature-owned since the
+// postfix flip (t-kd4y.3.5.8) left `postfix_suffix` as pure dispatch.
+fn field_rule_src() -> string {
     let g = avra_expr_dispatch_grammar()
     for gr in g.rules {
-        if gr.name == "postfix_suffix" { return emit_rule_fn(g, gr) }
+        if gr.name == "field_suffix" { return emit_rule_fn(g, gr) }
     }
     ""
 }
@@ -107,9 +109,9 @@ spec "t-47hc.33.1: the EMITTED static parser carries the widened guard" {
     // change passes every interpreter-driven spec above and emits nothing usable. This
     // asserts the emit side lowered FIELDNAME to the same Tk set.
     then "the emitted field branches test Tk.KwReserved" {
-        postfix_rule_src().contains("Tk.KwReserved")
+        field_rule_src().contains("Tk.KwReserved")
     }
     then "and keep Tk.Identifier alongside it — the pair, not a replacement" {
-        postfix_rule_src().contains("st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved")
+        field_rule_src().contains("st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved")
     }
 }

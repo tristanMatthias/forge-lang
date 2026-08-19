@@ -14,7 +14,7 @@
 // empty-list/absent-flag defaults — and give the alias toys the
 // production TypeRef edge the leaf-building MkTypeAlias arm dropped.
 use core.{Expr, ExprId, FieldEntry, FieldInit, NodeEdges, NodeRef, Stmt, Token, TypeParamEntry, ValueType, byte_span, byte_span_none, type_expr_to_vtype}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_field_list, capval_to_finit_list, capval_to_node_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_field_list, capval_to_finit_list, capval_to_node_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text, postfix_step_node}
 
 /// The WHOLE `type Name < tp > = …` declaration — every form the retired
 /// hand's `parse_type_declaration` produces, in one core, because the hand
@@ -150,9 +150,67 @@ export fn struct_lit_builds() -> List<BuilderBind> {
      bind_row("MkFieldInit", "finit", 2, false, "mk_field_init_abi", mk_field_init_abi)])
 }
 
-/// The contextual enum-ctor row (t-kd4y.3.5.6) — spanned at the `.` byte.
+/// `expr.field` — plain field access (t-47hc.33 form 4). A POSTFIX-chain
+/// core: it threads the engine's chain state (postfix_step_node reads the
+/// frozen step base), so its row is FLAT — the chain loop's snap owns the
+/// span. The ENUM-CONSTRUCTOR reading of the same syntax
+/// (`Type.Variant(args)`) builds a different node (mk_enum_ctor_suffix);
+/// `@peek(dot_plain_field)` keeps the two apart before the branch is
+/// entered.
+export fn mk_field_access(st: PState, ncap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.FieldAccess(st.postfix_step_base, capval_tok_text(ncap)))
+}
+
+export fn mk_field_access_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_field_access(st, vals[0]))
+}
+
+/// `Type.Variant(args)` — the ENUM-CTOR reading of `.` (t-47hc.33 form 6), the sibling
+/// the `.field` branch declines whenever `dot_plain_field` sees a `(` after a
+/// type-shaped base.
+///
+/// The base is NOT a child here: `Expr.EnumCtor` carries the type NAME as a string, so
+/// the receiver is consumed into `enum_type` and the node is a leaf whose only edges are
+/// its argument ids. That is why the whole reading has to be one branch — a `.field`
+/// step followed by a call step would build `Call(FieldAccess(Type, Variant), args)`,
+/// a method call on a type, which is a different node and a different program.
+///
+/// UNLIKE mk_generic_call_suffix, this DOES use postfix_step_node: the hand `alloc_at`s
+/// the ctor with the chain's `[base-start, next-token)` span, where the generic call is
+/// `alloc_leaf`-interned and span-free. Same family, opposite allocation — matching each
+/// one to its hand arm is the whole job.
+///
+/// The name reads off the frozen step base, mirroring the hand's match on `result`:
+/// a bare `Ident` contributes its own text, a `QualifiedIdent` its full `::` path (the
+/// renderer emits resolved ctors that way, and the LAST segment is what
+/// `base_upper_ident` gated on). Anything else cannot reach here — the branch's
+/// `@when(base_upper_ident)` already rejected it — so an empty name would be a grammar
+/// bug, and an empty `enum_type` is exactly the untyped `.Variant` primary's encoding.
+export fn mk_enum_ctor_suffix(st: PState, ncap: CapVal, acap: CapVal) -> ExprId {
+    let type_name = match st.store.exprs.get(st.postfix_step_base) {
+        .Ident(n) -> n
+        .QualifiedIdent(n) -> n
+        _ -> ""
+    }
+    postfix_step_node(st, Expr.EnumCtor(type_name, capval_tok_text(ncap), capval_to_node_list(acap)))
+}
+
+export fn mk_enum_ctor_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_enum_ctor_suffix(st, vals[0], vals[1]))
+}
+
+/// The enum-ctor rows: the contextual `.Variant` primary (t-kd4y.3.5.6,
+/// spanned at the `.` byte) + the postfix `Type.Variant(args)` SUFFIX
+/// reading (t-kd4y.3.5.8, flat — chain-threaded like every postfix step).
 export fn enum_ctor_builds() -> List<BuilderBind> {
-    bind_rows("features.struct_decl.lowering", [bind_row("mk_enum_ctor", "expr", 2, true, "mk_enum_ctor_abi", mk_enum_ctor_abi)])
+    bind_rows("features.struct_decl.lowering", [bind_row("mk_enum_ctor", "expr", 2, true, "mk_enum_ctor_abi", mk_enum_ctor_abi),
+     bind_row("MkEnumCtorSuffix", "expr", 2, false, "mk_enum_ctor_suffix_abi", mk_enum_ctor_suffix_abi)])
+}
+
+/// field_access_lang's row (its `field_suffix` rule spells it — both the
+/// peek-gated `.field` branch and the unguarded `.` fallback).
+export fn field_access_builds() -> List<BuilderBind> {
+    bind_rows("features.struct_decl.lowering", [bind_row("MkFieldAccess", "expr", 1, false, "mk_field_access_abi", mk_field_access_abi)])
 }
 
 /// `l ( "=" r )?` → an assignment, RETARGETING by the LHS shape (the

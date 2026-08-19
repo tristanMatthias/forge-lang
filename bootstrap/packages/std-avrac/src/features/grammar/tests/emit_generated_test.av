@@ -415,3 +415,26 @@ spec "t-47hc.5: speculative state unwinds completely, and a mode scope survives 
         at >= 0 && body.contains("self.abort_prop = false")
     }
 }
+
+spec "t-kd4y.3.5.8: a policy-marked repetition item never takes the stall fast-path" {
+    then "the table-row loop keeps its @onfail(bail) AND the no-progress break" {
+        // The regression this pins: the transitive rule_reaches_spec made
+        // `( @onfail(bail) rows:table_row )*` stall-capable, and the stall branch's
+        // single-plain-ref fast-path emitted a bare `parse_table_row` call — deleting
+        // the bail from the generated parser while the executor kept it. Exec then
+        // reported the hand's two diagnostics on a bad row width (F0001 + the trailing
+        // F0013 `unexpected }`) while emit/prod reported one. Both mechanisms must
+        // compose: the bail aborts a reported row, the break stops a zero-progress one.
+        let src = emit_all()
+        let at = src.index_of("fn parse_table_lit(")
+        let rest = if at < 0 { "" } else { src.substring(at, src.length) }
+        let end = rest.index_of("\nfn ")
+        let body = if end > 0 { rest.substring(0, end) } else { rest }
+        at >= 0 &&
+            body.contains("let __rep_before = st.pos") &&
+            body.contains("if st.pos == __rep_before { break }") &&
+            body.contains("let __bdiag0 = st.diags.length") &&
+            body.contains("st.diags.length != __bdiag0") &&
+            !body.contains("let __rep_cv = parse_table_row(st)")
+    }
+}

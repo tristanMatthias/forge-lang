@@ -1714,6 +1714,16 @@ fn single_plain_ref_group(g: Grammar, node: GNode, list_labels: List<string>) ->
             let it = b.items[0]
             if !rep_is_one(it.rep) || it.sameline || it.cut || it.require { return no }
             if it.mode_off != "" || it.mode_on != "" || it.mode_bump != "" || it.mode_on_if != "" || it.bound != "" { return no }
+            // The fast-path is a bare `parse_X` call + accumulate — legal ONLY when
+            // emit_node_items would add nothing else. An `@onfail(policy)` item's whole
+            // policy (the `__bdiag` bail check, skip's else-arm, …) is emitted BY
+            // emit_node_items, so taking the fast-path for one silently DELETES the
+            // policy from the generated parser: the t-kd4y.3.5.8 table-row regression —
+            // `( @onfail(bail) rows:table_row )*` became stall-capable when the
+            // transitive rule_reaches_spec landed, took this path, and the emitted loop
+            // lost its bail while the executor kept it (exec 2 diags, emit 1). Same
+            // reasoning shields `@gate` (its machinery also lives outside this shape).
+            if it.onfail != "" || it.gate { return no }
             match it.prim {
                 .Ref(nm) -> {
                     let acc = if it.label != "" && str_in(list_labels, it.label) {
@@ -1869,13 +1879,57 @@ fn node_has_gate(node: GNode) -> bool {
 /// abort check is the twin of `emit_one`'s), and `executor.av` deliberately does
 /// not import `emit.av`, so a second copy here would be the drift hazard.
 fn rule_reaches_spec(g: Grammar, name: string) -> bool {
+    let seen: List<string> = []
+    rule_reaches_spec_in(g, name, seen)
+}
+
+/// TRANSITIVE (t-kd4y.3.5.8): the non-transitive read inspected only the
+/// named rule's OWN branches, which was exact while every speculative
+/// branch lived inline in the repeated rule. The postfix flip made
+/// `postfix_suffix` PURE DISPATCH — nine bare refs, the `@try` one level
+/// down in `call_suffix` — so the stall analysis answered false, the
+/// emitted `( p:postfix_suffix )*` loops lost their no-progress break,
+/// and any `callable <` that is not a generic call (every `i < n`) spun
+/// the loop allocating an error row per iteration: a deterministic
+/// 14GB OOM kill in `phase: parse` on ordinary compiler input. The
+/// reach crosses a branch's leading ZERO-WIDTH items (peeks/preds) and
+/// its rule REFS: a ref in head position stalls when its rule does; an
+/// optional/starred head ref can also match ZERO and pass through, so
+/// the scan continues past it. Any token-bearing item ends the branch
+/// scan — from there the branch consumes. Cycle-guarded by `seen`
+/// (recursive grammars are the norm), answering false on revisit: a
+/// cycle alone cannot produce the zero-consume RETURN a rolled-back
+/// `@try` does.
+fn rule_reaches_spec_in(g: Grammar, name: string, seen: List<string>) -> bool {
+    if str_in(seen, name) { return false }
     let i = rule_index_of(g, name)
     if i < 0 { return false }
+    // A List is heap-backed, so `mut seen2 = seen` would ALIAS the caller's
+    // list and every push would leak into sibling traversals — turning the
+    // PATH-scoped cycle guard into a global visited set, whose revisit-as-false
+    // pruning can wrongly answer "cannot stall" (a break silently dropped).
+    mut seen2: List<string> = []
+    for s in seen { seen2.push(s) }
+    seen2.push(name)
     match g.rules[i].body {
         .Alt(branches) -> {
             for b in branches {
                 // A rolled-back `@try` consumes nothing.
                 if b.speculative { return true }
+                mut scanning = true
+                for it in b.items {
+                    if scanning {
+                        match it.prim {
+                            .Pred(_) -> {}
+                            .Peek(_) -> {}
+                            .Ref(nm) -> {
+                                if rule_reaches_spec_in(g, nm, seen2) { return true }
+                                if rep_is_one(it.rep) { scanning = false }
+                            }
+                            _ -> { scanning = false }
+                        }
+                    }
+                }
             }
             false
         }
@@ -2118,7 +2172,31 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     let req = match item.rep { .Plus -> "${ind}if ${req_bound_guard}!(${same_line_wrap(item, node_first_guard(g, inner, []))}) {\n${ind}    st.report(\"${req_msg}\")\n${req_abort}${ind}}\n"  _ -> "" }
             // The bound pieces are empty strings when unbounded, so splicing them into
             // this multi-line shape leaves the generated text byte-identical.
-            if group_can_stall(g, inner) {
+            if node_has_gate(inner) {
+                // t-myz7: a GATED repetition MUST carry the no-progress break. `@gate`
+                // drops the element's FIRST from the loop condition, and that FIRST was
+                // also what terminated the loop — so `while lookahead_ok(cond, st)` over
+                // an element that consumes nothing spins forever. Measured: `enum E {`
+                // with a gated variant loop HUNG (exit 124), it did not merely report the
+                // wrong message. The break is the same one group_can_stall emits,
+                // required here for the same reason: the loop
+                // condition no longer implies progress.
+                //
+                // Tested BEFORE group_can_stall: a gated group that is ALSO
+                // stall-capable needs the gated machinery (abort arm / first check /
+                // unwind), which the stall branch does not emit — and this branch
+                // already carries the break the stall branch exists to add.
+                req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                    bnd.guard +
+                    "${ind}    let __rep_before = st.pos\n" +
+                    gated_abort_arm(g, inner, ind + "    ") +
+                    gated_first_check(g, inner, ind + "    ", annots) +
+                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
+                    gated_abort_unwind(g, inner, ind + "    ") +
+                    "${ind}    if st.pos == __rep_before { break }\n" +
+                    bnd.step +
+                    "${ind}}\n"
+            } else if group_can_stall(g, inner) {
                 // Two body orders, split by WHAT a no-progress iteration hands back.
                 let spr = single_plain_ref_group(g, inner, list_labels)
                 if spr.applies {
@@ -2139,25 +2217,6 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                         bnd.step +
                         "${ind}}\n"
                 }
-            } else if node_has_gate(inner) {
-                // t-myz7: a GATED repetition MUST carry the no-progress break. `@gate`
-                // drops the element's FIRST from the loop condition, and that FIRST was
-                // also what terminated the loop — so `while lookahead_ok(cond, st)` over
-                // an element that consumes nothing spins forever. Measured: `enum E {`
-                // with a gated variant loop HUNG (exit 124), it did not merely report the
-                // wrong message. The break is the same one group_can_stall emits,
-                // required here for the same reason: the loop
-                // condition no longer implies progress.
-                req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
-                    bnd.guard +
-                    "${ind}    let __rep_before = st.pos\n" +
-                    gated_abort_arm(g, inner, ind + "    ") +
-                    gated_first_check(g, inner, ind + "    ", annots) +
-                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
-                    gated_abort_unwind(g, inner, ind + "    ") +
-                    "${ind}    if st.pos == __rep_before { break }\n" +
-                    bnd.step +
-                    "${ind}}\n"
             } else {
                 req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     bnd.guard +
@@ -2578,28 +2637,18 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "MkTaggedTemplate" -> "CapVal.Node(mk_tagged_template(st, sp_start, ${args[0]}, ${args[1]}))"
         "MkSplice" -> "CapVal.Node(mk_splice(st, sp_start, ${args[0]}))"
         "MkSpliceStruct" -> "CapVal.Node(mk_splice_struct(st, sp_start, ${args[0]}, CapVal.FInits(${args[1]}_list)))"
-        // Native `postfix_suffix` steps (t-47hc.33). No `sp_start` arg — the builder
-        // reads `st.postfix_sp_start`, so these are deliberately absent from
-        // build_uses_sp_start and no `let sp_start = …` is emitted for them.
-        "MkTrySuffix" -> "CapVal.Node(mk_try_suffix(st))"
-        "MkForceUnwrap" -> "CapVal.Node(mk_force_unwrap(st))"
-        "MkCallArg" -> "CapVal.Node(mk_call_arg(st, ${args[0]}))"
-        "MkCallSuffix" -> "CapVal.Node(mk_call_suffix(st, CapVal.Nodes(${args[0]}_list)))"
+        // The postfix-suffix step builds are feature-owned (features/
+        // null_safety, features/tuples, features/struct_decl, features/
+        // calls — t-kd4y.3.5.8): the manifest branch above renders the
+        // adapter calls, list captures wrapped by manifest_arg_spelling
+        // (the repeated type-arg capture rides the "type" kind's
+        // CapVal.TExprs list ctor, grown for MkGenericCallSuffix). No
+        // sp_start on any of them — the cores read the chain state the
+        // `( postfix_suffix )*` loop threads, so the rows are flat and
+        // deliberately absent from build_uses_sp_start.
         "MkSpliceName" -> "mk_splice_name(st, capval_tok_text(${args[0]}))"
         "MkPlainName" -> "mk_plain_name(st, capval_tok_text(${args[0]}))"
-        // The type-arg capture is ALREADY a `List<TypeExpr>` here (same as MkNamed's
-        // gen_args), so it passes raw — only the interpreter routes through
-        // capval_to_texpr_list.
-        "MkGenericCallSuffix" -> "CapVal.Node(mk_generic_call_suffix(st, ${args[0]}_list, CapVal.Nodes(${args[1]}_list)))"
-        "MkTupleIndex" -> "CapVal.Node(mk_tuple_index(st, ${args[0]}))"
-        "MkIndexSuffix" -> "CapVal.Node(mk_index_suffix(st, ${args[0]}, ${args[1]}))"
         "MkNone" -> "mk_none_cap(st)"
-        "MkOptChain" -> "CapVal.Node(mk_opt_chain(st, ${args[0]}))"
-        "MkOptMethodCall" -> "CapVal.Node(mk_opt_method_call(st, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
-        "MkTupleIndex" -> "CapVal.Node(mk_tuple_index(st, ${args[0]}))"
-        "MkFieldAccess" -> "CapVal.Node(mk_field_access(st, ${args[0]}))"
-        "MkEnumCtorSuffix" -> "CapVal.Node(mk_enum_ctor_suffix(st, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
-        "MkCatchSuffix" -> "CapVal.Node(mk_catch_suffix(st, ${args[0]}, ${args[1]}, CapVal.SNodes(${args[2]}_list)))"
         // The match family — arms, statement + when-statement forms, and the
         // table pair — is feature-owned (features/match/lowering): the
         // manifest branch above renders the adapter calls, list captures
@@ -3150,7 +3199,7 @@ type KindRow = { coerce: string, elem: string, list_ctor: string }
 fn kind_row(kind: string) -> KindRow {
     if kind == "pat" { return KindRow { coerce: "capval_to_pat", elem: "PatId", list_ctor: "CapVal.PNodes" } }
     if kind == "stmt" { return KindRow { coerce: "capval_to_stmt", elem: "StmtId", list_ctor: "CapVal.SNodes" } }
-    if kind == "type" { return KindRow { coerce: "capval_to_texpr", elem: "TypeExpr", list_ctor: "" } }
+    if kind == "type" { return KindRow { coerce: "capval_to_texpr", elem: "TypeExpr", list_ctor: "CapVal.TExprs" } }
     if kind == "pentry" { return KindRow { coerce: "capval_to_pentry", elem: "ParamEntry", list_ctor: "CapVal.PEntries" } }
     if kind == "tparam" { return KindRow { coerce: "capval_to_tparam", elem: "TypeParamEntry", list_ctor: "CapVal.TParams" } }
     if kind == "field" { return KindRow { coerce: "capval_to_field", elem: "FieldEntry", list_ctor: "CapVal.Fields" } }

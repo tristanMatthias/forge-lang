@@ -20,13 +20,14 @@ use features.logical_op.{logical_op_lang}
 use features.pipe_op.{pipe_op_lang}
 use features.eq_chain.{eq_chain_lang}
 use features.unary_op.{unary_op_lang}
+use features.calls.{calls_lang}
 use features.let_stmt.{let_lang, mut_lang, const_lang, let_destructure_lang}
 use features.list_comp.{list_comp_lang}
 use features.list_lit.{list_lit_lang}
 use features.map_lit.{map_lit_lang}
 use features.table_lit.{table_lit_lang}
 use features.modules.{mod_lang, use_lang, qualified_ref_lang}
-use features.null_safety.{null_coalesce_lang, optional_chain_feature, optional_method_call_feature, try_feature, catch_feature}
+use features.null_safety.{null_coalesce_lang, optional_chain_lang, optional_method_call_lang, try_lang, catch_lang}
 use features.parallel_stmt.{parallel_lang}
 use features.spawn_expr.{spawn_lang}
 use features.channels.{channels_lang}
@@ -35,13 +36,12 @@ use features.quote_expr.{quote_lang}
 use features.return_stmt.{return_lang}
 use features.select_stmt.{select_lang}
 use features.spec_test.{spec_lang, given_lang, then_lang}
-use features.struct_decl.{struct_lit_lang, field_access_feature, enum_ctor_lang, field_assign_lang, type_decl_lang, shape_lang}
+use features.struct_decl.{struct_lit_lang, field_access_lang, enum_ctor_lang, field_assign_lang, type_decl_lang, shape_lang}
 use features.trait_decl.{trait_lang}
-use features.tuples.{tuples_lang, tuple_index_feature}
+use features.tuples.{tuples_lang, tuple_index_lang}
 use features.while_stmt.{while_lang}
 use features.with_expr.{with_expr_lang}
 use features.component_decl.{component_lang}
-use core.{register}
 use features.defer.{defer_lang, errdefer_lang}
 use features.break_continue.{break_lang, continue_lang}
 use features.match.{match_lang, when_lang}
@@ -103,11 +103,10 @@ export component LanguageFeature {
 }
 
 /// Register every built-in language feature with the compiler's
-/// dispatch registry. Called once during compiler init. Migrated
-/// features expose a `<name>_lang()` LanguageFeature definition
-/// (registered via the `language_features()` list); the legacy
-/// remainder still exposes `<name>_feature()` builders. Order
-/// doesn't matter — features dispatch by AST tag, not declaration
+/// dispatch registry. Called once during compiler init. EVERY feature is
+/// a `<name>_lang()` LanguageFeature definition now — the legacy
+/// `Feature` remainder emptied with the postfix flip (t-kd4y.3.5.8).
+/// Order doesn't matter — features dispatch by AST tag, not declaration
 /// position.
 /// Returns the composed builder manifest alongside registration so
 /// `build_registry` can store it from the SAME factory run — a second
@@ -116,21 +115,9 @@ export component LanguageFeature {
 /// hundreds of stores a package compile creates (the rc-strict +2GB
 /// regression this signature exists to prevent).
 export fn init_features(reg: Registry) -> List<BuilderBind> {
-    // ── Statements ──
     let feats = language_features()
     for f in feats { register_lang(reg, f) }
-    let binds = fold_builders(feats)
-
-    // ── Expressions (legacy `Feature` remainder — postfix-chain forms,
-    //    spine-owned until t-kd4y.3.5.8) ──
-    register(reg, tuple_index_feature())
-    register(reg, optional_chain_feature())
-    register(reg, optional_method_call_feature())
-    register(reg, try_feature())
-    register(reg, catch_feature())
-    register(reg, field_access_feature())
-
-    binds
+    fold_builders(feats)
 }
 
 /// Every LanguageFeature definition, in registration order — the ONE list
@@ -138,7 +125,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), fn_lang(), extern_lang(), generics_lang(), type_decl_lang(), shape_lang(), component_lang(), let_lang(), mut_lang(), const_lang(), let_destructure_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), qualified_ref_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang(), quote_lang(), closures_lang(), tuples_lang(), list_lit_lang(), list_comp_lang(), map_lit_lang(), table_lit_lang(), struct_lit_lang(), enum_ctor_lang(), with_expr_lang(), grammar_block_lang(), spawn_lang(), isolated_lang(), channels_lang(), field_assign_lang(), null_coalesce_lang(), logical_op_lang(), pipe_op_lang(), eq_chain_lang(), is_keyword_lang(), in_operator_lang(), unary_op_lang(), spec_lang(), given_lang(), then_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), fn_lang(), extern_lang(), generics_lang(), type_decl_lang(), shape_lang(), component_lang(), let_lang(), mut_lang(), const_lang(), let_destructure_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), qualified_ref_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang(), quote_lang(), closures_lang(), tuples_lang(), tuple_index_lang(), list_lit_lang(), list_comp_lang(), map_lit_lang(), table_lit_lang(), struct_lit_lang(), enum_ctor_lang(), field_access_lang(), with_expr_lang(), grammar_block_lang(), spawn_lang(), isolated_lang(), channels_lang(), field_assign_lang(), null_coalesce_lang(), optional_chain_lang(), optional_method_call_lang(), try_lang(), catch_lang(), calls_lang(), logical_op_lang(), pipe_op_lang(), eq_chain_lang(), is_keyword_lang(), in_operator_lang(), unary_op_lang(), spec_lang(), given_lang(), then_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,

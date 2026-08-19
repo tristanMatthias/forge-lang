@@ -1,9 +1,11 @@
-// The null-coalesce operator's LOWERING (t-kd4y.3.5.7): one spanned row
-// (`fold_nullish`). The sibling `?.`/`?`/`catch` forms are POSTFIX-chain
-// branches (spine-owned until .3.5.8), so only the `??` stratum rides
-// this module. Imports ONLY features.grammar + core (F4012).
-use core.{Expr, ExprId, byte_span}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes}
+// The null-safety LOWERINGS: the `??` stratum's spanned fold
+// (t-kd4y.3.5.7) plus the POSTFIX-chain forms — `?` / `!` / `catch` /
+// `?.field` / `?.m(args)` (t-kd4y.3.5.8). The postfix cores thread the
+// engine's chain state (st.postfix_step_base / postfix_step_node), NOT
+// st.build_sp — their rows are flat; the chain loop's snap owns the span.
+// Imports ONLY features.grammar + core (F4012).
+use core.{Expr, ExprId, FORCE_UNWRAP_FN, byte_span}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes, capval_to_node_list, capval_to_stmt_list, capval_tok_pos, capval_tok_text, postfix_step_node}
 
 /// Left-fold `l ( "??" r )*` into a left-associative `Expr.NullCoalesce`
 /// chain (`a ?? b ?? c` = `(a ?? b) ?? c`) — the retired hand
@@ -30,4 +32,110 @@ export fn fold_nullish_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 export fn null_coalesce_builds() -> List<BuilderBind> {
     bind_rows("features.null_safety.lowering", [bind_row("fold_nullish", "expr", 3, true, "fold_nullish_abi", fold_nullish_abi)])
+}
+
+/// `expr?` — error propagation (t-47hc.33 form 1), the hand postfix_step's
+/// `if self.check(Tk.Question)` arm. No captures: the whole suffix is the token, and
+/// the subject is the threaded base.
+export fn mk_try_suffix(st: PState) -> ExprId {
+    postfix_step_node(st, Expr.Try(st.postfix_step_base))
+}
+
+export fn mk_try_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_try_suffix(st))
+}
+
+/// `expr!` — force-unwrap. A no-op pass-through at runtime (nullability is not tracked in
+/// the value tag), encoded as `Call(Ident($force_unwrap), [subject])` with a FRESH interned
+/// callee leaf, exactly as the hand builds it.
+///
+/// This branch is a single step, and the chain loop re-enters for whatever follows:
+/// the re-entry guard measures same-line against the `!`
+/// just consumed, so `x!?` continues the chain and `x!!` simply becomes two steps
+/// building the same two nodes.
+export fn mk_force_unwrap(st: PState) -> ExprId {
+    let callee = st.store.intern_expr_leaf(Expr.Ident(FORCE_UNWRAP_FN))
+    postfix_step_node(st, Expr.Call(callee, [st.postfix_step_base]))
+}
+
+export fn mk_force_unwrap_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_force_unwrap(st))
+}
+
+/// `expr catch { … }` / `expr catch (e) { … }` (t-47hc.33 form 2, spec Axis 12.5-12.6).
+///
+/// Three details the hand arm carries that are easy to lose:
+///   - The line/col stamped into the node are the `catch` KEYWORD's, captured before
+///     anything is consumed. They come off the captured token's byte offset here, which
+///     is the same position through the shared LineIndex.
+///   - The handler `Expr.Block` is INTERNED (`alloc_leaf` → `intern_expr_leaf`), not
+///     `add_expr`'d. `mk_expr_block` would allocate a fresh spanned row instead, so the
+///     handler cannot be routed through the `block_expr` rule.
+///   - An ABSENT `(e)` binding is the empty string, which is what `capval_tok_text`
+///     yields for a `Nil` capture.
+export fn mk_catch_suffix(st: PState, ccap: CapVal, bcap: CapVal, bodycap: CapVal) -> ExprId {
+    let lc = st.store.lines.to_linecol(capval_tok_pos(ccap))
+    let handler_id = st.store.intern_expr_leaf(Expr.Block(capval_to_stmt_list(bodycap)))
+    postfix_step_node(st, Expr.Catch(st.postfix_step_base, capval_tok_text(bcap), handler_id, lc.line, lc.col))
+}
+
+export fn mk_catch_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_catch_suffix(st, vals[0], vals[1], vals[2]))
+}
+
+/// `expr?.field` — optional chaining WITHOUT a call (t-47hc.33 form 3). The `?.m(args)`
+/// sibling builds a different node (`Expr.OptionalMethodCall`, from an arg list under
+/// `it`-sugar). `@peek(qdot_plain_field)` and `@peek(qdot_method_call)`
+/// — the same same-line test read in opposite directions — keep the two apart before
+/// either branch is entered.
+export fn mk_opt_chain(st: PState, ncap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.OptionalChain(st.postfix_step_base, capval_tok_text(ncap)))
+}
+
+export fn mk_opt_chain_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_opt_chain(st, vals[0]))
+}
+
+/// `expr?.m(args)` — the optional METHOD CALL, the sibling mk_opt_chain declines.
+///
+/// A different NODE, not a different spelling: `?.field` keeps `Expr.OptionalChain`, while
+/// this builds `Expr.OptionalMethodCall`, which has no dedicated codegen and desugars to
+/// the if-let shape (`{ let $t = recv; if $t != none { $t!.m(args) } else none }`). Getting
+/// the two confused would silently drop the argument list.
+///
+/// `it`-sugar is ON for the argument list, UNCONDITIONALLY — the hand sets
+/// `allow_it_sugar = true` here rather than the plain call's `is_method || saved_it`
+/// disjunction, which is why the branch carries a bare `@on(allow_it_sugar)` where the
+/// call form carries `@on_if(base_field_access, allow_it_sugar)`. The receiver of a `?.`
+/// call is a method receiver by construction, so the condition is already decided.
+///
+/// SPANNED via postfix_step_node, matching the hand's alloc_at.
+export fn mk_opt_method_call(st: PState, ncap: CapVal, acap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.OptionalMethodCall(st.postfix_step_base, capval_tok_text(ncap), capval_to_node_list(acap)))
+}
+
+export fn mk_opt_method_call_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_opt_method_call(st, vals[0], vals[1]))
+}
+
+/// The `?`/`!` unwrap pair — try_lang's rows (its `unwrap_suffix` rule
+/// spells both). Flat: the chain's own snap threads the span.
+export fn try_builds() -> List<BuilderBind> {
+    bind_rows("features.null_safety.lowering", [bind_row("MkTrySuffix", "expr", 0, false, "mk_try_suffix_abi", mk_try_suffix_abi),
+     bind_row("MkForceUnwrap", "expr", 0, false, "mk_force_unwrap_abi", mk_force_unwrap_abi)])
+}
+
+/// catch_lang's row.
+export fn catch_builds() -> List<BuilderBind> {
+    bind_rows("features.null_safety.lowering", [bind_row("MkCatchSuffix", "expr", 3, false, "mk_catch_suffix_abi", mk_catch_suffix_abi)])
+}
+
+/// optional_chain_lang's row.
+export fn optional_chain_builds() -> List<BuilderBind> {
+    bind_rows("features.null_safety.lowering", [bind_row("MkOptChain", "expr", 1, false, "mk_opt_chain_abi", mk_opt_chain_abi)])
+}
+
+/// optional_method_call_lang's row.
+export fn optional_method_call_builds() -> List<BuilderBind> {
+    bind_rows("features.null_safety.lowering", [bind_row("MkOptMethodCall", "expr", 2, false, "mk_opt_method_call_abi", mk_opt_method_call_abi)])
 }

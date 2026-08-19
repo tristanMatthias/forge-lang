@@ -1,7 +1,9 @@
-// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
-// flat at `features.tuples.{...}`.
+// dir-as-module (g2eo.1): codegen.av + lowering/ auto-load as siblings,
+// surface flat at `features.tuples.{...}`.
 use core.{vtype_tuple_at, vtype_eq}
-use core.{feature_new, Feature, ExprId}
+use core.{ExprId}
+use features.grammar.{parse_grammar}
+use features.tuples.lowering.{tuple_index_builds}
 use resolve.{resolve_expr, resolve_expr_list_ids}
 use typeck.{check_expr, check_expr_list_types, tc_er, tc_report, tc_gate_unthreaded_lambda}
 use diagnostics.{DiagCode}
@@ -47,16 +49,35 @@ fn tuple_eval(rt: Runtime, expr: Expr) -> StepResult {
     }
 }
 
-/// Register the `t.0`, `t.1`, ... tuple-indexing feature.
-/// Distinct AST tag from field access on structs because tuple
-/// elements are positional.
-export fn tuple_index_feature() -> Feature {
-    feature_new("tuple_index") with {
-        expr_tag: Expr.TupleIndex(ExprId(0), 0),
-        emit_expr: emit_tuple_index,
-        resolve_expr: tuple_index_resolve,
-        check_expr: tuple_index_check,
+/// `t.0`, `t.1`, … — tuple indexing. Distinct AST tag from field access
+/// on structs because tuple elements are positional. The definition
+/// carries its postfix-chain branch (t-kd4y.3.5.8): the spine's
+/// `postfix_suffix` dispatches here behind a zero-width
+/// `@peek(dot_number)` gate — the lookahead that partitions `.0` from
+/// `.field` BEFORE either `.`-led rule is entered, and what lets this
+/// rule sort ahead of field_suffix's unguarded `.` fallback.
+/// `gram_family = "expr"`.
+export fn tuple_index_lang() -> LanguageFeature {
+    LanguageFeature tuple_index_def {
+        name = "tuple_index",
+        title = ".0 — tuple indexing",
+        docs = """
+`t.0` reads a tuple's first element, `t.1` its second, and so on. The
+index is a literal — tuples are fixed-arity, so positions are checked at
+compile time.
+""",
+        gram = grammar {
+  tuple_suffix = @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
+        },
+        builders = tuple_index_builds(),
+        snippet = r"${1:tuple}.${2:0}",
+        expr_tag = Expr.TupleIndex(ExprId(0), 0),
+        emit_expr = emit_tuple_index,
+        resolve_expr = tuple_index_resolve,
+        check_expr = tuple_index_check,
+        gram_family = "expr",
     }
+    tuple_index_def
 }
 
 /// Resolver hook for `Tuple` literals. Walks every element.
