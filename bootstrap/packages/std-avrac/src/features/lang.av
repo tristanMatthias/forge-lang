@@ -9,7 +9,7 @@
 
 use core.{feature_new, Registry, register}
 use features.grammar.{grammar_literals, grammar_checked, grammar_startup_fail, compose_fragments, Grammar, GrammarParse, text_is_word}
-use features.grammar.{grammar_build_refs, central_build_kind, engine_build_kinds, str_in, BuilderBind}
+use features.grammar.{grammar_build_refs, central_build_kind, central_tableless_builds, engine_build_kinds, str_in, BuilderBind}
 use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
@@ -142,7 +142,14 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
         }
     }
     for r in refs {
-        if central_build_kind(r.name) == "" && !supplies(builders, r.name) {
+        // "Engine build" is central_build_kind's domain PLUS the tableless
+        // arms (MkNone / MkStampAt / MkAnnotated — arms with no kind row,
+        // deliberately: MkNone is the kind-free absent marker, and a kind
+        // row would poison alternation inference for every optional that
+        // uses it). The kind proxy alone rejected features/calls'
+        // `index_tail -> MkNone()` — the first feature gram to reference a
+        // tableless engine build (t-kd4y.3.5.8).
+        if central_build_kind(r.name) == "" && !str_in(central_tableless_builds(), r.name) && !supplies(builders, r.name) {
             return "feature `${fname}`: rule `${r.rule}` references build `${r.name}` (${r.argc} arg(s)) which resolves to no builder — supply it in `builders` or use an engine build"
         }
     }

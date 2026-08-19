@@ -1,9 +1,9 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av + typeck.av auto-load
 // as siblings, surface flat at `features.struct_decl.{...}`.
 use codegen.{err_emit}
-use core.{feature_new, Feature, vtype_struct_name, ExprId}
+use core.{vtype_struct_name, ExprId}
 use features.{composed}
-use features.struct_decl.lowering.{type_decl_builds, struct_lit_builds, enum_ctor_builds, field_assign_builds}
+use features.struct_decl.lowering.{type_decl_builds, struct_lit_builds, enum_ctor_builds, field_assign_builds, field_access_builds}
 use features.grammar.{parse_grammar}
 use resolve.{resolve_expr, resolve_expr_list_ids, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
@@ -50,25 +50,49 @@ partial updates go through `with`).
     struct_lit_def
 }
 
-/// Register the `obj.field` field-access feature. Also handles
-/// the `Type.STATIC` shape when the receiver starts with an
-/// upper-case ident — that case skips name resolution.
-export fn field_access_feature() -> Feature {
-    feature_new("field_access") with {
-        expr_tag: Expr.FieldAccess(ExprId(0), ""),
-        emit_expr: field_access_emit_expr,
-        resolve_expr: field_access_resolve_expr,
-        check_expr: field_access_check_expr,
+/// `obj.field` — field access. Also handles the `Type.STATIC` shape when
+/// the receiver starts with an upper-case ident — that case skips name
+/// resolution. The definition carries the postfix chain's `.`-led CORE
+/// rule (t-kd4y.3.5.8): the peek-gated `.field` branch AND the unguarded
+/// `@fallback` branch that owns the diagnostic for a `.` completing no
+/// step (`a.` — without it the stray `.` re-reads at statement level:
+/// F0001 vs the pinned F0040, and a different recovery tree). The
+/// `.Variant(` and `.0` readings are SIBLING RULES (enum_ctor_lang's
+/// enum_ctor_suffix, tuple_index_lang's tuple_suffix), dispatched
+/// zero-width-peek-first by the spine so this rule's fallback stays the
+/// LAST `.`-led branch. FIELDNAME (not IDENT): `consume_field_name`
+/// accepts reserved-but-inactive keywords (`x.ref`), a set the DSL's
+/// IDENT terminal cannot spell. `gram_family = "expr"`.
+export fn field_access_lang() -> LanguageFeature {
+    LanguageFeature field_access_def {
+        name = "field_access",
+        title = ". — field access",
+        docs = """
+`obj.field` reads a field; chains compose left-to-right. On an
+upper-case receiver the same syntax reads as `Type.STATIC` /
+`Type.Variant` — resolved by the type system rather than name lookup.
+""",
+        gram = grammar {
+  field_suffix = @peek(dot_plain_field) @when(dot_postfix_ok) "." n:FIELDNAME -> MkFieldAccess(n)
+               | @fallback @when(dot_postfix_ok) "." @require n:FIELDNAME @expect("FIELDNAME", "expected field name after `.`") -> MkFieldAccess(n)
+        },
+        builders = field_access_builds(),
+        snippet = r"${1:obj}.${2:field}",
+        expr_tag = Expr.FieldAccess(ExprId(0), ""),
+        emit_expr = field_access_emit_expr,
+        resolve_expr = field_access_resolve_expr,
+        check_expr = field_access_check_expr,
+        gram_family = "expr",
     }
+    field_access_def
 }
 
 /// `EnumName.Variant(args)` / leading-dot `.Variant(args)` enum
 /// constructors — the definition carries the contextual `.Variant` rule
-/// + its row (t-kd4y.3.5.6). Lives next to struct_lit because the
+/// (t-kd4y.3.5.6) AND the postfix `Type.Variant(args)` SUFFIX reading
+/// (t-kd4y.3.5.8) with both rows. Lives next to struct_lit because the
 /// parsing/typeck shape is similar; the `Type.Variant` form arrives via
-/// field-access rewriting, and the postfix `.Variant(args)` SUFFIX build
-/// (MkEnumCtorSuffix) stays with the spine's postfix chain until the
-/// .3.5.8 postfix flip. `gram_family = "expr"`.
+/// field-access rewriting. `gram_family = "expr"`.
 export fn enum_ctor_lang() -> LanguageFeature {
     LanguageFeature enum_ctor_def {
         name = "enum_ctor",
@@ -77,6 +101,7 @@ export fn enum_ctor_lang() -> LanguageFeature {
   variant_ctor = "." @require v:IDENT ( "(" ( a:expression ( "," a:expression )* )? @require ")" )?
                  @expect("IDENT", "expected a variant name after `.`", F0040)
                  @expect(")", "expected `)` after arguments") -> mk_enum_ctor(v, a)
+  enum_ctor_suffix = @peek(dot_enum_ctor) @when(base_upper_ident) @when(dot_postfix_ok) "." n:FIELDNAME "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkEnumCtorSuffix(n, a)
         },
         builders = enum_ctor_builds(),
         expr_tag = Expr.EnumCtor("", "", []),

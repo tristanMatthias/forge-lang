@@ -1,0 +1,79 @@
+// dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
+// at `features.calls.{...}`. A syntax-only carrier: `Expr.Call` /
+// `GenericCall` / `Index` / `Slice` are core codegen/typeck nodes (call
+// emission, mono, and index lowering live in core passes), so no pass
+// hooks ride this definition — syntax + the lowerings alone.
+use features.grammar.{parse_grammar}
+use features.calls.lowering.{calls_builds}
+
+/// `expr(args)` / `f<T>(args)` / `expr[i]` / `expr[a..b]` — the postfix
+/// chain's APPLY forms, one family with one shared argument rule
+/// (t-kd4y.3.5.8). The spine's `postfix_suffix` dispatches to
+/// `index_suffix` and `call_suffix` by name; `call_arg` is ALSO referenced
+/// cross-fragment by optcall_suffix (features/null_safety) and
+/// enum_ctor_suffix (features/struct_decl) — the `field_init` precedent:
+/// the rule lives with its primary owner, references bind by name, and
+/// the no-orphans validator holds because THIS gram spells every row it
+/// supplies. `index_tail` spells engine-core `MkNone()` (the
+/// absent-optional marshalling value) — referencing an engine build needs
+/// no row.
+///
+/// The `f<T>(args)` branch is the ONE speculative form in the chain, and every marker on
+/// it is chosen against try_parse_generic_call (features/generics/parser.av) rather than
+/// against its `(`-led neighbour:
+///   `@try` and NO `@cut`. `<` is also the comparison operator, so the branch must be
+///     able to un-decide: `a < b` is not a generic call. try_parse_generic_call
+///     backtracks on EVERY
+///     failure past the `<` — a type list that doesn't close, a missing `(`, a bad arg
+///     list, a missing `)` all hit the same `restore_state` — so there is no point at
+///     which it owns its diagnostics, and a `@cut` would invent one. Placing a cut after
+///     `">" "("` reads as the natural commit point and is exactly the divergence to
+///     avoid: it would report on `f<int>(` + garbage where the rollback lets
+///     the tokens re-read as a comparison chain.
+///   No `@require` / `@expect` for the same reason: inside a `@try` before a cut they
+///     degrade to plain reporting (the rollback already IS the abort), so they would be
+///     dead markers that only suggest a commit point exists.
+///   No `^`. The `[` and `(` branches are same-line gated; the `Tk.Less` arm is
+///     not (`check(Tk.Less) && is_callable(result)` is the whole entry guard), so adding
+///     one here would reject a line-broken turbofish that must be accepted.
+///   `@when(base_callable)` is the `is_callable(result)` conjunct — Ident, QualifiedIdent
+///     or FieldAccess. It reads the folded BASE, not a mode, which is why it is a
+///     base_pred (executor.av) shared by both engines rather than a modes_flag.
+///   The type list is OPTIONAL as a whole: parse_type_name_list returns early on `>`, so
+///     `f<>(x)` parses, and a bare `ta:type_expr ( "," ta:type_expr )*` would reject it.
+///   No `@on_if(base_field_access, allow_it_sugar)`. The plain-call branch carries it
+///     because the `(` arm sets `allow_it_sugar = is_method || saved_it`;
+///     try_parse_generic_call never touches the mode, so the sugar must stay at whatever
+///     the enclosing context already had. `call_arg` is still the right body — the same
+///     arg list is reached through parse_arg_list_ids, which sets allow_dot_postfix
+///     and leaves the it-wrap to the same `allow_it_sugar` read mk_call_arg performs.
+///
+/// index_tail: two sequences because the closing `]` message differs by whether a `..`
+/// was seen and `@expect` keys on the token. Dispatch is on `..` (FIRST), not
+/// speculation — the index expression is parsed exactly once. The `]` branch is
+/// `@fallback` so it owns the message for a token that starts NEITHER (`a[1 2]`).
+/// `gram_family = "expr"`.
+export fn calls_lang() -> LanguageFeature {
+    LanguageFeature calls_def {
+        name = "calls",
+        title = "calls and indexing",
+        docs = """
+`f(args)` calls a function or method; `f<T>(args)` passes explicit type
+arguments (parsed speculatively — `a < b` stays a comparison);
+`xs[i]` indexes and `xs[a..b]` slices. Arguments apply the `it` pronoun
+sugar in method position: `xs.map(it * 2)`.
+""",
+        gram = grammar {
+  index_suffix = ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
+  index_tail  = ".." e:expression @require "]" @expect("]", "expected `]` after slice") -> e
+              | @fallback @require "]" @expect("]", "expected `]` after index") -> MkNone()
+  call_suffix = ^"(" @on_if(base_field_access, allow_it_sugar) ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
+              | @try @when(base_callable) "<" ( ta:type_expr ( "," ta:type_expr )* )? ">" "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" -> MkGenericCallSuffix(ta, a)
+  call_arg = @on(allow_dot_postfix) e:expression -> MkCallArg(e)
+        },
+        builders = calls_builds(),
+        snippet = r"${1:f}(${2:args})",
+        gram_family = "expr",
+    }
+    calls_def
+}

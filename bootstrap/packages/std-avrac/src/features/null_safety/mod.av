@@ -3,9 +3,9 @@
 // Sibling exports (emit_null_coalesce, check_catch, etc.) are in scope
 // without explicit self-imports.
 use codegen.{err_emit}
-use core.{feature_new, Feature, vtype_wrap_optional, vtype_is_optional, vtype_is_unknown, ExprId}
+use core.{vtype_wrap_optional, vtype_is_optional, vtype_is_unknown, ExprId}
 use features.grammar.{parse_grammar}
-use features.null_safety.lowering.{null_coalesce_builds}
+use features.null_safety.lowering.{null_coalesce_builds, try_builds, catch_builds, optional_chain_builds, optional_method_call_builds}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er, check_method_call}
@@ -13,9 +13,8 @@ use typeck.{check_expr, tc_er, check_method_call}
 /// `x ?? fallback` — null coalescing. The definition carries the
 /// ladder's `null_coalesce` stratum and its spanned `fold_nullish` row
 /// (t-kd4y.3.5.7) — the sibling `?.`/`?`/`catch` forms are postfix-chain
-/// branches (spine-owned until .3.5.8) and keep their own `Feature`
-/// registrations below. `gram_family = "expr"`; `pipe` enters here and
-/// the stratum exits to `logic_or` by name.
+/// definitions below (t-kd4y.3.5.8). `gram_family = "expr"`; `pipe`
+/// enters here and the stratum exits to `logic_or` by name.
 export fn null_coalesce_lang() -> LanguageFeature {
     LanguageFeature null_coalesce_def {
         name = "null_coalesce",
@@ -38,51 +37,132 @@ associate left and stop at the first non-null value: `a ?? b ?? c`.
     null_coalesce_def
 }
 
-/// Register the `?.` optional-chain feature (`obj?.field`).
-/// Short-circuits the field access to null when the receiver is
-/// null.
-export fn optional_chain_feature() -> Feature {
-    feature_new("optional_chain") with {
-        expr_tag: Expr.OptionalChain(ExprId(0), ""),
-        emit_expr: optional_chain_emit_expr,
-        resolve_expr: optional_chain_resolve_expr,
-        check_expr: optional_chain_check_expr,
+/// `obj?.field` — optional chaining without a call. Short-circuits the
+/// field access to null when the receiver is null. The definition carries
+/// its postfix-chain branch (t-kd4y.3.5.8): the rule builds through the
+/// engine's chain threading (postfix_step_node reads the frozen step
+/// base), so the row is FLAT — the chain loop's snap owns the span. The
+/// spine's `postfix_suffix` dispatches here behind a zero-width
+/// `@peek(qdot_method_call)` gate on the SIBLING branch: the same
+/// same-line test read in opposite directions keeps `?.f` and `?.m(args)`
+/// apart before either rule is entered. `gram_family = "expr"`.
+export fn optional_chain_lang() -> LanguageFeature {
+    LanguageFeature optional_chain_def {
+        name = "optional_chain",
+        title = "?. — optional chaining",
+        docs = """
+`obj?.field` yields the field when `obj` is non-null and `none`
+otherwise, widening the result to `T?`. Chains compose left-to-right and
+short-circuit at the first null receiver.
+""",
+        gram = grammar {
+  optchain_suffix = @peek(qdot_plain_field) "?." n:FIELDNAME -> MkOptChain(n)
+        },
+        builders = optional_chain_builds(),
+        snippet = r"${1:obj}?.${2:field}",
+        expr_tag = Expr.OptionalChain(ExprId(0), ""),
+        emit_expr = optional_chain_emit_expr,
+        resolve_expr = optional_chain_resolve_expr,
+        check_expr = optional_chain_check_expr,
+        gram_family = "expr",
     }
+    optional_chain_def
 }
 
-/// Register the `?` (try) operator feature. Unwraps `Ok(x)` to
-/// `x`; propagates `Err(e)` to the enclosing fn (spec Axis 12).
-/// Register the `obj?.method(args)` optional method-call feature — sibling
-/// of optional_chain for the call form. Short-circuits to none on a null
-/// receiver, else calls the method and wraps the result.
-export fn optional_method_call_feature() -> Feature {
-    feature_new("optional_method_call") with {
-        expr_tag: Expr.OptionalMethodCall(ExprId(0), "", []),
-        emit_expr: optional_method_call_emit_expr,
-        resolve_expr: optional_method_call_resolve_expr,
-        check_expr: optional_method_call_check_expr,
+/// `obj?.method(args)` — the optional METHOD CALL, optional_chain's
+/// sibling for the call form. Short-circuits to none on a null receiver,
+/// else calls the method and wraps the result. `it`-sugar is ON for the
+/// argument list UNCONDITIONALLY (`@on(allow_it_sugar)` — a `?.` call's
+/// receiver is a method receiver by construction, so the plain call's
+/// `is_method || saved_it` disjunction is already decided). The arg list
+/// references `call_arg` cross-fragment (features/calls) by name.
+/// `gram_family = "expr"`.
+export fn optional_method_call_lang() -> LanguageFeature {
+    LanguageFeature optional_method_call_def {
+        name = "optional_method_call",
+        title = "?.m(…) — optional method calls",
+        docs = """
+`obj?.method(args)` calls the method when `obj` is non-null and yields
+`none` otherwise, widening the result to `T?`. The argument list applies
+the `it` pronoun sugar exactly as a plain method call does.
+""",
+        gram = grammar {
+  optcall_suffix = @peek(qdot_method_call) "?." n:FIELDNAME "(" @on(allow_it_sugar) ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkOptMethodCall(n, a)
+        },
+        builders = optional_method_call_builds(),
+        snippet = r"${1:obj}?.${2:method}(${3:args})",
+        expr_tag = Expr.OptionalMethodCall(ExprId(0), "", []),
+        emit_expr = optional_method_call_emit_expr,
+        resolve_expr = optional_method_call_resolve_expr,
+        check_expr = optional_method_call_check_expr,
+        gram_family = "expr",
     }
+    optional_method_call_def
 }
 
-export fn try_feature() -> Feature {
-    feature_new("try") with {
-        expr_tag: Expr.Try(ExprId(0)),
-        emit_expr: try_emit_expr,
-        resolve_expr: try_resolve_expr,
-        check_expr: (tc: TC, expr: Expr) -> check_try(tc, expr),
+/// `expr?` / `expr!` — the unwrap pair (spec Axis 12): `?` unwraps `Ok(x)`
+/// to `x` and propagates `Err(e)` to the enclosing fn; `!` asserts a
+/// nullable is present (a runtime no-op encoded as the `$force_unwrap`
+/// call, exactly as the hand built it). ONE rule carries both branches —
+/// same entry guard (`@when(allow_dot_postfix)` + same-line `^`), same
+/// flat chain-threaded lowering, and `x!?` simply runs two steps.
+/// `gram_family = "expr"`.
+export fn try_lang() -> LanguageFeature {
+    LanguageFeature try_def {
+        name = "try",
+        title = "? / ! — unwrap and propagate",
+        docs = """
+`expr?` unwraps a `Result`/nullable and propagates the error/null to the
+enclosing fn. `expr!` asserts the value is present, panicking otherwise.
+Both continue the postfix chain: `x!.field` and `f()?.g()` compose.
+""",
+        gram = grammar {
+  unwrap_suffix = @when(allow_dot_postfix) ^"!" -> MkForceUnwrap()
+                | @when(allow_dot_postfix) ^"?" -> MkTrySuffix()
+        },
+        builders = try_builds(),
+        snippet = r"${1:expr}?",
+        expr_tag = Expr.Try(ExprId(0)),
+        emit_expr = try_emit_expr,
+        resolve_expr = try_resolve_expr,
+        check_expr = (tc: TC, expr: Expr) -> check_try(tc, expr),
+        gram_family = "expr",
     }
+    try_def
 }
 
-/// Register the `catch` recovery feature
-/// (`expr() catch { default }`). Pairs with `Result`/`?` to
-/// recover an error path with a fallback value.
-export fn catch_feature() -> Feature {
-    feature_new("catch") with {
-        expr_tag: Expr.Catch(ExprId(0), "", ExprId(0), 0, 0),
-        emit_expr: catch_emit_expr,
-        resolve_expr: catch_resolve_expr,
-        check_expr: check_catch,
+/// `expr catch { default }` / `expr catch (e) { … }` — error recovery
+/// (spec Axis 12.5-12.6). Pairs with `Result`/`?` to recover an error
+/// path with a fallback value. The handler body is a declaration list
+/// (referenced cross-fragment by name); the node keeps the `catch`
+/// KEYWORD's line/col, read off the captured token's byte offset.
+/// `gram_family = "expr"`.
+export fn catch_lang() -> LanguageFeature {
+    LanguageFeature catch_def {
+        name = "catch",
+        title = "catch — error recovery",
+        docs = """
+`expr catch { fallback }` yields `expr`'s value on success and runs the
+handler on error; `catch (e)` binds the error. The handler's last
+expression is the recovery value.
+""",
+        gram = grammar {
+  catch_suffix = c:"catch" ( "(" @require b:IDENT @require ")" )? @require "{"
+                 @on(allow_dot_postfix) body:declaration* @require "}"
+                 @expect("IDENT", "expected error binding name after `catch (`")
+                 @expect(")", "expected `)` after catch binding")
+                 @expect("{", "expected `{` after catch")
+                 @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
+        },
+        builders = catch_builds(),
+        snippet = r"${1:expr} catch { ${2:fallback} }",
+        expr_tag = Expr.Catch(ExprId(0), "", ExprId(0), 0, 0),
+        emit_expr = catch_emit_expr,
+        resolve_expr = catch_resolve_expr,
+        check_expr = check_catch,
+        gram_family = "expr",
     }
+    catch_def
 }
 
 /// Resolver hook for `NullCoalesce`. Walks both sides.

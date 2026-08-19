@@ -2578,28 +2578,18 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         "MkTaggedTemplate" -> "CapVal.Node(mk_tagged_template(st, sp_start, ${args[0]}, ${args[1]}))"
         "MkSplice" -> "CapVal.Node(mk_splice(st, sp_start, ${args[0]}))"
         "MkSpliceStruct" -> "CapVal.Node(mk_splice_struct(st, sp_start, ${args[0]}, CapVal.FInits(${args[1]}_list)))"
-        // Native `postfix_suffix` steps (t-47hc.33). No `sp_start` arg — the builder
-        // reads `st.postfix_sp_start`, so these are deliberately absent from
-        // build_uses_sp_start and no `let sp_start = …` is emitted for them.
-        "MkTrySuffix" -> "CapVal.Node(mk_try_suffix(st))"
-        "MkForceUnwrap" -> "CapVal.Node(mk_force_unwrap(st))"
-        "MkCallArg" -> "CapVal.Node(mk_call_arg(st, ${args[0]}))"
-        "MkCallSuffix" -> "CapVal.Node(mk_call_suffix(st, CapVal.Nodes(${args[0]}_list)))"
+        // The postfix-suffix step builds are feature-owned (features/
+        // null_safety, features/tuples, features/struct_decl, features/
+        // calls — t-kd4y.3.5.8): the manifest branch above renders the
+        // adapter calls, list captures wrapped by manifest_arg_spelling
+        // (the repeated type-arg capture rides the "type" kind's
+        // CapVal.TExprs list ctor, grown for MkGenericCallSuffix). No
+        // sp_start on any of them — the cores read the chain state the
+        // `( postfix_suffix )*` loop threads, so the rows are flat and
+        // deliberately absent from build_uses_sp_start.
         "MkSpliceName" -> "mk_splice_name(st, capval_tok_text(${args[0]}))"
         "MkPlainName" -> "mk_plain_name(st, capval_tok_text(${args[0]}))"
-        // The type-arg capture is ALREADY a `List<TypeExpr>` here (same as MkNamed's
-        // gen_args), so it passes raw — only the interpreter routes through
-        // capval_to_texpr_list.
-        "MkGenericCallSuffix" -> "CapVal.Node(mk_generic_call_suffix(st, ${args[0]}_list, CapVal.Nodes(${args[1]}_list)))"
-        "MkTupleIndex" -> "CapVal.Node(mk_tuple_index(st, ${args[0]}))"
-        "MkIndexSuffix" -> "CapVal.Node(mk_index_suffix(st, ${args[0]}, ${args[1]}))"
         "MkNone" -> "mk_none_cap(st)"
-        "MkOptChain" -> "CapVal.Node(mk_opt_chain(st, ${args[0]}))"
-        "MkOptMethodCall" -> "CapVal.Node(mk_opt_method_call(st, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
-        "MkTupleIndex" -> "CapVal.Node(mk_tuple_index(st, ${args[0]}))"
-        "MkFieldAccess" -> "CapVal.Node(mk_field_access(st, ${args[0]}))"
-        "MkEnumCtorSuffix" -> "CapVal.Node(mk_enum_ctor_suffix(st, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
-        "MkCatchSuffix" -> "CapVal.Node(mk_catch_suffix(st, ${args[0]}, ${args[1]}, CapVal.SNodes(${args[2]}_list)))"
         // The match family — arms, statement + when-statement forms, and the
         // table pair — is feature-owned (features/match/lowering): the
         // manifest branch above renders the adapter calls, list captures
@@ -3150,7 +3140,7 @@ type KindRow = { coerce: string, elem: string, list_ctor: string }
 fn kind_row(kind: string) -> KindRow {
     if kind == "pat" { return KindRow { coerce: "capval_to_pat", elem: "PatId", list_ctor: "CapVal.PNodes" } }
     if kind == "stmt" { return KindRow { coerce: "capval_to_stmt", elem: "StmtId", list_ctor: "CapVal.SNodes" } }
-    if kind == "type" { return KindRow { coerce: "capval_to_texpr", elem: "TypeExpr", list_ctor: "" } }
+    if kind == "type" { return KindRow { coerce: "capval_to_texpr", elem: "TypeExpr", list_ctor: "CapVal.TExprs" } }
     if kind == "pentry" { return KindRow { coerce: "capval_to_pentry", elem: "ParamEntry", list_ctor: "CapVal.PEntries" } }
     if kind == "tparam" { return KindRow { coerce: "capval_to_tparam", elem: "TypeParamEntry", list_ctor: "CapVal.TParams" } }
     if kind == "field" { return KindRow { coerce: "capval_to_field", elem: "FieldEntry", list_ctor: "CapVal.Fields" } }

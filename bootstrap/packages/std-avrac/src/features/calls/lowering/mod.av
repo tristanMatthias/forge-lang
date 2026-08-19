@@ -1,0 +1,85 @@
+// The call/index LOWERINGS (t-kd4y.3.5.8): the postfix chain's apply
+// forms — `expr(args)`, `f<T>(args)`, `expr[i]` / `expr[a..b]` — plus the
+// shared ONE-argument rule every call form routes through. All four are
+// POSTFIX-chain cores: they thread the engine's chain state
+// (postfix_step_node / st.postfix_step_base), NOT st.build_sp — their
+// rows are flat, and the chain loop's snap owns the span. The `it`-sugar
+// application is an ENGINE service (features.grammar.apply_it_sugar,
+// which composes the features.closures helpers beside the mode flag it
+// reads), so this module imports ONLY features.grammar + core (F4012).
+use core.{Expr, ExprId, TypeExpr, ValueType, type_expr_to_vtype}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, apply_it_sugar, capval_present, capval_to_expr, capval_to_node_list, capval_to_texpr_list, postfix_step_node}
+
+/// ONE call argument, reproducing parse_arg_list_ids_inner's `it` sugar: under
+/// `allow_it_sugar` an argument that MENTIONS `it` becomes `(it) -> arg`, so
+/// `xs.map(it * 2)` means `xs.map((it) -> it * 2)`. An argument that is already a lambda
+/// is left alone — wrapping it would double-bind.
+export fn mk_call_arg(st: PState, ecap: CapVal) -> ExprId {
+    apply_it_sugar(st, capval_to_expr(st, ecap))
+}
+
+export fn mk_call_arg_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_call_arg(st, vals[0]))
+}
+
+/// `expr(args)`. The receiver is the chain base as of this step's ENTRY, not the live
+/// accumulator — the argument list recurses into `expression` and runs its own chain.
+export fn mk_call_suffix(st: PState, acap: CapVal) -> ExprId {
+    postfix_step_node(st, Expr.Call(st.postfix_step_base, capval_to_node_list(acap)))
+}
+
+export fn mk_call_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_call_suffix(st, vals[0]))
+}
+
+/// `f<T, U>(args)` — the explicit-type-argument call.
+///
+/// NOT `postfix_step_node`, which every sibling suffix uses. try_parse_generic_call ends
+/// in `alloc_leaf` (→ `intern_expr_leaf`), so the GenericCall row is INTERNED and carries
+/// NO byte span, while `postfix_step_node` would `add_expr` a freshly spanned row. The
+/// difference is observable: an interned row is shared by structural identity and a
+/// spanned one is not, and the span feeds every diagnostic anchored on this node. Chain
+/// threading still has to happen by hand, hence the explicit `set_postfix_base`.
+///
+/// The type arguments arrive as TypeExprs and are lowered through the SHARED
+/// type_expr_to_vtype, exactly as parse_type_name_list does — so `id<List<int>>(x)` yields
+/// `List(Int)` rather than a bare `List` with the `<int>` orphaned.
+export fn mk_generic_call_suffix(st: PState, targs: List<TypeExpr>, acap: CapVal) -> ExprId {
+    mut vts: List<ValueType> = []
+    for te in targs { vts.push(type_expr_to_vtype(te)) }
+    let rid = st.store.intern_expr_leaf(
+        Expr.GenericCall(st.postfix_step_base, vts, capval_to_node_list(acap)))
+    st.set_postfix_base(rid)
+    rid
+}
+
+export fn mk_generic_call_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_generic_call_suffix(st, capval_to_texpr_list(vals[0]), vals[1]))
+}
+
+/// `expr[i]` / `expr[a..b]` (t-47hc.33 form 5) — the FIRST form that recurses into
+/// `expression`, which is what made `snap_postfix_step` necessary: the receiver is the
+/// chain base as of this step's ENTRY, not whatever the nested index expression left in
+/// the live accumulator.
+export fn mk_index_suffix(st: PState, icap: CapVal, tcap: CapVal) -> ExprId {
+    let i = capval_to_expr(st, icap)
+    if capval_present(tcap) {
+        return postfix_step_node(st, Expr.Slice(st.postfix_step_base, i, capval_to_expr(st, tcap)))
+    }
+    postfix_step_node(st, Expr.Index(st.postfix_step_base, i))
+}
+
+export fn mk_index_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_index_suffix(st, vals[0], vals[1]))
+}
+
+/// calls_lang's rows — call_suffix spells MkCallSuffix + MkGenericCallSuffix,
+/// call_arg spells MkCallArg, index_suffix spells MkIndexSuffix. (index_tail
+/// spells engine-core MkNone — the absent-optional marshalling value — and
+/// needs no row here.) All flat: every core is chain-threaded.
+export fn calls_builds() -> List<BuilderBind> {
+    bind_rows("features.calls.lowering", [bind_row("MkCallSuffix", "expr", 1, false, "mk_call_suffix_abi", mk_call_suffix_abi),
+     bind_row("MkGenericCallSuffix", "expr", 2, false, "mk_generic_call_suffix_abi", mk_generic_call_suffix_abi),
+     bind_row("MkCallArg", "expr", 1, false, "mk_call_arg_abi", mk_call_arg_abi),
+     bind_row("MkIndexSuffix", "expr", 2, false, "mk_index_suffix_abi", mk_index_suffix_abi)])
+}

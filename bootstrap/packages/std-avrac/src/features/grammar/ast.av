@@ -895,8 +895,24 @@ export fn engine_core_builds() -> List<string> {
     //   side-table row, builds nothing a user spells. (Tableless: exec/emit
     //   arms only, no kind row — see central_tableless_builds.)
     // MkNone — the absent-optional-capture marshalling value. (Tableless.)
+    //   Spelled by ONE production rule — features/calls' index_tail — and by
+    //   toy grammars; referencing an engine build from a feature gram is
+    //   legal (the validator's orphan contract binds SUPPLIED rows only).
+    // field_suffix / index_suffix / call_suffix — the PARTIAL-suffix
+    //   vocabulary of the DSL's own `fold_postfix` mechanism (missing-
+    //   subject FieldAccess/Index/Call the fold rebinds). Spelled ONLY by
+    //   user/test grammars, never by a feature or the spine — the same
+    //   reclassification as fold_postfix_with: a user cannot use
+    //   fold_postfix without them, so they are the machine, not content
+    //   (t-kd4y.3.5.8). NOT the production rules of the same names — those
+    //   are grammar RULES in feature fragments; builds and rules are
+    //   separate namespaces.
+    // MkExprBlock — `{ stmt* }` in expression position. Spelled ONLY by the
+    //   spine's `block_expr` (the brace primary), and ownership follows the
+    //   referencing rule — moving it would mean moving the primary dispatch
+    //   skeleton itself (the fold_postfix_with rationale, t-kd4y.3.5.8).
     ["fold_binary", "fold_postfix", "fold_postfix_with", "Block", "ExprStmt", "MkPrimaryFail",
-     "MkStampAt", "MkNone"]
+     "MkStampAt", "MkNone", "field_suffix", "index_suffix", "call_suffix", "MkExprBlock"]
 }
 
 /// Every FEATURE-OWNED central build, grouped by the family ticket that
@@ -919,18 +935,11 @@ export fn unflipped_builds() -> List<string> {
      // feature may only supply builders its OWN gram references.
      "MkSplice", "MkSpliceStruct",
      "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName",
-     // t-kd4y.3.5.6 re-scoped remnants: MkEnumCtorSuffix + MkExprBlock are
-     // spelled by SPINE rules (the postfix chain and block_expr), so their
-     // rows flip with .3.5.8 when those rules themselves are in play;
-     // MkTaggedTemplate pairs with MkTemplate in .3.5.9.
-     "MkEnumCtorSuffix", "MkExprBlock", "MkTaggedTemplate",
-     // t-kd4y.3.5.8 postfix/call families
-     "field_suffix", "index_suffix", "call_suffix", "MkCallSuffix",
-     "MkIndexSuffix", "MkGenericCallSuffix", "MkCallArg", "MkFieldAccess",
-     "MkTupleIndex", "MkOptChain", "MkOptMethodCall", "MkForceUnwrap",
-     "MkTrySuffix", "MkCatchSuffix",
-     // t-kd4y.3.5.9 templates + decl wrappers
-     "MkTemplate", "MkAnn", "MkAnnotatedArgs", "MkAnnotated", "MkExport",
+     // t-kd4y.3.5.9 templates + decl wrappers (MkTaggedTemplate pairs with
+     // MkTemplate; the .3.5.6/.3.5.8 remnants it was grouped with are gone —
+     // MkEnumCtorSuffix flipped with the postfix families, MkExprBlock
+     // reclassified engine-core)
+     "MkTemplate", "MkTaggedTemplate", "MkAnn", "MkAnnotatedArgs", "MkAnnotated", "MkExport",
      "MkDocAnnotated", "MkModuleDoc",
      // t-kd4y.3.5.10 type expressions
      "TyUnion", "TyDyn", "TyList", "TyParen", "MkFn", "MkNamed",
@@ -952,9 +961,7 @@ export fn central_build_kind(bn: string) -> string {
             or "MkExprBlock"
             or "field_suffix" or "index_suffix" or "call_suffix"
             or "MkSplice" or "MkSpliceStruct"
-            or "MkTemplate" or "MkTrySuffix" or "MkCatchSuffix" or "MkOptChain" or "MkTupleIndex"
-            or "MkFieldAccess" or "MkIndexSuffix" or "MkCallSuffix" or "MkGenericCallSuffix"
-            or "MkEnumCtorSuffix" or "MkOptMethodCall" or "MkForceUnwrap" or "MkCallArg"
+            or "MkTemplate"
             or "MkTaggedTemplate"
             or "MkPrimaryFail" -> "expr"
         "ExprStmt" or "Block" -> "stmt"
