@@ -54,7 +54,7 @@
 // (features/derive_registry); the query surface lives beside it for the
 // same reason.
 
-use core.{NodeStore, StmtId, Stmt, Expr, ValueType, ParamEntry, TypeParamEntry, find_annotation, type_short_name}
+use core.{NodeStore, StmtId, Stmt, ValueType, ParamEntry, TypeParamEntry, find_annotation, type_short_name}
 use parse.{parse_program_source_shared}
 
 /// A `@query(Fam.Variant)` family reference: the enum name and the variant

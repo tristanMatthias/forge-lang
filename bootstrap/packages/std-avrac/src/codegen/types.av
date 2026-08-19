@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{Expr, VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_str, vtype_is_unknown, variant_lookup, vtype_eq, field_vtype_of, env_extend, union_type_list_merge, find_type_pipe, vtype_struct_name}
+use core.{VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_unknown, variant_lookup, field_vtype_of, env_extend, vtype_struct_name}
 
 // LLVMTypeKind values from llvm-c/Core.h (LLVM 20). Only the kinds the
 // value-dispatch helpers test; keep in sync with the pinned LLVM major.
@@ -24,7 +24,7 @@ use core.{TypeRegistry, type_registry_id_for, type_registry_name_for}
 use core.{NodeStore}
 use core.{avra_coverage_emit_hit, avra_covmap_alloc, avra_covmap_counter_count, avra_coverage_finalize_fn}
 use features.error_propagation.{Result}
-use diagnostics.{DiagnosticBag, bag_new, bag_report, diag_warning, span_new, DiagCode}
+use diagnostics.{DiagnosticBag, bag_report, diag_warning, span_new, DiagCode}
 use core.{avra_tag_as_result}
 use list_ops.{list_any}
 
@@ -980,16 +980,7 @@ impl Ctx {
     fn value_array(self, count: int) -> ptr { avra_llvm_value_array_new(count) }
     fn value_array_set(self, arr: ptr, idx: int, val: ptr) { avra_llvm_value_array_set(arr, idx, val) }
     fn value_array_free(self, arr: ptr) { avra_llvm_value_array_free(arr) }
-    fn type_array(self, count: int) -> ptr { avra_llvm_type_array_new(count) }
-    fn type_array_set(self, arr: ptr, idx: int, ty: ptr) { avra_llvm_type_array_set(arr, idx, ty) }
     fn type_array_free(self, arr: ptr) { avra_llvm_type_array_free(arr) }
-
-    // Create a type array pre-filled with i64 types (the common case for lambdas/closures).
-    fn i64_type_array(self, count: int) -> ptr {
-        let arr = avra_llvm_type_array_new(count)
-        self.fill_i64_types(arr, 0, count)
-        arr
-    }
 
     fn fill_i64_types(self, arr: ptr, idx: int, count: int) {
         if idx >= count { return }
@@ -1117,8 +1108,6 @@ impl Ctx {
         self.llvm_type_for(vt)
     }
 
-    // Typed alloca/load: use the correct LLVM type for a ValueType.
-    fn alloca_typed(self, vt: ValueType, name: string) -> ptr { avra_llvm_build_alloca(self.builder, self.type_for(vt), name) }
     fn load_typed(self, vt: ValueType, src: ptr, name: string) -> ptr { avra_llvm_build_load(self.builder, self.type_for(vt), src, name) }
 
     // Zero/null value for a given type.
@@ -1141,32 +1130,6 @@ impl Ctx {
             avra_llvm_value_array_set(arr, i, args[i])
         }
         let result = avra_llvm_build_call_coerce(self.builder, ft, fn_val, arr, count, "")
-        avra_llvm_value_array_free(arr)
-        result
-    }
-
-    // Call a function value (not by name — for local fn variables).
-    fn call_fn(self, fn_val: ptr, args: [ptr]) -> ptr {
-        let ft = avra_llvm_fn_type_of(fn_val)
-        let count = args.length
-        let arr = avra_llvm_value_array_new(count)
-        for i in 0..count {
-            avra_llvm_value_array_set(arr, i, args[i])
-        }
-        let result = avra_llvm_build_call_coerce(self.builder, ft, fn_val, arr, count, "")
-        avra_llvm_value_array_free(arr)
-        result
-    }
-
-    // Same but with a named result.
-    fn call_fn_named(self, fn_val: ptr, args: [ptr], name: string) -> ptr {
-        let ft = avra_llvm_fn_type_of(fn_val)
-        let count = args.length
-        let arr = avra_llvm_value_array_new(count)
-        for i in 0..count {
-            avra_llvm_value_array_set(arr, i, args[i])
-        }
-        let result = avra_llvm_build_call_coerce(self.builder, ft, fn_val, arr, count, name)
         avra_llvm_value_array_free(arr)
         result
     }
@@ -1233,7 +1196,6 @@ impl Ctx {
     // ── Control flow ──
     fn br(self, bb: ptr) { avra_llvm_build_br(self.builder, bb) }
     fn cond_br(self, cond: ptr, then_bb: ptr, else_bb: ptr) { avra_llvm_build_cond_br(self.builder, cond, then_bb, else_bb) }
-    fn build_ret(self, val: ptr) { avra_llvm_build_ret(self.builder, val) }
     fn unreachable(self) { avra_llvm_build_unreachable(self.builder) }
     fn has_terminator(self) -> bool { avra_llvm_block_has_terminator(self.builder) != 0 }
     fn current_bb(self) -> ptr { avra_llvm_get_insert_block(self.builder) }
@@ -1250,7 +1212,6 @@ impl Ctx {
     fn bit_or(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_or(self.builder, a, b, name) }
     fn bit_xor(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_xor(self.builder, a, b, name) }
     fn shl(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_shl(self.builder, a, b, name) }
-    fn shr(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_ashr(self.builder, a, b, name) }
     fn lshr(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_lshr(self.builder, a, b, name) }
     fn ashr(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_ashr(self.builder, a, b, name) }
     fn bit_not(self, val: ptr, name: string) -> ptr { avra_llvm_build_not(self.builder, val, name) }
@@ -1434,11 +1395,6 @@ impl Ctx {
         }
     }
 
-    // Create a string constant — returns ptr directly (no i64 cast).
-    fn string_val(self, text: string) -> ptr {
-        avra_llvm_build_global_string_ptr(self.builder, text, ".str")
-    }
-
     // ── Level 3: semantic operations (4-6 lines → 1) ──
 
     // Load the tag (i64 hash) from an enum value
@@ -1471,13 +1427,6 @@ impl Ctx {
         let st_ty = self.get_type(type_name)
         let fld_gep = avra_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "${name}_ptr")
         avra_llvm_build_load(self.builder, self.type_for(ty), fld_gep, name)
-    }
-
-    // Store into a struct field by index with type-safe casting.
-    fn set_field(self, obj: ptr, type_name: string, idx: int, val: ptr, field_ty: ValueType) {
-        let st_ty = self.get_type(type_name)
-        let fld_gep = avra_llvm_build_struct_gep2(self.builder, st_ty, obj, idx, "fld_ptr")
-        avra_llvm_build_store(self.builder, self.cast_to(val, field_ty), fld_gep)
     }
 
     // Emit match-unreachable trap + unreachable instruction.
@@ -1699,15 +1648,6 @@ impl Ctx {
         field_resolved_at(ev.fields, 0)
     }
 
-    /// Type-args-aware variant — same shape as resolve_ok_type_with
-    /// but pulls the 2nd type arg (Err type) instead. nce6.3.
-    fn resolve_err_type_with(self, enum_name: string, type_args: List<ValueType>) -> ValueType {
-        if type_args.length >= 2 {
-            let arg = type_args[1]
-            if !(arg is .Unknown) { return arg }
-        }
-        self.resolve_err_type(enum_name)
-    }
     fn lookup_fn_params(self, name: string) -> List<ValueType> { fn_param_lookup(self.fn_params, name) }
 
     // ── Closure support ──

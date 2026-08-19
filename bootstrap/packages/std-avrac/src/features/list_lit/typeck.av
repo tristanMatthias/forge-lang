@@ -1,6 +1,6 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.{Expr, ExprId, ValueType, vtype_list_elem, vtype_pair_list, vtype_render_full}
+use core.{ExprId, ValueType, vtype_list_elem, vtype_pair_list, vtype_render_full}
 use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list_types, tc_gate_unthreaded_lambda, tc_report, nested_layout_conflict}
 use diagnostics.{DiagCode}
 

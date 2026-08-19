@@ -10,6 +10,7 @@
 //
 // dir-as-module (g2eo.1): no `mod` decls — the sibling files surface flat.
 use core.{Expr, ExprId, byte_span}
+use features.grammar.{parse_grammar}
 
 /// The `grammar { … }` feature block's core (the `MkGrammarBlock` build,
 /// t-kd4y.3.5.6) — the desugared call the retired hand built:

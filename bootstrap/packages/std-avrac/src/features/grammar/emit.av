@@ -1,13 +1,13 @@
 // WHY: ps3t.6.5.11 — the code-generation face of the generator. Where
 
-use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
 // t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
 // The local wrappers below delegate to it so the two engines cannot drift.
 use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, rule_owns_recovery}
-use features.grammar.{ExpectHit, expect_for, rule_own_expect_msg, rule_first_expect_msg, rule_first_expect_msg_leaf, gated_ref_of, node_has_onfail}
-use features.grammar.{grammar_has_gate, rule_body_has_gate, rule_first_is_ident}
-use features.grammar.{rule_result_kind, rule_kind_v, node_kind, seq_kind, build_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule}
-use features.grammar.{grammar_build_refs, BuildRef, BuilderBind, BuildKindRow, manifest_row}
+use features.grammar.{expect_for, rule_first_expect_msg, gated_ref_of, node_has_onfail}
+use features.grammar.{grammar_has_gate, rule_first_is_ident}
+use features.grammar.{rule_result_kind, prim_is_pred_e, rep_is_one, str_in, emit_lookup_rule}
+use features.grammar.{BuildKindRow, manifest_row}
 use features.{feature_builders}
 
 // ── Pratt collapse of the uniform binary-operator ladder (ps3t.6.7 Step G, slice 1) ──

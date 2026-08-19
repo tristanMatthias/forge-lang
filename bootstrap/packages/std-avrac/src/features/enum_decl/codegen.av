@@ -1,9 +1,9 @@
 // WHY: emits enum constructors (heap-allocated tagged unions) and
 // enum value comparison (tag equality via struct GEP).
 
-use core.{ExprId, FieldEntry, Variant, VarBinding, variant_lookup, ValueType, vtype_enum_name}
+use core.{ExprId, FieldEntry, VarBinding, variant_lookup, ValueType, vtype_enum_name}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
-use core.{type_registry_id_for, variant_payload_name, vtype_strip_optional}
+use core.{type_registry_id_for, vtype_strip_optional}
 use codegen.{needs_optional_box, emit_optional_some}
 use features.closures.{emit_expected}
 

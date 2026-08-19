@@ -642,9 +642,6 @@ fn str_list_has(xs: List<string>, s: string) -> bool {
 /// True for a One repetition.
 export fn grep_is_one(r: GRep) -> bool { match r { .One -> true  _ -> false } }
 
-/// True for a `+` repetition.
-export fn grep_is_plus(r: GRep) -> bool { match r { .Plus -> true  _ -> false } }
-
 /// True for a nonterminal-reference primary.
 export fn gprim_is_ref(p: GPrim) -> bool { match p { .Ref(_) -> true  _ -> false } }
 

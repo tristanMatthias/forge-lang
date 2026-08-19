@@ -35,8 +35,7 @@ use core.{
     avra_selfhost_read_file,
     avra_selfhost_write_file,
 }
-use build.graph.{Unit, build_graph, DepGraph}
-use build.fingerprint.{Fingerprint}
+use build.graph.{Unit, DepGraph}
 use @std.crypto.{sha256_file}
 
 /// One record per unit in the lockfile. `fp` is the SHA-256 of the

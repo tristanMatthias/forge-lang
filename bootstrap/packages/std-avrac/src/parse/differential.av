@@ -109,7 +109,7 @@ export fn mode_env(mode: string) -> string {
 ///
 /// Everywhere else in this file the F-code signature discriminates, so `errcodes` is
 /// enough. For the table literal it is NOT, and that is worth stating because the
-/// difference is invisible until measured: `parse_table_literal`'s three semantic
+/// difference is invisible until measured: the table literal's three semantic
 /// aborts — duplicate column, row-too-short, row-too-long — ALL report under F0001 and
 /// ALL cascade into the same F0013 `unexpected \`}\``. Their signatures are therefore
 /// byte-identical (`F0001 F0013`), so an `agree_all` over codes stays green even if a
@@ -790,18 +790,17 @@ export fn CDEF() -> string {
 // valid ones, exactly one `F0040` for the malformed one) — the discipline this file
 // exists to enforce, after an anchor sat here malformed and green for months.
 
-// ── the `table { … }` literal — the corpus, landed BEFORE the routing (t-myz7) ──
+// ── the `table { … }` literal — the corpus that gated the routing (t-myz7) ──
 //
-// The LAST valid input in the compiler that reaches a production `@hand` leaf. With
-// `grammar { … }` native (#1159), refusing BOTH leaves attributes 17 refusals to exactly
-// one file — `test_runner/mod.av` — and all of them are its two `table<…> { … }`
-// literals. Nothing else in 249 non-test sources needs either leaf.
+// Written CORPUS-FIRST while the hand `parse_table_literal` still owned this syntax:
+// it was the last valid input in the compiler reaching a production hand leaf, and
+// these cases were required to go RED if `table_lit` were routed natively without
+// reproducing what the hand provided. That flip has since LANDED — the rules and
+// lowerings live in features/table_lit (t-kd4y.3.5.5) and the hand leaf is deleted —
+// so the corpus now guards the NATIVE rule against regressing to any of the same
+// mistakes. Kept verbatim in coverage for exactly that reason.
 //
-// Corpus-first, per the routing discipline: these pass TODAY because the hand owns them.
-// The demonstration that counts comes at the flip — each must go RED if `table_lit` is
-// routed without reproducing what `parse_table_literal` provides.
-//
-// ONE CASE PER ABORT PATH of parse_table_literal (parse/mod.av:1284), because the three
+// ONE CASE PER ABORT PATH of the retired hand parser, because the three
 // SEMANTIC aborts are the part a native rule is most likely to get subtly wrong — they
 // are checks over collected lists, not parse structure:
 //

@@ -1,11 +1,11 @@
 // dir-as-module (g2eo.1): codegen.av + lowering/ auto-load as siblings,
 // surface flat at `features.in_operator.{...}`.
-use core.{feature_new, Feature, ExprId}
+use core.{ExprId}
 use resolve.{resolve_expr, resolve_expr_list_ids}
-use features.grammar.{parse_grammar}
 use features.in_operator.codegen.{emit_in_check}
 use features.in_operator.lowering.{in_operator_builds}
 use typeck.{check_expr, check_expr_list, tc_er}
+use features.grammar.{parse_grammar}
 
 /// `x in [1, 2, 3]` / `n in 0..10` — membership tests (produce Bool).
 /// The definition carries `in_tail` (one branch of the spine's `eq_tail`

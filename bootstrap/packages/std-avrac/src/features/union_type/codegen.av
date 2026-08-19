@@ -3,8 +3,8 @@
 // layout as enums: {i64 tag, ptr payload}. Tags are djb2 hashes of the
 // type name (e.g. "int", "string", "MyStruct").
 
-use core.{ValueType, vtype_display, vtype_eq, union_contains}
-use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use core.{ValueType, vtype_display, union_contains}
+use codegen.{Ctx, EmitValue, ok_emit}
 use features.error_propagation.{Result}
 
 /// Wrap a concrete value as a union-typed discriminated struct

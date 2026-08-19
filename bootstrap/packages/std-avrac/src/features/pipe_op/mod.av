@@ -2,8 +2,8 @@
 // at `features.pipe_op.{...}`. A syntax-only carrier: `|>` desugars to a
 // plain `Expr.Call` in the BUILD, so no pass hooks ride this definition —
 // the call machinery owns everything downstream.
-use features.grammar.{parse_grammar}
 use features.pipe_op.lowering.{pipe_op_builds}
+use features.grammar.{parse_grammar}
 
 /// `a |> f` — the pipe operator (spec axis 28), desugared in the parser:
 /// `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`, `a |> f(_, b)` → `f(a, b)`

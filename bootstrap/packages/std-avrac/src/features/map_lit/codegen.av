@@ -1,7 +1,7 @@
 // WHY: codegen for map literals {"key": value, ...} and map operations.
 // Maps are backed by the C-runtime avra_map_*_cstr functions.
 
-use core.{Expr, ExprId, VarBinding, ValueType, vtype_map_value, vtype_is_unknown}
+use core.{ExprId, VarBinding, ValueType, vtype_map_value, vtype_is_unknown}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use codegen.{emit_single_arg, optional_repr_tagged, emit_optional_some, emit_optional_none}
 

@@ -1,8 +1,8 @@
 // dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
 // at `features.unary_op.{...}`. A syntax-only carrier: `Expr.Unary` is a
 // core codegen/typeck node, so no pass hooks ride this definition.
-use features.grammar.{parse_grammar}
 use features.unary_op.lowering.{unary_op_builds}
+use features.grammar.{parse_grammar}
 
 /// `!x` / `-x` / `not x` / `~x` — the prefix unary operators
 /// (t-kd4y.3.5.7). The definition carries `unary_prefix`, the first

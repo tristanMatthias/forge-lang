@@ -4,7 +4,7 @@
 
 use core.{FieldEntry, Variant, ValueType}
 use core.{avra_intmap_new, avra_intmap_set, avra_intmap_get, avra_intmap_has, avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr, avra_map_has_cstr}
-use core.{avra_intmap_inc, avra_intmap_get_as_string}
+use core.{avra_intmap_get_as_string}
 use core.{avra_bytes_from_string, avra_bytes_length, avra_bytes_byte}
 
 // ── Content-addressed type/symbol identity ──

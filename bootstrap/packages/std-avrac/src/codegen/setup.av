@@ -1,19 +1,18 @@
 // WHY: compilation setup — declaration passes and top-level emission.
 
-use core.{Expr, FieldEntry, ParamEntry, Stmt, ValueType, VarBinding, Variant, field_list_has, filter_fields_only, filter_fields_without, find_annotation, stmt_unwrap, variant_max_payload, vtype_eq, vtype_fn_ret, vtype_is_closure, vtype_is_unknown, vtype_enum_name, vtype_struct_name, env_extend}
+use core.{Expr, FieldEntry, ParamEntry, ValueType, VarBinding, Variant, filter_fields_only, filter_fields_without, find_annotation, stmt_unwrap, vtype_fn_ret, vtype_is_unknown, vtype_struct_name}
 use core.{NodeStore, StmtId}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int}
 extern fn avra_ice_phase(phase: string)
 use core.{avra_process_env_get}
-use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EmitValue, EnumReg, EnumLookup, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructLookup, StructReg, TopLevelLookup, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, err_emit, err_stmt, llvm_type_for_full, llvm_type_for_full_sized, ok_emit, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
-use codegen.{analyze_releasable, analyze_copy_types, analyze_return_ownership_set, fresh_set_new}
+use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EnumReg, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructReg, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, llvm_type_for_full, llvm_type_for_full_sized, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.{analyze_releasable, analyze_copy_types, analyze_return_ownership_set}
 use codegen.{publish_fn_units}
 use codegen.{analyze_cycles, cycle_set_has}
-use core.{build_registry}
 use features.union_type.{emit_union_wrap, needs_union_wrap}
 use codegen.{emit_optional_coerce}
-use codegen.{emit_expr, emit_stmt}
+use codegen.{emit_stmt}
 use codegen.{stmts_last_expr}
 use list_ops.{list_map}
 use diagnostics.{bag_new}

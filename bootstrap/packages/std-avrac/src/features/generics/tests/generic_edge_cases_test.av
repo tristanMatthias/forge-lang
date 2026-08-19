@@ -3,8 +3,6 @@ fn gec_double_identity<T>(x: T) -> T { gec_identity(x) }
 
 type GecPair<A, B> = { first: A, second: B }
 
-fn gec_inc<T>(x: T) -> T { x }
-
 fn gec_apply<T>(x: T, f: fn(T) -> T) -> T { f(x) }
 
 fn gec_show(x: int) -> string { "value: ${string(x)}" }

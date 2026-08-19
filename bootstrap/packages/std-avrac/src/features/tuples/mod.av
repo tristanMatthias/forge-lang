@@ -2,12 +2,12 @@
 // surface flat at `features.tuples.{...}`.
 use core.{vtype_tuple_at, vtype_eq}
 use core.{ExprId}
-use features.grammar.{parse_grammar}
 use features.tuples.lowering.{tuple_index_builds, paren_type_builds}
 use resolve.{resolve_expr, resolve_expr_list_ids}
 use typeck.{check_expr, check_expr_list_types, tc_er, tc_report, tc_gate_unthreaded_lambda}
 use diagnostics.{DiagCode}
 use features.eval.{Runtime, StepResult, Value, eval_expr, ok_result, error_result, value_list}
+use features.grammar.{parse_grammar}
 
 /// Register the `(a, b, c)` tuple literal feature. Wires up
 /// resolver, type-checker, codegen, and the tree-walk evaluator.

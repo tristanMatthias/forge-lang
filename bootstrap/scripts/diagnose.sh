@@ -6162,7 +6162,7 @@ seed_merge_hint() {
       err "  The '$cand' stage binary corrupted while compiling the merged source"
       err "  — it predates a codegen-correctness fix present in the union."
       err "  Prefer the side that HAS the fix in its machine code."
-      err "  Forensics: AVRA_REDZONES=1, docs/RC_MEMORY_RUNBOOK.md."
+      err "  Forensics: AVRA_RC_STRICT=1, docs/RC_MEMORY_RUNBOOK.md."
       ;;
     *)
       err "  No known failure signature matched — read the log."

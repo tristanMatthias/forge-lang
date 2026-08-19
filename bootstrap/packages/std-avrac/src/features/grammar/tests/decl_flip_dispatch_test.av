@@ -18,7 +18,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
-use @std.avrac.features.grammar.{avra_program_grammar, Grammar, GNode, GAnnot, avra_decl_dispatch_grammar, avra_expr_grammar, checked_in_parser_source}
+use @std.avrac.features.grammar.{GAnnot, GNode, Grammar, avra_decl_dispatch_grammar, avra_expr_grammar, avra_program_grammar, checked_in_parser_source, parse_grammar}
 use @std.avrac.features.grammar.{emit_lookup_rule, rule_body_has_cut, checked_in_parser_source}
 
 fn flip_decl(src: string) -> string {

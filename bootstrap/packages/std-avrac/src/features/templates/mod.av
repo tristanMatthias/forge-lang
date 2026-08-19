@@ -4,8 +4,8 @@
 // SHARED desugar (parse's desugar_template_store, reached via the engine's
 // desugar_template_in seam), so this definition is syntax + lowerings
 // alone; codegen sees ordinary calls and string ops.
-use features.grammar.{parse_grammar}
 use features.templates.lowering.{templates_builds}
+use features.grammar.{parse_grammar}
 
 /// `"…${expr}…"` template literals and ``tag"…"`` tagged templates — the
 /// definition carries both rules and both lowerings (t-kd4y.3.5.9).

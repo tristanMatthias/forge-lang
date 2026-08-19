@@ -420,7 +420,7 @@ manifest. Text→AST is one grammar run by two ENGINES:
   all decide by asking whether `diags` GREW, so a mid-parse release reads as
   "this rule reported".
 - **Whoever COMMITS owns the diagnostics** — a `@cut` branch must carry its
-  coded reports itself (`Parser.report_at_byte` + `GDiag.byte` position them);
+  coded reports itself (`Parser.report_at_span` + `GDiag.byte` position them);
   there is no rollback left to re-parse and re-own them.
 - **Grammar marker order is insignificant** (`@bump(x) @require y` ==
   `@require @bump(x) y`), and `@require` + a mode-SET marker on one item is
@@ -585,8 +585,8 @@ When hitting a segfault/crash, follow this order. Do NOT guess.
 1. **LLDB first:** `lldb -b -o 'target create ./build/bs2' -o 'settings set -- target.run-args check /tmp/test.av' -o run -o bt -o 'register read x0 x1 x8 x9'`
 2. **Check seed integrity:** `git diff seed/seed.ll` — if dirty and you didn't update, restore it
 3. **Check -O0 vs -O2:** if only -O2 crashes, it's an alignment bug
-4. **Store tracking:** `AVRA_TRACK_STORES=1` finds return-type mismatches
-5. **Redzones:** `AVRA_REDZONES=1` / `AVRA_PAGE_ALLOC=1` catches cross-allocation writes
+4. **RC invariant check:** `AVRA_VERIFY_RC=1` machine-checks the alloca zero-init invariant (emits verification calls — changes IR, so never inside a diff-test comparison)
+5. **RC forensics:** `AVRA_RC_STRICT=1` (poison-on-free + reuse quarantine + foreign-release abort), `AVRA_RC_TRACE=1` (retain/release tracing), `AVRA_CRASH_DETAIL=1` (full signal dump); `AVRA_RC_NO_REGION=1` swaps in the all-malloc allocator as a layout perturbation
 6. Only then read IR
 
 LLDB notes: the runtime's `avra_match_unreachable` reporter calls `exit(99)` (no

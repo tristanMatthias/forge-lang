@@ -107,16 +107,17 @@ Reading the result:
 - Address symbolication: `nm build/bs2 | grep <fn>` + offsets, or
   `addr2line -f -e build/bs2 <offset>`.
 
-Useful perturbation checks: if the crash dodges under any probe /
-`AVRA_PAGE_ALLOC=1` / `AVRA_REDZONES=1`, it is layout-sensitive
-garbage — which post-guard means a stale binary or a new bypass.
+Useful perturbation checks: if the crash dodges under any probe, or
+under `AVRA_RC_NO_REGION=1` (the all-malloc allocator, same detection
+semantics), it is layout-sensitive garbage — which post-guard means a
+stale binary or a new bypass.
 
 ## Tools inventory
 
 | Tool | What |
 |---|---|
 | `AVRA_VERIFY_RC=1` | IR verifier for the invariant (this doc, rcsf.2) |
-| `AVRA_TRACK_STORES=1`, `AVRA_REDZONES=1`, `AVRA_PAGE_ALLOC=1` | runtime store-tracking / redzone / page-alloc modes (runtime.c) |
+| `AVRA_RC_STRICT=1`, `AVRA_RC_TRACE=1`, `AVRA_CRASH_DETAIL=1` | poison-on-free + reuse quarantine + foreign-release abort / retain-release tracing / full signal dump (runtime.c) |
 | `avra_trace_ptr`, `avra_dump_stmt`, `avra_dump_function` | C-side tracing — never `eprintln` in hot paths |
 | `setarch -R` | ASLR off for stable addresses outside gdb |
 | `bash scripts/diagnose.sh --help` | all build/analysis entry points |

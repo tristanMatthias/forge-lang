@@ -1,19 +1,17 @@
 // WHY: ps3t.6.4 — the grammar-DSL *generator*, in its executable form.
 
-use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, method_mangled_name, vtype_from_name, pattern_optional_present, pattern_optional_absent, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, ByteSpan, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list, FORCE_UNWRAP_FN}
-use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, GBuild, GAnnot}
+use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list}
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GPrim, GAnnot}
 use features.grammar.{Token, lex_real, LexDiag, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
 use features.grammar.{dispatch_has_tail}
 // t-myz7: the gated-call FIRST message, SHARED with emit (see ast.av) — the
 // executor's gate check must say exactly what the generated parser's says.
-use features.grammar.{rule_first_expect_msg, gated_ref_of, GatedRef}
+use features.grammar.{rule_first_expect_msg, gated_ref_of}
 use features.grammar.{grammar_has_gate, rule_first_is_ident, rule_first_literal}
 use features.grammar.{rule_result_kind, gprim_ref_name, BuildKindRow}
 // The field-name acceptance set (t-47hc.33.1).
 use core.{tk_is_field_name}
-use core.{tk_keyword_str}
-use core.{build_let_else_init, stmt_ids_diverge}
 use core.{SelectArm}
 use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct, lookup_stmt_parser}
 use features.grammar.{code_at, is_ident_start_code}
@@ -23,7 +21,7 @@ use features.grammar.{code_at, is_ident_start_code}
 // than re-deriving it at token level, which is not equivalent — see the note
 // at the cores in chars.av for the four divergences that depends on.
 use features.grammar.{word_excluded_as_instance_name, src_next_nonws_is_quote, src_next_nonws_is_digit, src_next_nonws_starts_with, src_next_nonws_is_single_eq, src_next_nonws_is_lbrace, src_next_nonws_is_value_word, src_at_empty_call_block}
-use parse.{parser_new_with_file, parser_new_with_store, Parser, desugar_template_store}
+use parse.{parser_new_with_store, Parser, desugar_template_store}
 use list_ops.{lower_bound}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 
@@ -1052,30 +1050,6 @@ impl PState {
     fn synchronize(self, tok: string) {
         while !self.at_end() && self.cur().text != tok { let _ = self.advance() }
         if self.cur().text == tok { let _ = self.advance() }
-    }
-
-    /// Statement-boundary synchronize — the PState twin of the no-arg
-    /// `Parser.synchronize` (parse/mod.av): advance until a statement
-    /// LEAD keyword or `}`, WITHOUT consuming it. Matches by `Tk` (NOT text) so a
-    /// string/ident token whose text spells a keyword can't wrongly halt the scan.
-    /// The boundary set is fn/let/const/mut/type/enum/impl/if/
-    /// while/for/match/return/extern/trait/defer/spec/given/then/select + RightBrace;
-    /// errdefer and break/continue are deliberately NOT boundaries.
-    /// Net braces OPENED and not closed across the token span `[lo, hi)` — how deep a
-    /// failed child left the scanner. Recovery uses it to step out of a group the child
-    /// entered but never closed, instead of mistaking that group's `}` for the block's
-    /// own. A METHOD so the generated parser can call it too: both statement-list loops
-    /// need the identical answer, and a second copy would drift.
-    fn brace_delta(self, lo: int, hi: int) -> int {
-        mut d = 0
-        mut i = lo
-        while i < hi && i < self.toks.length {
-            let k = self.toks[i].tk
-            if k == Tk.LeftBrace { d = d + 1 }
-            if k == Tk.RightBrace { d = d - 1 }
-            i = i + 1
-        }
-        d
     }
 
     fn synchronize_stmt(self) {
