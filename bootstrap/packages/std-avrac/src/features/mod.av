@@ -20,6 +20,7 @@ use features.let_stmt.{let_lang, mut_lang, const_lang, let_destructure_lang}
 use features.list_comp.{list_comp_lang}
 use features.list_lit.{list_lit_lang}
 use features.map_lit.{map_lit_lang}
+use features.table_lit.{table_lit_lang}
 use features.modules.{mod_lang, use_lang}
 use features.null_safety.{null_coalesce_feature, optional_chain_feature, optional_method_call_feature, try_feature, catch_feature}
 use features.parallel_stmt.{parallel_lang}
@@ -141,7 +142,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), fn_lang(), extern_lang(), generics_lang(), type_decl_lang(), shape_lang(), component_lang(), let_lang(), mut_lang(), const_lang(), let_destructure_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang(), quote_lang(), closures_lang(), tuples_lang(), list_lit_lang(), list_comp_lang(), map_lit_lang(), spawn_lang(), isolated_lang(), channels_lang(), spec_lang(), given_lang(), then_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), fn_lang(), extern_lang(), generics_lang(), type_decl_lang(), shape_lang(), component_lang(), let_lang(), mut_lang(), const_lang(), let_destructure_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang(), quote_lang(), closures_lang(), tuples_lang(), list_lit_lang(), list_comp_lang(), map_lit_lang(), table_lit_lang(), spawn_lang(), isolated_lang(), channels_lang(), spec_lang(), given_lang(), then_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,

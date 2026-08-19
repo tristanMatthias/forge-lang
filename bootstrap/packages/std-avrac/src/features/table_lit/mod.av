@@ -1,0 +1,52 @@
+// dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
+// at `features.table_lit.{...}`. Until t-kd4y.3.5.5 this feature dir held
+// only grammar.md — tables desugar to `Expr.ListLit` of `Expr.StructLit`
+// rows in the BUILDS, so the list/struct features carry the downstream
+// hooks and this definition is syntax + lowerings alone.
+use features.grammar.{parse_grammar}
+use features.table_lit.lowering.{table_lit_builds}
+
+/// `table [<Row>] { col | col … rows }` — the definition carries the
+/// whole family (t-kd4y.3.5.5): syntax, docs, surface, and ALL THREE
+/// lowerings its fragment spells (MkTableLit / MkTableHeader /
+/// MkTableRow). `gram_family = "expr"`; the spine's postfix ladder and
+/// primary alternation dispatch to `table_lit` by name behind
+/// @peek(ident_lbrace_feature).
+export fn table_lit_lang() -> LanguageFeature {
+    LanguageFeature table_lit_def {
+        name = "table_lit",
+        title = "table — row-struct list literals",
+        docs = """
+`table<Row> { a | b   1 | 2   3 | 4 }` builds a `List<Row>` — the header
+names the columns, each row builds one `Row` struct, `|` separates
+cells. A context-free `table { … }` gets its row type from the binding.
+""",
+        // VERBATIM from the spine. The `|` separators are ungated (a pipe
+        // is consumed unconditionally, checking the line only before each
+        // IDENT). `bitxor` is the ladder level just above `|`: entering
+        // there stops before `|`, so the column separator is never eaten
+        // as a bitwise-or operand. Both sub-rules are `@onfail(bail)`: a
+        // header with a duplicate column and a row whose width disagrees
+        // with the header are reported by their BUILDS, and either failure
+        // must leave the table's `}` UNCONSUMED — the enclosing fn's
+        // statement list otherwise takes the `}` as its own closer and the
+        // whole tail (a diagnostic + two statements' placement) silently
+        // differs. `@on(cell_mode)` is a PER-ITEM marker, so it repeats on
+        // the loop's cell: without it cells 2..N parse with cell_mode OFF
+        // and the last cell of a row could take the NEXT row's leading
+        // sign as a binary operand (parse_binary_pratt_g_id only refuses a
+        // cross-line `+`/`-` while cell_mode is set).
+        gram = grammar {
+  table_lit  = "table" @onfail(bail) table_head ( @onfail(bail) rows:table_row )* "}"
+               @expect("}", "expected `}` to close table") -> MkTableLit(rows)
+  table_head = ( "<" rt:IDENT ">" )? "{" ( h:IDENT ( "|" )? ( ^h:IDENT ( "|" )? )* )?
+               @expect(">", "expected `>` after table row type")
+               @expect("{", "expected `{` to open table") -> MkTableHeader(rt, h)
+  table_row  = @on(cell_mode) v:bitxor ( ^"|" ^@on(cell_mode) v:bitxor )* -> MkTableRow(v)
+        },
+        builders = table_lit_builds(),
+        snippet = r"table<${1:Row}> {\n    ${2:col} | ${3:col}\n    ${4:v} | ${5:v}\n}",
+        gram_family = "expr",
+    }
+    table_lit_def
+}
