@@ -126,6 +126,13 @@ Cross-package `use @pkg.…` resolves `@pkg` against:
 
 ## Pipeline placement
 
+- `@pkg::mod::name` expression references: the `qualified_expr` rule
+  lives in `qualified_ref_lang`'s `grammar {}` block
+  (`features/modules/mod.av`) with the `MkQualExpr` lowering
+  feature-owned in `features/modules/lowering/` (t-kd4y.3.5.6);
+  `field_init` (the struct-literal form's fields) is referenced
+  cross-fragment — `struct_lit_lang` owns it.
+
 The whole module pipeline runs early — before name resolution
 itself can complete — because every later pass needs the full
 AST. Subsequent passes (`expand_components`, `derive_marshal`,

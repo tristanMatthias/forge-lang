@@ -9,15 +9,64 @@
 // sits on; `parser.av` holds the parse+desugar.
 //
 // dir-as-module (g2eo.1): no `mod` decls — the sibling files surface flat.
-use core.{feature_new, Feature}
+use core.{Expr, ExprId, byte_span}
 
-/// Register the `grammar { … }` expression construct. Only the parser
-/// hook is populated: the desugared `Call(Ident("parse_grammar"), …)`
-/// flows through the existing resolve / typecheck / codegen / eval
-/// paths with no new AST node, so no per-pass handlers are needed.
-export fn grammar_feature() -> Feature {
-    feature_new("grammar") with {
-        expr_keyword: "grammar",
-        parse_expr: (p: Parser, start: int) -> p.parse_grammar_block(start),
+/// The `grammar { … }` feature block's core (the `MkGrammarBlock` build,
+/// t-kd4y.3.5.6) — the desugared call the retired hand built:
+///     grammar { expr = term }   ==>   parse_grammar("expr = term")
+/// `bcap` is the `@rawbrace` capture: the verbatim source between the
+/// braces, from the SHARED `rawbrace_scan`.
+///
+/// The bookend quotes are added WITHOUT escaping the interior,
+/// deliberately: codegen's `strip_quotes` peels one char from each end,
+/// so a grammar literal's own `"+"` quotes — and the newlines of a
+/// multi-line block — survive verbatim into the runtime string. Escaping
+/// here would corrupt every grammar literal that quotes a terminal,
+/// which is all of them.
+///
+/// Both leaves INTERN, the §14.4 convention: a grammar-built leaf must
+/// produce the SAME arena id the hand parser did, or repeat content
+/// diverges. diff-test cannot see this — distinct-but-equal leaf rows
+/// lower to identical IR; the divergence lives purely in arena ids,
+/// which is exactly what the L6 content-id machinery keys on.
+export fn mk_grammar_block(st: PState, sp_start: int, bcap: CapVal) -> ExprId {
+    let str_id = st.store.intern_expr_leaf(Expr.String("\"" + capval_tok_text(bcap) + "\""))
+    let callee = st.store.intern_expr_leaf(Expr.Ident("parse_grammar"))
+    st.store.add_expr(Expr.Call(callee, [str_id]), byte_span(sp_start, st.cur().pos), [])
+}
+
+export fn mk_grammar_block_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_grammar_block(st, st.build_sp, vals[0]))
+}
+
+fn grammar_block_builds() -> List<BuilderBind> {
+    bind_rows("features.grammar", [bind_row("MkGrammarBlock", "expr", 1, true, "mk_grammar_block_abi", mk_grammar_block_abi)])
+}
+
+/// The `grammar { … }` expression construct — the definition carries the
+/// rule + its row (t-kd4y.3.5.6). The `expr_keyword` + `parse_expr` hooks
+/// stay: `@peek(ident_lbrace_feature)` is a REGISTRY check
+/// (`lookup_expr_parser`), so `grammar` must remain registered as an
+/// expression keyword for the ladder's gate to answer true; the desugared
+/// `Call(Ident("parse_grammar"), …)` flows through the existing passes
+/// with no new AST node, so no per-pass handlers are needed.
+/// `gram_family = "expr"`.
+export fn grammar_block_lang() -> LanguageFeature {
+    LanguageFeature grammar_block_def {
+        name = "grammar",
+        title = "grammar — inline grammar blocks",
+        docs = """
+`grammar { rule = body … }` authors a grammar inline: the block body is
+captured verbatim and desugars to a runtime `parse_grammar` call, so it
+is exactly the quoted form with the quotes dropped.
+""",
+        gram = grammar {
+  grammar_expr = "grammar" "{" body:@rawbrace(grammar) "}" -> MkGrammarBlock(body)
+        },
+        builders = grammar_block_builds(),
+        expr_keyword = "grammar",
+        parse_expr = (p: Parser, start: int) -> p.parse_grammar_block(start),
+        gram_family = "expr",
     }
+    grammar_block_def
 }

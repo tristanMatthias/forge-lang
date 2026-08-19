@@ -1586,7 +1586,7 @@ fn grammar_starts_upper(name: string) -> bool {
 /// The TYPE-name segment of a qualified path — the last `::` segment, and for an
 /// UN-namespaced id the part after the leading `@`.
 ///
-/// Both skips are needed. `mk_qualified` builds `@` + the head name, so a single-segment
+/// Both skips are needed. `mk_qualified` (features/modules lowering) builds `@` + the head name, so a single-segment
 /// reference is `@Result` with no `::` at all; testing that raw would see `@` and report
 /// lowercase, which made `base_upper_ident` answer false for every un-namespaced type and
 /// silently stop a `.Variant` chain. `type_short_name` (core/type_registry.av) skips the same
@@ -4087,13 +4087,8 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // suffix that folds a list of them (t-47hc.17). The interpreter is the
         // differential oracle, so the suffix is span-free (sp_start = 0 - 1) exactly
         // like the sibling builds; the GENERATED parser passes the real chain start.
-        "MkFieldInit" if args.length == 2 -> mk_field_init(st, env.get(args[0]), env.get(args[1]))
-        "MkWithSuffix" if args.length == 1 -> CapVal.Node(mk_with_suffix(st, 0 - 1, env.get(args[0])))
         "MkTemplate" if args.length == 1 -> CapVal.Node(mk_template(st, env.get(args[0])))
-        "MkQualExpr" if args.length == 4 -> CapVal.Node(mk_qualified(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3])))
         // t-47hc slice 8 — the two IDENT-led primaries (grammar block + struct literal).
-        "MkGrammarBlock" if args.length == 1 -> CapVal.Node(mk_grammar_block(st, 0 - 1, env.get(args[0])))
-        "MkStructLit" if args.length == 2 -> CapVal.Node(mk_struct_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         // The `table { … }` family (MkTableLit/MkTableHeader/MkTableRow) is
         // feature-owned (features/table_lit/lowering, t-kd4y.3.5.5): the
         // manifest dispatches them.
@@ -4156,7 +4151,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    (mk_component_def_with_params) stays below, exported — its
         //    registration hooks close over the host Parser. ──
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
-        "mk_enum_ctor" if args.length == 2 -> CapVal.Node(mk_enum_ctor_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))
         "field_suffix" if args.length == 1 -> {
             // A partial FieldAccess with a sentinel receiver; fold_postfix
@@ -5034,31 +5028,6 @@ export fn capval_to_finit(st: PState, v: CapVal) -> FieldInit {
     }
 }
 
-/// Build ONE struct field-init. Mirrors `parse_field_init_list`'s body
-/// (features/struct_decl/parser.av:143): `name: value`, or the SHORTHAND `name`
-/// (no `:`) which expands to `name: Expr.Ident(name)` — so an absent value must
-/// allocate that ident leaf, exactly as the hand `alloc_leaf(Expr.Ident(name))` does.
-export fn mk_field_init(st: PState, name_cv: CapVal, value_cv: CapVal) -> CapVal {
-    let name = capval_tok_text(name_cv)
-    let value_id = match value_cv {
-        .Nil -> st.store.exprs.add_leaf(Expr.Ident(name))
-        _ -> capval_to_expr(st, value_cv)
-    }
-    CapVal.FInit(FieldInit { name, value_id })
-}
-
-/// Build ONE `with { … }` suffix as a PARTIAL `Expr.With` whose receiver is a
-/// placeholder — `fold_postfix_with_expr`/`fold_with_expr` rebind it to the running
-/// base via `rebind_with`. The span is `[with-start, next-token)`: `rebind_with` reads
-/// this node's `.hi` to stamp each rebuilt `With`, so a chained `a with { } with { }`
-/// reproduces the hand loop's per-iteration `alloc_at(…, sp_start)` spans exactly.
-/// The twin of the deleted `parse_with_suffix` (parse/mod.av).
-export fn mk_with_suffix(st: PState, sp_start: int, finits_cv: CapVal) -> ExprId {
-    let inits = capval_to_finit_list(finits_cv)
-    let recv = st.store.exprs.add_leaf(Expr.Missing)
-    st.store.add_expr(Expr.With(recv, inits), byte_span(sp_start, st.cur().pos), [])
-}
-
 /// FIRST-set predicate for an EXTERNAL `pattern_or` reference in the dispatch-only
 /// statement grammar. The interpreter composes the pattern fragment and computes
 /// this structurally; the static emitter calls this twin so it can keep using the
@@ -5293,47 +5262,7 @@ export fn mk_template(st: PState, tcap: CapVal) -> ExprId {
     }
 }
 
-/// `Name { f: v, … }` — a plain (unqualified) STRUCT LITERAL, the grammar-expressible
-/// branch of the hand `parse_ident_expr` (t-47hc slice 8). The nominal sibling of
-/// `mk_qualified`'s struct-literal half: same `Expr.StructLit` payload and the same
-/// `capval_to_finit_list` field decoding, with the name taken from one IDENT instead
-/// of rebuilt from `@pkg::mod::` segments.
-///
-/// Unlike `mk_qualified` there is no `lb` capture to distinguish an EMPTY literal
-/// from a bare ident, because the two are separate grammar branches here: this
-/// builder is reached only when the `{` was actually matched, so `Name {}` (no
-/// fields) is still a StructLit with an empty field list, exactly as the hand
-/// parser builds it.
-export fn mk_struct_lit(st: PState, sp_start: int, ncap: CapVal, fcap: CapVal) -> ExprId {
-    st.store.add_expr(Expr.StructLit(capval_tok_text(ncap), capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
-}
 
-/// The `grammar { … }` feature block (t-myz7) — the desugared call the hand's
-/// `parse_grammar_block` (features/grammar/parser.av) builds:
-///     grammar { expr = term }   ==>   parse_grammar("expr = term")
-/// `bcap` is the `@rawbrace` capture: the verbatim source between the braces, from
-/// the SHARED `rawbrace_scan`, so the body text cannot drift from the hand's
-/// `capture_balanced_brace_body`.
-///
-/// The bookend quotes are added WITHOUT escaping the interior, deliberately and
-/// exactly as the hand does: codegen's `strip_quotes` peels one char from each end,
-/// so a grammar literal's own `"+"` quotes — and the newlines of a multi-line block —
-/// survive verbatim into the runtime string. Escaping here would corrupt every
-/// grammar literal that quotes a terminal, which is all of them.
-/// Both leaves INTERN, matching the hand's `alloc_leaf` (= `store.intern_expr_leaf`)
-/// — the §14.4 convention `literal_node` states: a grammar-built leaf must produce the
-/// SAME arena id the hand parser does, or repeat content diverges. `Expr.Ident(
-/// "parse_grammar")` is emitted once per `grammar { … }` block in the file, so with a
-/// plain `add_leaf` every block would mint its own callee row where the hand shares one.
-///
-/// diff-test cannot see this: distinct-but-equal leaf rows lower to identical IR, so the
-/// divergence lives purely in arena ids — which is exactly what the L6 content-id and
-/// early-cutoff machinery keys on. IR equality is not evidence of id parity.
-export fn mk_grammar_block(st: PState, sp_start: int, bcap: CapVal) -> ExprId {
-    let str_id = st.store.intern_expr_leaf(Expr.String("\"" + capval_tok_text(bcap) + "\""))
-    let callee = st.store.intern_expr_leaf(Expr.Ident("parse_grammar"))
-    st.store.add_expr(Expr.Call(callee, [str_id]), byte_span(sp_start, st.cur().pos), [])
-}
 
 /// A TAGGED TEMPLATE — ``tag`…` `` — the hand `parse_ident_expr`'s template branch
 /// (t-47hc slice 8). Desugars to a CALL of the tag with the interpolated template as
@@ -5348,19 +5277,6 @@ export fn mk_tagged_template(st: PState, sp_start: int, ncap: CapVal, tcap: CapV
     st.store.add_expr(Expr.Call(tag_id, [arg_id]), byte_span(sp_start, st.cur().pos), [])
 }
 
-/// `@pkg::mod::name` and its struct-literal form `@pkg::mod::Name { f: v }` (t-47hc.18b).
-/// The name is rebuilt from the `@`-IDENT plus each `::`-segment token, exactly as the
-/// hand parse_qualified_at_name concatenates them. A `{ … }` suffix is taken ONLY when
-/// allow_struct_lit is on (the @when gate) — `lb` present distinguishes an EMPTY struct
-/// literal `@a::B {}` from a bare qualified ident, which both yield no field inits.
-export fn mk_qualified(st: PState, sp_start: int, ncap: CapVal, scap: CapVal, lbcap: CapVal, fcap: CapVal) -> ExprId {
-    mut name = "@" + capval_tok_text(ncap)
-    for t in capval_toks(scap) { name = name + "::" + t.text }
-    match lbcap {
-        .Nil -> st.store.exprs.add_leaf(Expr.QualifiedIdent(name))
-        _ -> st.store.add_expr(Expr.StructLit(name, capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
-    }
-}
 
 export fn mk_splice(st: PState, sp_start: int, tcap: CapVal) -> ExprId {
     st.store.add_expr(Expr.Splice(capval_to_expr(st, tcap)), byte_span(sp_start, st.cur().pos), [])
@@ -5390,18 +5306,6 @@ export fn mk_inrange_expr(st: PState, scap: CapVal, ecap: CapVal) -> ExprId {
     st.store.exprs.add_leaf(Expr.Logical(ge, LogicOp.And, le))
 }
 
-/// Build a contextual enum constructor `.Variant` / `.Variant(args)` (Phase 3a-7
-/// slice 4). Matches hand parse_primary's `Expr.EnumCtor("", variant, args)` — the
-/// EMPTY enum name is the contextual marker (the enum is inferred from the expected
-/// type). `vcap` is the variant IDENT; `acap` is the optional args list (Nil ⇒ empty
-/// nullary ctor). Spanned `[sp_start, next-token)` exactly like the hand `alloc_at`
-/// (sp_start = the `.` byte); sp_start < 0 is the interpreter's span-free sentinel.
-export fn mk_enum_ctor_expr(st: PState, sp_start: int, vcap: CapVal, acap: CapVal) -> ExprId {
-    let variant = capval_tok_text(vcap)
-    let args = capval_to_node_list(acap)
-    let sp = byte_span(sp_start, st.cur().pos)
-    st.store.add_expr(Expr.EnumCtor("", variant, args), sp, [])
-}
 
 /// `( == | != ) r )+` → the left-assoc `Expr.Binary` chain seeded with a MISSING
 /// left; rebind_eq_expr retargets the spine-bottom sentinel to `base`. Reuses

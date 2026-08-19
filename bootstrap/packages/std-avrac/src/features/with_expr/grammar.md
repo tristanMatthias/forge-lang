@@ -85,6 +85,12 @@ Union-typed fields with widening overrides route through
 
 ## Pipeline placement
 
+- The `with_suffix` rule lives in `with_expr_lang`'s `grammar {}` block
+  (`features/with_expr/mod.av`) with the `MkWithSuffix` lowering
+  feature-owned in `features/with_expr/lowering/` (t-kd4y.3.5.6); every
+  unary branch's suffix tail references it cross-fragment by name, and
+  the rebinding fold (`fold_postfix_with`) stays engine-core.
+
 - Parser produces `Expr.With(obj, overrides: FieldInitList)`.
 - Resolve walks `obj` then each override value in the current
   scope.

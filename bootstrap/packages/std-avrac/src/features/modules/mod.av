@@ -7,7 +7,8 @@
 use features.eval.{ok_result, value_null}
 use core.{Stmt, StmtId}
 use resolve.{resolve_stmt_ids}
-use features.modules.lowering.{modules_builds}
+use features.modules.lowering.{modules_builds, qualified_builds}
+use features.grammar.{parse_grammar}
 use features.{composed}
 
 /// Resolver hook for `mod`. Recursively resolves the body — name
@@ -72,4 +73,35 @@ may be named `defer`); the imported names themselves stay identifiers.
         eval_stmt = use_eval,
     }
     use_def
+}
+
+/// `@pkg::mod::name` qualified references (t-kd4y.3.5.6) — the
+/// EXPRESSION-side face of the package system, so the rule + its
+/// MkQualExpr row live here beside `use`. The rule also carries the
+/// struct-literal form behind the @when(allow_struct_lit) gate;
+/// `field_init` is referenced cross-fragment (struct_lit_lang owns it).
+/// `gram_family = "expr"`; the ladder dispatches on the `@` token.
+export fn qualified_ref_lang() -> LanguageFeature {
+    LanguageFeature qualified_ref_def {
+        name = "qualified_ref",
+        title = "@pkg::path — qualified package references",
+        docs = """
+`@pkg::mod::name` names an item through its package path; with
+`{ fields }` it builds that package's struct type. `@name` alone is
+annotation syntax — a qualified reference always carries `::`.
+""",
+        // VERBATIM from the spine, including the reporting posture: the
+        // segment name after `::` is @require'd — unrequired it reported a
+        // bare "expected identifier" and left the cursor mid-reference.
+        gram = grammar {
+  qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" @require s:IDENT )+
+                   ( @when(allow_struct_lit) lb:"{" ( @onfail(bail) f:field_init )* "}" )?
+                   @expect("IDENT", "expected identifier after `::` in qualified reference")
+                   @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
+                   @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
+        },
+        builders = qualified_builds(),
+        gram_family = "expr",
+    }
+    qualified_ref_def
 }

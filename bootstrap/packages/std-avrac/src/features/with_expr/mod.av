@@ -1,20 +1,39 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
-// flat at `features.with_expr.{...}`.
-use core.{feature_new, Feature, vtype_struct_name, ExprId}
+// flat at `features.with_expr.{...}`; the manifest row lives in lowering/.
+use core.{vtype_struct_name, ExprId}
 use resolve.{resolve_expr, resolve_field_init_list}
 use features.struct_decl.{check_field_inits, check_struct_lit_fields}
+use features.grammar.{parse_grammar}
+use features.with_expr.lowering.{with_expr_builds}
 use typeck.{check_expr, tc_er}
 
-/// Register the `with` expression feature. Used to produce a
-/// shallow-copied struct value with selected fields overridden:
-/// `point with { x: 5 }`. Spec axis 28.
-export fn with_expr_feature() -> Feature {
-    feature_new("with") with {
-        expr_tag: Expr.With(ExprId(0), []),
-        emit_expr: emit_with,
-        resolve_expr: with_resolve,
-        check_expr: with_check,
+/// `point with { x: 5 }` — a shallow-copied struct value with selected
+/// fields overridden (spec axis 28). The definition carries the
+/// `with_suffix` rule + the MkWithSuffix row (t-kd4y.3.5.6): every unary
+/// branch's `( @onfail(bail) s:with_suffix )*` tail references it
+/// cross-fragment by name, and the fold that rebinds the partial nodes
+/// (fold_postfix_with) stays engine-core. `gram_family = "expr"`.
+export fn with_expr_lang() -> LanguageFeature {
+    LanguageFeature with_expr_def {
+        name = "with",
+        title = "with — struct update expressions",
+        docs = """
+`value with { field: new, … }` builds a copy of a struct value with the
+named fields replaced; the update is intentionally partial (no
+completeness gate — that is the literal's job).
+""",
+        gram = grammar {
+  with_suffix = "with" @require "{" ( @onfail(bail) f:field_init )+ @require "}" @expect("{", "expected `{` after `with`") @expect("+", "expected field name") @expect("}", "expected `}` after struct fields") -> MkWithSuffix(f)
+        },
+        builders = with_expr_builds(),
+        snippet = r"${1:value} with { ${2:field}: ${3:new} }",
+        expr_tag = Expr.With(ExprId(0), []),
+        emit_expr = emit_with,
+        resolve_expr = with_resolve,
+        check_expr = with_check,
+        gram_family = "expr",
     }
+    with_expr_def
 }
 
 /// Resolver hook for `With`. Walks the source object, then the
