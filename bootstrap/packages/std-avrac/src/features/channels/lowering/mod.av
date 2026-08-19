@@ -14,7 +14,7 @@ export fn mk_channel(st: PState, sp_start: int, elem_cv: CapVal, cap_cv: CapVal)
     let elem_id = st.store.ingest_type(elem, byte_span_none())
     CapVal.Node(st.store.add_expr(
         Expr.ChannelNew(elem, cap),
-        byte_span(sp_start, st.cur().pos),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
         [NodeRef.TypeRef(elem_id)]
     ))
 }
