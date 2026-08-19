@@ -1,18 +1,44 @@
-// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces flat at `features.in_operator.{...}`
+// dir-as-module (g2eo.1): codegen.av + lowering/ auto-load as siblings,
+// surface flat at `features.in_operator.{...}`.
 use core.{feature_new, Feature, ExprId}
 use resolve.{resolve_expr, resolve_expr_list_ids}
+use features.grammar.{parse_grammar}
 use features.in_operator.codegen.{emit_in_check}
+use features.in_operator.lowering.{in_operator_builds}
 use typeck.{check_expr, check_expr_list, tc_er}
 
-/// Register the `in` operator feature. Used for membership tests
-/// (`x in [1, 2, 3]` and `n in 0..10`). Returns Bool.
-export fn in_operator_feature() -> Feature {
-    feature_new("in") with {
-        expr_tag: Expr.InCheck(ExprId(0), []),
-        emit_expr: emit_in_check,
-        resolve_expr: in_resolve,
-        check_expr: in_check,
+/// `x in [1, 2, 3]` / `n in 0..10` — membership tests (produce Bool).
+/// The definition carries `in_tail` (one branch of the spine's `eq_tail`
+/// dispatch) and its `in_rhs` sub-rule (t-kd4y.3.5.7): the list form
+/// builds a PARTIAL `InCheck`, the range form the `>= s && <= e` desugar
+/// with MISSING sentinels — the `equality` stratum's rebind_eq
+/// (features/struct_decl) installs the real subject into either shape.
+/// `gram_family = "expr"`.
+export fn in_operator_lang() -> LanguageFeature {
+    LanguageFeature in_operator_def {
+        name = "in",
+        title = "in — membership tests",
+        docs = """
+`x in [a, b, c]` is true when `x` equals any listed value; `n in s..e`
+is the half-open range test `n >= s && n < e`'s inclusive sibling
+(`>= s && <= e`). Mutually exclusive with `==` chains and `is` at the
+same precedence.
+""",
+        gram = grammar {
+  in_tail = "in" ir:in_rhs -> ir
+  in_rhs  = "[" ( a:expression ( "," a:expression )* )? "]" -> mk_inlist(a)
+          | s:bitor @require ".." e:bitor
+            @expect("..", "expected `..` in range expression after `in`") -> mk_inrange(s, e)
+        },
+        builders = in_operator_builds(),
+        snippet = r"${1:value} in ${2:collection}",
+        expr_tag = Expr.InCheck(ExprId(0), []),
+        emit_expr = emit_in_check,
+        resolve_expr = in_resolve,
+        check_expr = in_check,
+        gram_family = "expr",
     }
+    in_operator_def
 }
 
 /// Resolver hook for `InCheck`. Recurses into the needle and the

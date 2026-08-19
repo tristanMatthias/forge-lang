@@ -4,19 +4,38 @@
 // without explicit self-imports.
 use codegen.{err_emit}
 use core.{feature_new, Feature, vtype_wrap_optional, vtype_is_optional, vtype_is_unknown, ExprId}
+use features.grammar.{parse_grammar}
+use features.null_safety.lowering.{null_coalesce_builds}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er, check_method_call}
 
-/// Register the `??` null-coalesce expression feature
-/// (`x ?? fallback`).
-export fn null_coalesce_feature() -> Feature {
-    feature_new("null_coalesce") with {
-        expr_tag: Expr.NullCoalesce(ExprId(0), ExprId(0)),
-        emit_expr: null_coalesce_emit_expr,
-        resolve_expr: null_coalesce_resolve_expr,
-        check_expr: check_null_coalesce,
+/// `x ?? fallback` — null coalescing. The definition carries the
+/// ladder's `null_coalesce` stratum and its spanned `fold_nullish` row
+/// (t-kd4y.3.5.7) — the sibling `?.`/`?`/`catch` forms are postfix-chain
+/// branches (spine-owned until .3.5.8) and keep their own `Feature`
+/// registrations below. `gram_family = "expr"`; `pipe` enters here and
+/// the stratum exits to `logic_or` by name.
+export fn null_coalesce_lang() -> LanguageFeature {
+    LanguageFeature null_coalesce_def {
+        name = "null_coalesce",
+        title = "?? — null coalescing",
+        docs = """
+`a ?? b` yields `a` unless it is null, in which case `b`. Chains
+associate left and stop at the first non-null value: `a ?? b ?? c`.
+""",
+        gram = grammar {
+  null_coalesce = l:logic_or ( op:("??") r:logic_or )* -> fold_nullish(l, op, r)
+        },
+        builders = null_coalesce_builds(),
+        snippet = r"${1:value} ?? ${2:fallback}",
+        expr_tag = Expr.NullCoalesce(ExprId(0), ExprId(0)),
+        emit_expr = null_coalesce_emit_expr,
+        resolve_expr = null_coalesce_resolve_expr,
+        check_expr = check_null_coalesce,
+        gram_family = "expr",
     }
+    null_coalesce_def
 }
 
 /// Register the `?.` optional-chain feature (`obj?.field`).

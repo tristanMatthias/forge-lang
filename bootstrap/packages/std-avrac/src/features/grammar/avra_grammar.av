@@ -42,27 +42,22 @@ use features.generics.{avra_generics_grammar}
 export fn avra_expr_spine_grammar() -> Grammar {
     let gp = grammar {
   expression    = assignment
-  // `@onfail(bail)` on the LHS: without it a FAILED left operand
-  // was still built on: `if let = x { 1 }` reported the missing binding name, then
-  // `assignment` consumed the `=`, parsed the rest of the fn body as an RHS ("expected
-  // }"), and `mk_assign_expr` added "invalid assignment target" on top — three
-  // diagnostics where one is pinned. `bail` keys on the sub-parse FAILING, not on it
-  // reporting, which is required: `let a = (1) ->` reports and still yields `(group 1)`,
-  // a value that is kept.
-  assignment    = @onfail(bail) l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
-  pipe          = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)
-  pipe_arg      = @on(allow_it_sugar) logic_or
-  null_coalesce = l:logic_or ( op:("??") r:logic_or )* -> fold_nullish(l, op, r)
-  logic_or      = l:logic_and ( op:("||" | "or") r:logic_and )* -> fold_logical(l, op, r)
-  logic_and     = l:equality ( op:("&&" | "and") r:equality )* -> fold_logical(l, op, r)
-  equality      = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)
-  eq_tail       = "is" "." v:IDENT
-                  @expect(".", "expected `.Variant` after `is`") -> mk_is(v)
-                | "in" ir:in_rhs -> ir
-                | ( op:("==" | "!=") r:bitor )+ -> mk_eqchain(op, r)
-  in_rhs        = "[" ( a:expression ( "," a:expression )* )? "]" -> mk_inlist(a)
-                | s:bitor @require ".." e:bitor
-                  @expect("..", "expected `..` in range expression after `in`") -> mk_inrange(s, e)
+  // The OPERATOR LADDER threads through feature-owned strata BY NAME
+  // (t-kd4y.3.5.7); only the dispatch skeleton stays here:
+  //   `assignment` + `equality` — features/struct_decl's field_assign_lang
+  //     (the LHS-bail posture and the rebind_eq retargeting ride their
+  //     comments there);
+  //   `pipe` / `pipe_arg` — features/pipe_op;
+  //   `null_coalesce` — features/null_safety's null_coalesce_lang;
+  //   `logic_or` / `logic_and` — features/logical_op;
+  //   `is_tail` / `in_tail` (+ `in_rhs`) / `eqchain_tail` — the eq_tail
+  //     branches, with features/is_keyword, features/in_operator, and
+  //     features/eq_chain.
+  // eq_tail is PURE DISPATCH over those three tails — distinct FIRSTs
+  // (`is` / `in` / `==`|`!=`), the hand parse_equality's mutual
+  // exclusion. Each tail builds a PARTIAL with a MISSING subject;
+  // `equality`'s rebind_eq installs the real base and stamps the final.
+  eq_tail       = is_tail | in_tail | eqchain_tail
   bitor      = l:bitxor ( op:("|") r:bitxor )* -> fold_binary(l, op, r)
   bitxor     = l:bitand ( op:("^") r:bitand )* -> fold_binary(l, op, r)
   bitand     = l:comparison ( op:("&") r:comparison )* -> fold_binary(l, op, r)
@@ -70,10 +65,17 @@ export fn avra_expr_spine_grammar() -> Grammar {
   shift      = l:term ( op:("<<" | ">>") r:term )* -> fold_binary(l, op, r)
   term       = l:factor ( op:("+" | "-") r:factor )* -> fold_binary(l, op, r)
   factor     = l:unary ( op:("*" | "/" | "%") r:unary )* -> fold_binary(l, op, r)
-  unary      = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
-             | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
-             | @when(in_quote_body) @peek(tilde_ident_lbrace) @when(allow_struct_lit) "~" n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkSpliceStruct(n, f)
+  // The SPLICE branches lead and `unary_prefix` (features/unary_op — the
+  // `!`/`-`/`not`/`~` prefix ops, t-kd4y.3.5.7) follows: `~` is two
+  // operators either side of the quote-depth line, and the gates are
+  // exact complements (`in_quote_body` = depth > 0, `at_quote_top` =
+  // depth == 0 inside unary_prefix), so no input satisfies both and this
+  // order is behavior-identical to the retired in-spine one — while
+  // keeping the referenced rule's broad FIRST (`~` included) from
+  // swallowing an in-quote splice.
+  unary      = @when(in_quote_body) @peek(tilde_ident_lbrace) @when(allow_struct_lit) "~" n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkSpliceStruct(n, f)
              | @when(in_quote_body) "~" t:unary -> MkSplice(t)
+             | unary_prefix
              | b:NUMBER ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
              | b:STRING ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
              | b:BOOL ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)

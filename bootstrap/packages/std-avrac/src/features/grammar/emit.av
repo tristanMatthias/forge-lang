@@ -511,6 +511,12 @@ fn emit_accumulate(it: GItem, ind: string) -> string {
 
 /// A fold's build call: the seed label maps to its scalar CapVal var, an
 /// accumulator label to CapVal.Toks(<l>s) / CapVal.Nodes(<l>s).
+/// Manifest rows answer FIRST (t-kd4y.3.5.7 — fold_logical/fold_nullish
+/// are feature-owned but KEEP this specialised path for its
+/// operator-absent fast-path; the adapter call is the one spelling that
+/// moves): a `spanned` row threads the emit_fold-captured sp_start via
+/// call_with_build_sp exactly as emit_call_build does. The central arm
+/// below survives for the engine folds (fold_binary / fold_postfix).
 fn emit_fold_build(g: Grammar, build: GBuild, seed_label: string, inner: GSeq) -> string {
     match build {
         .Call(name, args) -> {
@@ -518,8 +524,15 @@ fn emit_fold_build(g: Grammar, build: GBuild, seed_label: string, inner: GSeq) -
             for a in args {
                 rendered.push(emit_fold_arg(a, seed_label, inner))
             }
-            // fold_logical/fold_nullish take the rule-entry sp_start (emit_fold
-            // captures it); fold_binary→Pratt and fold_postfix do not.
+            let row = manifest_row(g.builder_kinds, name, args.length)
+            if row != null {
+                let b = row!
+                if b.spanned {
+                    return "call_with_build_sp(st, sp_start, ${b.export_name}, [${join_commas(rendered)}])"
+                }
+                return "${b.export_name}(st, [${join_commas(rendered)}])"
+            }
+            // The engine folds (fold_binary→Pratt, fold_postfix) are span-free.
             let sp_arg = if build_uses_sp_start(g, name, args.length) { "sp_start, " } else { "" }
             "CapVal.Node(${build_fn(name)}(st, ${sp_arg}${join_commas(rendered)}))"
         }
@@ -541,8 +554,7 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
     // allocation-flat.
     let row = manifest_row(g.builder_kinds, name, arity)
     if row != null { return row!.spanned }
-    name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
-        name == "fold_with" || name == "fold_postfix_with" || name == "mk_assign" || name == "rebind_eq" ||
+    name == "fold_postfix_with" ||
         name == "MkExprBlock" ||
         // `( a, b, … )` tuple spans sp_start = the `(` byte (t-47hc paren prep, DORMANT) —
         // its owning rule enters at `(`, like MkListLit's at `[`.
@@ -2488,24 +2500,21 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // threads the [production-entry, next-token) span into the
         // DSL compound builders — see executor.av. fold_binary→Pratt and
         // fold_postfix keep their span-free signatures.
-        "fold_logical" -> "CapVal.Node(fold_logical_expr(st, sp_start, ${arg3(args)}))"
-        "fold_nullish" -> "CapVal.Node(fold_nullish_expr(st, sp_start, ${arg3(args)}))"
         "fold_postfix" -> "CapVal.Node(fold_postfix_expr(st, ${arg2(args)}))"
-        "mk_assign" -> "CapVal.Node(mk_assign_expr(st, sp_start, ${args[0]}, ${args[1]}))"
-        "fold_pipe" -> "CapVal.Node(fold_pipe_expr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
-        // The `with` postfix fold (Phase 3a-3): `base` is a scalar CapVal, `s` a
-        // repetition list of PARTIAL `with_suffix` nodes; fold_with_expr rebinds
-        // each onto the accumulated base with the per-step span.
-        "fold_with" -> "CapVal.Node(fold_with_expr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
         // The Phase-3a postfix+with fold: `base` is a scalar CapVal, `p` the postfix-
         // step list, `s` the with-suffix list. fold_postfix_with_expr takes the last
         // postfix node (the complete chain) then rebinds each `with` suffix over it.
         "fold_postfix_with" -> "CapVal.Node(fold_postfix_with_expr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list), CapVal.Nodes(${args[2]}_list)))"
-        // The is/in/==-chain equality suffix (ps3t.6.7 Step C). mk_inlist's `a`
-        // and mk_eqchain's `op`/`r` are repetition captures (list accumulators).
-        "rebind_eq" -> "CapVal.Node(rebind_eq_expr(st, sp_start, ${args[0]}, ${args[1]}))"
-        "mk_is" -> "CapVal.Node(mk_is_expr(st, ${args[0]}))"
-        "mk_inlist" -> "CapVal.Node(mk_inlist_expr(st, CapVal.Nodes(${args[0]}_list)))"
+        // The OPERATOR families are feature-owned (t-kd4y.3.5.7): the
+        // ladder folds fold_logical / fold_nullish (features/logical_op +
+        // features/null_safety lowerings — emit_fold_build's manifest
+        // branch renders their adapter calls), fold_pipe
+        // (features/pipe_op), mk_assign / rebind_eq
+        // (features/struct_decl), the eq_tail partials mk_is / mk_inlist /
+        // mk_inrange / mk_eqchain (features/is_keyword,
+        // features/in_operator, features/eq_chain), and Unary
+        // (features/unary_op). `fold_with` was spelled by NO rule and is
+        // DELETED, not moved.
         // The `(`-led paren family (MkLambdaTyped/MkLambda/MkTupleFR/
         // MkGroupOrEmpty/MkParam — t-kd4y.3.5.3) and the collections
         // (MkListLit/MkListComp/MkMapLit — t-kd4y.3.5.4) are feature-owned
@@ -2513,12 +2522,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // lowerings): the manifest branch above renders the adapter calls,
         // captures wrapped by manifest_arg_spelling.
         "MkExprBlock" -> "mk_expr_block(st, sp_start, CapVal.SNodes(${args[0]}_list))"
-        "mk_inrange" -> "CapVal.Node(mk_inrange_expr(st, ${args[0]}, ${args[1]}))"
-        // Contextual enum ctor `.Variant`/`.Variant(args)` (Phase 3a-7 slice 4): `v` is
-        // the scalar variant IDENT, `a` the repetition args-list accumulator (empty ⇒
-        // nullary). sp_start = the `.` byte, spanned like the hand alloc_at.
-        "mk_eqchain" -> "CapVal.Node(mk_eqchain_expr(st, CapVal.Toks(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
-        "Unary" -> "CapVal.Node(unary_expr(st, ${args[0]}, ${args[1]}))"
         "field_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(${args[0]}))))"
         "index_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Index(st.missing_node(), capval_to_expr(st, ${args[0]}))))"
         "call_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.Call(st.missing_node(), ${args[0]}_list)))"
@@ -2653,10 +2656,7 @@ fn arg2(args: List<string>) -> string { "${args[0]}, ${args[1]}" }
 
 fn build_fn(name: string) -> string {
     if name == "fold_binary" { return "fold_binary_expr" }
-    if name == "fold_logical" { return "fold_logical_expr" }
-    if name == "fold_nullish" { return "fold_nullish_expr" }
     if name == "fold_postfix" { return "fold_postfix_expr" }
-    if name == "Unary" { return "unary_expr" }
     name
 }
 

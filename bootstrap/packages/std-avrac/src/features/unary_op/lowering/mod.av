@@ -1,0 +1,36 @@
+// The prefix-unary family's LOWERING (t-kd4y.3.5.7): one span-free row
+// (`Unary`) — span-free in the ROW sense (no st.build_sp thread) because
+// the span it stamps is the OP TOKEN's own start byte, carried in the
+// capture, not the rule entry. Imports ONLY features.grammar + core
+// (F4012).
+use core.{Expr, ExprId, UnOp, byte_span}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_tok_text}
+
+export fn unary_expr(st: PState, opcap: CapVal, opndcap: CapVal) -> ExprId {
+    let operand = capval_to_expr(st, opndcap)
+    // Stamp the SAME [op-start, next-token) byte span the hand parse_unary stamped
+    // via alloc_at(Expr.Unary, sp_start) (mod.av:1747) — sp_start there was the op
+    // token's start, which IS the op capture's Token.pos here; st.cur().pos is the
+    // next-unconsumed byte. Mirrors mk_binary (add_expr with an empty-edges span)
+    // so a grammar-owned prefix Unary is byte-identical to the retired hand one,
+    // not span-free.
+    match opcap {
+        .Tok(t) -> st.store.add_expr(Expr.Unary(unop_of(t.text), operand), byte_span(t.pos, st.cur().pos), [])
+        _ -> st.store.exprs.add_leaf(Expr.Unary(unop_of(capval_tok_text(opcap)), operand))
+    }
+}
+
+fn unop_of(sym: string) -> UnOp {
+    if sym == "!" { return UnOp.Not }
+    if sym == "not" { return UnOp.Not }
+    if sym == "~" { return UnOp.BitNot }
+    UnOp.Neg
+}
+
+export fn unary_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(unary_expr(st, vals[0], vals[1]))
+}
+
+export fn unary_op_builds() -> List<BuilderBind> {
+    bind_rows("features.unary_op.lowering", [bind_row("Unary", "expr", 2, false, "unary_abi", unary_abi)])
+}

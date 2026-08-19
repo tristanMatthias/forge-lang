@@ -1,0 +1,35 @@
+// dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
+// at `features.unary_op.{...}`. A syntax-only carrier: `Expr.Unary` is a
+// core codegen/typeck node, so no pass hooks ride this definition.
+use features.grammar.{parse_grammar}
+use features.unary_op.lowering.{unary_op_builds}
+
+/// `!x` / `-x` / `not x` / `~x` — the prefix unary operators
+/// (t-kd4y.3.5.7). The definition carries `unary_prefix`, the first
+/// branch of the spine's `unary` alternation. The `~` branch is
+/// `@when(at_quote_top)` because `~` is TWO operators either side of the
+/// quote-depth line: bitnot at depth 0 (this rule) and quote SPLICE
+/// inside a body — the splice branches stay with the spine's `unary`
+/// (their builds are .3.4 remnants) and are tried FIRST, so `~` only
+/// reaches this rule where bitnot is what it means. The two gates are
+/// exact complements (`quote_depth == 0` vs `> 0`), which is what makes
+/// that branch order behavior-identical to the retired in-spine one.
+/// `gram_family = "expr"`.
+export fn unary_op_lang() -> LanguageFeature {
+    LanguageFeature unary_op_def {
+        name = "unary_op",
+        title = "! / - / not / ~ — prefix unary operators",
+        docs = """
+`!x` (or `not x`) negates a Bool, `-x` negates a number, and `~x` is
+bitwise NOT on an Int. Prefix operators nest right: `!!x` is `!(!x)`.
+""",
+        gram = grammar {
+  unary_prefix = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
+               | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
+        },
+        builders = unary_op_builds(),
+        snippet = r"!${1:value}",
+        gram_family = "expr",
+    }
+    unary_op_def
+}

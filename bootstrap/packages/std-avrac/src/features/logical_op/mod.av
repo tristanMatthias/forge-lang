@@ -1,0 +1,34 @@
+// dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
+// at `features.logical_op.{...}`. A syntax-only carrier: `Expr.Logical` is
+// a core codegen/typeck node (short-circuit lowering lives in codegen),
+// so no pass hooks ride this definition — syntax + the lowering alone.
+use features.grammar.{parse_grammar}
+use features.logical_op.lowering.{logical_op_builds}
+
+/// `a && b` / `a || b` (and the keyword spellings `and` / `or`) — the
+/// short-circuit logical operators. The definition carries BOTH ladder
+/// strata (t-kd4y.3.5.7): `logic_or` and `logic_and` are one family with
+/// one fold (`fold_logical` — the or/and distinction is the captured
+/// operator token, not the rule), so one gram owns the two rules and the
+/// row per the no-orphans validator. `gram_family = "expr"`; the ladder
+/// enters from `null_coalesce` (features/null_safety) and exits to
+/// `equality` (features/struct_decl's field_assign) by name.
+export fn logical_op_lang() -> LanguageFeature {
+    LanguageFeature logical_op_def {
+        name = "logical_op",
+        title = "&& / || — short-circuit logical operators",
+        docs = """
+`a && b` evaluates `b` only when `a` is true; `a || b` only when `a` is
+false. `and` / `or` are keyword spellings of the same operators. Both
+associate left: `a || b || c` is `(a || b) || c`.
+""",
+        gram = grammar {
+  logic_or      = l:logic_and ( op:("||" | "or") r:logic_and )* -> fold_logical(l, op, r)
+  logic_and     = l:equality ( op:("&&" | "and") r:equality )* -> fold_logical(l, op, r)
+        },
+        builders = logical_op_builds(),
+        snippet = r"${1:a} && ${2:b}",
+        gram_family = "expr",
+    }
+    logical_op_def
+}
