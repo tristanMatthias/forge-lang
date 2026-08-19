@@ -1869,13 +1869,52 @@ fn node_has_gate(node: GNode) -> bool {
 /// abort check is the twin of `emit_one`'s), and `executor.av` deliberately does
 /// not import `emit.av`, so a second copy here would be the drift hazard.
 fn rule_reaches_spec(g: Grammar, name: string) -> bool {
+    let seen: List<string> = []
+    rule_reaches_spec_in(g, name, seen)
+}
+
+/// TRANSITIVE (t-kd4y.3.5.8): the non-transitive read inspected only the
+/// named rule's OWN branches, which was exact while every speculative
+/// branch lived inline in the repeated rule. The postfix flip made
+/// `postfix_suffix` PURE DISPATCH — nine bare refs, the `@try` one level
+/// down in `call_suffix` — so the stall analysis answered false, the
+/// emitted `( p:postfix_suffix )*` loops lost their no-progress break,
+/// and any `callable <` that is not a generic call (every `i < n`) spun
+/// the loop allocating an error row per iteration: a deterministic
+/// 14GB OOM kill in `phase: parse` on ordinary compiler input. The
+/// reach crosses a branch's leading ZERO-WIDTH items (peeks/preds) and
+/// its rule REFS: a ref in head position stalls when its rule does; an
+/// optional/starred head ref can also match ZERO and pass through, so
+/// the scan continues past it. Any token-bearing item ends the branch
+/// scan — from there the branch consumes. Cycle-guarded by `seen`
+/// (recursive grammars are the norm), answering false on revisit: a
+/// cycle alone cannot produce the zero-consume RETURN a rolled-back
+/// `@try` does.
+fn rule_reaches_spec_in(g: Grammar, name: string, seen: List<string>) -> bool {
+    if str_in(seen, name) { return false }
     let i = rule_index_of(g, name)
     if i < 0 { return false }
+    mut seen2 = seen
+    seen2.push(name)
     match g.rules[i].body {
         .Alt(branches) -> {
             for b in branches {
                 // A rolled-back `@try` consumes nothing.
                 if b.speculative { return true }
+                mut scanning = true
+                for it in b.items {
+                    if scanning {
+                        match it.prim {
+                            .Pred(_) -> {}
+                            .Peek(_) -> {}
+                            .Ref(nm) -> {
+                                if rule_reaches_spec_in(g, nm, seen2) { return true }
+                                if rep_is_one(it.rep) { scanning = false }
+                            }
+                            _ -> { scanning = false }
+                        }
+                    }
+                }
             }
             false
         }

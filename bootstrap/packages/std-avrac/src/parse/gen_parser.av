@@ -3676,7 +3676,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let b = CapVal.Tok(st.advance())
         st.seed_postfix(capval_to_expr(st, b), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3696,7 +3699,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let b = CapVal.Tok(st.advance())
         st.seed_postfix(capval_to_expr(st, b), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3716,7 +3722,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let b = CapVal.Tok(st.advance())
         st.seed_postfix(capval_to_expr(st, b), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3736,7 +3745,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let b = CapVal.Tok(st.advance())
         st.seed_postfix(capval_to_expr(st, b), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3756,7 +3768,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_variant_ctor(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3776,7 +3791,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_match_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3796,7 +3814,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_if_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3816,7 +3837,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_spawn_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3836,7 +3860,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_channel_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3856,7 +3883,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_isolated_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3876,7 +3906,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_when_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3896,7 +3929,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_quote_arm_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3916,7 +3952,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_quote_type_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3936,7 +3975,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_quote_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3956,7 +3998,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_list_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3976,7 +4021,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_brace_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -3996,7 +4044,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_qualified_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -4016,7 +4067,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_paren_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -4036,7 +4090,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_template_lit(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -4056,7 +4113,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_grammar_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -4076,7 +4136,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_table_lit(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -4096,7 +4159,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_struct_lit_expr(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -4116,7 +4182,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let base = parse_tagged_template(st)
         st.seed_postfix(capval_to_expr(st, base), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -4136,7 +4205,10 @@ fn parse_unary_chain(st: PState) -> CapVal {
         let b = CapVal.Tok(st.advance())
         st.seed_postfix(capval_to_expr(st, b), sp_start)
         while starts_postfix_suffix(st) {
-            p_list.push(capval_to_expr(st, parse_postfix_suffix(st)))
+            let __rep_before = st.pos
+            let __rep_cv = parse_postfix_suffix(st)
+            if st.pos == __rep_before { break }
+            p_list.push(capval_to_expr(st, __rep_cv))
         }
         while starts_with_suffix(st) {
             let __bdiag0 = st.diags.length
@@ -4770,13 +4842,10 @@ fn parse_table_lit(st: PState) -> CapVal {
     }
     let _ = __bres1
     while starts_table_row(st) {
-        let __bdiag0 = st.diags.length
-        let __bres0 = parse_table_row(st)
-        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
-            st.set_abort_prop(true)
-            return CapVal.Node(st.error_node_silent())
-        }
-        rows_list.push(capval_to_expr(st, __bres0))
+        let __rep_before = st.pos
+        let __rep_cv = parse_table_row(st)
+        if st.pos == __rep_before { break }
+        rows_list.push(capval_to_expr(st, __rep_cv))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}` to close table")
@@ -5956,7 +6025,10 @@ fn parse_when_expr(st: PState) -> CapVal {
         st.report("expected `{`")
     }
     while starts_when_arm(st) {
-        a_list.push(capval_to_when_arm(st, parse_when_arm(st)))
+        let __rep_before = st.pos
+        let __rep_cv = parse_when_arm(st)
+        if st.pos == __rep_before { break }
+        a_list.push(capval_to_when_arm(st, __rep_cv))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}`")
