@@ -79,27 +79,25 @@ spec "operator families as LanguageFeatures" {
 // Representative operator shapes through the PRODUCTION engine — every
 // flipped stratum exercised end-to-end.
 spec "operator shapes parse to the expected trees" {
-    then "logical, nullish, and pipe fold left" {
-        let l = oracle_expr("a && b || c") ?? "<parse error>"
-        let n = oracle_expr("a ?? b ?? c") ?? "<parse error>"
-        let p = oracle_expr("x |> f |> g") ?? "<parse error>"
-        !l.contains("error") && !n.contains("error") && !p.contains("error")
-            && l.contains("a") && n.contains("c") && p.contains("g")
+    then "logical, nullish, and pipe fold LEFT — exact trees, not identifier presence" {
+        // Pinned as full renders: a right fold or a subject left Missing
+        // would contain the same identifiers, so `.contains` cannot catch
+        // an associativity or retarget regression (CodeRabbit find, #1282).
+        (oracle_expr("a && b || c") ?? "<parse error>") == "(|| (&& a b) c)"
+            && (oracle_expr("a ?? b ?? c") ?? "<parse error>") == "(?? (?? a b) c)"
+            && (oracle_expr("x |> f |> g") ?? "<parse error>") == "(call g ((call f (x))))"
     }
-    then "the eq stratum retargets is / in / ==-chains onto the base" {
+    then "the eq stratum retargets is / in / ==-chains onto the base — no Missing survives" {
         let ischk = oracle_expr("v is .Some") ?? "<parse error>"
         let inl = oracle_expr("x in [1, 2]") ?? "<parse error>"
-        let inr = oracle_expr("n in 0..9") ?? "<parse error>"
-        let eqc = oracle_expr("a == b") ?? "<parse error>"
-        ischk.contains("Some") && inl.contains("x") && inr.contains("n")
-            && eqc.contains("a") && eqc.contains("b")
-            && !ischk.contains("error") && !inl.contains("error")
-            && !inr.contains("error") && !eqc.contains("error")
+        (oracle_expr("a == b") ?? "<parse error>") == "(== a b)"
+            && (oracle_expr("n in 0..9") ?? "<parse error>") == "(&& (>= n 0) (<= n 9))"
+            && ischk.contains("Some") && !ischk.contains("missing") && !ischk.contains("error")
+            && inl.contains("x") && !inl.contains("missing") && !inl.contains("error")
     }
     then "prefix unary and assignment build their nodes" {
-        let neg = oracle_expr("!ready") ?? "<parse error>"
         let asn = oracle_expr("x = 5") ?? "<parse error>"
-        neg.contains("ready") && asn.contains("x") && asn.contains("5")
-            && !neg.contains("error") && !asn.contains("error")
+        (oracle_expr("!ready") ?? "<parse error>") == "(! ready)"
+            && asn.contains("x") && asn.contains("5") && !asn.contains("error")
     }
 }

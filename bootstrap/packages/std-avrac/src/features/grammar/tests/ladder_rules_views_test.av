@@ -1,0 +1,41 @@
+// t-kd4y.3.5.7 (CodeRabbit find, #1282) — the operator LADDER threads through
+// feature-owned strata BY NAME: the spine's `expression`/`eq_tail` reference
+// rules (assignment/equality/pipe/…/unary_prefix) that live in feature
+// fragments, so a fragment dropped from ONE view's composition would leave
+// that view with dangling references while the others stay green. This spec
+// pins rule DEFINITIONS (g.rules, never rendered text — a render shows a
+// reference without a definition behind it) across every composed view that
+// derives expressions.
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_stmt_flip_grammar, avra_decl_flip_grammar, avra_program_grammar, Grammar}
+
+fn ladder_rules() -> List<string> {
+    ["assignment", "equality", "pipe", "pipe_arg", "null_coalesce",
+     "logic_or", "logic_and", "is_tail", "in_tail", "in_rhs",
+     "eqchain_tail", "unary_prefix"]
+}
+
+fn missing_in(g: Grammar) -> string {
+    for want in ladder_rules() {
+        mut found = false
+        for r in g.rules {
+            if r.name == want { found = true }
+        }
+        if !found { return want }
+    }
+    ""
+}
+
+spec "every composed view DEFINES the externally owned operator-ladder rules" {
+    then "the expression dispatch view" {
+        missing_in(avra_expr_dispatch_grammar()) == ""
+    }
+    then "the statement-flip view" {
+        missing_in(avra_stmt_flip_grammar()) == ""
+    }
+    then "the declaration-flip view" {
+        missing_in(avra_decl_flip_grammar()) == ""
+    }
+    then "the whole-program view" {
+        missing_in(avra_program_grammar()) == ""
+    }
+}

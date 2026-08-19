@@ -73,7 +73,12 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // order is behavior-identical to the retired in-spine one — while
   // keeping the referenced rule's broad FIRST (`~` included) from
   // swallowing an in-quote splice.
-  unary      = @when(in_quote_body) @peek(tilde_ident_lbrace) @when(allow_struct_lit) "~" n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkSpliceStruct(n, f)
+  // The @peek LEADS the marker run (marker order is semantically
+  // insignificant, but the ambiguity guard's peek-exemption reads the
+  // branch's LEAD item — @when-first read as an unpartitioned `~` shadow
+  // over the later splice/prefix branches and went red at the first full
+  // gate on this slice).
+  unary      = @peek(tilde_ident_lbrace) @when(in_quote_body) @when(allow_struct_lit) "~" n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkSpliceStruct(n, f)
              | @when(in_quote_body) "~" t:unary -> MkSplice(t)
              | unary_prefix
              | b:NUMBER ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)

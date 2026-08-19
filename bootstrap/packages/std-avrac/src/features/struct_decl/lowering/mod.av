@@ -217,7 +217,14 @@ fn rebind_missing_subject(st: PState, sp_start: int, tail_id: ExprId, base: Expr
             st.store.add_expr(Expr.Logical(ge2, op, le2), sp, [])
         }
         .Binary(l, op, r) -> st.store.add_expr(Expr.Binary(rebind_missing_subject(st, sp_start, l, base), op, r), sp, [])
-        _ -> base
+        // The sentinel seed itself: recursion bottom of a `==`-chain's left
+        // spine, and the bare-base case — the subject IS the base.
+        .Missing -> base
+        // Anything else (an Expr.Error from a failed tail coercion included)
+        // is PRESERVED, never silently swapped for the base: dropping the
+        // failed tail here would erase an error node the recovery tree owns
+        // (both engines share this lowering, so they stay in agreement).
+        _ -> tail_id
     }
 }
 

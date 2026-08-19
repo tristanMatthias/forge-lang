@@ -20,9 +20,8 @@ export fn in_operator_lang() -> LanguageFeature {
         title = "in — membership tests",
         docs = """
 `x in [a, b, c]` is true when `x` equals any listed value; `n in s..e`
-is the half-open range test `n >= s && n < e`'s inclusive sibling
-(`>= s && <= e`). Mutually exclusive with `==` chains and `is` at the
-same precedence.
+tests an inclusive range: it is true when `n >= s && n <= e`. Mutually
+exclusive with `==` chains and `is` at the same precedence.
 """,
         gram = grammar {
   in_tail = "in" ir:in_rhs -> ir
