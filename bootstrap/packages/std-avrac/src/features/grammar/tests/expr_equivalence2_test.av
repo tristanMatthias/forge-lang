@@ -1,0 +1,109 @@
+// SPLIT per t-kdyj.13's whale precedent (t-u602): as ONE file this
+// differential's unit peaked 8773 MB under AVRA_RC_STRICT=1 (measured solo,
+// quiet box) — past the solo-retry's runner-survival ceiling (~7871 MB), so
+// its batch died as a MEMORY CEILING red on every rc-strict run while the
+// blamed first-of-batch file used 75 MB. Each slice keeps the shared
+// harness verbatim; coverage is the union of the three files.
+// ps3t.6.7 / Step C — the grammar-DSL EXPRESSION family, grown toward selfhost
+// fidelity. avra_expr_grammar has the full operator-precedence spine (logic_or ->
+// ... -> unary -> postfix -> primary); this test proves it builds the same tree
+// as the hand parser's parse_expression over the covered surface, and grows with
+// the grammar. The mode primitives (interpolation @hand(template_expr), map/block
+// @hand(brace_expr)) are wired into the primary here.
+//
+// Interpolated sources are built by concatenating a lone "$" with "{...}", so no
+// interpolation syntax appears in this file (which would interpolate here).
+use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr}
+use @std.avrac.parse.{oracle_expr}
+use @std.avrac.core.{render_expr_id}
+
+fn dsl(src: string) -> string {
+    let r = run_grammar_expr(avra_expr_grammar(), src)
+    if r.had_error { return "<err>" }
+    render_expr_id(r.store, r.root)
+}
+
+fn hand(src: string) -> string {
+    oracle_expr(src) ?? "<err>"
+}
+
+fn agree(src: string) -> bool {
+    let got = dsl(src)
+    let want = hand(src)
+    if got != want {
+        println("expression grammar mismatch: ${src}")
+        println("generated: ${got}")
+        println("hand:      ${want}")
+    }
+    got == want
+}
+
+spec "ps3t.6.7/StepC: avra_expr_grammar == hand parse_expression (slice 2: hand leaves, keyword primaries, stateful postfix)" {
+    given "enum constructors and list literals" {
+        then "nullary/payload enum ctors, nested, and list literals agree" {
+            dsl(".Some(1)") != "<err>" &&
+            agree(".None") && agree(".Some(1)") && agree(".Pair(1, 2)") &&
+            agree(".Wrap(.Inner(x))") &&
+            agree("[]") && agree("[1]") && agree("[1, 2, 3]") &&
+            agree("[a + 1, b]") && agree("[[1], [2]]") &&
+            agree(".Some(1 + 2)") && agree("[f(1), g(2)]")
+        }
+    }
+    // ── ps3t.6.7 Step C: the @hand(hand_unary) leaf — the procedural forms the
+    // DSL delegates wholesale to parse_unary (newline-sensitive + mode-stateful).
+    given "float literals (parse_primary Tk.Float, via the @hand leaf)" {
+        then "decimals build FloatLit (not Int Number) and agree" {
+            dsl("3.14") != "<err>" &&
+            agree("3.14") && agree("0.5") && agree("1.0 + 2.5") && agree("- 3.14")
+        }
+    }
+    given "closures / lambdas ( ( params ) -> body )" {
+        then "zero/one/multi-param and typed closures agree" {
+            dsl("(x) -> x + 1") != "<err>" &&
+            agree("(x) -> x + 1") && agree("() -> 1") && agree("(x, y) -> x + y") &&
+            agree("(x: int) -> x") && agree("(a) -> (b) -> a + b") &&
+            agree("(x) -> { let y = x + 1 y }")
+        }
+    }
+    given "statement-bearing expression blocks" {
+        then "spawn and isolated bodies agree without a hand leaf" {
+            agree("spawn { let x = 1 x + 1 }") &&
+            agree("isolated { let x = 1 x + 1 }") &&
+            agree("spawn { if true { return 1 } 2 }.await")
+        }
+    }
+    given "prefix `not` and null/none primaries" {
+        then "logical not keyword and the absence literals agree" {
+            agree("not a") && agree("not (a && b)") && agree("not not a") &&
+            agree("null") && agree("none")
+        }
+    }
+    given "match / if / when expressions (keyword primaries)" {
+        then "match, if/else, and when expressions agree" {
+            dsl("match x { _ -> 1 }") != "<err>" &&
+            agree("match x { _ -> 1 }") &&
+            agree("if a { 1 } else { 2 }") &&
+            agree("when { true -> 1 }") &&
+            agree("when { a > 1 -> f(a) _ -> g() }") &&
+            agree("when { false -> 1 else -> 2 }.field")
+        }
+    }
+    given "channel construction (grammar-native keyword primary)" {
+        then "unbounded, bounded, and nested element types agree" {
+            dsl("channel<int>()") != "<err>" &&
+            agree("channel<int>()") && agree("channel<int>(4)") &&
+            agree("channel<List<int>>(n)")
+        }
+    }
+    given "the newline-sensitive / stateful postfix chain (parse_call)" {
+        then "generic-call, optional-chain, try, catch, slice, await, method chains agree" {
+            agree("f<int>()") && agree("f<int>(x)") && agree("g<A, B>(x, y)") &&
+            agree("a?.b") && agree("a?.b.c") && agree("a?.m(x)") &&
+            agree("f()?") && agree("a?") &&
+            agree("f() catch { 0 }") && agree("f() catch (e) { 1 }") &&
+            agree("a[1..2]") && agree("a[i..j]") &&
+            agree("f().await") &&
+            agree("a.map(f).filter(g)")
+        }
+    }
+}
