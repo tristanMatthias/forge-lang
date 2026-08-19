@@ -483,7 +483,9 @@ reference scan, prove the scan SEES the callers:
 - **`find -path '*/build/*'` matches ACROSS SLASHES.** It is meant to skip the
   package output dir and also silently eats `src/build/`. Anchor to one segment:
   `find . -regextype posix-extended -not -regex '\./[^/]+/build/.*'`.
-- **A name can be reached without appearing as `name(`.** `@derive` targets are
+- **A name can be reached without appearing as `name(`.** A function used as a
+  VALUE has no parentheses at all — `84 |> gec_inc` (pipe operand), a callback
+  passed by name, any higher-order use. `@derive` targets are
   emitted from STRING literals in the synthesis code (`derive/walk.av`,
   `derive/eq.av`); generic calls carry type args (`render_answer<V>(...)`);
   `parse_grammar` is DESUGAR-INJECTED into any file containing a `grammar { }`
