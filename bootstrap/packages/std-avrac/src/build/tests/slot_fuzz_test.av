@@ -19,13 +19,57 @@
 
 use @std.avrac.core.{avra_shell_exec}
 
+/// The fuzz's verdict — with a DIAGNOSIS printed whenever it is absent.
+///
+/// The assertion is UNCHANGED (the sentinel is still the only pass); what is
+/// added is which failure happened. A bare `out.contains(...)` reported a
+/// blown timeout and a genuine exclusion violation identically, as a one-line
+/// FAIL over output that was then discarded — the same defect shape
+/// `sandbox_ran` in bs2_stale_report_test exists to prevent, and it cost a
+/// full investigation on #1287: rc-strict went red here while the runner sat
+/// at 1527MB available with 638 admission deferrals, and nothing in the
+/// failure said whether the gate had broken or the ceiling had simply been
+/// hit. diagnose.sh prints `N invariant violation(s):` for the real thing and
+/// nothing at all when killed, so the two ARE separable — say which.
+///
+/// The captured bytes go to the shard log on the failing run, so a recurrence
+/// is diagnosable from that run rather than needing a second one.
+fn fuzz_clean(out: string) -> bool {
+    if out.contains("0 invariant violations, no hang") { return true }
+    if out.contains("invariant violation(s)") {
+        // Deliberately NOT worded "a real gate defect". A violation has two
+        // causes and they are indistinguishable from here: the gate genuinely
+        // breaking exclusion/cap, OR a SECOND slot-fuzz running concurrently
+        // — mode_slot_fuzz keys its pool/obs/viol on a fixed
+        // `$BUILD_DIR/slot_fuzz` with no pid scoping and `rm -rf`s it at
+        // startup, so two overlapping runs count each other's tokens and wipe
+        // each other's state (the shared-dir hazard the shard logs were
+        // pid-scoped to fix). Measured while investigating #1287: an
+        // overlapping run manufactured 23 "light holding with 1 heavy"
+        // violations that were pure crosstalk. Check for a second fuzz before
+        // reading this as a gate defect.
+        println("      [slot-fuzz VIOLATED] exclusion/cap breached — gate defect OR a concurrent second fuzz (shared pool, not pid-scoped): " + out)
+        return false
+    }
+    println("      [slot-fuzz NO VERDICT] no result line — killed at the 120s ceiling or died before reporting; "
+        + "check the run's `[resources]` line for pressure before reading this as a gate defect; captured "
+        + string(out.length) + " byte(s): " + out)
+    false
+}
+
 spec "uzs9.7: fixture-compile slot gate holds its exclusion invariants under contention" {
     then "mixed light/heavy workers never violate exclusion/cap and never hang" {
         // `timeout` (repo convention, cf. comptime/tests) so a livelock in the
         // gate fails FAST as a missing sentinel instead of hanging the runner —
-        // the spec's per-then guard isolates crashes, not runtime hangs. A
-        // healthy 8x8/N=3 run finishes in ~2-3s, far under the 120s ceiling.
+        // the spec's per-then guard isolates crashes, not runtime hangs.
+        //
+        // Headroom, MEASURED rather than assumed: a healthy 8x8/N=3 run is
+        // ~12s on an idle 16GB box (five consecutive runs, 2026-08-19), not
+        // the ~2-3s this comment used to claim. The 120s ceiling is kept —
+        // raising it to make a red run green would be weakening the guard —
+        // but the true margin is ~10x, not ~50x, so a heavily loaded runner
+        // can reach it. That is what `fuzz_clean` above now distinguishes.
         let out = avra_shell_exec("timeout 120 bash scripts/diagnose.sh --slot-fuzz 8 8 3 2>&1 || true")
-        out.contains("0 invariant violations, no hang")
+        fuzz_clean(out)
     }
 }
