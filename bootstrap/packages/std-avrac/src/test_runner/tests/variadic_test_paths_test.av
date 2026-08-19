@@ -121,6 +121,31 @@ spec "t-kdyj.6: every positional test path is honoured, not just the first" {
         p.status != 0 && p.output.contains("no_such_spec_file_xyz.av")
     }
 
+    // t-kdyj.14 ROOT CAUSE + its guard. The discovery classifier used to
+    // build a full Parser per walked file — the ctor's fresh store EAGERLY
+    // builds the whole feature registry (~5MB+/file, arena-permanent,
+    // growing with every migrated family), discarded unread since
+    // classification never parses. An unresolvable path filter falls back
+    // to the WHOLE-TREE walk, so this file's bogus-path probes ballooned
+    // to ~6.2GB and raced the F4014 ceiling on CI: the ceiling report won
+    // ("phase: startup (before parse)" — runner work stamps nothing), the
+    // unmatched-path error never printed, and the two arms above went
+    // conditionally red. classify_av_source is LEX-ONLY now
+    // (parser_new_lex_only — measured ~870MB whole-walk, was ~6.2GB), and
+    // this arm pins the COST CLASS: the walk must complete and name the
+    // path under a ceiling the registry-per-file shape cannot fit.
+    then "the unmatched-path walk fits a ceiling the old registry-per-file cost cannot" {
+        let log = "/tmp/avra_vtp_mem_${string(avra_getpid())}.log"
+        let st = avra_shell_exec_status("AVRA_MEM_LIMIT_MB=2600 ./build/bs2 test no_such_spec_file_xyz.av > '${log}' 2>&1")
+        let out = avra_selfhost_read_file(log)
+        let _ = avra_shell_exec("rm -f '${log}'")
+        if st == 0 || !out.contains("no_such_spec_file_xyz.av") || out.contains("error[F4014]") {
+            println("mem-bounded path_probe status=${string(st)} output:")
+            println(out)
+        }
+        st != 0 && out.contains("no_such_spec_file_xyz.av") && !out.contains("error[F4014]")
+    }
+
     // Control: the failure above must come from the BOGUS path, not from
     // passing two paths at all. Without this, "any multi-path run fails"
     // would satisfy the arm above.
