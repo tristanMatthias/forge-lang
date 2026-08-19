@@ -92,6 +92,15 @@ spec "t-kdyj.6: every positional test path is honoured, not just the first" {
     // that matched nothing"). Raised in review of #1138.
     then "an unmatched path fails, naming it" {
         let p = path_probe("no_such_spec_file_xyz.av")
+        // Print the capture on failure — this arm failed ONCE on CI
+        // (seed-train-verify, 2026-08-19, head 8a0e1aa9) with the name
+        // absent from the output while rc-strict on the SAME tree and
+        // every local run (standalone AND the exact 8-file batch) passed;
+        // without the capture the next occurrence is undiagnosable.
+        if p.status == 0 || !p.output.contains("no_such_spec_file_xyz.av") {
+            println("path_probe status=${string(p.status)} output:")
+            println(p.output)
+        }
         p.status != 0 && p.output.contains("no_such_spec_file_xyz.av")
     }
 
@@ -103,6 +112,12 @@ spec "t-kdyj.6: every positional test path is honoured, not just the first" {
     // passed.
     then "a valid path does not excuse an unmatched sibling" {
         let p = path_probe("tests/suite_bs2_guard_test.av no_such_spec_file_xyz.av")
+        // Same capture-on-failure as the arm above — one CI occurrence,
+        // conditional, undiagnosable without the child's actual output.
+        if p.status == 0 || !p.output.contains("no_such_spec_file_xyz.av") {
+            println("path_probe status=${string(p.status)} output:")
+            println(p.output)
+        }
         p.status != 0 && p.output.contains("no_such_spec_file_xyz.av")
     }
 
