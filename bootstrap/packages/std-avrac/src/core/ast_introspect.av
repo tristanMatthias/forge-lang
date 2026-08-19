@@ -65,12 +65,6 @@ export fn config_lookup(pairs: List<CompConfigPair>, key: string) -> Expr? {
     null
 }
 
-/// True when a config pair with this key was supplied by the user
-/// at the call site.
-export fn config_has(pairs: List<CompConfigPair>, key: string) -> bool {
-    config_lookup(pairs, key) != null
-}
-
 // ── TokenStream bodies (vez6.9) ──
 
 /// True when this def-body row is the `body: TokenStream` declaration

@@ -1544,52 +1544,6 @@ impl Parser {
         .Ok(ArgListIds { ids: ids })
     }
 
-    /// B1: primary productions hand back a typed id — the node (and its
-    /// whole subtree) is in the arena. Leaves alloc directly; composites
-    /// whose children flowed through the id-returning chain re-parent those
-    /// ids; stmt-bearing / feature-parsed productions (match, if, quote,
-    /// templates, table/map literals, blocks) still build boxed and enter
-    /// via the glue bridge at their own boundary — each bridge disappears
-    /// when its producer converts to ids.
-    /// Read a fully-qualified `@pkg::mod::name` path into its canonical
-    /// `::`-joined string. The renderer (`fmt_stmt_ids`) emits resolved
-    /// names in this form, so re-parsing a shipped `@comptime` body must
-    /// accept it — in expression position (→ `QualifiedIdent`) and type
-    /// position (→ `Named`) alike. `::` lexes as two `Colon` tokens.
-    /// Precondition: current token is `Tk.At`.
-    // The `::` separator is STRICT: two ADJACENT colons (adjacency is
-    // confirmed against the raw source, bounds-guarded for input
-    // truncated at a lone `:`), each followed by an identifier segment —
-    // a single `:` never pairs, so `@a:b` stays a parse error instead of
-    // silently reading as `@a::b`. At least one `::` is required: a lone
-    // `@ident` is annotation syntax everywhere Avra accepts `@`.
-    fn parse_qualified_at_name(self) -> Result<string, string> {
-        self.advance()  // consume `@`
-        if !self.check(Tk.Identifier) {
-            self.set_error("expected identifier after `@` in qualified reference")
-            return .Err("parse error")
-        }
-        mut name = "@" + self.current_lexeme
-        self.advance()  // consume first segment
-        mut segments = 0
-        while self.check(Tk.Colon) && self.current_start + 1 < self.source_len && self.char_at(self.current_start + 1) == ":" {
-            self.advance()  // first `:`
-            self.advance()  // second `:`
-            if !self.check(Tk.Identifier) {
-                self.set_error("expected identifier after `::` in qualified reference")
-                return .Err("parse error")
-            }
-            name = name + "::" + self.current_lexeme
-            self.advance()  // segment identifier
-            segments = segments + 1
-        }
-        if segments == 0 {
-            self.set_error("expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
-            return .Err("parse error")
-        }
-        .Ok(name)
-    }
-
     /// Scan tokens to the `}` balancing the already-consumed `{`,
     /// WITHOUT consuming it, and return the verbatim source substring
     /// in between (outer whitespace trimmed). Brace TOKENS drive the

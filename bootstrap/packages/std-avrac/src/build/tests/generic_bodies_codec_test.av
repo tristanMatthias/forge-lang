@@ -191,7 +191,7 @@ spec "P4 extractor: generic_bodies population" {
 // re-parsed body (instead of the empty-body extern-wrapped stub the
 // pre-P5 path used for every fn).
 use @std.avrac.build.{synthesize_unit_body}
-use @std.avrac.core.{NodeStore, StmtId, new_node_store, build_line_index, Stmt, stmt_unwrap}
+use @std.avrac.core.{NodeStore, StmtId, new_node_store, build_line_index, stmt_unwrap}
 
 /// Walk a (possibly Module-wrapped) List<StmtId> and find the first
 /// `Function(name)` node, returning its body. Returns an empty list
@@ -253,7 +253,6 @@ spec "P5 consumer: synthesize_unit_body inlines generic bodies" {
 // included an inherent-impl method (e.g. @std::avrac::build's
 // BytesWriter / BytesReader).
 
-use @std.avrac.build.{InherentImplEntry}
 
 /// Fresh store for synthesized-body probes (F2: bodies parse into it).
 fn ts() -> NodeStore {
