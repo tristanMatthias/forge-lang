@@ -1,0 +1,44 @@
+// The logical-operator family's LOWERING (t-kd4y.3.5.7): one spanned row
+// (`fold_logical`) shared by both strata — the captured operator tokens
+// carry the or/and distinction. Imports ONLY features.grammar + core
+// (F4012).
+use core.{Expr, ExprId, LogicOp, byte_span}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes}
+
+/// Left-fold `l ( op r )*` into a left-associative `Expr.Logical` chain
+/// (the `&&`/`||` short-circuit ops). Sibling of the engine's fold_binary.
+export fn fold_logical_expr(st: PState, sp_start: int, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let ops = capval_toks(opcap)
+    let rs = capval_nodes(rcap)
+    let m = if ops.length < rs.length { ops.length } else { rs.length }
+    mut i = 0
+    while i < m {
+        // Each intermediate Logical carries [sp_start, next-token) exactly as the
+        // hand parse_or/parse_and stamp it per iteration (mod.av:1564): sp_start is
+        // the rule-entry byte (leftmost operand, reused), and the hi after
+        // consuming rs[i] is the NEXT operator's byte (ops[i+1].pos) or, for the
+        // last, the token past the whole fold (st.cur().pos). sp_start < 0 (the
+        // interpreter's span-free path) folds to byte_span_none. add_expr(_, sp, [])
+        // mirrors alloc_at's empty-edges spanned alloc.
+        let hi = if i + 1 < m { ops[i + 1].pos } else { st.cur().pos }
+        acc = st.store.add_expr(Expr.Logical(acc, logicop_of(ops[i].text), rs[i]), byte_span(sp_start, hi), [])
+        i = i + 1
+    }
+    acc
+}
+
+fn logicop_of(sym: string) -> LogicOp {
+    // Both the symbolic (`||`/`&&`) and keyword (`or`/`and`) spellings map to the
+    // same LogicOp — the retired hand parse_or/parse_and accepted both.
+    if sym == "||" || sym == "or" { return LogicOp.Or }
+    LogicOp.And
+}
+
+export fn fold_logical_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(fold_logical_expr(st, st.build_sp, vals[0], vals[1], vals[2]))
+}
+
+export fn logical_op_builds() -> List<BuilderBind> {
+    bind_rows("features.logical_op.lowering", [bind_row("fold_logical", "expr", 3, true, "fold_logical_abi", fold_logical_abi)])
+}

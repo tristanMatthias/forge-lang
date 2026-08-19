@@ -1,0 +1,34 @@
+// dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
+// at `features.pipe_op.{...}`. A syntax-only carrier: `|>` desugars to a
+// plain `Expr.Call` in the BUILD, so no pass hooks ride this definition —
+// the call machinery owns everything downstream.
+use features.grammar.{parse_grammar}
+use features.pipe_op.lowering.{pipe_op_builds}
+
+/// `a |> f` — the pipe operator (spec axis 28), desugared in the parser:
+/// `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`, `a |> f(_, b)` → `f(a, b)`
+/// with `_` taking the piped value. The definition carries the `pipe`
+/// stratum and its `pipe_arg` sub-rule (`@on(allow_it_sugar)` — a piped
+/// closure body may use the `it` pronoun), one gram owning the
+/// `fold_pipe` row per the no-orphans validator (t-kd4y.3.5.7).
+/// `gram_family = "expr"`; `assignment` enters here and the stratum exits
+/// to `null_coalesce` by name.
+export fn pipe_op_lang() -> LanguageFeature {
+    LanguageFeature pipe_op_def {
+        name = "pipe_op",
+        title = "|> — pipeline operator",
+        docs = """
+`value |> f |> g` reads left to right as `g(f(value))`. A call on the
+right prepends the piped value to its arguments; a `_` placeholder takes
+it positionally instead: `x |> clamp(_, 0, 9)` is `clamp(x, 0, 9)`.
+""",
+        gram = grammar {
+  pipe          = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)
+  pipe_arg      = @on(allow_it_sugar) logic_or
+        },
+        builders = pipe_op_builds(),
+        snippet = r"${1:value} |> ${2:f}",
+        gram_family = "expr",
+    }
+    pipe_op_def
+}

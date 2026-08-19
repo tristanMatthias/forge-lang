@@ -1,0 +1,22 @@
+// The equality chain's LOWERING (t-kd4y.3.5.7): one span-free row
+// (`mk_eqchain`) — the discardable partial stays span-free; only the
+// rebound final (rebind_eq, features/struct_decl) reaches the tree with a
+// span. Imports ONLY features.grammar + core (F4012).
+use core.{ExprId}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, fold_binary_expr}
+
+/// `( ( == | != ) r )+` → the left-assoc `Expr.Binary` chain seeded with a
+/// MISSING left; rebind_eq retargets the spine-bottom sentinel to `base`.
+/// Reuses the engine's fold_binary_expr so the chain matches the plain
+/// `==`/`!=` fold byte-for-byte.
+export fn mk_eqchain_expr(st: PState, opcap: CapVal, rcap: CapVal) -> ExprId {
+    fold_binary_expr(st, CapVal.Node(st.missing_node()), opcap, rcap)
+}
+
+export fn mk_eqchain_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_eqchain_expr(st, vals[0], vals[1]))
+}
+
+export fn eq_chain_builds() -> List<BuilderBind> {
+    bind_rows("features.eq_chain.lowering", [bind_row("mk_eqchain", "expr", 2, false, "mk_eqchain_abi", mk_eqchain_abi)])
+}

@@ -1,0 +1,33 @@
+// The null-coalesce operator's LOWERING (t-kd4y.3.5.7): one spanned row
+// (`fold_nullish`). The sibling `?.`/`?`/`catch` forms are POSTFIX-chain
+// branches (spine-owned until .3.5.8), so only the `??` stratum rides
+// this module. Imports ONLY features.grammar + core (F4012).
+use core.{Expr, ExprId, byte_span}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes}
+
+/// Left-fold `l ( "??" r )*` into a left-associative `Expr.NullCoalesce`
+/// chain (`a ?? b ?? c` = `(a ?? b) ?? c`) — the retired hand
+/// parse_null_coalesce shape. Sibling of fold_binary / fold_logical.
+export fn fold_nullish_expr(st: PState, sp_start: int, lcap: CapVal, opcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    let ops = capval_toks(opcap)
+    let rs = capval_nodes(rcap)
+    let m = if ops.length < rs.length { ops.length } else { rs.length }
+    mut i = 0
+    while i < m {
+        // [sp_start, next-token) per the hand parse_null_coalesce (mod.av:1549):
+        // hi after rs[i] is the next `??`'s byte, or st.cur().pos for the last.
+        let hi = if i + 1 < m { ops[i + 1].pos } else { st.cur().pos }
+        acc = st.store.add_expr(Expr.NullCoalesce(acc, rs[i]), byte_span(sp_start, hi), [])
+        i = i + 1
+    }
+    acc
+}
+
+export fn fold_nullish_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(fold_nullish_expr(st, st.build_sp, vals[0], vals[1], vals[2]))
+}
+
+export fn null_coalesce_builds() -> List<BuilderBind> {
+    bind_rows("features.null_safety.lowering", [bind_row("fold_nullish", "expr", 3, true, "fold_nullish_abi", fold_nullish_abi)])
+}
