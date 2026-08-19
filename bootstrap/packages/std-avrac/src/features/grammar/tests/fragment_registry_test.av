@@ -8,7 +8,7 @@
 // other fragments (a clean union with a well-defined start symbol) — so this
 // spec is the gate that keeps the modular assembly honest, not a snapshot.
 use @std.avrac.features.{feature_grammar_fragments}
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_expr_spine_grammar, avra_type_grammar, avra_program_grammar, compose_fragments, fragment_rule_conflicts, feature_decl_grammar_fragments, Grammar}
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_expr_spine_grammar, avra_type_spine_grammar, avra_program_grammar, compose_fragments, fragment_rule_conflicts, feature_decl_grammar_fragments, Grammar}
 
 // The shared cross-cutting base (owned by no single feature) followed by every
 // per-feature fragment the registry collects — the composer's full input.
@@ -21,8 +21,10 @@ fn shared_plus_features() -> List<Grammar> {
     // the decl ones), so passing a composed view here would count every
     // migrated expression rule twice and the union property would report a
     // conflict that does not exist. The spine is exactly "the rules no feature
-    // owns", which is what this property is about.
-    mut all: List<Grammar> = [avra_expr_spine_grammar(), avra_type_grammar()]
+    // owns", which is what this property is about. Same story for the TYPE
+    // family since t-kd4y.3.5.10: avra_type_grammar is a composed view now,
+    // so this list carries the type SPINE.
+    mut all: List<Grammar> = [avra_expr_spine_grammar(), avra_type_spine_grammar()]
     for g in feature_grammar_fragments() {
         all.push(g)
     }

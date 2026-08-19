@@ -16,7 +16,7 @@
 // the features whose rules spell them — impl (t-kd4y.3.3.4) and component
 // (t-kd4y.3.3.5) — not to `trait` on the strength of their names.
 
-use core.{Stmt, ValueType, TypeParamEntry, type_expr_to_vtype}
+use core.{Stmt, type_expr_to_vtype, TypeExpr, TypeParamEntry, ValueType}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_tok_text, capval_present, capval_to_stmt_list, capval_to_pentry_list, capval_to_texpr}
 
 /// `trait Name { member* }` (`MkTraitDecl`).
@@ -53,4 +53,27 @@ export fn trait_builds() -> List<BuilderBind> {
     bind_rows("features.trait_decl.lowering", [bind_row("MkTraitDecl", "stmt", 2, false, "trait_decl_build", trait_decl_build),
      bind_row("MkAssocType", "stmt", 1, false, "assoc_type_build", assoc_type_build),
      bind_row("MkTraitMethod", "stmt", 5, false, "trait_method_build", trait_method_build)])
+}
+
+/// A `dyn Trait` type — the `TyDyn` build's core (t-kd4y.3.5.10). The
+/// nominal name is carried as `Named` (the dyn-ness lives downstream in
+/// resolution, exactly as the retired hand built it); `?` wraps Optional.
+export fn mk_dyn_type(nm: string, is_opt: bool) -> CapVal {
+    mut base = TypeExpr.Named(nm)
+    if is_opt { base = TypeExpr.Optional(base) }
+    CapVal.TExpr(base)
+}
+
+export fn ty_dyn_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_dyn_type(capval_tok_text(vals[0]), capval_present(vals[1]))
+}
+
+/// The dyn-trait TYPE row (t-kd4y.3.5.10) — arity 2 only, the production
+/// rule's spelling (`( opt:"?" )?` is an optional CAPTURE, so a `?`-less
+/// dyn still arrives as two args with the second Nil). The retired central
+/// /1 arm served five TOY grammars that spelled `TyDyn(t)` bare; those
+/// tests now spell the production arity — a name split central/feature by
+/// ARITY would trip the validator's shadow rule.
+export fn dyn_type_builds() -> List<BuilderBind> {
+    bind_rows("features.trait_decl.lowering", [bind_row("TyDyn", "type", 2, false, "ty_dyn_abi", ty_dyn_abi)])
 }

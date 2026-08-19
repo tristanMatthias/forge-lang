@@ -4201,15 +4201,12 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    delegates to the SHARED constructor core (fold_type_union /
         //    mk_named_type / mk_paren_type / mk_fn_type), so apply_build and the
         //    generated static type parser build byte-identical trees. ──
-        "TyUnion" if args.length == 2 -> fold_type_union(st, env.get(args[0]), capval_to_texpr_list(env.get(args[1])))
+        // The owned type-expression builds are feature-owned (t-kd4y.3.5.10):
+        // TyUnion -> union_type, MkNamed/MkQualified -> struct_decl, TyList
+        // -> list_lit, TyParen -> tuples, TyDyn -> trait_decl, MkFn ->
+        // fn_decl — the manifest dispatches them. Only the splice atom
+        // stays (splice doctrine: the engine ladder references it).
         "MkSpliceType" if args.length == 2 -> mk_splice_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])))
-        "MkNamed" if args.length == 3 -> mk_named_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
-        "MkQualified" if args.length == 3 -> mk_qualified_type(capval_toks(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
-        "TyList" if args.length == 1 -> CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
-        "TyParen" if args.length == 1 -> mk_paren_type(capval_to_texpr_list(env.get(args[0])))
-        "TyDyn" if args.length == 1 -> mk_dyn_type(capval_tok_text(env.get(args[0])), false)
-        "TyDyn" if args.length == 2 -> mk_dyn_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])))
-        "MkFn" if args.length == 3 -> mk_fn_type(st, capval_present(env.get(args[0])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])), env.get(args[2]))
         // ── Remaining statement builds (target: Stmt, ps3t.6.5.4). The
         //    BINDING family is feature-owned now (MkLetBinding / MkMutBinding /
         //    MkConstBinding / MkDestructure, features/let_stmt lowering —
@@ -4402,21 +4399,10 @@ export fn capval_to_texpr_list(v: CapVal) -> List<TypeExpr> {
     }
 }
 
-/// Fold a `l ( "|" r )*` union — the `TyUnion` build's core, shared by
-/// apply_build + the generated static type parser (ps3t.6.5.11). No right
-/// atoms ⇒ the left CapVal unchanged; otherwise a left-associative chain of
-/// `TypeExpr.Union`, mirroring parse_type_expr's while-loop.
-export fn fold_type_union(st: PState, l: CapVal, rs: List<TypeExpr>) -> CapVal {
-    if rs.length == 0 { return l }
-    mut acc = capval_to_texpr(st, l)
-    for rt in rs { acc = TypeExpr.Union(acc, rt) }
-    CapVal.TExpr(acc)
-}
+// fold_type_union moved to features/union_type/lowering with the TyUnion
+// row; mk_named_type + mk_qualified_type to features/struct_decl/lowering
+// (MkNamed/MkQualified) — t-kd4y.3.5.10.
 
-/// A named type (optionally generic, optionally nullable) — the `MkNamed`
-/// build's core. `has_gen` ⇒ `Generic(nm, gen_args)`, else `Named(nm)`; an
-/// `is_opt` wrap makes it `Optional`. Mirrors parse_type_atom's identifier
-/// branch.
 /// `~var` in TYPE position (t-47hc.4.3). The hand's `consume_name_or_splice` encodes a
 /// name-slot splice by PREFIXING the name with `~` and carrying it as an ordinary name
 /// string, which the quote lowerer reads back out — so this must produce exactly
@@ -4426,26 +4412,6 @@ export fn mk_splice_type(name: string, is_opt: bool) -> CapVal {
     mut base = TypeExpr.Named("~" + name)
     if is_opt { base = TypeExpr.Optional(base) }
     CapVal.TExpr(base)
-}
-
-export fn mk_named_type(nm: string, has_gen: bool, gen_args: List<TypeExpr>, is_opt: bool) -> CapVal {
-    mut base = if has_gen { TypeExpr.Generic(nm, gen_args) } else { TypeExpr.Named(nm) }
-    if is_opt { base = TypeExpr.Optional(base) }
-    CapVal.TExpr(base)
-}
-
-/// A package-qualified type atom. Punctuation is structural in the grammar, so
-/// rebuild the canonical `@pkg::mod::Type` spelling from captured segments,
-/// then apply the same generic/optional wrappers as a bare named type.
-export fn mk_qualified_type(segments: List<Token>, has_gen: bool, gen_args: List<TypeExpr>, is_opt: bool) -> CapVal {
-    mut name = "@"
-    mut i = 0
-    for segment in segments {
-        if i > 0 { name = name + "::" }
-        name = name + segment.text
-        i = i + 1
-    }
-    mk_named_type(name, has_gen, gen_args, is_opt)
 }
 
 /// A `{ statement* }` expression body. Its statement ids are the payload and
@@ -4620,35 +4586,9 @@ export fn capval_to_select_arm(st: PState, v: CapVal) -> SelectArm {
     }
 }
 
-/// A `dyn Trait` type — the TyDyn build's core. Matches the hand parser
-/// (parse_type_atom's `dyn` branch, mod.av): `dyn Trait` → TypeExpr.Named(trait) (the
-/// hand parser drops the dyn-ness to a bare Named — there is no distinct dyn
-/// TypeExpr variant), and the NULLABLE `dyn Trait?` → TypeExpr.Optional(Named). The
-/// `?` suffix is what the earlier `-> TyDyn(t)` build dropped (nullable dyn parsed as
-/// non-nullable, leaving `?` for the caller); threading `is_opt` restores parity.
-export fn mk_dyn_type(nm: string, is_opt: bool) -> CapVal {
-    mut base = TypeExpr.Named(nm)
-    if is_opt { base = TypeExpr.Optional(base) }
-    CapVal.TExpr(base)
-}
-
-/// A parenthesised type — the `TyParen` build's core. Exactly one element is a
-/// grouping (the type itself); zero or ≥2 are a tuple `Generic("__tuple", …)`,
-/// matching parse_type_atom's paren branch.
-export fn mk_paren_type(tes: List<TypeExpr>) -> CapVal {
-    if tes.length == 1 { return CapVal.TExpr(tes[0]) }
-    CapVal.TExpr(TypeExpr.Generic("__tuple", tes))
-}
-
-/// A `fn` type — the `MkFn` build's core. A bare `fn` (neither param parens
-/// nor an arrow) is the under-determined `Named("fn")`; any `(`/`->` makes it a
-/// `FnType` (params default [], ret defaults `Infer`). Mirrors parse_type_atom's
-/// `fn` branch.
-export fn mk_fn_type(st: PState, has_params: bool, params: List<TypeExpr>, has_ret: bool, ret_cv: CapVal) -> CapVal {
-    if !has_params && !has_ret { return CapVal.TExpr(TypeExpr.Named("fn")) }
-    let ret = if has_ret { capval_to_texpr(st, ret_cv) } else { TypeExpr.Infer }
-    CapVal.TExpr(TypeExpr.FnType(params, ret))
-}
+// mk_dyn_type moved to features/trait_decl/lowering with the TyDyn row;
+// mk_paren_type to features/tuples/lowering (TyParen); mk_fn_type to
+// features/fn_decl/lowering (MkFn) — t-kd4y.3.5.10.
 
 // ── Declaration coercions + shared constructor cores (ps3t.6.5.7, ps3t.6.5.11)
 //    The generated static whole-program parser accumulates rep captures per

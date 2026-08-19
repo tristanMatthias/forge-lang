@@ -3,7 +3,8 @@
 // is in scope without a self-import); the manifest rows live in lowering/
 // (t-kd4y.3.3.1).
 use features.{composed}
-use features.fn_decl.lowering.{fn_builds}
+use features.fn_decl.lowering.{fn_builds, fn_type_builds}
+use features.grammar.{parse_grammar}
 
 /// `fn` — the definition carries the feature whole (t-kd4y.3.3.1): syntax,
 /// docs, editor surface, and the THREE lowerings its fragment spells
@@ -29,4 +30,24 @@ An absent return type means the function returns nothing (`Void`).
         snippet = r"fn ${1:name}(${2:params}) {\n    ${3:body}\n}",
     }
     fn_def
+}
+
+/// `fn(A, B) -> R` in TYPE position (t-kd4y.3.5.10) — the fn family's
+/// type-position face, so the rule + its MkFn row live here.
+/// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+export fn fn_type_lang() -> LanguageFeature {
+    LanguageFeature fn_type_def {
+        name = "fn_type",
+        title = "fn(A) -> R — function types",
+        docs = """
+`fn(A, B) -> R` names a function type; params and the arrow are each
+optional (`fn` alone is the under-determined function type).
+""",
+        gram = grammar {
+  fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
+        },
+        builders = fn_type_builds(),
+        gram_family = "type",
+    }
+    fn_type_def
 }

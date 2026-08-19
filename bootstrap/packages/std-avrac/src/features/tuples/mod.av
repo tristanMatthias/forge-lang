@@ -3,7 +3,7 @@
 use core.{vtype_tuple_at, vtype_eq}
 use core.{ExprId}
 use features.grammar.{parse_grammar}
-use features.tuples.lowering.{tuple_index_builds}
+use features.tuples.lowering.{tuple_index_builds, paren_type_builds}
 use resolve.{resolve_expr, resolve_expr_list_ids}
 use typeck.{check_expr, check_expr_list_types, tc_er, tc_report, tc_gate_unthreaded_lambda}
 use diagnostics.{DiagCode}
@@ -137,4 +137,25 @@ fn tuple_index_check(tc: TC, expr: Expr) -> ExprResult {
         }
         _ -> tc_er(tc, .Unknown)
     }
+}
+
+/// `(A, B)` in TYPE position (t-kd4y.3.5.10) — the tuple family's
+/// type-position face, so the rule + its TyParen row live here. One
+/// element is a grouping; zero or several are a tuple type.
+/// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+export fn tuple_type_lang() -> LanguageFeature {
+    LanguageFeature tuple_type_def {
+        name = "tuple_type",
+        title = "(A, B) — tuple + grouping types",
+        docs = """
+`(A, B)` names a tuple type by position; `(T)` is grouping and means
+`T` itself. `()` is the empty tuple.
+""",
+        gram = grammar {
+  paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
+        },
+        builders = paren_type_builds(),
+        gram_family = "type",
+    }
+    tuple_type_def
 }

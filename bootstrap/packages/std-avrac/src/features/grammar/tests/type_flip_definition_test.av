@@ -1,0 +1,93 @@
+// t-kd4y.3.5.10 — the type-expression families' flip, pinned. Seven rows
+// left the engine for five owning features (ownership follows the
+// referencing rule: each feature's gram is the only spelling); the
+// type-ladder SKELETON (type_expr's fold shape, type_atom's alternation)
+// stays engine exactly as the expression precedence skeleton does, and
+// MkSpliceType stays central (quote-body vocabulary, spelled by the
+// spine's splice_type).
+use @std.avrac.features.{feature_builders}
+use @std.avrac.features.grammar.{avra_type_grammar, central_build_kind, run_dsl_type_at}
+use @std.avrac.core.{TypeExpr}
+
+fn row_of(name: string) -> string {
+    for b in feature_builders() {
+        if b.name == name {
+            return "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
+        }
+    }
+    ""
+}
+
+fn rows_named(name: string) -> int {
+    mut n = 0
+    for b in feature_builders() { if b.name == name { n = n + 1 } }
+    n
+}
+
+spec "type families as feature-owned rows (t-kd4y.3.5.10)" {
+    then "the seven rows ride their owners' manifests, exactly" {
+        row_of("TyUnion") == "type/2/flat/ty_union_abi/features.union_type.lowering"
+            && row_of("MkNamed") == "type/3/flat/mk_named_type_abi/features.struct_decl.lowering"
+            && row_of("MkQualified") == "type/3/flat/mk_qualified_type_abi/features.struct_decl.lowering"
+            && row_of("MkFn") == "type/3/flat/mk_fn_type_abi/features.fn_decl.lowering"
+            && row_of("TyDyn") == "type/2/flat/ty_dyn_abi/features.trait_decl.lowering"
+            && row_of("TyList") == "type/1/flat/ty_list_abi/features.list_lit.lowering"
+            && row_of("TyParen") == "type/1/flat/ty_paren_abi/features.tuples.lowering"
+    }
+    then "each name has exactly ONE row and NO central kind — the flip is total, not shadowed" {
+        rows_named("TyUnion") == 1 && central_build_kind("TyUnion") == ""
+            && rows_named("MkNamed") == 1 && central_build_kind("MkNamed") == ""
+            && rows_named("MkQualified") == 1 && central_build_kind("MkQualified") == ""
+            && rows_named("MkFn") == 1 && central_build_kind("MkFn") == ""
+            && rows_named("TyDyn") == 1 && central_build_kind("TyDyn") == ""
+            && rows_named("TyList") == 1 && central_build_kind("TyList") == ""
+            && rows_named("TyParen") == 1 && central_build_kind("TyParen") == ""
+    }
+    then "the quote-body splice stays ENGINE — central kind kept, no feature row" {
+        rows_named("MkSpliceType") == 0 && central_build_kind("MkSpliceType") == "type"
+    }
+    then "the composed type view DEFINES every family rule (structural, not rendered text)" {
+        mut te = false
+        mut ta = false
+        mut nt = false
+        mut qt = false
+        mut ft = false
+        mut dt = false
+        mut lt = false
+        mut pt = false
+        mut sp = false
+        for r in avra_type_grammar().rules {
+            if r.name == "type_expr" { te = true }
+            if r.name == "type_atom" { ta = true }
+            if r.name == "named_type" { nt = true }
+            if r.name == "qualified_type" { qt = true }
+            if r.name == "fn_type" { ft = true }
+            if r.name == "dyn_type" { dt = true }
+            if r.name == "list_type" { lt = true }
+            if r.name == "paren_type" { pt = true }
+            if r.name == "splice_type" { sp = true }
+        }
+        te && ta && nt && qt && ft && dt && lt && pt && sp
+    }
+    then "a plain named type stays NAMED — the arg-list test, not capture presence" {
+        // The caught regression: the generated parser marshals its generic-args
+        // accumulator as TExprs([]) even when `<…>` never matched, and a
+        // presence test in the abi turned `string?` into Generic("string", [])?
+        // (rendered `str?`), corrupting every plain annotation. Pin the SHAPE.
+        let r = run_dsl_type_at("string?", 0)
+        match r.te {
+            .Optional(inner) -> match inner {
+                .Named(n) -> !r.had_error && n == "string"
+                _ -> false
+            }
+            _ -> false
+        }
+    }
+    then "a real generic stays GENERIC with its args — the fix did not overcorrect" {
+        let r = run_dsl_type_at("Box<int>", 0)
+        match r.te {
+            .Generic(n, args) -> !r.had_error && n == "Box" && args.length == 1
+            _ -> false
+        }
+    }
+}

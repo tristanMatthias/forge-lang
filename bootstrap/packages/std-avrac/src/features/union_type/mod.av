@@ -1,2 +1,30 @@
 // dir-as-module (g2eo.1): no `mod` decls — sibling .av files
 // (codegen.av) auto-load and surface flat at `features.union_type.{...}`.
+
+use features.union_type.lowering.{union_type_builds}
+use features.grammar.{parse_grammar}
+
+/// `A | B` ad-hoc union types (t-kd4y.3.5.10) — the definition carries the
+/// type ladder's ENTRY rule: `type_expr` folds atoms left-associatively
+/// through fold_type_union in this feature's lowering (TyUnion is its only
+/// spelling — the core moved with the row).
+/// `gram_family = "type"`; the type spine's `type_atom` dispatch and every
+/// cross-family `type_expr` reference resolve to this rule by name.
+export fn union_type_lang() -> LanguageFeature {
+    LanguageFeature union_type_def {
+        name = "union_type",
+        title = "A | B — ad-hoc union types",
+        docs = """
+`A | B` in type position is an ad-hoc union: a value of either arm.
+Unions compose with every atom (`int | [string] | fn() -> bool?`) and
+`match` discriminates them per spec Axis 5.
+""",
+        gram = grammar {
+  type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
+        },
+        builders = union_type_builds(),
+        snippet = r"${1:A} | ${2:B}",
+        gram_family = "type",
+    }
+    union_type_def
+}

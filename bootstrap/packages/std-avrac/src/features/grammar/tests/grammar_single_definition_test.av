@@ -70,6 +70,9 @@ spec "t-47hc.8: every rule in avra_grammar.av has exactly ONE definition" {
         if dups.length > 0 {
             for d in dups { eprintln("duplicate rule definition: " + d) }
         }
-        dups.length == 0 && seen.length > 30
+        // The floor is anti-vacuity only (the scan must have seen a real rule
+        // set, not an empty read). It moves DOWN as flips drain the central
+        // file: 25 heads remain after the type family left (t-kd4y.3.5.10).
+        dups.length == 0 && seen.length > 20
     }
 }

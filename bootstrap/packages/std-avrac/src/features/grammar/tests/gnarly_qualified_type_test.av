@@ -17,7 +17,7 @@ fn type_grammar_src() -> string {
     "  type_atom  = qualified_type | fn_type | dyn_type | list_type | paren_type | named_type\n" +
     "  qualified_type = \"@\" q:IDENT ( @peek(double_colon) \":\" \":\" q:IDENT )+ ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkQualified(q, a, opt)\n" +
     "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" r:type_expr )? -> MkFn(lp, p, r)\n" +
-    "  dyn_type   = \"dyn\" t:IDENT -> TyDyn(t)\n" +
+    "  dyn_type   = \"dyn\" t:IDENT ( topt:\"?\" )? -> TyDyn(t, topt)\n" +
     "  list_type  = \"[\" e:type_expr \"]\" -> TyList(e)\n" +
     "  paren_type = \"(\" ( t:type_expr ( \",\" t:type_expr )* )? \")\" -> TyParen(t)\n" +
     "  named_type = name:IDENT ( \".\" name:IDENT )* ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(name, a, opt)\n" +

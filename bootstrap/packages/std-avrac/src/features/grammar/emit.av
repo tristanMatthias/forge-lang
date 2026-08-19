@@ -2600,20 +2600,17 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // ── Type-expression builds (target: TypeExpr) — delegate to the SHARED
         //    constructor cores (executor.apply_build's exact twins). args[N]_list
         //    names a rep/list capture; a bare arg is a scalar/opt-scalar CapVal. ──
-        "TyUnion" -> "fold_type_union(st, ${args[0]}, ${args[1]}_list)"
         // The name is captured as a repeated `.Toks` (`name:IDENT ( "." name:IDENT )*`,
         // the dotted type path Self.Item / a.b.C), so join it via CapVal.Toks — the
         // emit twin of the executor's `capval_tok_text(env.get("name"))`, which
         // reconstructs the flat dotted name. A single-segment name is a one-element
         // list, joined to itself. (ps3t.6.7 — was `capval_tok_text(name)`, undefined
         // once the dotted star made `name` a list label.)
+        // The owned type-expression templates left with their features
+        // (t-kd4y.3.5.10) — the manifest branch above renders the adapter
+        // calls, list captures wrapped by the "type" kind's CapVal.TExprs
+        // ctor. Only the splice atom's template stays (splice doctrine).
         "MkSpliceType" -> "mk_splice_type(capval_tok_text(${args[0]}), capval_present(${args[1]}))"
-        "MkNamed" -> "mk_named_type(capval_tok_text(CapVal.Toks(${args[0]}_list)), ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
-        "MkQualified" -> "mk_qualified_type(${args[0]}_list, ${args[1]}_list.length > 0, ${args[1]}_list, capval_present(${args[2]}))"
-        "TyList" -> "CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, ${args[0]})))"
-        "TyParen" -> "mk_paren_type(${args[0]}_list)"
-        "TyDyn" -> "mk_dyn_type(capval_tok_text(${args[0]}), capval_present(${args[1]}))"
-        "MkFn" -> "mk_fn_type(st, capval_present(${args[0]}), ${args[1]}_list, capval_present(${args[2]}), ${args[2]})"
         // ── Control-flow + declaration builds (target: Stmt / component CapVals)
         //    — delegate to the SHARED constructor cores (executor.apply_build's
         //    exact twins). ${args[N]}_list names a rep/list capture; a bare arg

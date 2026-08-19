@@ -23,7 +23,7 @@ fn typeop_grammar_src() -> string {
     "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
     "  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type\n" +
     "  fn_type    = \"fn\" ( lp:\"(\" ( p:type_expr ( \",\" p:type_expr )* )? \")\" )? ( \"->\" tr:type_expr )? -> MkFn(lp, p, tr)\n" +
-    "  dyn_type   = \"dyn\" dt:IDENT -> TyDyn(dt)\n" +
+    "  dyn_type   = \"dyn\" dt:IDENT ( dopt:\"?\" )? -> TyDyn(dt, dopt)\n" +
     "  list_type  = \"[\" el:type_expr \"]\" -> TyList(el)\n" +
     "  paren_type = \"(\" ( pt2:type_expr ( \",\" pt2:type_expr )* )? \")\" -> TyParen(pt2)\n" +
     "  named_type = tn:IDENT ( \"<\" a:type_expr ( \",\" a:type_expr )* \">\" )? ( opt:\"?\" )? -> MkNamed(tn, a, opt)\n" +

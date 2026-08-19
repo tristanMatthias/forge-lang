@@ -1,13 +1,14 @@
 // ps3t.6.5.11 (type family) — emit.av RENDERS the generated static parser for the
 // type family: `parse_type_expr` folds the `|` union and the TypeExpr builds
-// (TyUnion / MkNamed / MkFn / TyList / TyParen / TyDyn) lower to the SHARED
-// constructor cores (fold_type_union / mk_named_type / mk_fn_type / mk_paren_type,
-// the same helpers executor.apply_build calls). The union is a FOLD-SHAPED rule
-// whose build is NOT a legacy expr fold, so it flows through the GENERAL emit
-// path (a `_list` accumulator typed per the referenced rule's kind + emit_call_build).
-// Fast in-suite structural guard on the emitter over avra_type_grammar(); the
-// executor differential is type_equivalence_test and the airtight behavioural gate
-// is diagnose.sh --emit-gen-check.
+// (TyUnion / MkNamed / MkFn / TyList / TyParen / TyDyn) route through the
+// FEATURE-OWNED abi rows (t-kd4y.3.5.10: ty_union_abi / mk_named_type_abi /
+// mk_fn_type_abi / ty_paren_abi / ty_dyn_abi — the same fns the executor's
+// table dispatch calls). The union is a FOLD-SHAPED rule whose build is NOT a
+// legacy expr fold, so it flows through the GENERAL emit path (a `_list`
+// accumulator typed per the referenced rule's kind + the manifest's arg
+// spelling). Fast in-suite structural guard on the emitter over
+// avra_type_grammar(); the executor differential is type_equivalence_test and
+// the airtight behavioural gate is diagnose.sh --emit-gen-check.
 
 use @std.avrac.features.grammar.{avra_type_grammar, emit_parser_source}
 
@@ -24,22 +25,23 @@ spec "grammar emitter: renders the type family's generated static parser" {
         src.contains("fn parse_fn_type(st: PState) -> CapVal")
     }
 
-    then "the `|` union folds via the SHARED fold_type_union over a typed list" {
+    then "the `|` union folds via the feature-owned TyUnion row over a typed list" {
         let src = emit_all()
-        // NOT the legacy expr-fold path (no CapVal.Nodes wrap) — a TypeExpr `_list`.
+        // NOT the legacy expr-fold path (no CapVal.Nodes wrap) — a TypeExpr `_list`,
+        // handed to the union_type feature's abi as a marshalled TExprs capture.
         src.contains("mut r_list: List<TypeExpr> = []") &&
         src.contains("r_list.push(capval_to_texpr(st, parse_type_atom(st)))") &&
-        src.contains("fold_type_union(st, l, r_list)")
+        src.contains("ty_union_abi(st, [l, CapVal.TExprs(r_list)])")
     }
 
-    then "named / fn / list / paren / dyn lower to their SHARED type cores" {
+    then "named / fn / list / paren / dyn lower to their FEATURE-OWNED abi rows" {
         let src = emit_all()
-        src.contains("mk_named_type(capval_tok_text(CapVal.Toks(name_list)), a_list.length > 0, a_list, capval_present(opt))") &&
-        src.contains("mk_fn_type(st, capval_present(lp), p_list, capval_present(r), r)") &&
-        src.contains("mk_paren_type(t_list)") &&
-        src.contains("CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, e)))") &&
-        // dyn Trait / dyn Trait? — the SHARED mk_dyn_type core (t-47hc.4.4): `dyn X` →
-        // Named(X), the nullable `dyn X?` → Optional(Named), matching the hand parser.
-        src.contains("mk_dyn_type(capval_tok_text(t), capval_present(opt))")
+        src.contains("mk_named_type_abi(st, [CapVal.Toks(name_list), CapVal.TExprs(a_list), opt])") &&
+        src.contains("mk_fn_type_abi(st, [lp, CapVal.TExprs(p_list), r])") &&
+        src.contains("ty_paren_abi(st, [CapVal.TExprs(t_list)])") &&
+        src.contains("ty_list_abi(st, [e])") &&
+        // dyn Trait / dyn Trait? — trait_decl's TyDyn row (t-47hc.4.4 semantics kept):
+        // `dyn X` → Named(X), the nullable `dyn X?` → Optional(Named).
+        src.contains("ty_dyn_abi(st, [t, opt])")
     }
 }

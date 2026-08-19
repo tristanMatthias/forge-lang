@@ -3,7 +3,7 @@
 use codegen.{err_emit}
 use core.{vtype_struct_name, ExprId}
 use features.{composed}
-use features.struct_decl.lowering.{type_decl_builds, struct_lit_builds, enum_ctor_builds, field_assign_builds, field_access_builds}
+use features.struct_decl.lowering.{type_decl_builds, struct_lit_builds, enum_ctor_builds, field_assign_builds, field_access_builds, named_type_builds}
 use features.grammar.{parse_grammar}
 use resolve.{resolve_expr, resolve_expr_list_ids, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
@@ -348,4 +348,29 @@ fn field_assign_check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         _ -> tc_er(tc, .Unknown)
     }
+}
+
+/// Named + package-qualified type atoms (t-kd4y.3.5.10) — the type-decl
+/// family's reference face (`Name`, `Name<Args>`, dotted module paths,
+/// `@pkg::mod::Type`), so both rules + their rows live here, sharing one
+/// constructor core (mk_qualified_type composes mk_named_type — the
+/// F4012 closure keeps shared cores within one lowering).
+/// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+export fn named_type_lang() -> LanguageFeature {
+    LanguageFeature named_type_def {
+        name = "named_type",
+        title = "Name<Args> / @pkg::Type — named type references",
+        docs = """
+A bare `Name` references a declared type; `mod.Name` crosses modules,
+`Name<A, B>` applies generic arguments, a trailing `?` makes it
+nullable, and `@pkg::mod::Name` addresses a package's type.
+""",
+        gram = grammar {
+  qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
+  named_type = name:IDENT ( "." name:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
+        },
+        builders = named_type_builds(),
+        gram_family = "type",
+    }
+    named_type_def
 }
