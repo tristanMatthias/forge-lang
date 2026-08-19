@@ -1,0 +1,561 @@
+// One slice of the error-recovery differential corpus (t-kdyj.13).
+// The corpus was ONE file whose unit process measured 8.4GB resident —
+// each un-paired in-process oracle call builds a fresh store + registry
+// (~30MB) and arena memory is process-permanent, so the ONLY bound the
+// runner offers is fewer cases per PROCESS: per-scenario files, spread
+// across shard processes by the stride batcher. Oracle helpers + the
+// engine-pinning WHYs live in ONE home: parse/differential.av
+// (@std.avrac.parse). Specs are VERBATIM from the original file.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.parse.{CDEF, agree, agree_all, agree_bad, agree_error, agree_pos, agree_tree, dbrace, default_path, errcodes, errmsgs, exec_oracle, mode_env, msgs_agree_bad, pin, pin_pos, pin_tree, poslist, poslist_from, rdiags, rtree, rtree_at, sig_has_parse_code, static_raw, tpl_src, tree_agrees_everywhere, mode_parse, ModeRun, rendered}
+
+spec "t-47hc.26: the native `if let` recovers exactly as the hand did" {
+    // ROUTING GUARD. `if let` left `@hand(if_expr)` in t-47hc.26, and routing is
+    // INVISIBLE ON VALID INPUT by construction: the native rule and the hand agree
+    // there, so diff-test, the parity specs and the comptime smoke can all be green
+    // while error recovery has silently regressed. These malformed forms are the only
+    // witness, and each one corresponds to a `return .Err` in the hand's
+    // parse_if_let_header — the three points the rule reproduces with `@require`.
+    //
+    // Written as `agree_bad` (F-code + diagnostic COUNT + tree) AND `agree_all` (all
+    // three paths) per the routing discipline: the F-code oracles disable the fallback,
+    // so on any invalid input the DEFAULT path is answered by the EXECUTOR, and an
+    // executor-only divergence is invisible to them (t-zrn3).
+    then "each malformed if-let reports, and recovers to the hand's tree" {
+        // Binding absent (hand: consume_identifier fails), `=` absent (hand:
+        // consume(Equal) fails), block absent (hand: the check(LeftBrace) guard), and
+        // the subject missing entirely.
+        agree_bad("fn f(x: int?) -> int {\n let r = if let = x { 1 }\n r\n}") &&
+        agree_bad("fn f(x: int?) -> int {\n let r = if let v x { 1 }\n r\n}") &&
+        agree_bad("fn f(x: int?) -> int {\n let r = if let v = x 1\n r\n}") &&
+        agree_bad("fn f(x: int?) -> int {\n let r = if let v =\n r\n}")
+    }
+    then "and all three parser paths agree on the recovered tree" {
+        // The executor answers the default path on invalid input, so this is the
+        // comparison the two F-code oracles structurally cannot make.
+        agree_all("fn f(x: int?) -> int {\n let r = if let = x { 1 }\n r\n}") &&
+        agree_all("fn f(x: int?) -> int {\n let r = if let v x { 1 }\n r\n}") &&
+        agree_all("fn f(x: int?) -> int {\n let r = if let v = x 1\n r\n}") &&
+        agree_all("fn f(x: int?) -> int {\n let r = if let v =\n r\n}")
+    }
+    then "a NESTED if-let is the case a build-minted temp would get wrong" {
+        // Not a recovery case — an ORDERING case, and the reason `@gensym` is a
+        // positional primary. The hand mints the OUTER temp first; a build-minted one
+        // would number the inner binding first, because its sequence completes first.
+        // Same tree from both parsers is the observable consequence.
+        agree_all("fn f(a: int?, b: int?) -> int {\n let r = if let p = a { if let q = b { q } else { p } } else { 0 }\n r\n}")
+    }
+}
+
+spec "ps3t.6.7 slice 5a: static parser error recovery == exec oracle (invalid corpus)" {
+    // ps3t.6.7 slice 5b — the corpus GREW to a broad, category-diverse invalid set
+    // (stray tokens, malformed decls of every keyword, control-flow, expressions,
+    // multi-error, EOF-unclosed). All AGREE: static-raw error recovery is
+    // byte-identical to hand across the board — the proof that gates slice 5c
+    // (removing the interpreter re-parse fallback).
+    then "stray top-level tokens: static-raw diagnostics match hand" {
+        agree("fn a() -> int { 1 }\nthen\nfn b() -> int { 2 }") &&
+        agree("fn a() -> int { 1 }\n)\nfn b() -> int { 2 }") &&
+        agree("fn a() -> int { 1 }\n,\nfn b() -> int { 2 }") &&
+        agree("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") &&
+        agree("else\nfn b() -> int { 2 }")
+    }
+    // t-zrn3 — the same stray tokens as the block above, measured on ALL THREE paths.
+    // The block above compares emit against hand and passed throughout the entire period
+    // this was broken, because emit was never the one that was wrong. On the DEFAULT path
+    // every one of these reported F0001 "unexpected token `X`" where the hand parser
+    // reports F0040 "expected expression" — the executor's answer, shipped through the
+    // re-parse fallback. `->` is included as the pure case: a token that starts nothing
+    // at all, so it can only be answered by the tail.
+    then "stray top-level tokens agree on the DEFAULT path too, not just emit-vs-hand" {
+        agree_all("fn a() -> int { 1 }\nthen\nfn b() -> int { 2 }") &&
+        agree_all("fn a() -> int { 1 }\n)\nfn b() -> int { 2 }") &&
+        agree_all("fn a() -> int { 1 }\n,\nfn b() -> int { 2 }") &&
+        agree_all("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") &&
+        agree_all("fn a() -> int { 1 }\n->\nfn b() -> int { 2 }") &&
+        agree_all("else\nfn b() -> int { 2 }") &&
+        agree_all("->\nfn b() -> int { 2 }")
+    }
+    then "malformed function declarations" {
+        agree("fn () -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree("fn a( -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree("fn a(x: ) -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree("fn a() -> { 1 }\nfn b() -> int { 2 }") &&
+        agree("fn a() -> int\nfn b() -> int { 2 }")
+    }
+    then "malformed type / enum / trait / impl declarations" {
+        // PINNED, not agreed: the executor adds the enclosing alternation's own F0001
+        // on top of the field rule's. See `pin`.
+        pin("type T = { x: , y: int }\nfn f() -> int { 1 }", "F0001 F0013 ") &&
+        agree("type T = { x: int\nfn f() -> int { 1 }") &&
+        agree("type = { x: int }\nfn f() -> int { 1 }") &&
+        agree("enum E { A, , B }\nfn f() -> int { 1 }") &&
+        agree("enum E A B }\nfn f() -> int { 1 }") &&
+        agree("trait T { fn m( }\nfn f() -> int { 1 }") &&
+        agree("impl for Foo { }\nfn f() -> int { 1 }")
+    }
+    // `shape` is the ONE decl keyword currently ROUTED onto the production path
+    // (t-47hc slice 10.9, #1054), and until now the invalid corpus had no malformed
+    // `shape` at all — so the recovery guard was blind to exactly the keyword whose
+    // recovery had actually changed. Routing it looked clean partly because nothing
+    // tested it broken. Mirrors the malformed-`type` cases above, since `shape` shares
+    // `field` with it.
+    then "malformed shape declarations (the routed keyword)" {
+        // PINNED for the same reason as the `type` sibling — `shape` shares `field`.
+        pin("shape S = { x: , y: int }\nfn f() -> int { 1 }", "F0001 F0013 ") &&
+        agree("shape S = { x: int\nfn f() -> int { 1 }") &&
+        agree("shape = { x: int }\nfn f() -> int { 1 }") &&
+        agree("shape S = \nfn f() -> int { 1 }") &&
+        agree("shape S { x: int }\nfn f() -> int { 1 }")
+    }
+    // `use` and `mod` are the two decl keywords ROUTED onto the production path
+    // (t-47hc slice 10.1) — and, exactly like `shape` above, they were routed with
+    // ZERO malformed coverage here. Measuring them found EIGHT divergences, all of
+    // them live on the production path (not just under the no-fallback oracle):
+    // `use @.{x}` / `use @{x}` / `use @std.{}` / `use @std.{x,}` DROPPED hand's second
+    // diagnostic; `use @std..{x}` / `use @std.{,x}` / `use @5.{x}` / `use @std.5.{x}`
+    // ADDED a spurious one; `mod {` reported twice where hand reports once.
+    //
+    // The fix is `@try` on both branches: a routed rule that reports rolls back and
+    // falls into `@hand(decl_hand)`, so the native path owns VALID input and hand still
+    // owns recovery. These cases fail without it and pass with it.
+    then "malformed use / mod declarations (the routed keywords)" {
+        agree("use\nfn f() -> int { 1 }") &&
+        agree("use foo\nfn f() -> int { 1 }") &&
+        agree("use foo.{\nfn f() -> int { 1 }") &&
+        agree("use .{x}\nfn f() -> int { 1 }") &&
+        agree("use @.{x}\nfn f() -> int { 1 }") &&
+        agree("use @{x}\nfn f() -> int { 1 }") &&
+        agree("use @std.{}\nfn f() -> int { 1 }") &&
+        agree("use @std..{x}\nfn f() -> int { 1 }") &&
+        agree("use @std.{x,}\nfn f() -> int { 1 }") &&
+        agree("use @std.{,x}\nfn f() -> int { 1 }") &&
+        agree("use @5.{x}\nfn f() -> int { 1 }") &&
+        agree("use @std.5.{x}\nfn f() -> int { 1 }") &&
+        agree("mod\nfn f() -> int { 1 }") &&
+        agree("mod 5\nfn f() -> int { 1 }") &&
+        agree("mod {\nfn f() -> int { 1 }")
+    }
+    then "malformed bindings (the routed keywords), on all three paths" {
+        agree_all("let\nfn f() -> int { 1 }") &&
+        agree_all("let x\nfn f() -> int { 1 }") &&
+        agree_all("let x =\nfn f() -> int { 1 }") &&
+        agree_all("let x: = 1\nfn f() -> int { 1 }") &&
+        agree_all("let 5 = 1\nfn f() -> int { 1 }") &&
+        agree_all("let mut = 1\nfn f() -> int { 1 }") &&
+        agree_all("mut\nfn f() -> int { 1 }") &&
+        agree_all("mut y y = 1\nfn f() -> int { 1 }") &&
+        agree_all("const\nfn f() -> int { 1 }") &&
+        agree_all("const C\nfn f() -> int { 1 }") &&
+        // The EMPTY TYPE ANNOTATION on all three binding keywords. `let x: = 1` was
+        // here; `mut`/`const` were not, and both carried the same defect invisibly —
+        // an un-`@require`d type position let the type view's generic F0040 "expected
+        // expression" stand where the hand reports F0001 "expected type after `:`",
+        // and the binding survived as `(… :<unknown> 1)` instead of aborting. Routing
+        // `let` is what surfaced it; the siblings needed the same fix and now need the
+        // same guard, or the next grammar edit can regress two of the three silently.
+        agree_all("mut x: = 1\nfn f() -> int { 1 }") &&
+        agree_all("const X: = 1\nfn f() -> int { 1 }") &&
+        agree_all("fn g() -> int {\n let a: = 1\n mut b: = 2\n const C: = 3\n return a\n}") &&
+        agree_all("let (a b) = t\nfn f() -> int { 1 }") &&
+        agree_all("fn f() -> int {\n    let x = )\n    1\n}") &&
+        agree_all("fn f(o: int?) -> int {\n    let v = o else { 1 }\n    v\n}") &&
+        // The same keywords under the prefix wrappers, which this slice widens to
+        // accept bindings (`exportable_inner` / `wrapped_inner`): a malformed
+        // binding must fail the WHOLE wrapped branch back to the hand.
+        agree_all("export let\nfn f() -> int { 1 }") &&
+        agree_all("export const C\nfn f() -> int { 1 }") &&
+        agree_all("/// d\nlet x: = 1\nfn f() -> int { 1 }") &&
+        agree_all("@a\nmut\nfn f() -> int { 1 }") &&
+        // The DESTRUCTURE form joins the routed set: every way its list, closer,
+        // `=` or initializer can go missing, plus the `let mut (` spelling and
+        // the export-wrapped variant.
+        agree_all("let ( = t\nfn f() -> int { 1 }") &&
+        agree_all("let (a, 5) = t\nfn f() -> int { 1 }") &&
+        agree_all("let (a, b = t\nfn f() -> int { 1 }") &&
+        agree_all("let (a, b) t\nfn f() -> int { 1 }") &&
+        agree_all("let (a, b) =\nfn f() -> int { 1 }") &&
+        agree_all("let mut (a b) = t\nfn f() -> int { 1 }") &&
+        agree_all("export let (a b) = t\nfn f() -> int { 1 }")
+    }
+    // The prefix WRAPPERS join the routed set (t-47hc Phase 4: `///` doc, `//!` module
+    // doc, `@annotation`; `export` went in #1098). Measured on ALL THREE paths, not
+    // just emit-vs-hand: the wrappers are `@try`-routed, so on any malformed form the
+    // branch rolls back and it is the EXECUTOR that answers the default path — the
+    // divergence class the two-parser oracles are structurally blind to (t-zrn3).
+    // The CONCURRENCY statements join the routed set (t-47hc Phase 4: `select` /
+    // `parallel`). Added BEFORE the routing per the discipline. The select arm
+    // list's hand recovery is distinctive — a malformed arm returns SILENTLY and
+    // the caller's `}` consume does the reporting — so every partial-arm form is
+    // pinned here: the native rule must hand all of them back.
+    then "malformed select / parallel (the routed keywords), on all three paths" {
+        agree_all("parallel\nfn f() -> int { 1 }") &&
+        agree_all("parallel x\nfn f() -> int { 1 }") &&
+        agree_all("select\nfn f() -> int { 1 }") &&
+        agree_all("select x\nfn f() -> int { 1 }") &&
+        agree_all("select { x }\nfn f() -> int { 1 }") &&
+        agree_all("select { 5 }\nfn f() -> int { 1 }") &&
+        agree_all("select { x <- }\nfn f() -> int { 1 }") &&
+        agree_all("select { x <- ch }\nfn f() -> int { 1 }") &&
+        agree_all("select { x <- ch -> }\nfn f() -> int { 1 }") &&
+        agree_all("select { x <- ch -> { 1 }\nfn f() -> int { 1 }")
+    }
+
+    // The SPEC-TEST blocks join the routed set (t-47hc Phase 4: `spec`, with its
+    // `given` / `then` inner keywords). Added BEFORE the routing per the
+    // discipline. The missing-name forms pin the silent-drop fix in
+    // spec_test/parser.av: given/then bailed with a bare Err that
+    // parse_spec_body swallowed, so those inputs used to parse CLEAN.
+    then "malformed spec / given / then (the routed keyword), on all three paths" {
+        agree_all("spec\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\"\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" {\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { given }\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { given \"g\" }\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { then }\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { then \"t\" }\nfn f() -> int { 1 }") &&
+        agree_all("spec \"s\" { given \"g\" { then } }\nfn f() -> int { 1 }")
+    }
+
+    // The COMPONENT definition forms (t-47hc Phase 4 slice A — corpus FIRST,
+    // ahead of any routing). Every way the header, implements clause, config /
+    // children schemas, `body: TokenStream` marker, and field decls can go
+    // wrong, including the two coded diagnostics (implements-then-instance,
+    // body: non-TokenStream). The instantiation forms are slices B/C.
+    then "malformed component definitions (pre-routing corpus), on all three paths" {
+        agree_all("component\nfn f() -> int { 1 }") &&
+        agree_all("component C\nfn f() -> int { 1 }") &&
+        agree_all("component C 5\nfn f() -> int { 1 }") &&
+        agree_all("component C implements {\nfn f() -> int { 1 }") &&
+        agree_all("component C implements A B { }\nfn f() -> int { 1 }") &&
+        agree_all("component C { config }\nfn f() -> int { 1 }") &&
+        agree_all("component C { config { x } }\nfn f() -> int { 1 }") &&
+        agree_all("component C { config { x: } }\nfn f() -> int { 1 }") &&
+        agree_all("component C { children { x } }\nfn f() -> int { 1 }") &&
+        // A NON-IDENT entry takes a different path from the three above: `x` is an
+        // IDENT so the `@peek(not_rbrace) @gate` admits it and `config_entry` fails
+        // inside, where `5` is declined by the gate itself. The gated element ABORTS,
+        // and that is the hand's behaviour here — `parse_component_decl` propagates,
+        // leaving the two stray `}`s for the caller (F0001 then F0013 F0013). It is
+        // deliberately NOT `select`'s `@onfail(close)`: the two hand parsers disagree,
+        // which is the whole reason the policy is per-rule and stated rather than
+        // inferred (see GItem.onfail). Pinned because the resemblance to `select_decl`
+        // invites exactly that inference — it has been proposed on review twice.
+        agree_all("component C { config { 5 } }\nfn f() -> int { 1 }") &&
+        agree_all("component C { children { 5 } }\nfn f() -> int { 1 }") &&
+        agree_all("component C { body: int }\nfn f() -> int { 1 }") &&
+        agree_all("component C { let x }\nfn f() -> int { 1 }") &&
+        agree_all("component C inst\nfn f() -> int { 1 }") &&
+        agree_all("component C implements A inst { }\nfn f() -> int { 1 }")
+    }
+
+    // ROUTING GUARD for t-47hc.5.1 slice B — the KEYWORD-PREFIXED INSTANTIATION
+    // (`component C inst { … }`, parse_component_decl's third form). Landed
+    // BEFORE the routing, per the slice-10 discipline: routing is invisible on
+    // valid input by construction, so the invalid corpus is the only witness
+    // that recovery did not silently change. `shape` shipped routed with no
+    // malformed coverage (#1054) and had to be un-routed (#1059) — a keyword
+    // must not be routed on no evidence.
+    //
+    // These pass TODAY (both paths reach the hand) and must go RED if the rule
+    // is ever routed BARE, because the hand ABORTS a malformed item and lets
+    // the statement-list loop synchronize, while a bare native branch is
+    // error-TOLERANT and builds partial nodes. `@try` is what keeps them green.
+    //
+    // Cases are one per error site down the instantiation path. The three forms
+    // slice A's corpus already covers (`component C inst`, `component C
+    // implements A inst { }`, `component C 5`) are deliberately NOT repeated.
+    then "malformed component INSTANTIATIONS (pre-routing corpus), on all three paths" {
+        // config-pair sites (parse_comp_config_pairs)
+        agree_all("component C inst { key = }\nfn f() -> int { 1 }") &&
+        agree_all("component C inst { key = 1\nfn f() -> int { 1 }") &&
+        // the instance block itself never closes
+        agree_all("component C inst {\nfn f() -> int { 1 }") &&
+        // nested-block site: a nested name with no `{` (parse_comp_block_body)
+        agree_all("component C inst { nested name }\nfn f() -> int { 1 }") &&
+        // method-shorthand site: the method body never closes. The `{` must stay
+        // UNCLOSED — `run() { }` closes it, and then the only thing left wrong is
+        // the outer block, which reports F0040 exactly like the bare case above.
+        // Unterminated, this reports F0001 `expected `}` after method body`, which
+        // is the site this case exists to cover.
+        agree_all("component C inst { run() {\nfn f() -> int { 1 }") &&
+        // body statement site: a `let` the block body cannot accept
+        agree_all("component C inst { let x }\nfn f() -> int { 1 }") &&
+        // ── the four DECLINED arms (slice B2b corpus, landed before the routing) ──
+        // parse_comp_block_body has four arms the native rule currently declines,
+        // each of which ABORTS where a plain `declaration` would be happy. These
+        // pin their malformed shapes NOW, while the hand still owns them, so the
+        // guard exists before B2b routes them and can fail if B2b gets one wrong.
+        // arm 2 — `ident name {` nested block, malformed statement INSIDE the body.
+        // The braces stay balanced on purpose: an unterminated form (either
+        // `nested name { }` or `nested name {`) just runs to EOF and reports the
+        // same F0040 as the bare `component C inst {` case above, testing nothing
+        // new. Balanced, it reaches the nested body and reports F0001 `expected
+        // `=` after variable name` — arm 2's own path.
+        agree_all("component C inst { nested name { let x } }\nfn f() -> int { 1 }") &&
+        // arm 3 — the brace form (`ident {`, instance name == component name),
+        // same reasoning. arm 2's OTHER site, a missing `{` after the nested name,
+        // is already covered above by `component C inst { nested name }`.
+        agree_all("component C inst { nested { let x } }\nfn f() -> int { 1 }") &&
+        // arm 4 — method shorthand whose BODY carries a malformed statement
+        agree_all("component C inst { run() { let x } }\nfn f() -> int { 1 }") &&
+        // arm 1 — nested `component` with no name, and with no body
+        agree_all("component C inst { component }\nfn f() -> int { 1 }") &&
+        agree_all("component C inst { component D }\nfn f() -> int { 1 }")
+    }
+
+    then "malformed decl wrappers (the routed prefixes), on all three paths" {
+        // t-47hc.5: was `native_agrees_hand_differs`. The hand parser is DELETED, so
+        // there is no longer a hand answer to differ from — the divergence this pinned
+        // ended with the oracle, not with a fix.
+        agree_all("@\nfn f() -> int { 1 }") &&
+        agree_all("@foo(\nfn f() -> int { 1 }") &&
+        agree_all("@foo(,)\nfn f() -> int { 1 }") &&
+        agree_all("@foo)\nfn f() -> int { 1 }") &&
+        agree_all("@foo") &&
+        agree_all("/// doc\nfn ( ) -> int { 1 }\nfn f() -> int { 1 }") &&
+        agree_all("//! mdoc\n* 5\nfn f() -> int { 1 }") &&
+        agree_all("/// doc\n@foo(\nfn f() -> int { 1 }") &&
+        agree_all("@foo\nexport enum { A }\nfn f() -> int { 1 }")
+    }
+    // `enum` joins the routed set (t-47hc slice 10.11). It is the first routed keyword
+    // with real INTERNAL structure — a type-param list, a variant list, and payload
+    // fields — so the forms that can go wrong are not just "the name is missing": a
+    // half-closed generic list, a variant with an empty payload field, a non-IDENT where
+    // a variant belongs. Two malformed enums were already in the blocks above; these
+    // widen the coverage to the shapes routing actually reaches, BEFORE trusting it.
+    then "malformed enum declarations (the routed keyword)" {
+        agree("enum { A, B }\nfn f() -> int { 1 }") &&
+        agree("enum E\nfn f() -> int { 1 }") &&
+        agree("enum E {\nfn f() -> int { 1 }") &&
+        agree("enum E { A,\nfn f() -> int { 1 }") &&
+        agree("enum E { A(x: ) }\nfn f() -> int { 1 }") &&
+        agree("enum E { A( }\nfn f() -> int { 1 }") &&
+        agree("enum E< { A }\nfn f() -> int { 1 }") &&
+        agree("enum E<T { A }\nfn f() -> int { 1 }") &&
+        agree("enum E { 5 }\nfn f() -> int { 1 }")
+    }
+    // `type` joins the routed set (t-47hc slice 10.12) — the last and largest of the
+    // decl keywords, and the one that needed two fixes before it could go: the RHS forms
+    // made exclusive (t-myz7.1) and the executor's missing unguarded tail (t-zrn3). The
+    // second one is why `type T =` followed by a `fn` declaration is here: `tok_starts_type`
+    // includes `fn`, so the alias branch is entered on the following declaration's lead
+    // token and the remainder becomes a stray-token item — the exact shape that exposed
+    // the executor gap. It is measured on all three paths by the block above.
+    then "malformed type declarations (the routed keyword)" {
+        // The bare-RHS EDGE, on all three paths. `type T =` with nothing after it is
+        // ACCEPTED — by the HAND parser too, which is what makes it parity rather than a
+        // hole; diagnostic_equivalence_test pins the node both build. What varies is the
+        // FOLLOWER: `let`/EOF leave it alone, `mod`/`use` are consumed as the alias and
+        // fail in the resolver, and `}` / `)` fail in the parser. Each of those is the
+        // hand's own behaviour, reproduced. (Raised in review on #1068 as a possible
+        // hole — measured instead of argued, and kept as coverage.)
+        agree_all("type T =") &&
+        agree_all("type T =\nlet q = 1\n") &&
+        agree_all("type T =\nmod foo\n") &&
+        agree_all("type T =\n}\n") &&
+        agree_all("type T =\n)\n") &&
+        agree("type T =\nfn f() -> int { 1 }") &&
+        agree("type T< = { x: int }\nfn f() -> int { 1 }") &&
+        agree("type T<A = { x: int }\nfn f() -> int { 1 }") &&
+        agree("type T { x: int }\nfn f() -> int { 1 }") &&
+        agree("type T = int without\nfn f() -> int { 1 }") &&
+        agree("type T = int only { \nfn f() -> int { 1 }")
+    }
+    // The LAST four decl keywords (t-47hc slice 10.13): `fn`, `extern`, `trait`, `impl`.
+    // Some of these forms were already in the blocks above as generic malformed-decl
+    // cases; they are repeated here deliberately, grouped by the keyword that now owns
+    // them, because that is the granularity a future un-routing would need. The added
+    // ones probe what routing actually reaches: a truncated generic list, an empty
+    // parameter, a bodyless `extern`, a member list that never closes.
+    then "malformed fn / extern / trait / impl declarations (the routed keywords)" {
+        agree("fn () -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree("fn a( -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree("fn a(x: ) -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree("fn a() -> { 1 }\nfn b() -> int { 2 }") &&
+        agree("fn a() -> int\nfn b() -> int { 2 }") &&
+        agree("fn a<T() -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree("extern fn () -> int\nfn b() -> int { 2 }") &&
+        agree("extern fn a(\nfn b() -> int { 2 }") &&
+        agree("extern a() -> int\nfn b() -> int { 2 }") &&
+        agree("trait T { fn m( }\nfn f() -> int { 1 }") &&
+        agree("trait { fn m() }\nfn f() -> int { 1 }") &&
+        agree("trait T {\nfn f() -> int { 1 }") &&
+        agree("trait T { type }\nfn f() -> int { 1 }") &&
+        agree("impl for Foo { }\nfn f() -> int { 1 }") &&
+        agree("impl Foo {\nfn f() -> int { 1 }") &&
+        agree("impl Foo { fn m( }\nfn f() -> int { 1 }")
+    }
+    then "a malformed TYPE-PARAMETER list on each routed keyword agrees" {
+        // The corpus had malformed BODIES for every routed keyword and malformed
+        // type-parameter lists for none of `trait` / `shape` / `type` / `impl` — so the
+        // one construct every one of them shares was measured on exactly one of them
+        // (`fn a<T(`, above). Sweeping it across the family is what found `trait T<`,
+        // which reported TWO diagnostics natively (`expected \`IDENT\`` then
+        // `expected \`>\``) where the hand reports one, because the native rule parses
+        // the list the hand blindly skips.
+        //
+        // `agree_all`, not `agree`: the executor answers the default path on invalid
+        // input, and the emit-vs-hand comparison is blind to it (t-zrn3).
+        agree_error("trait T< { }\nfn zz() -> int { 1 }") &&
+            agree_all("trait T< { }\nfn zz() -> int { 1 }") &&
+            agree_error("trait T<X { }\nfn zz() -> int { 1 }") &&
+            agree_all("trait T<X { }\nfn zz() -> int { 1 }") &&
+            agree_error("enum E< { A }\nfn zz() -> int { 1 }") &&
+            agree_all("enum E< { A }\nfn zz() -> int { 1 }") &&
+            agree_error("enum E<,T> { A }\nfn zz() -> int { 1 }") &&
+            agree_all("enum E<,T> { A }\nfn zz() -> int { 1 }") &&
+            agree_error("shape S< = { x: int }\nfn zz() -> int { 1 }") &&
+            agree_all("shape S< = { x: int }\nfn zz() -> int { 1 }") &&
+            agree_error("type T< = { x: int }\nfn zz() -> int { 1 }") &&
+            agree_all("type T< = { x: int }\nfn zz() -> int { 1 }") &&
+            agree_error("impl F< { }\nfn zz() -> int { 1 }") &&
+            agree_all("impl F< { }\nfn zz() -> int { 1 }")
+    }
+    then "malformed bindings and control-flow statements" {
+        agree("fn f() -> int {\n let x = \n return 1\n}") &&
+        agree("fn f() -> int {\n let = 5\n return 1\n}") &&
+        agree("fn f() -> int {\n const C\n return 1\n}") &&
+        agree("fn f() -> int {\n if { return 1 }\n return 2\n}") &&
+        agree("fn f() -> int {\n while return 2\n}") &&
+        agree("fn f() -> int {\n for x { return 3 }\n}") &&
+        agree("fn f() -> int {\n match { 1 -> 2 }\n}")
+    }
+    then "malformed expressions: dangling operators and unclosed delimiters" {
+        agree("fn f() -> int {\n let x = 1 +\n return x\n}") &&
+        agree("fn f() -> int {\n let y = (1 + 2\n return y\n}") &&
+        agree("fn f() -> int {\n let z = [1, 2\n return 0\n}") &&
+        agree("fn f() -> int {\n let w = foo(1,\n return 0\n}") &&
+        agree("fn f() -> int {\n let q = a.\n return 0\n}") &&
+        // t-47hc.4.3 — `agree_all`, not `agree`: this input rides the ONE
+        // `@gate @onfail(bail)` shape in the grammar (`return_stmt`), and the two engines
+        // did NOT agree on it. Emit's `gated_first_check` stands down for `bail` (the
+        // callee owns the message) while the executor's `gated_first_ok` stood down only
+        // for `skip`/`close`, so the pre-check fired there and answered F0001 where the
+        // hand and emit both answer F0040 — same wording, different CODE. `agree` compares
+        // emit against the hand and so was blind to it by construction, which is the
+        // t-zrn3 blind spot exactly. Measured with a control: revert the executor's
+        // stand-down and this line goes red.
+        agree_all("fn f() -> int {\n return * 3\n}")
+    }
+    then "the trailing dot agrees on ALL THREE paths, executor included" {
+        // The `.`-led `@fallback` that replaced `@hand(postfix_suffix)` (t-47hc.33.2)
+        // owns this diagnostic natively now, and the two engines reach it differently:
+        // emit REPORTS then still builds `mk_field_access` from the cursor token, while
+        // the executor's `@require` aborts to `error_node_silent()`. The corpus pinned
+        // this input emit-vs-hand (`agree` above) and tree-vs-hand (`agree_bad` below),
+        // but never against the EXECUTOR — and the default production path is answered by
+        // the executor on invalid input, so an executor-only divergence here was
+        // structurally invisible (the t-zrn3 blind spot). `agree_all` is the third
+        // comparison; without it, "all paths agree on the trailing dot" was an
+        // assumption, not a measurement.
+        // `agree_error` FIRST on each input, then `agree_all`: on its own `agree_all`
+        // only checks that the three signatures MATCH, so it passes vacuously if every
+        // path silently accepts a malformed input — three empty strings agree. Pairing
+        // it with the non-empty check is this file's own rule (the `agree_bad`
+        // docstring), and the reason is the `shape` regression: a guard that cannot
+        // fail is worth nothing.
+        agree_error("fn f() -> int {\n let q = a.\n return 0\n}") &&
+            agree_all("fn f() -> int {\n let q = a.\n return 0\n}") &&
+            agree_error("fn f() -> int {\n let q = a.b.\n return 0\n}") &&
+            agree_all("fn f() -> int {\n let q = a.b.\n return 0\n}")
+        // `a?.` is DELIBERATELY absent: it genuinely diverges (native F0001 vs hand
+        // F0040) and the divergence PREDATES the `.` fallback — the pre-#1078 compiler
+        // reports F0001 too. Both `?.` branches are `@peek`-gated on a valid FIELDNAME
+        // (`qdot_method_call` / `qdot_plain_field`), so a trailing `?.` satisfies
+        // neither and no branch owns the diagnostic; the `.` family got a `@fallback`
+        // in t-47hc.33.2 and the `?.` family never did. Filed as its own gap rather
+        // than asserted here, so this spec does not fail for something it is not
+        // about. Adding `agree_all("… a?. …")` is the failing-first witness when
+        // someone fixes it.
+    }
+    then "a GATED member/field list agrees on ALL THREE paths, executor included" {
+        // The gated call's FIRST re-check (t-myz7). `@gate` REPLACES a group's FIRST with
+        // the preceding `@peek` cond — that is what lets the loop enter where the
+        // element's own FIRST would refuse (`}` / EOF), so the hand's "report about the
+        // ELEMENT" recovery is reproducible. The price is that the callee's standing
+        // promise, "my caller proved my FIRST", no longer holds, so the gated call has to
+        // re-check it itself. emit has done that since the gate landed
+        // (`gated_first_check`); the INTERPRETER never did and simply fell into the
+        // sub-rule.
+        //
+        // `trait T {` therefore reached the EXPRESSION tail on the default path and said
+        // F0040 `expected expression` where the hand names the missing member, and
+        // `shape S = { x: int` answered with three diagnostics to the hand's one — the
+        // loop entered `field` standing on `fn`, `field` reported a missing name then a
+        // missing `:`, and `shape_decl` then reported a missing `}`.
+        //
+        // Every input here ALREADY sits in the `agree` corpus above and passed there
+        // throughout, because `agree` compares emit against hand and emit was never the
+        // one that was wrong. The default production path answers invalid input with the
+        // EXECUTOR, so only `agree_all` can see this — the t-zrn3 blind spot, in the
+        // keyword family that has the most gates. `agree_error` first on each, per this
+        // file's rule that a signature check must also prove the signature is non-empty.
+        agree_error("trait T {\nfn f() -> int { 1 }") &&
+            agree_all("trait T {\nfn f() -> int { 1 }") &&
+            agree_error("shape S = { x: int\nfn f() -> int { 1 }") &&
+            agree_all("shape S = { x: int\nfn f() -> int { 1 }") &&
+            agree_error("enum E {\nfn f() -> int { 1 }") &&
+            agree_all("enum E {\nfn f() -> int { 1 }") &&
+            agree_error("enum E { 5 }\nfn f() -> int { 1 }") &&
+            agree_all("enum E { 5 }\nfn f() -> int { 1 }")
+    }
+    then "an aborted declaration does not trail a generic CapVal-coercion diagnostic" {
+        // The boundary now carries EVERY diagnostic the DSL run recorded, not just
+        // `diags[0]` (t-myz7 — a committed native rule reports more than once, and the
+        // one-diagnostic seam made the hand's multi-error recovery unreachable no matter
+        // what the grammar said). The four `capval_to_*` coercions are what that
+        // exposed: they run on the run's RESULT, so their generic "expected a
+        // statement" / "expected a field" was appended AFTER every real diagnostic and
+        // the seam had been dropping it silently.
+        //
+        // A coercion failure is a real finding on a CLEAN parse (a grammar or builder
+        // bug) and pure noise on a FAILED one — the rule aborted, so of course it handed
+        // back `Nil`. Without that distinction every one of these gained a spurious
+        // trailing F0001 apiece the moment the boundary widened. `agree_all`, because
+        // the coercion sits at the boundary itself and so fires on all three native
+        // paths at once.
+        agree_error("use\nfn f() -> int { 1 }") &&
+            agree_all("use\nfn f() -> int { 1 }") &&
+            agree_error("mod\nfn f() -> int { 1 }") &&
+            agree_all("mod\nfn f() -> int { 1 }") &&
+            agree_error("const\nfn f() -> int { 1 }") &&
+            agree_all("const\nfn f() -> int { 1 }") &&
+            agree_error("export const C\nfn f() -> int { 1 }") &&
+            agree_all("export const C\nfn f() -> int { 1 }") &&
+            agree_error("shape = { x: int }\nfn f() -> int { 1 }") &&
+            agree_all("shape = { x: int }\nfn f() -> int { 1 }")
+    }
+    then "multi-error recovery: static-raw finds the SAME ordered error set as hand" {
+        // Each program has 3-6 parse errors; recovery must resynchronise and find
+        // every one, in the same order, under both parsers.
+        agree("fn a() -> int { 1 + }\nfn b() -> int { 2 }\nthen\nfn c() -> int { * 3 }") &&
+        // PINNED: contains the `{ x: , … }` field abort, so it carries the executor's
+        // extra alternation F0001 exactly as the single-error case above does.
+        pin("type T = { x: , y: }\nfn f(a: , b: int) -> int { return a }\nfn g() -> int { let z = ; return z }",
+            "F0001 F0013 F0001 F0013 F0001 F0041 ") &&
+        agree("fn h() -> int {\n  if { return 1 }\n  while return 2\n  for x { return 3 }\n}")
+    }
+    then "unclosed constructs at EOF" {
+        agree("fn f() -> int {\n return 1\n") &&
+        agree("fn f() -> int {\n let x = (1 + 2 * 3\n") &&
+        agree("type T = {\n x: int,\n")
+    }
+    then "a valid program produces no diagnostics under either mode (sanity)" {
+        static_raw("fn ok() -> int { 1 + 2 }") == "" && exec_oracle("fn ok() -> int { 1 + 2 }") == ""
+    }
+}
+
+spec "t-47hc.4.1: emit and exec agree on the inputs that split the hand from the native paths" {
+    then "a bare `@`, a malformed binding, and a malformed wrapper agree across engines" {
+        // Three inputs the hand and the native paths demonstrably DISAGREED on while the
+        // hand existed: a bare `@` (the hand invented an annotation named `fn`), a
+        // malformed binding, and a malformed wrapper. With the hand gone they are
+        // ordinary two-engine agreement checks — and they are not vacuous, because emit
+        // and exec DO diverge elsewhere in this file (that is what `pin` exists for).
+        agree("@\nfn f() -> int { 1 }") &&
+            agree("let x: = 1\nfn f() -> int { 1 }") &&
+            agree("@a\nmut\nfn f() -> int { 1 }")
+    }
+}

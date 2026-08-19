@@ -1,10 +1,21 @@
-// dir-as-module (g2eo.1): parser.av auto-loads as a sibling, surfaces flat at `features.extern_decl.{...}`
-use core.{feature_new, Feature}
+// dir-as-module (g2eo.1): sibling .av files surface flat at
+// `features.extern_decl.{...}`.
 
-/// Register the `extern fn` feature with the compiler. Picks up
-/// the `extern` keyword and routes to the parser's
-/// `parse_extern_declaration`. Registered via
-/// `init_features` in `features/mod.av`.
-export fn extern_decl_feature() -> Feature {
-    feature_new("extern_decl")
+/// `extern fn` — FFI signature declarations. The SYNTAX lives in the fn
+/// feature's fragment (`extern_decl` in features/fn_decl/grammar.av — same
+/// lead-keyword family), and its lowering (MkExtern) rides fn_lang's
+/// manifest, so this definition carries the surface alone (t-kd4y.3.3.1;
+/// the retired `feature_new("extern_decl")` register was hookless too).
+export fn extern_lang() -> LanguageFeature {
+    LanguageFeature extern_def {
+        name = "extern_decl",
+        title = "extern fn — foreign function signatures",
+        docs = """
+`extern fn name(params) -> Ret` declares a bodyless signature for a
+function provided by the C runtime or a linked library. An absent return
+type defaults to `Void`. Calls compile to direct symbol references.
+""",
+        snippet = r"extern fn ${1:name}(${2:params}) -> ${3:Ret}",
+    }
+    extern_def
 }

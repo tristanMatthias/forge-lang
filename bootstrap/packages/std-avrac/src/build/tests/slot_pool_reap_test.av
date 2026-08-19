@@ -1,0 +1,38 @@
+// t-kdyj.12 — the EMPTY-PID slot wedge. A slot abandoned in the
+// microsecond mkdir->echo window (its taker killed between the two) has
+// no pid for the owner-liveness reap to test, so it was never collected:
+// the HEAVY acquirer waited forever for all slots while holding
+// heavy_pending, and every light acquirer yielded to that live heavy at
+// `sleep 0.2` — the whole pool wedged until a human deleted the
+// directory (observed live: a timeout-killed regen left slot.2 pid-less
+// for 1h09m and a full suite run sat behind it). The fix reaps an
+// empty/missing-pid slot once its dir is provably older than the write
+// window (>=5s by mtime, GNU + BSD stat).
+//
+// The spec stages exactly that wreckage — a pool whose slot.2 exists
+// with no pid file and a 30s-old mtime — and asserts a HEAVY acquire
+// (--slot-exec with AVRA_USE_METADATA unset) completes under a timeout
+// that the pre-fix wedge could never beat. Per-pid pool dir so
+// concurrent shards can't contend (the slot_gate_test convention).
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_getpid}
+
+fn pool_dir() -> string {
+    "/tmp/avra_slot_reap_test_${string(avra_getpid())}"
+}
+
+spec "t-kdyj.12: a stale pid-less slot is reaped, not waited on forever" {
+    then "a HEAVY acquire completes despite the abandoned slot (pre-fix: wedged until timeout)" {
+        let pool = pool_dir()
+        let stage = "rm -rf ${pool} && mkdir -p ${pool}/slot.2 && (touch -d '30 seconds ago' ${pool}/slot.2 2>/dev/null || touch -t \"$(date -v-30S +%Y%m%d%H%M.%S)\" ${pool}/slot.2)"
+        let staged = avra_shell_exec_status(stage)
+        // Heavy path = AVRA_USE_METADATA unset; the heavy must collect ALL
+        // slots, so the stale slot.2 blocks it absent the reap. 15s >> the
+        // 5s age gate + jittered retries; the wedge ran 1h+ unreaped.
+        // `perl -e 'alarm ...; exec ...'` is the portable timeout: stock
+        // macOS has no GNU `timeout`, and this spec's whole point is the
+        // pre-fix WEDGE, which only a deadline can convert into a red.
+        let rc = avra_shell_exec_status("env -u AVRA_USE_METADATA AVRA_SLOT_DIR='${pool}' AVRA_FIXTURE_JOBS=4 perl -e 'alarm shift; exec @ARGV' 15 bash scripts/diagnose.sh --slot-exec true > '/tmp/avra_slot_reap_${string(avra_getpid())}.log' 2>&1")
+        let _ = avra_shell_exec("rm -rf ${pool}")
+        staged == 0 && rc == 0
+    }
+}

@@ -6,5 +6,28 @@
 // concrete specializations before codegen.
 //
 // dir-as-module (g2eo.1): no `mod` decls — sibling .av files
-// (parser.av + mono.av) auto-load and surface flat at
-// `features.generics.{...}`.
+// (parser.av + mono.av + grammar.av) auto-load and surface flat at
+// `features.generics.{...}`; the manifest row lives in lowering/.
+use features.{composed}
+use features.generics.lowering.{generics_builds}
+
+/// Generic type parameters — the definition carries the shared `tparam`
+/// rule (every generic decl keyword references it by name across the
+/// merged rule set) and its one lowering (t-kd4y.3.3.1). No pass hooks:
+/// monomorphization is a core pass (mono.av), not tag-dispatched.
+export fn generics_lang() -> LanguageFeature {
+    LanguageFeature generics_def {
+        name = "generics",
+        title = "generics — type parameters",
+        docs = """
+`<T, U: Bound>` declares type parameters on functions, types, enums,
+traits, and impls. Generic code monomorphizes: each concrete
+instantiation compiles to its own specialization. A single bound rides
+the parameter (`T: Ord`); extra bounds go in a `where` clause.
+""",
+        gram = composed([avra_generics_grammar()]),
+        builders = generics_builds(),
+        snippet = r"<${1:T}>",
+    }
+    generics_def
+}

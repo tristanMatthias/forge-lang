@@ -1,0 +1,82 @@
+// One slice of the error-recovery differential corpus (t-kdyj.13).
+// The corpus was ONE file whose unit process measured 8.4GB resident —
+// each un-paired in-process oracle call builds a fresh store + registry
+// (~30MB) and arena memory is process-permanent, so the ONLY bound the
+// runner offers is fewer cases per PROCESS: per-scenario files, spread
+// across shard processes by the stride batcher. Oracle helpers + the
+// engine-pinning WHYs live in ONE home: parse/differential.av
+// (@std.avrac.parse). Specs are VERBATIM from the original file.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.parse.{CDEF, agree, agree_all, agree_bad, agree_error, agree_pos, agree_tree, dbrace, default_path, errcodes, errmsgs, exec_oracle, mode_env, msgs_agree_bad, pin, pin_pos, pin_tree, poslist, poslist_from, rdiags, rtree, rtree_at, sig_has_parse_code, static_raw, tpl_src, tree_agrees_everywhere, mode_parse, ModeRun, rendered}
+
+spec "t-47hc.3: recovery-TREE shape == exec oracle (invalid corpus) — part 3/3" {
+    // The TREE half for `type` — the F-code half lives in error_recovery_diff_codes_test.av.
+    then "malformed type recovers to the same tree" {
+        agree_bad("type T =\nfn f() -> int { 1 }") &&
+        agree_bad("type T< = { x: int }\nfn f() -> int { 1 }") &&
+        agree_bad("type T<A = { x: int }\nfn f() -> int { 1 }") &&
+        agree_bad("type T { x: int }\nfn f() -> int { 1 }") &&
+        agree_bad("type T = int without\nfn f() -> int { 1 }") &&
+        agree_bad("type T = int only { \nfn f() -> int { 1 }")
+    }
+    // The TREE half for the last four keywords — see the F-code block above.
+    then "malformed fn / extern / trait / impl recover to the same tree" {
+        agree_bad("fn a<T() -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree_bad("extern fn () -> int\nfn b() -> int { 2 }") &&
+        agree_bad("extern fn a(\nfn b() -> int { 2 }") &&
+        agree_bad("extern a() -> int\nfn b() -> int { 2 }") &&
+        agree_bad("trait { fn m() }\nfn f() -> int { 1 }") &&
+        agree_bad("trait T {\nfn f() -> int { 1 }") &&
+        agree_bad("trait T { type }\nfn f() -> int { 1 }") &&
+        agree_bad("impl Foo {\nfn f() -> int { 1 }") &&
+        agree_bad("impl Foo { fn m( }\nfn f() -> int { 1 }")
+    }
+    then "malformed statements + expressions recover to the same tree" {
+        agree_bad("fn f() -> int {\n let x = \n return 1\n}") &&
+        agree_bad("fn f() -> int {\n let = 5\n return 1\n}") &&
+        agree_bad("fn f() -> int {\n const C\n return 1\n}") &&
+        agree_bad("fn f() -> int {\n if { return 1 }\n return 2\n}") &&
+        agree_bad("fn f() -> int {\n while return 2\n}") &&
+        agree_bad("fn f() -> int {\n for x { return 3 }\n}") &&
+        agree_tree("fn f() -> int {\n match { 1 -> 2 }\n}") &&
+        agree_bad("fn f() -> int {\n let x = 1 +\n return x\n}") &&
+        agree_bad("fn f() -> int {\n let y = (1 + 2\n return y\n}") &&
+        agree_bad("fn f() -> int {\n let z = [1, 2\n return 0\n}") &&
+        agree_bad("fn f() -> int {\n let w = foo(1,\n return 0\n}") &&
+        agree_bad("fn f() -> int {\n let q = a.\n return 0\n}") &&
+        agree_bad("fn f() -> int {\n return * 3\n}")
+    }
+    then "multi-error recovery builds the same tree" {
+        agree_bad("fn a() -> int { 1 + }\nfn b() -> int { 2 }\nthen\nfn c() -> int { * 3 }") &&
+        // PINNED for the same reason as its F-code sibling above.
+        pin_tree("type T = { x: , y: }\nfn f(a: , b: int) -> int { return a }\nfn g() -> int { let z = ; return z }",
+                 "(error)\n(error)\n(return a)\n(fn g () -> int (error)\n(return z))", 6) &&
+        agree_bad("fn h() -> int {\n  if { return 1 }\n  while return 2\n  for x { return 3 }\n}")
+    }
+    then "unclosed-at-EOF constructs recover to the same tree" {
+        agree_bad("fn f() -> int {\n return 1\n") &&
+        agree_bad("fn f() -> int {\n let x = (1 + 2 * 3\n") &&
+        agree_bad("type T = {\n x: int,\n")
+    }
+    then "a valid program renders the same NON-error tree under both modes" {
+        let t = rtree(true, "fn ok() -> int { 1 + 2 }")
+        agree_tree("fn ok() -> int { 1 + 2 }") &&
+        t != "<null>" &&
+        !t.contains("(error)")
+    }
+}
+
+spec "t-47hc.3: the 5c recovery-TREE divergence is CLOSED (emit-error fix)" {
+    then "F-codes agree on the stray top-level `* 5`" {
+        agree("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }")
+    }
+    then "the recovery TREES now AGREE: static yields a bare `(error)`, matching hand (not `(expr (*`)" {
+        let src = "fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }"
+        let emit_t = rtree(true, src)
+        agree_bad(src) &&
+        emit_t.contains("(error)") &&
+        !emit_t.contains("(expr (*") &&
+        !rtree(false, src).contains("(expr (*")
+    }
+}

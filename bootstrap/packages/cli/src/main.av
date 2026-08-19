@@ -59,7 +59,7 @@ use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str, json_object, json_pairs, json_pair_add}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure, output_has_ceiling_marker}
+use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure, output_has_ceiling_marker, retry_bounded_cmd}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path, filter_by_paths}
 use @std.avrac.test_runner.{
     scan_gate_diagnostics, render_gate_scan,
@@ -3197,8 +3197,9 @@ fn ceiling_stopped_victims(shards: List<Shard>) -> List<Shard> {
 
 // F4014 self-stop recovery (t-d91l): a mid-suite ceiling stop is usually BOX
 // PRESSURE, not the shard's own defect — the F4014 grant shrinks while the
-// pool runs wide, and a whale batch (error_recovery_differential_test peaks
-// ~8.3GB, 4.6x the admission model, strict and normal alike) trips it exactly
+// pool runs wide, and a whale batch (the error-recovery differential corpus
+// peaked ~8.4GB as one file — split per scenario since, t-kdyj.13; each
+// slice is ~1.3-1.7GB) trips it exactly
 // when siblings are co-resident. The pool has drained by the time this runs,
 // so one solo re-dispatch gives the victim the quiet box — the same room the
 // historic width-1 dispatch gave every shard implicitly. The shard command's
@@ -3209,9 +3210,43 @@ fn ceiling_stopped_victims(shards: List<Shard>) -> List<Shard> {
 fn retry_ceiling_stopped(shards: List<Shard>, cx: RunCtx, per_shard_mb: int) {
     let victims = ceiling_stopped_victims(shards)
     if victims.length == 0 { return }
-    eprintln("[per-file] retrying ${string(victims.length)} memory-ceiling-stopped shard(s) solo on the drained box")
-    let retry_cx = cx with { jobs: 1, per_shard_mb: per_shard_mb, snapshot: resource_snapshot() }
-    let _ = dispatch_shards(victims, retry_cx, per_shard_mb)
+    // t-kdyj.12: the retry gets the whole drained box, but the BOX must
+    // survive the attempt — each victim's command carries a hard ceiling
+    // matched to the drained box (retry_bounded_cmd), so a shard that
+    // cannot fit F4014s ITSELF in its own log instead of riding the
+    // soft-hold into a runner-level OOM eviction. The truncating `> log`
+    // redirect inside the cmd still replaces the first F4014 capture with
+    // the retry's outcome, exactly as before.
+    let snap = resource_snapshot()
+    // Non-positive availability is UNKNOWN — the compute_shard_jobs
+    // convention — and must not reach the bound as if it were a reading
+    // (it would floor a roomy box into a skipped retry). Fall back to
+    // capacity, exactly as the jobs computation does.
+    let eff_avail = if snap.available_mb > 0 { snap.available_mb } else { snap.capacity_mb }
+    mut bounded: List<Shard> = []
+    mut skipped = 0
+    for v in victims {
+        let bcmd = retry_bounded_cmd(v.cmd, eff_avail)
+        if bcmd == "" {
+            // Below the retry floor: the box cannot host a meaningful
+            // ceiling, so the victim keeps its first attempt's honest
+            // F4014 instead of burning a doomed startup-F4014 run.
+            skipped = skipped + 1
+        } else {
+            // The FIRST attempt may have written a results sidecar before
+            // its ceiling stop; a retry that dies pre-write must not let
+            // the aggregator read attempt-1 counts as the retry's.
+            let _ = avra_shell_exec("rm -f '${v.bin_path}'")
+            bounded.push(v with { cmd: bcmd })
+        }
+    }
+    if skipped > 0 {
+        eprintln("[per-file] ${string(skipped)} ceiling-stopped shard(s) NOT retried — available memory is under the retry floor; their first F4014 stands")
+    }
+    if bounded.length == 0 { return }
+    eprintln("[per-file] retrying ${string(bounded.length)} memory-ceiling-stopped shard(s) solo on the drained box (hard-bounded to it; avail ${string(eff_avail)}MB)")
+    let retry_cx = cx with { jobs: 1, per_shard_mb: per_shard_mb, snapshot: snap }
+    let _ = dispatch_shards(bounded, retry_cx, per_shard_mb)
 }
 
 // Walk each shard's log file, print it verbatim (preserving per-shard

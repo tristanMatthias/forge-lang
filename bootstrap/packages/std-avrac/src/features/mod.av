@@ -7,8 +7,9 @@
 
 use features.closures.{closures_feature}
 use features.enum_decl.{enum_lang}
-use features.extern_decl.{extern_decl_feature}
-use features.fn_decl.{fn_decl_feature}
+use features.extern_decl.{extern_lang}
+use features.fn_decl.{fn_lang}
+use features.generics.{generics_lang}
 use features.for_stmt.{for_lang, for_in_lang}
 use features.grammar.{grammar_feature, Grammar, feature_decl_grammar_fragments}
 use features.if_stmt.{if_lang}
@@ -97,8 +98,10 @@ export component LanguageFeature {
 }
 
 /// Register every built-in language feature with the compiler's
-/// dispatch registry. Called once during compiler init; each
-/// feature module exposes a `<name>_feature()` builder. Order
+/// dispatch registry. Called once during compiler init. Migrated
+/// features expose a `<name>_lang()` LanguageFeature definition
+/// (registered via the `language_features()` list); the legacy
+/// remainder still exposes `<name>_feature()` builders. Order
 /// doesn't matter — features dispatch by AST tag, not declaration
 /// position.
 /// Returns the composed builder manifest alongside registration so
@@ -137,8 +140,6 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
     register(reg, field_assign_feature())
 
     // ── Declarations (parse-only) ──
-    register(reg, fn_decl_feature())
-    register(reg, extern_decl_feature())
     register(reg, type_decl_feature())
     register(reg, shape_decl_feature())
 
@@ -153,7 +154,7 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
 export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), let_lang(), mut_lang(), const_lang(), let_destructure_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang(), quote_lang(), spec_lang(), given_lang(), then_lang()]
+    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), fn_lang(), extern_lang(), generics_lang(), let_lang(), mut_lang(), const_lang(), let_destructure_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang(), quote_lang(), spec_lang(), given_lang(), then_lang()]
 }
 
 /// The composed builder manifest — every feature-supplied build lowering,

@@ -1,0 +1,26 @@
+// The generics feature's LOWERING — the `tparam` rule's build, in a
+// dedicated SUBMODULE (t-kd4y.3.3.1; imports ONLY features.grammar + core,
+// the F4012 import-closure invariant). The `tparam` rule lives in
+// ../grammar.av and is shared by every generic decl keyword — the fragment
+// stays in the decl-fragment registry; this row is its one lowering.
+use core.{TypeParamEntry}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_tok_text}
+
+/// `name ( ":" bound )?` — ONE generic type parameter (the `MkTypeParam`
+/// build's core). A single trait bound only; absent => "" (unbounded).
+/// Multi-bound `T: A + B` is a where-clause (the fn feature's
+/// `MkWhereParam`) and out of scope here.
+export fn mk_type_param(name: string, bound_cv: CapVal, has_bound: bool) -> CapVal {
+    let bound = if has_bound { capval_tok_text(bound_cv) } else { "" }
+    CapVal.TParam(TypeParamEntry { name: name, bounds: bound })
+}
+
+export fn mk_type_param_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_type_param(capval_tok_text(vals[0]), vals[1], capval_present(vals[1]))
+}
+
+/// The generics feature's one row — span-free (a `TypeParamEntry` value,
+/// no node).
+export fn generics_builds() -> List<BuilderBind> {
+    bind_rows("features.generics.lowering", [bind_row("MkTypeParam", "tparam", 2, false, "mk_type_param_abi", mk_type_param_abi)])
+}

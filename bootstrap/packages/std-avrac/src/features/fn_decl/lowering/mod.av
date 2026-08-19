@@ -1,0 +1,105 @@
+// The fn_decl feature's LOWERINGS — the fn/extern declaration cores + their
+// ABI adapters + manifest rows (t-kd4y.3.3.1). This module imports ONLY
+// features.grammar + core — both already in every generated parser's
+// closure — so the F4012 import-closure invariant holds by construction.
+//
+// The production gram (../grammar.av) spells THREE builds and this manifest
+// carries exactly those: MkFnDecl/6 (the where-merging form — one rule
+// serves plain, generic, and where'd fns via empty captures), MkWhereParam/2
+// (one where entry), and MkExtern/3 (the bodyless FFI signature — its rule
+// lives in the fn fragment, so its row rides fn_lang exactly as
+// MkDestructure rides let_lang). The §2 oracle-era MkFnDecl/4 and /5 arms
+// (spelled by toy grams only) were DELETED with the flip — the convenience
+// purity move — and the toys re-point at /6 with unbound (Nil) captures for
+// the type-param/where slots, which coerce to the same empty lists the
+// production rule's absent groups produce.
+use core.{ParamEntry, Stmt, StmtId, Token, TypeParamEntry, ValueType, byte_span_none, type_expr_to_vtype}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_pentry_list, capval_to_stmt_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text, fn_decl_edges}
+
+/// `fn name < tp > ( params ) -> ret { body }` — the generic core. Absent
+/// return type defaults to Void; the type-param list is a payload, not an
+/// edge, so the edge set matches the plain form's.
+export fn mk_fn_decl_g(st: PState, name: string, tps: List<TypeParamEntry>, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>) -> CapVal {
+    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
+    CapVal.SNode(st.store.stmts.add(Stmt.Function(name, tps, params, ret_vt, body), fn_decl_edges(st, ret_vt), byte_span_none()))
+}
+
+/// `fn name < tp > ( params ) -> ret where wp { body }` — the `MkFnDecl`
+/// build with a WHERE CLAUSE (t-47hc.5).
+///
+/// The clause is not sugar for more angle-bracket parameters: it MERGES into
+/// them, and a name it mentions that the angle brackets did not declare is
+/// APPENDED as a fresh entry — the hand's `parse_where_clause` folding
+/// `merge_type_param_bound` over its entries, reproduced rather than
+/// re-derived. Merging on the grammar side is what lets the routed `fn_decl`
+/// own the form: nothing in the DSL can express "amend an earlier capture",
+/// so the fold has to live in a build.
+export fn mk_fn_decl_where_g(st: PState, name: string, tps: List<TypeParamEntry>, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool, body: List<StmtId>, wheres: List<TypeParamEntry>) -> CapVal {
+    mut merged = tps
+    for w in wheres {
+        merged = grammar_merge_type_param_bound(merged, w.name, w.bounds)
+    }
+    mk_fn_decl_g(st, name, merged, params, ret_cv, has_ret, body)
+}
+
+/// The hand's `merge_type_param_bound`, kept private beside its one caller.
+fn grammar_merge_type_param_bound(params: List<TypeParamEntry>, name: string, bounds: string) -> List<TypeParamEntry> {
+    mut out: List<TypeParamEntry> = []
+    mut found = false
+    for e in params {
+        if e.name == name {
+            let m = if e.bounds == "" { bounds } else { e.bounds + " + " + bounds }
+            out.push(TypeParamEntry { name: e.name, bounds: m })
+            found = true
+        } else {
+            out.push(e)
+        }
+    }
+    if !found { out.push(TypeParamEntry { name: name, bounds: bounds }) }
+    out
+}
+
+export fn mk_fn_decl_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    // Coercion ORDER mirrors the retired central arm exactly: name, tparams,
+    // params, ret (+ presence), body, wheres.
+    mk_fn_decl_where_g(st, capval_tok_text(vals[0]), capval_to_tparam_list(vals[1]), capval_to_pentry_list(vals[2]), vals[3], capval_present(vals[3]), capval_to_stmt_list(vals[4]), capval_to_tparam_list(vals[5]))
+}
+
+/// ONE `where` entry — `T: Trait1 + Trait2` (the `MkWhereParam` build's
+/// core). Distinct from the generics feature's `mk_type_param` in exactly
+/// one way: an angle-bracket parameter carries at most ONE bound, a where
+/// entry a `+`-joined list. The joiner is the hand's literal `" + "`, and
+/// the entry is the same `TypeParamEntry` shape, so `mk_fn_decl_where_g`
+/// can merge the two lists without knowing which is which.
+export fn mk_where_param(name: string, bounds: List<Token>) -> CapVal {
+    mut acc = ""
+    mut i = 0
+    for t in bounds {
+        if i > 0 { acc = acc + " + " + t.text } else { acc = t.text }
+        i = i + 1
+    }
+    CapVal.TParam(TypeParamEntry { name: name, bounds: acc })
+}
+
+export fn mk_where_param_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_where_param(capval_tok_text(vals[0]), capval_tok_list(vals[1]))
+}
+
+/// `extern fn name ( params? ) ( "->" ret )?` — a bodyless FFI signature
+/// (the `MkExtern` build's core). An absent return type defaults to Void.
+export fn mk_extern_fn(st: PState, name: string, params: List<ParamEntry>, ret_cv: CapVal, has_ret: bool) -> CapVal {
+    let ret_vt = if has_ret { type_expr_to_vtype(capval_to_texpr(st, ret_cv)) } else { ValueType.Void }
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ExternFn(name, params, ret_vt)))
+}
+
+export fn mk_extern_fn_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_extern_fn(st, capval_tok_text(vals[0]), capval_to_pentry_list(vals[1]), vals[2], capval_present(vals[2]))
+}
+
+/// ALL of the fn feature's rows — span-free (`Stmt.Function` rows carry
+/// byte_span_none; the statement-list loop stamps the outermost node).
+export fn fn_builds() -> List<BuilderBind> {
+    bind_rows("features.fn_decl.lowering", [bind_row("MkFnDecl", "stmt", 6, false, "mk_fn_decl_abi", mk_fn_decl_abi),
+     bind_row("MkWhereParam", "tparam", 2, false, "mk_where_param_abi", mk_where_param_abi),
+     bind_row("MkExtern", "stmt", 3, false, "mk_extern_fn_abi", mk_extern_fn_abi)])
+}

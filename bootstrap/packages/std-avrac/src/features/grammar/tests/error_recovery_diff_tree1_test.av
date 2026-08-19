@@ -1,0 +1,152 @@
+// One slice of the error-recovery differential corpus (t-kdyj.13).
+// The corpus was ONE file whose unit process measured 8.4GB resident —
+// each un-paired in-process oracle call builds a fresh store + registry
+// (~30MB) and arena memory is process-permanent, so the ONLY bound the
+// runner offers is fewer cases per PROCESS: per-scenario files, spread
+// across shard processes by the stride batcher. Oracle helpers + the
+// engine-pinning WHYs live in ONE home: parse/differential.av
+// (@std.avrac.parse). Specs are VERBATIM from the original file.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.parse.{CDEF, agree, agree_all, agree_bad, agree_error, agree_pos, agree_tree, dbrace, default_path, errcodes, errmsgs, exec_oracle, mode_env, msgs_agree_bad, pin, pin_pos, pin_tree, poslist, poslist_from, rdiags, rtree, rtree_at, sig_has_parse_code, static_raw, tpl_src, tree_agrees_everywhere, mode_parse, ModeRun, rendered}
+
+spec "t-47hc.3: recovery-TREE shape == exec oracle (invalid corpus) — part 1/3" {
+    // The same category-diverse invalid corpus as the F-code oracle, now asserting
+    // the RECOVERED TREES match — a strictly stronger check. Every case here agrees
+    // at the tree level (the single known divergence is characterised separately
+    // below), so this is the green gate that grows as leaf forms migrate.
+    then "stray top-level tokens recover to the same tree" {
+        agree_bad("fn a() -> int { 1 }\nthen\nfn b() -> int { 2 }") &&
+        agree_bad("fn a() -> int { 1 }\n)\nfn b() -> int { 2 }") &&
+        agree_bad("fn a() -> int { 1 }\n,\nfn b() -> int { 2 }") &&
+        // `* 5` (a binary-operator-led expr-stmt) was the one 5c divergence — the
+        // static parse_expr_stmt now yields Stmt.Error on a failed expression, so
+        // it recovers to the same bare `(error)` as hand (folded in from the
+        // former characterisation spec once the emit-error fix landed).
+        agree_bad("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") &&
+        agree_bad("else\nfn b() -> int { 2 }")
+    }
+    then "malformed declarations recover to the same tree" {
+        agree_bad("fn () -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree_bad("fn a( -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree_bad("fn a(x: ) -> int { 1 }\nfn b() -> int { 2 }") &&
+        agree_bad("fn a() -> { 1 }\nfn b() -> int { 2 }") &&
+        agree_bad("fn a() -> int\nfn b() -> int { 2 }") &&
+        // PINNED (see `pin`): the executor answers this field abort with an extra
+        // alternation diagnostic, so the COUNT half of `agree_bad` cannot hold.
+        pin_tree("type T = { x: , y: int }\nfn f() -> int { 1 }", "(error)\n(fn f () -> int (expr 1))", 2) &&
+        agree_bad("type T = { x: int\nfn f() -> int { 1 }") &&
+        agree_bad("type = { x: int }\nfn f() -> int { 1 }") &&
+        agree_bad("enum E { A, , B }\nfn f() -> int { 1 }") &&
+        agree_bad("enum E A B }\nfn f() -> int { 1 }") &&
+        agree_bad("trait T { fn m( }\nfn f() -> int { 1 }") &&
+        agree_bad("impl for Foo { }\nfn f() -> int { 1 }")
+    }
+    // The TREE half of the routed-keyword coverage. The F-code oracle above catches a
+    // dropped or added diagnostic; this catches the shape of what was BUILT — a routed
+    // rule that reports and then builds a partial node (a nameless `use`, a segment-less
+    // `mod`) has the same F-codes as hand's `(error)` and a different tree. Both halves
+    // are needed, which is the whole lesson of the `shape` regression.
+    then "malformed use / mod recover to the same tree" {
+        agree_bad("use\nfn f() -> int { 1 }") &&
+        agree_bad("use foo\nfn f() -> int { 1 }") &&
+        agree_bad("use foo.{\nfn f() -> int { 1 }") &&
+        agree_bad("use @.{x}\nfn f() -> int { 1 }") &&
+        agree_bad("use @std.{}\nfn f() -> int { 1 }") &&
+        agree_bad("use @std..{x}\nfn f() -> int { 1 }") &&
+        agree_bad("use @std.{,x}\nfn f() -> int { 1 }") &&
+        agree_bad("mod\nfn f() -> int { 1 }") &&
+        agree_bad("mod 5\nfn f() -> int { 1 }") &&
+        agree_bad("mod {\nfn f() -> int { 1 }")
+    }
+    // The DECL-WRAPPER rationale + its tree cases live with the wrapper
+    // block in error_recovery_diff_tree2_test.av (the corpus split moved
+    // the cases there; the paragraph travelled with them).
+    // t-47hc Phase 4, routing `let` / `mut` / `const`: the tree half of the binding
+    // corpus above. A routed rule that reports and then builds a partial binding (a
+    // nameless `let`, an initializer-less `mut`) has the same F-codes as hand's
+    // `(error)` and a different tree — the exact `shape`/`use`/`mod` lesson.
+    then "malformed bindings recover to the same tree" {
+        agree_bad("let\nfn f() -> int { 1 }") &&
+        agree_bad("let x\nfn f() -> int { 1 }") &&
+        agree_bad("let x =\nfn f() -> int { 1 }") &&
+        agree_bad("let x: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("let 5 = 1\nfn f() -> int { 1 }") &&
+        agree_bad("let mut = 1\nfn f() -> int { 1 }") &&
+        agree_bad("mut\nfn f() -> int { 1 }") &&
+        agree_bad("mut y y = 1\nfn f() -> int { 1 }") &&
+        agree_bad("const\nfn f() -> int { 1 }") &&
+        agree_bad("const C\nfn f() -> int { 1 }") &&
+        // The empty-type-annotation trio (see the F-code spec above): the TREE is the
+        // half that catches "reported the right message and kept the binding anyway".
+        agree_bad("mut x: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("const X: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("fn g() -> int {\n let a: = 1\n mut b: = 2\n const C: = 3\n return a\n}") &&
+        agree_bad("let (a b) = t\nfn f() -> int { 1 }") &&
+        agree_bad("fn f() -> int {\n    let x = )\n    1\n}") &&
+        agree_bad("fn f(o: int?) -> int {\n    let v = o else { 1 }\n    v\n}") &&
+        agree_bad("export let\nfn f() -> int { 1 }") &&
+        agree_bad("export const C\nfn f() -> int { 1 }") &&
+        agree_bad("/// d\nlet x: = 1\nfn f() -> int { 1 }") &&
+        agree_bad("@a\nmut\nfn f() -> int { 1 }") &&
+        agree_bad("let ( = t\nfn f() -> int { 1 }") &&
+        agree_bad("let (a, 5) = t\nfn f() -> int { 1 }") &&
+        agree_bad("let (a, b = t\nfn f() -> int { 1 }") &&
+        agree_bad("let (a, b) t\nfn f() -> int { 1 }") &&
+        agree_bad("let (a, b) =\nfn f() -> int { 1 }") &&
+        agree_bad("let mut (a b) = t\nfn f() -> int { 1 }") &&
+        agree_bad("export let (a b) = t\nfn f() -> int { 1 }")
+    }
+    // The tree half of the select / parallel corpus above.
+    // The tree half of the select / parallel corpus above. `select { x }` is the
+    // case that caught a real hand bug pre-routing: the arm loop bailed on a
+    // missing `<-` with the binding already consumed and NO report, so the input
+    // parsed clean with the arm silently dropped (fixed in select_stmt/parser.av
+    // alongside this corpus; agree_bad's silent-drop guard is what saw it).
+    then "malformed select / parallel recover to the same tree" {
+        agree_bad("parallel\nfn f() -> int { 1 }") &&
+        agree_bad("parallel x\nfn f() -> int { 1 }") &&
+        agree_bad("select\nfn f() -> int { 1 }") &&
+        agree_bad("select x\nfn f() -> int { 1 }") &&
+        agree_bad("select { x }\nfn f() -> int { 1 }") &&
+        agree_bad("select { 5 }\nfn f() -> int { 1 }") &&
+        agree_bad("select { x <- }\nfn f() -> int { 1 }") &&
+        agree_bad("select { x <- ch }\nfn f() -> int { 1 }") &&
+        agree_bad("select { x <- ch -> }\nfn f() -> int { 1 }") &&
+        agree_bad("select { x <- ch -> { 1 }\nfn f() -> int { 1 }")
+    }
+
+    // The tree half of the spec / given / then corpus above.
+    then "malformed spec / given / then recover to the same tree" {
+        agree_bad("spec\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\"\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" {\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { given }\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { given \"g\" }\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { then }\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { then \"t\" }\nfn f() -> int { 1 }") &&
+        agree_bad("spec \"s\" { given \"g\" { then } }\nfn f() -> int { 1 }")
+    }
+
+    // The tree half of the component-definition corpus above.
+    then "malformed component definitions recover to the same tree" {
+        agree_bad("component\nfn f() -> int { 1 }") &&
+        agree_bad("component C\nfn f() -> int { 1 }") &&
+        agree_bad("component C 5\nfn f() -> int { 1 }") &&
+        agree_bad("component C implements {\nfn f() -> int { 1 }") &&
+        agree_bad("component C implements A B { }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { config }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { config { x } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { config { x: } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { children { x } }\nfn f() -> int { 1 }") &&
+        // The TREE half of the non-IDENT entry (see the F-code spec above) — the half
+        // that catches "reported the right sequence and recovered somewhere else".
+        agree_bad("component C { config { 5 } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { children { 5 } }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { body: int }\nfn f() -> int { 1 }") &&
+        agree_bad("component C { let x }\nfn f() -> int { 1 }") &&
+        agree_bad("component C inst\nfn f() -> int { 1 }") &&
+        agree_bad("component C implements A inst { }\nfn f() -> int { 1 }")
+    }
+
+}

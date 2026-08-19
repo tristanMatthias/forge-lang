@@ -1,0 +1,46 @@
+// WHY: t-kdyj.12 — the solo retry's BOX PROTECTION. A ceiling-stopped
+// shard retried "solo on the drained box" used to run UNBOUNDED: on 8GB
+// fleet VMs a whale batch rode the F4014 soft-hold straight into a
+// runner-level OOM eviction, killing the job as an unattributable cancel
+// (eleven identical evictions on PR #1273 — no shard name, no F4014, the
+// per-shard logs dead with the VM). retry_bounded_cmd wraps the victim's
+// command with a HARD ceiling matched to the drained box minus a runner
+// reserve, CAPPED at the highest ceiling a fleet VM has actually
+// survived (7871MB stopped legibly twice; 8814MB evicted the VM). Below
+// the retry floor it returns "" — the DON'T-RETRY sentinel — because the
+// one degenerate export that must never be emitted is 0 ("disable the
+// ceiling"), and a 1GB ceiling on a compiler whose baseline exceeds it
+// would only replace the victim's honest first F4014 with a misleading
+// startup one. The caller (retry_ceiling_stopped) skips "" victims and
+// says so.
+use @std.avrac.test_runner.{retry_bounded_cmd}
+
+spec "t-kdyj.12: the solo retry's hard ceiling follows the drained box" {
+    then "a mid-size box exports avail minus the runner reserve" {
+        // 5000 - 768 = 4232: bounded, under the survivable cap, above the
+        // floor — the plain arithmetic case.
+        retry_bounded_cmd("run_shard > log 2>&1", 5000)
+            == "export AVRA_MEM_LIMIT_MB=4232; run_shard > log 2>&1"
+    }
+    then "a roomy box is CAPPED at the proven-survivable ceiling" {
+        // 9407 - 768 = 8639 was the first calibrated roll's ceiling — and
+        // the sibling roll's 8814 ceiling EVICTED its VM (avail 9582).
+        // Ceilings of 7871/7895 stopped legibly with the runner alive, so
+        // the cap pins to the measured-survivable value, not arithmetic.
+        retry_bounded_cmd("run_shard > log 2>&1", 9407)
+            == "export AVRA_MEM_LIMIT_MB=7871; run_shard > log 2>&1"
+    }
+    then "a box under the retry floor SKIPS the retry — the sentinel, never 0" {
+        // 1600 - 768 = 832 would starve any compile at startup; exporting
+        // 0 would DISABLE the ceiling (the eviction hole). Both answer ""
+        // and the victim keeps its first attempt's honest F4014.
+        retry_bounded_cmd("c", 1600) == "" && retry_bounded_cmd("c", 0) == ""
+    }
+    then "the wrapped command survives verbatim — redirects included" {
+        // The shard cmd's truncating `> log` redirect is what lets the
+        // retry's outcome REPLACE the first F4014 capture; the wrapper
+        // must not disturb it. 10000 - 768 = 9232 caps to 7871.
+        let out = retry_bounded_cmd("sh -c 'x && y' > /tmp/l 2>&1", 10000)
+        out.ends_with("sh -c 'x && y' > /tmp/l 2>&1") && out.starts_with("export AVRA_MEM_LIMIT_MB=7871; ")
+    }
+}

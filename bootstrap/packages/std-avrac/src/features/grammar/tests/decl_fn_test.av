@@ -23,7 +23,7 @@ use @std.avrac.core.{render_stmt_id}
 
 fn fn_grammar_src() -> string {
     "grammar Decl {\n" +
-    "  fn_decl    = \"fn\" name:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(name, params, ret, body)\n" +
+    "  fn_decl    = \"fn\" name:IDENT \"(\" ( params:param ( \",\" params:param )* )? \")\" ( \"->\" ret:type_expr )? \"{\" ( body:statement )* \"}\" -> MkFnDecl(name, pad_tp, params, ret, body, pad_wp)\n" +
     "  param      = pname:IDENT ( \":\" pt:type_expr )? -> MkParam(pname, pt)\n" +
     // ── body statement subset ──
     "  statement  = break_stmt | continue_stmt | return_stmt | expr_stmt\n" +

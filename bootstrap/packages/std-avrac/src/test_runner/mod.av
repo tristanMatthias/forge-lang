@@ -1241,6 +1241,61 @@ export fn output_has_ceiling_marker(out: string) -> bool {
     out.contains("error[F4014]: compiler memory ceiling")
 }
 
+/// The solo retry's BOX PROTECTION (t-kdyj.12): wrap a ceiling-stopped
+/// shard's command so the drained-box re-run carries a HARD memory
+/// ceiling matched to what the box actually offers, minus a runner
+/// reserve. Without it an unbounded whale rode the F4014 soft-hold
+/// straight into a runner-level OOM eviction on 8GB fleet VMs — the job
+/// died as an unattributable cancel, the shard's name and its F4014 log
+/// with it (nine identical evictions on PR #1273 before this). Bounded,
+/// a shard that cannot fit stops ITSELF with a named, phase-carrying
+/// F4014 in its own log — red but legible, and the runner survives to
+/// aggregate — while a shard that fits (the common pressure-confound
+/// case t-d91l built the retry for) completes exactly as before.
+///
+/// The pool's normal admissions must NEVER export AVRA_MEM_LIMIT_MB
+/// (that is the user's hard override — dispatch_batch's contract); the
+/// drained-box solo retry is the one seam where the orchestrator IS the
+/// deliberate decider. Floor guard: 0 would DISABLE the ceiling
+/// entirely, so a degenerate avail reading clamps to a real minimum
+/// rather than ever emitting a no-op or negative limit.
+export fn retry_bounded_cmd(cmd: string, avail_mb: int) -> string {
+    mut allowance = avail_mb - RETRY_RUNNER_RESERVE_MB
+    if allowance > RETRY_CEILING_CAP_MB { allowance = RETRY_CEILING_CAP_MB }
+    if allowance < RETRY_ALLOWANCE_FLOOR_MB { return "" }
+    "export AVRA_MEM_LIMIT_MB=${string(allowance)}; ${cmd}"
+}
+
+/// Headroom kept back from the drained box for the runner agent + OS
+/// churn during the retry (hosted runner agents alone hold ~700MB).
+/// SIZED FROM THE FIRST BOUNDED RUN'S MEASUREMENTS (2026-08-19, runs
+/// 32199097036/55): the drained fleet box offered 9407MB, and the whale
+/// shard (the error-recovery differential corpus — measured 8.4GB as
+/// ONE file; split per scenario since, t-kdyj.13, so no shard should
+/// reach this class again) stopped at the 1536-reserve ceiling of 7871MB while
+/// still climbing. 768 puts the ceiling at ~8.6GB there — above the
+/// whale's need, still a hard stop well under the box — where 1536 was
+/// 400MB too greedy and turned a fits-when-drained shard into a
+/// deterministic red. The fixture's own ~8.3GB appetite is the real
+/// defect (an in-process parse differential has no business there) and
+/// is tracked separately; this constant only decides how much of a
+/// DRAINED box the retry may use.
+const RETRY_RUNNER_RESERVE_MB = 768
+
+/// The smallest hard ceiling the retry will ever export — never 0
+/// (which AVRA_MEM_LIMIT_MB reads as "disable the ceiling").
+const RETRY_ALLOWANCE_FLOOR_MB = 1024
+
+/// The retry ceiling is CAPPED at the highest value a hosted-fleet VM has
+/// SURVIVED, whatever the sampled availability says. Measured on the
+/// 2026-08-19 t-kdyj.12 rolls: ceilings of 7871MB and 7895MB produced
+/// legible in-process F4014 stops (runner alive both times), while a
+/// ceiling of 8814MB (avail 9582 - 768) let the shard's RSS outrun its
+/// own poll and the VM was EVICTED — the exact failure the bound exists
+/// to prevent. A retry that cannot fit under this cap fails as the
+/// honest F4014 it already produced; it must never take the box with it.
+const RETRY_CEILING_CAP_MB = 7871
+
 /// Did the SHELL report this output's producer as killed?
 ///
 /// LINE-ANCHORED ON PURPOSE. A kill is announced by the shell as its own

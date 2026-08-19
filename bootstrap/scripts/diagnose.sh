@@ -2127,7 +2127,7 @@ acquire_compile_slot() {
   [ -z "${AVRA_USE_METADATA:-}" ] && heavy=1
   mkdir -p "$base"
   COMPILE_SLOT_DIR=""
-  local i dir owner got k held
+  local i dir owner got k held now born
   if [ "$heavy" -eq 1 ]; then
     while :; do
       echo $$ > "$pend"                 # (re)assert each attempt: lights yield
@@ -2138,7 +2138,21 @@ acquire_compile_slot() {
           echo $$ > "$dir/pid"; got="$got $dir"; k=$((k + 1))
         else
           owner=$(cat "$dir/pid" 2>/dev/null)
-          [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null && rm -rf "$dir" 2>/dev/null
+          if [ -n "$owner" ]; then
+            ! kill -0 "$owner" 2>/dev/null && rm -rf "$dir" 2>/dev/null
+          else
+            # Empty/missing pid is legitimate only in the microsecond
+            # mkdir->echo window. A slot ABANDONED there (its taker killed
+            # between the two) is invisible to the owner-liveness reap and
+            # WEDGES the whole pool: the heavy waits forever for all slots
+            # while holding heavy_pending, and every light acquirer yields
+            # to that live heavy at `sleep 0.2` — the t-kdyj.12 incident
+            # (a timeout-killed regen left slot.2 pid-less; a full suite
+            # run sat behind it for 20+ minutes). Reap once the dir is
+            # provably older than the window.
+            now=$(date +%s); born=$(stat -c %Y "$dir" 2>/dev/null || stat -f %m "$dir" 2>/dev/null || echo "$now")
+            [ $((now - born)) -ge 5 ] && rm -rf "$dir" 2>/dev/null
+          fi
         fi
       done
       if [ "$k" -eq "$n" ]; then
@@ -2162,7 +2176,13 @@ acquire_compile_slot() {
         dir="$base/slot.$i"
         if mkdir "$dir" 2>/dev/null; then echo $$ > "$dir/pid"; COMPILE_SLOT_DIR="$dir"; return 0; fi
         owner=$(cat "$dir/pid" 2>/dev/null)
-        [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null && rm -rf "$dir" 2>/dev/null
+        if [ -n "$owner" ]; then
+          ! kill -0 "$owner" 2>/dev/null && rm -rf "$dir" 2>/dev/null
+        else
+          # Same empty-pid reap as the heavy loop above (t-kdyj.12).
+          now=$(date +%s); born=$(stat -c %Y "$dir" 2>/dev/null || stat -f %m "$dir" 2>/dev/null || echo "$now")
+          [ $((now - born)) -ge 5 ] && rm -rf "$dir" 2>/dev/null
+        fi
       done
       sleep 0.2
     done

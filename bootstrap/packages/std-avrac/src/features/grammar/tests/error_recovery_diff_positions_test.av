@@ -1,0 +1,187 @@
+// One slice of the error-recovery differential corpus (t-kdyj.13).
+// The corpus was ONE file whose unit process measured 8.4GB resident —
+// each un-paired in-process oracle call builds a fresh store + registry
+// (~30MB) and arena memory is process-permanent, so the ONLY bound the
+// runner offers is fewer cases per PROCESS: per-scenario files, spread
+// across shard processes by the stride batcher. Oracle helpers + the
+// engine-pinning WHYs live in ONE home: parse/differential.av
+// (@std.avrac.parse). Specs are VERBATIM from the original file.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.parse.{CDEF, agree, agree_all, agree_bad, agree_error, agree_pos, agree_tree, dbrace, default_path, errcodes, errmsgs, exec_oracle, mode_env, msgs_agree_bad, pin, pin_pos, pin_tree, poslist, poslist_from, rdiags, rtree, rtree_at, sig_has_parse_code, static_raw, tpl_src, tree_agrees_everywhere, mode_parse, ModeRun, rendered}
+
+spec "t-47hc.33.1: a reserved-keyword field name parses on every path" {
+    then "`.ref` reports the SEMANTIC error, identically on all three paths" {
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.ref))\n}")
+    }
+    then "and so do the other reserved spellings" {
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.owned))\n}") &&
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.move))\n}")
+    }
+    then "chained past a reserved field name" {
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.ref.a))\n}")
+    }
+    then "the optional-chain form agrees too" {
+        agree_all("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s?.borrow))\n}")
+    }
+    then "an ACTIVE keyword after the dot is a PARSE error — and still agrees" {
+        // The other half of the FIELDNAME contract. `if` is Tk.KwIf, not KwReserved, so
+        // both front ends must REJECT it; a branch matching the DSL's coarse `KW` kind
+        // would have accepted it and diverged here.
+        agree_error("type S = { a: int }\nfn main() {\n let s = S { a: 1 }\n println(string(s.if))\n}")
+    }
+}
+
+spec "t-47hc.26: statement-position `if let` lowers to the hand's STATEMENT tree" {
+    then "a statement-position `if let` is a Stmt.Block + Stmt.If, not an ExprStmt" {
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n mut t = 0\n if let v = x { t = v } else { return 0 - 1 }\n t\n}") &&
+        tree_agrees_everywhere("fn g(x: int?) -> int {\n if let v = x { return v } else { return 0 }\n}")
+    }
+    then "with NO else, the else stays ABSENT — no synthesized empty block" {
+        // The regression that motivated the shared-core routing. An if-EXPRESSION needs
+        // a value and so must invent an else; `Stmt.If` takes `none`, and the hand
+        // passes `none`. Asserting the tree is the only way to see the difference.
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n mut t = 0\n if let v = x { t = v }\n t\n}")
+    }
+    then "a nested if-let picks its position independently, and mints in hand order" {
+        // The outer is EXPRESSION position (a `let` initializer) and the inner is
+        // STATEMENT position inside the then-block, so one source line exercises both
+        // lowerings at once. Also pins the `@gensym(iflet)` order: the outer must be
+        // `$iflet$1` and the inner `$iflet$2`, which is why the mint sits between `"if"`
+        // and `"let"` in BOTH rules rather than at build time.
+        tree_agrees_everywhere("fn f(a: int?, b: int?) -> int {\n let r = if let p = a { if let q = b { q } else { p } } else { 0 }\n r\n}")
+    }
+}
+
+spec "t-47hc.33.2: the `!` compounds parse identically on all three paths" {
+    then "a NEXT-LINE suffix after `!` does not fold onto the previous line" {
+        // Newline-sensitivity is the whole question. `[0]` and `(1)` must start FRESH
+        // statements (a list literal and a group), not become an index and a call —
+        // which is what the entry guard's same-line conjunct is for.
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n [0]\n return 0\n}") &&
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n (1)\n return 0\n}")
+    }
+    then "a next-line `.field` DOES fold — and that is the designed asymmetry" {
+        // `.` is the one postfix whose entry guard requires same-line ONLY under
+        // `cell_mode`, because cross-line method chaining is idiomatic. Pinned so a
+        // later "consistency" tidy-up cannot quietly make `.` newline-sensitive too.
+        tree_agrees_everywhere("type S = { f: int }\nfn f(x: S?) -> int {\n let a = x!\n .f\n return 0\n}")
+    }
+    then "and the SAME-LINE compounds, which the hand ran as ONE step" {
+        // `x!!` and `x!?` are the `!` loop's own shape — the hand consumed the run and
+        // then dispatched without re-guarding. Native, each is a separate re-entered
+        // step; that this makes no observable difference is the claim under test.
+        //
+        // The doubly-nullable parameter goes through an ALIAS. Written inline as
+        // `x: int??` the fixture does not parse AT ALL — `??` in a parameter type is
+        // `error[F0001]: expected \`)\` after parameters`, on every path — so the
+        // assertion agreed about recovery from a malformed PARAMETER LIST and never
+        // reached the `!!` it names. Green, and measuring nothing: the same
+        // typo'd-fixture trap this file records retiring BARE_IDENT_COMP_INST for.
+        //
+        // `exec_oracle(src) == ""` is what makes the repair hold. `tree_agrees_everywhere`
+        // compares RENDERED TREES and nothing else, so it cannot reject a parse error the
+        // three paths share — which is exactly how the `int??` version passed. Verifying
+        // the replacement compiles and then writing "verified" in a comment would repeat
+        // the defect one level up, so the clean parse is ASSERTED. Same idiom the
+        // same-line control below uses. (`agree_all` is deliberately not added: on a clean
+        // program it compares empty against empty, the vacuity this file polices.)
+        let ubang = "type W = int?\nfn f(x: W?) -> int {\n let a = x!!\n return 0\n}"
+        tree_agrees_everywhere(ubang) && exec_oracle(ubang) == "" &&
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}")
+    }
+    then "a next-line `?` after a `!` run does NOT fold — the fallthrough re-guards" {
+        // t-47hc.33.2 — this case used to DIVERGE and was carried as a comment rather
+        // than an assertion. Measured then:
+        //
+        //     hand  error[F0040]: expected expression
+        //     emit  <clean>   — folded to (let a (? (call __avra_force_unwrap (x))))
+        //     exec  <clean>   — same as emit
+        //     prod  <clean>
+        //
+        // Mechanism: `postfix_step` (parse/mod.av) consumes a run of `!` in a `while`
+        // loop and then re-dispatched on `if self.check(Tk.Question)` with NO re-test of
+        // the entry guard's `allow_dot_postfix && current_line == prev_line`, so a `?` on
+        // the FOLLOWING line folded into a Try that the entry guard would have rejected.
+        // The fallthrough now re-tests those conjuncts: a guard belongs on every dispatch
+        // of a form, not only the first. All four paths report F0040 together.
+        //
+        // This is a STRICTNESS change — the parser now rejects what it accepted — so it
+        // ships under `intended-strictness-change`, not as a silent correction.
+        //
+        // Its siblings never diverged, which is why this was one bug and not a class:
+        // `[` and `(` reach the same fallthrough but land in a fresh step on every path,
+        // and `.` is legal cross-line by design (above).
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}") &&
+            agree_all("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}") &&
+            // The exact diagnostic, not merely agreement — an equal-and-nonzero
+            // signature is not evidence of the RIGHT rejection.
+            exec_oracle("fn f(x: int?) -> int {\n let a = x!\n ?\n return 0\n}").contains("F0040")
+    }
+    then "the SAME-LINE `!` compounds still fold — the guard did not over-reject" {
+        // The control for the strictness change above: `x!?` on ONE line must stay
+        // clean on every path. A re-guard that also killed this would be a regression,
+        // and nothing else in this spec would have caught it.
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") &&
+            exec_oracle("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") == ""
+    }
+}
+
+spec "t-47hc.5.1: the per-statement SrcPos side-table is stamped exactly" {
+    // Each expectation is the sequence `push_body_elem` produces: body rows first, in
+    // source order, then the enclosing block, then the trailing `fn`. A rule that
+    // stopped stamping loses its entry; one that stamped at the wrong token moves it.
+    then "a native instantiation body stamps every body statement" {
+        pin_pos("component C inst { key \"v\"\n  let z = 1\n  foo()\n}\nfn f() -> int { 1 }",
+                "2:3 3:3 1:1 5:17 ")
+    }
+    then "config pairs do not disturb the body's positions" {
+        pin_pos("component C inst { a 1\n  b \"s\"\n  let z = 1\n}\nfn f() -> int { 1 }",
+                "3:3 1:1 5:17 ")
+    }
+    // The four arms B2b made native (nested `component`, `ident name {`, `ident {`,
+    // `ident() {`). Their stamping did not move when they flipped — which is the
+    // assertion, and it failed until each routed arm stamped like `push_body_elem`.
+    then "the once-declined arms are stamped at their own lead token" {
+        pin_pos("component C inst { nested name { let z = 1 } }\nfn f() -> int { 1 }", "1:34 1:20 1:1 2:17 ") &&
+        pin_pos("component C inst { nested { let z = 1 } }\nfn f() -> int { 1 }", "1:29 1:20 1:1 2:17 ") &&
+        pin_pos("component C inst { run() { let z = 1 } }\nfn f() -> int { 1 }", "1:28 1:20 1:1 2:17 ") &&
+        pin_pos("component C inst { component D e { } }\nfn f() -> int { 1 }", "1:20 1:1 2:17 ")
+    }
+    then "positions survive a MALFORMED body too (recovery still stamps)" {
+        pin_pos("component C inst { let x }\nfn f() -> int { 1 }", "1:1 2:17 ") &&
+        pin_pos("component C inst { nested name }\nfn f() -> int { 1 }", "1:1 2:17 ")
+    }
+}
+
+spec "t-47hc.5.1 slice C: bare-IDENT component instantiation recovers as the hand does" {
+    // `acct_sr a` with no `{` is NOT malformed — it parses as two ordinary identifier
+    // expression statements on both paths, with no diagnostic. It looked like an abort
+    // path from reading parse_component_block_bare; measuring it showed otherwise, so
+    // it is a TREE agreement rather than an agree_bad case.
+    then "a registered name + instance with no brace is two expressions, not an error" {
+        // TREE, per the note above — on this clean input the signature
+        // oracle compares empty against empty and proves nothing.
+        agree_tree(CDEF() + "fn u() -> int {\n acct_sr a\n 0\n}")
+    }
+
+    then "and on ALL THREE parser paths, including the executor" {
+        agree_all(CDEF() + "fn u() -> int {\n acct_sr a\n 0\n}") &&
+        agree_all(CDEF() + "fn u() -> int {\n acct_sr a { balance = 1\n 0\n}")
+    }
+
+    // NOT included, and deliberately so: `acct_sr a { balance = }` (a config pair with
+    // no value) diverges between the static path and the hand TODAY — measured before
+    // any slice C routing, on a form the hand still owns. It is a PRE-EXISTING gap in
+    // component-body recovery that this corpus exposed, not something routing caused,
+    // and it wants its own ticket rather than a red baseline here. The unterminated
+    // sibling (`{ balance = 1`) DOES agree on all three paths and is asserted above,
+    // so the malformed-body class is still guarded.
+
+    // The instance-name-missing case is NOT an error: the hand falls back to
+    // parse_statement, so `acct_sr` alone is an ordinary identifier expression.
+    // Pinned as a TREE agreement rather than agree_bad, since nothing reports.
+    then "a registered name with no instance falls back to an expression, as the hand does" {
+        agree_tree(CDEF() + "fn u() -> int {\n acct_sr\n 0\n}")
+    }
+}

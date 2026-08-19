@@ -1,0 +1,94 @@
+// The fn-family LanguageFeature definitions (t-kd4y.3.3.1): fn_lang carries
+// the fragment + THREE manifest rows (MkFnDecl/6, MkWhereParam/2, MkExtern/3
+// — the extern rule lives in the fn fragment); extern_lang carries the FFI
+// surface; generics_lang carries the shared `tparam` rule + MkTypeParam/2.
+// The §2 oracle-era MkFnDecl/4 and /5 arms are DELETED (toys re-point at /6
+// with Nil-padded captures), and `MkParam` stays central — its `param` rule
+// is pinned to the shared base (lambdas/trait/impl reference it), grouped
+// with the paren family (t-kd4y.3.5.3).
+use @std.avrac.features.fn_decl.{fn_lang}
+use @std.avrac.features.extern_decl.{extern_lang}
+use @std.avrac.features.generics.{generics_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+
+spec "fn family as LanguageFeatures" {
+    then "the keywords derive from the declared grammars" {
+        mut has_fn = false
+        mut has_extern = false
+        for k in feature_keywords(fn_lang()) {
+            if k == "fn" { has_fn = true }
+            if k == "extern" { has_extern = true }
+        }
+        has_fn && has_extern
+    }
+    then "titles, docs, and editor snippets are carried" {
+        let f = fn_lang()
+        let e = extern_lang()
+        let g = generics_lang()
+        f.title.length > 0 && f.docs.contains("where") && f.snippet.contains("fn")
+            && e.title.length > 0 && e.docs.contains("bodyless") && e.snippet.contains("extern")
+            && g.title.length > 0 && g.docs.contains("monomorphizes")
+    }
+    then "the declared rules reach the composed whole-program view" {
+        // Rule DEFINITIONS, not renders: rendered output can contain a
+        // rule-body REFERENCE even when the definition is absent, so the
+        // availability check reads g.rules directly; the render checks then
+        // pin the builds those definitions spell.
+        mut fn_def = false
+        mut ex_def = false
+        mut tp_def = false
+        for r in avra_program_grammar().rules {
+            if r.name == "fn_decl" { fn_def = true }
+            if r.name == "extern_decl" { ex_def = true }
+            if r.name == "tparam" { tp_def = true }
+        }
+        let prog = render_grammar(avra_program_grammar())
+        fn_def && ex_def && tp_def
+            && prog.contains("MkFnDecl(name, tparams, params, ret, body, wp)")
+            && prog.contains("MkWhereParam(wn, wb)")
+            && prog.contains("MkExtern(ename, eparams, eret)")
+            && prog.contains("MkTypeParam(tpn, tpb)")
+    }
+    then "the decl-fragment registry serves fn_decl, extern_decl, and tparam" {
+        mut fn_r = false
+        mut ex_r = false
+        mut tp_r = false
+        for g in feature_decl_grammar_fragments() {
+            for r in g.rules {
+                if r.name == "fn_decl" { fn_r = true }
+                if r.name == "extern_decl" { ex_r = true }
+                if r.name == "tparam" { tp_r = true }
+            }
+        }
+        fn_r && ex_r && tp_r
+    }
+    then "the four rows ride the manifest and NOTHING is left central" {
+        mut fd = ""
+        mut wp = ""
+        mut ex = ""
+        mut tp = ""
+        for b in feature_builders() {
+            let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
+            if b.name == "MkFnDecl" { fd = row }
+            if b.name == "MkWhereParam" { wp = row }
+            if b.name == "MkExtern" { ex = row }
+            if b.name == "MkTypeParam" { tp = row }
+        }
+        fd == "stmt/6/flat/mk_fn_decl_abi/features.fn_decl.lowering"
+            && wp == "tparam/2/flat/mk_where_param_abi/features.fn_decl.lowering"
+            && ex == "stmt/3/flat/mk_extern_fn_abi/features.fn_decl.lowering"
+            && tp == "tparam/2/flat/mk_type_param_abi/features.generics.lowering"
+            && central_build_kind("MkFnDecl") == ""
+            && central_build_kind("MkWhereParam") == ""
+            && central_build_kind("MkExtern") == ""
+            && central_build_kind("MkTypeParam") == ""
+    }
+    then "MkParam stays central — the shared base owns the `param` rule" {
+        mut param_rows = 0
+        for b in feature_builders() {
+            if b.name == "MkParam" { param_rows = param_rows + 1 }
+        }
+        param_rows == 0 && central_build_kind("MkParam") == "pentry"
+    }
+}
