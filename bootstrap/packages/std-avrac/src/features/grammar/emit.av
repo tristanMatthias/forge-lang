@@ -1714,6 +1714,16 @@ fn single_plain_ref_group(g: Grammar, node: GNode, list_labels: List<string>) ->
             let it = b.items[0]
             if !rep_is_one(it.rep) || it.sameline || it.cut || it.require { return no }
             if it.mode_off != "" || it.mode_on != "" || it.mode_bump != "" || it.mode_on_if != "" || it.bound != "" { return no }
+            // The fast-path is a bare `parse_X` call + accumulate — legal ONLY when
+            // emit_node_items would add nothing else. An `@onfail(policy)` item's whole
+            // policy (the `__bdiag` bail check, skip's else-arm, …) is emitted BY
+            // emit_node_items, so taking the fast-path for one silently DELETES the
+            // policy from the generated parser: the t-kd4y.3.5.8 table-row regression —
+            // `( @onfail(bail) rows:table_row )*` became stall-capable when the
+            // transitive rule_reaches_spec landed, took this path, and the emitted loop
+            // lost its bail while the executor kept it (exec 2 diags, emit 1). Same
+            // reasoning shields `@gate` (its machinery also lives outside this shape).
+            if it.onfail != "" || it.gate { return no }
             match it.prim {
                 .Ref(nm) -> {
                     let acc = if it.label != "" && str_in(list_labels, it.label) {
@@ -2157,7 +2167,31 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     let req = match item.rep { .Plus -> "${ind}if ${req_bound_guard}!(${same_line_wrap(item, node_first_guard(g, inner, []))}) {\n${ind}    st.report(\"${req_msg}\")\n${req_abort}${ind}}\n"  _ -> "" }
             // The bound pieces are empty strings when unbounded, so splicing them into
             // this multi-line shape leaves the generated text byte-identical.
-            if group_can_stall(g, inner) {
+            if node_has_gate(inner) {
+                // t-myz7: a GATED repetition MUST carry the no-progress break. `@gate`
+                // drops the element's FIRST from the loop condition, and that FIRST was
+                // also what terminated the loop — so `while lookahead_ok(cond, st)` over
+                // an element that consumes nothing spins forever. Measured: `enum E {`
+                // with a gated variant loop HUNG (exit 124), it did not merely report the
+                // wrong message. The break is the same one group_can_stall emits,
+                // required here for the same reason: the loop
+                // condition no longer implies progress.
+                //
+                // Tested BEFORE group_can_stall: a gated group that is ALSO
+                // stall-capable needs the gated machinery (abort arm / first check /
+                // unwind), which the stall branch does not emit — and this branch
+                // already carries the break the stall branch exists to add.
+                req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
+                    bnd.guard +
+                    "${ind}    let __rep_before = st.pos\n" +
+                    gated_abort_arm(g, inner, ind + "    ") +
+                    gated_first_check(g, inner, ind + "    ", annots) +
+                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
+                    gated_abort_unwind(g, inner, ind + "    ") +
+                    "${ind}    if st.pos == __rep_before { break }\n" +
+                    bnd.step +
+                    "${ind}}\n"
+            } else if group_can_stall(g, inner) {
                 // Two body orders, split by WHAT a no-progress iteration hands back.
                 let spr = single_plain_ref_group(g, inner, list_labels)
                 if spr.applies {
@@ -2178,25 +2212,6 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                         bnd.step +
                         "${ind}}\n"
                 }
-            } else if node_has_gate(inner) {
-                // t-myz7: a GATED repetition MUST carry the no-progress break. `@gate`
-                // drops the element's FIRST from the loop condition, and that FIRST was
-                // also what terminated the loop — so `while lookahead_ok(cond, st)` over
-                // an element that consumes nothing spins forever. Measured: `enum E {`
-                // with a gated variant loop HUNG (exit 124), it did not merely report the
-                // wrong message. The break is the same one group_can_stall emits,
-                // required here for the same reason: the loop
-                // condition no longer implies progress.
-                req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
-                    bnd.guard +
-                    "${ind}    let __rep_before = st.pos\n" +
-                    gated_abort_arm(g, inner, ind + "    ") +
-                    gated_first_check(g, inner, ind + "    ", annots) +
-                    emit_node_items(g, inner, annots, ind + "    ", list_labels, opts, 0, spec_ctx) +
-                    gated_abort_unwind(g, inner, ind + "    ") +
-                    "${ind}    if st.pos == __rep_before { break }\n" +
-                    bnd.step +
-                    "${ind}}\n"
             } else {
                 req + bnd.decl + "${ind}while ${same_line_wrap(item, node_first_guard(g, inner, []))} {\n" +
                     bnd.guard +

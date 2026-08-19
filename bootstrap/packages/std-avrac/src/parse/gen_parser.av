@@ -4843,9 +4843,14 @@ fn parse_table_lit(st: PState) -> CapVal {
     let _ = __bres1
     while starts_table_row(st) {
         let __rep_before = st.pos
-        let __rep_cv = parse_table_row(st)
+        let __bdiag0 = st.diags.length
+        let __bres0 = parse_table_row(st)
+        if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
+            st.set_abort_prop(true)
+            return CapVal.Node(st.error_node_silent())
+        }
+        rows_list.push(capval_to_expr(st, __bres0))
         if st.pos == __rep_before { break }
-        rows_list.push(capval_to_expr(st, __rep_cv))
     }
     if st.cur().tk == Tk.RightBrace { let _ = st.advance() } else {
         st.report("expected `}` to close table")
