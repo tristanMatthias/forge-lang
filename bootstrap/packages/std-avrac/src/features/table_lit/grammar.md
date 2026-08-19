@@ -3,8 +3,9 @@
 A `table` literal is row-oriented data-entry sugar: an aligned header row
 of field names followed by one data row per record. It desugars to a
 `List<RowStruct>` of struct literals — ordinary statically-typed structs,
-not opaque maps. Parsing lives in `parse/mod.av` (`parse_table_literal`);
-row-type inference lives in `desugar/mod.av`.
+not opaque maps. Parsing lives in this feature's own gram (`mod.av` —
+the `table_lit` / `table_head` / `table_row` rules) with its lowerings in
+`lowering/mod.av`; row-type inference lives in `desugar/mod.av`.
 
 ## Syntax
 
