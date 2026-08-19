@@ -279,7 +279,7 @@ fn has_field(inits: List<FieldInit>, name: string) -> bool {
 
 /// The raw DSL text of the instance's `gram` pair — the String argument of
 /// the `parse_grammar("…")` call the `grammar { }` block desugared to at
-/// parse time (executor.av mk_grammar_block), outer quotes stripped. ""
+/// parse time (mod.av mk_grammar_block — feature-owned since t-kd4y.3.5.6), outer quotes stripped. ""
 /// when the pair is absent or shaped differently (e.g. a no_grammar()
 /// call), which simply opts the instance out.
 fn gram_text_of(store: NodeStore, inits: List<FieldInit>) -> string {

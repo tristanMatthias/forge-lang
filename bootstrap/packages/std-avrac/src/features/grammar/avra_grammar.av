@@ -98,38 +98,22 @@ export fn avra_expr_spine_grammar() -> Grammar {
              | @peek(ident_lbrace_plain) @when(allow_struct_lit) base:struct_lit_expr ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
-  // t-myz7 — the `grammar { … }` feature block, native. This is `@rawbrace`'s canonical
-  // consumer (ast.av:322 gives this exact rule as the marker's example): the body is NOT
-  // Avra syntax, so it is captured verbatim and handed to the runtime engine as a string.
-  //
-  // Byte-for-byte `parse_grammar_block` (features/grammar/parser.av), which is
-  // only ever `{` + `capture_balanced_brace_body` + `}` + build-the-desugared-call —
-  // and `@rawbrace` IS that capture, sharing `rawbrace_scan` rather than
-  // re-deriving the depth count.
-  //
-  // The `@peek(ident_lbrace_feature)` gate is the REGISTRY check, not a keyword test —
-  // `lookup_expr_parser(features, name)` — so a program that
-  // has not registered the feature must still read `grammar` as an ordinary identifier.
-  // The gate asks the same registry, through `PState.host`'s `.features`. Pairing
-  // it with the leading `"grammar"` literal is what keeps the sibling feature form
-  // (`table { … }`, which the same cond also admits) out of this branch.
-  grammar_expr = "grammar" "{" body:@rawbrace(grammar) "}" -> MkGrammarBlock(body)
+  // `grammar_expr` lives with the grammar feature (features/grammar's
+  // grammar_block_lang, gram_family = "expr", t-kd4y.3.5.6) — the
+  // @peek(ident_lbrace_feature) REGISTRY-gate history rides its comments.
   // The `table [<Row>] { … }` literal (table_lit / table_head / table_row)
   // lives with the table_lit feature (gram_family = "expr", t-kd4y.3.5.5)
   // — dispatched from the ladder above by name behind
   // @peek(ident_lbrace_feature); the line-sensitivity and bail history
   // ride the rules' own comments there.
-  struct_lit_expr = n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkStructLit(n, f)
+  // `struct_lit_expr` + the shared `field_init` live with the struct_lit
+  // feature (features/struct_decl's struct_lit_lang, gram_family = "expr",
+  // t-kd4y.3.5.6); qualified_expr / with_suffix / the splice-struct branch
+  // reference `field_init` cross-fragment by name.
   tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
-  // The segment name after `::` is `@require`d: unrequired it reported a bare
-  // "expected IDENT" and PARSED ON, so `@pkg::mod::name` — where `mod` is a keyword, not
-  // an identifier — left the cursor on `mod` for the declaration dispatch to pick up and
-  // added "expected module name after `mod`" on top of the single message.
-  qualified_expr = "@" n:IDENT ( @peek(double_colon) ":" ":" @require s:IDENT )+
-                   ( @when(allow_struct_lit) lb:"{" ( @onfail(bail) f:field_init )* "}" )?
-                   @expect("IDENT", "expected identifier after `::` in qualified reference")
-                   @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
-                   @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
+  // `qualified_expr` lives with the modules feature (qualified_ref_lang,
+  // gram_family = "expr", t-kd4y.3.5.6) — the @require'd-segment reporting
+  // posture rides its comments there.
   template_lit = t:TEMPLATE -> MkTemplate(t)
   brace_expr   = @peek(brace_map) map_literal | block_expr
   // `map_literal` lives with the map_lit feature (gram_family = "expr",
@@ -219,18 +203,13 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // succeeded with no overrides, and `{ 1 }` fell out as a separate block statement with
   // NO diagnostic at all. A zero-match `+` fails the rule, which is exactly that
   // behaviour.
-  with_suffix = "with" @require "{" ( @onfail(bail) f:field_init )+ @require "}" @expect("{", "expected `{` after `with`") @expect("+", "expected field name") @expect("}", "expected `}` after struct fields") -> MkWithSuffix(f)
-  // The VALUE propagates, mirroring `parse_expression()?` in
-  // `parse_field_init_list` (features/struct_decl/parser.av) — a failed value aborts
-  // the whole literal. Unrequired, `T { x: }` built `(struct T (x=(error)))`, a literal
-  // asserting a field was initialised, instead of taking out the literal, the binding and
-  // the enclosing fn. The NAME cannot carry `@require`: it is the
-  // sequence's leading item and therefore the FIRST-set guard, which the DSL rejects
-  // outright — and it needs no guard, since the rule is only entered when that FIRST holds.
-  field_init  = n:IDENT ( ":" @onfail(bail) v:expression )? ( "," )? -> MkFieldInit(n, v)
-  variant_ctor = "." @require v:IDENT ( "(" ( a:expression ( "," a:expression )* )? @require ")" )?
-                 @expect("IDENT", "expected a variant name after `.`", F0040)
-                 @expect(")", "expected `)` after arguments") -> mk_enum_ctor(v, a)
+  // `with_suffix` lives with the with feature (with_expr_lang,
+  // gram_family = "expr", t-kd4y.3.5.6) — every unary branch's suffix
+  // tail references it by name; fold_postfix_with stays engine-core.
+  // `variant_ctor` lives with the enum_ctor feature (features/struct_decl's
+  // enum_ctor_lang, gram_family = "expr", t-kd4y.3.5.6). The postfix
+  // `.Variant(args)` SUFFIX branch above stays with the chain until the
+  // .3.5.8 postfix flip.
   // channel_expr lives with its feature (features/channels, gram_family =
   // "expr", t-kd4y.3.5.1) — referenced from the ladder above by name.
   // The `quote` family lives with its feature (features/quote_expr, gram_family

@@ -1,0 +1,26 @@
+// The with feature's LOWERING (t-kd4y.3.5.6): the `with { … }` postfix
+// suffix. One spanned row, anchored at the `with` keyword. Imports ONLY
+// features.grammar + core (F4012).
+use core.{Expr, ExprId, byte_span}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_finit_list}
+
+/// Build ONE `with { … }` suffix as a PARTIAL `Expr.With` whose receiver
+/// is a placeholder — `fold_postfix_with_expr`/`fold_with_expr` rebind it
+/// to the running base via `rebind_with`. The span is `[with-start,
+/// next-token)`: `rebind_with` reads this node's `.hi` to stamp each
+/// rebuilt `With`, so a chained `a with { } with { }` reproduces the
+/// retired hand loop's per-iteration `alloc_at(…, sp_start)` spans
+/// exactly.
+export fn mk_with_suffix(st: PState, sp_start: int, finits_cv: CapVal) -> ExprId {
+    let inits = capval_to_finit_list(finits_cv)
+    let recv = st.store.exprs.add_leaf(Expr.Missing)
+    st.store.add_expr(Expr.With(recv, inits), byte_span(sp_start, st.cur().pos), [])
+}
+
+export fn mk_with_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_with_suffix(st, st.build_sp, vals[0]))
+}
+
+export fn with_expr_builds() -> List<BuilderBind> {
+    bind_rows("features.with_expr.lowering", [bind_row("MkWithSuffix", "expr", 1, true, "mk_with_suffix_abi", mk_with_suffix_abi)])
+}

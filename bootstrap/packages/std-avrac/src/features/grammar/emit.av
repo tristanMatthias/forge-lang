@@ -543,7 +543,6 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
     if row != null { return row!.spanned }
     name == "fold_logical" || name == "fold_nullish" || name == "fold_pipe" ||
         name == "fold_with" || name == "fold_postfix_with" || name == "mk_assign" || name == "rebind_eq" ||
-        name == "mk_enum_ctor" ||
         name == "MkExprBlock" ||
         // `( a, b, … )` tuple spans sp_start = the `(` byte (t-47hc paren prep, DORMANT) —
         // its owning rule enters at `(`, like MkListLit's at `[`.
@@ -573,15 +572,11 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
         // A `with { … }` suffix spans sp_start = the `with` byte (t-47hc.17): its owning
         // with_suffix rule enters there, and rebind_with reads the partial node's `.hi`
         // to stamp each rebuilt `With` in a chained `a with { } with { }`.
-        name == "MkWithSuffix" ||
         name == "MkSplice" ||
         name == "MkSpliceStruct" ||
-        name == "MkQualExpr" ||
         // t-47hc slice 8 — both IDENT-led primaries span from the NAME token, so they
         // thread the rule-entry byte exactly as MkQualExpr does (a tagged template's
         // Call node must start at the tag, not at the template literal).
-        name == "MkGrammarBlock" ||
-        name == "MkStructLit" ||
         name == "MkTaggedTemplate" ||
         // A prefix WRAPPER's inner declaration carries its OWN position, stamped from
         // the byte where the inner starts — the hand captures it right after consuming
@@ -2522,7 +2517,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // Contextual enum ctor `.Variant`/`.Variant(args)` (Phase 3a-7 slice 4): `v` is
         // the scalar variant IDENT, `a` the repetition args-list accumulator (empty ⇒
         // nullary). sp_start = the `.` byte, spanned like the hand alloc_at.
-        "mk_enum_ctor" -> "CapVal.Node(mk_enum_ctor_expr(st, sp_start, ${args[0]}, CapVal.Nodes(${args[1]}_list)))"
         "mk_eqchain" -> "CapVal.Node(mk_eqchain_expr(st, CapVal.Toks(${args[0]}_list), CapVal.Nodes(${args[1]}_list)))"
         "Unary" -> "CapVal.Node(unary_expr(st, ${args[0]}, ${args[1]}))"
         "field_suffix" -> "CapVal.Node(st.store.exprs.add_leaf(Expr.FieldAccess(st.missing_node(), capval_tok_text(${args[0]}))))"
@@ -2571,7 +2565,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // hand's unstamped `alloc_stmt_leaf`. See the `Block` note in build_uses_sp_start.
         "Block" -> "mk_block(st, 0 - 1, ${args[0]}_list)"
         "MkTemplate" -> "CapVal.Node(mk_template(st, ${args[0]}))"
-        "MkQualExpr" -> "CapVal.Node(mk_qualified(st, sp_start, ${args[0]}, CapVal.Toks(${args[1]}_list), ${args[2]}, CapVal.FInits(${args[3]}_list)))"
         // The `table { … }` family (MkTableLit/MkTableHeader/MkTableRow)
         // is feature-owned (features/table_lit/lowering, t-kd4y.3.5.5):
         // the manifest branch above renders the adapter calls.
@@ -2579,8 +2572,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // t-47hc slice 8 — the field-init list arrives as a repetition capture, so it is
         // boxed as CapVal.FInits over the accumulated `_list`, exactly as MkQualExpr's
         // struct-literal half does.
-        "MkGrammarBlock" -> "CapVal.Node(mk_grammar_block(st, sp_start, ${args[0]}))"
-        "MkStructLit" -> "CapVal.Node(mk_struct_lit(st, sp_start, ${args[0]}, CapVal.FInits(${args[1]}_list)))"
         "MkTaggedTemplate" -> "CapVal.Node(mk_tagged_template(st, sp_start, ${args[0]}, ${args[1]}))"
         "MkSplice" -> "CapVal.Node(mk_splice(st, sp_start, ${args[0]}))"
         "MkSpliceStruct" -> "CapVal.Node(mk_splice_struct(st, sp_start, ${args[0]}, CapVal.FInits(${args[1]}_list)))"
@@ -2615,8 +2606,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // that folds the accumulated list. Unlike the interpreter oracle (span-free),
         // the generated parser threads the real `sp_start`, so each partial `Expr.With`
         // carries the `[with-start, next-token)` span rebind_with reads back.
-        "MkFieldInit" -> "mk_field_init(st, ${args[0]}, ${args[1]})"
-        "MkWithSuffix" -> "CapVal.Node(mk_with_suffix(st, sp_start, CapVal.FInits(${args[0]}_list)))"
         // The GENERIC decl forms are distinguished by ARITY, not by name — same build
         // name, one extra type-param list. These arms must come FIRST: emit dispatches
         // on the name alone, so without them a 3-arg `MkEnumDecl` in a grammar renders
