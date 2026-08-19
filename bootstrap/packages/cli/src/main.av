@@ -3218,8 +3218,33 @@ fn retry_ceiling_stopped(shards: List<Shard>, cx: RunCtx, per_shard_mb: int) {
     // redirect inside the cmd still replaces the first F4014 capture with
     // the retry's outcome, exactly as before.
     let snap = resource_snapshot()
-    eprintln("[per-file] retrying ${string(victims.length)} memory-ceiling-stopped shard(s) solo on the drained box (hard-bounded to it; avail ${string(snap.available_mb)}MB)")
-    let bounded = list_map(victims, (s: Shard) -> s with { cmd: retry_bounded_cmd(s.cmd, snap.available_mb) })
+    // Non-positive availability is UNKNOWN — the compute_shard_jobs
+    // convention — and must not reach the bound as if it were a reading
+    // (it would floor a roomy box into a skipped retry). Fall back to
+    // capacity, exactly as the jobs computation does.
+    let eff_avail = if snap.available_mb > 0 { snap.available_mb } else { snap.capacity_mb }
+    mut bounded: List<Shard> = []
+    mut skipped = 0
+    for v in victims {
+        let bcmd = retry_bounded_cmd(v.cmd, eff_avail)
+        if bcmd == "" {
+            // Below the retry floor: the box cannot host a meaningful
+            // ceiling, so the victim keeps its first attempt's honest
+            // F4014 instead of burning a doomed startup-F4014 run.
+            skipped = skipped + 1
+        } else {
+            // The FIRST attempt may have written a results sidecar before
+            // its ceiling stop; a retry that dies pre-write must not let
+            // the aggregator read attempt-1 counts as the retry's.
+            let _ = avra_shell_exec("rm -f '${v.bin_path}'")
+            bounded.push(v with { cmd: bcmd })
+        }
+    }
+    if skipped > 0 {
+        eprintln("[per-file] ${string(skipped)} ceiling-stopped shard(s) NOT retried — available memory is under the retry floor; their first F4014 stands")
+    }
+    if bounded.length == 0 { return }
+    eprintln("[per-file] retrying ${string(bounded.length)} memory-ceiling-stopped shard(s) solo on the drained box (hard-bounded to it; avail ${string(eff_avail)}MB)")
     let retry_cx = cx with { jobs: 1, per_shard_mb: per_shard_mb, snapshot: snap }
     let _ = dispatch_shards(bounded, retry_cx, per_shard_mb)
 }

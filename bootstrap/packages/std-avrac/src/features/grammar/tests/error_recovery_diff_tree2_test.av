@@ -11,7 +11,8 @@ extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{CDEF, agree, agree_all, agree_bad, agree_error, agree_pos, agree_tree, dbrace, default_path, errcodes, errmsgs, exec_oracle, mode_env, msgs_agree_bad, pin, pin_pos, pin_tree, poslist, poslist_from, rdiags, rtree, rtree_at, sig_has_parse_code, static_raw, tpl_src, tree_agrees_everywhere, mode_parse, ModeRun, rendered}
 
 spec "t-47hc.3: recovery-TREE shape == exec oracle (invalid corpus) — part 2/3" {
-    // The TREE half of the instantiation corpus above. This is the half that
+    // The TREE half of the instantiation corpus (its F-code half lives in
+    // error_recovery_diff_codes_test.av). This is the half that
     // actually caught the enum_decl routing regression (t-myz7.2): the F-code
     // signatures can agree while the RECOVERED TREE diverges, because the hand
     // aborts to Stmt.Error and synchronizes where a tolerant native branch
@@ -78,6 +79,26 @@ spec "t-47hc.3: recovery-TREE shape == exec oracle (invalid corpus) — part 2/3
         agree_bad("component C inst { component D }\nfn f() -> int { 1 }")
     }
 
+    // t-47hc PHASE 4 PREREQUISITE — the DECL WRAPPERS (rationale moved here
+    // with its cases by the corpus split; it sat beside them as one file).
+    //
+    // All nine decl keywords are native; what keeps `@hand(decl_hand)` alive is the
+    // prefix-wrapper family (`///` doc, `//!` module doc, `@annotation`, `export`) plus
+    // the IDENT-led `Comp inst { … }`. Those wrappers are RECURSIVE — each parses its
+    // prefix and calls `parse_declaration` again — so routing them moves every
+    // declaration in the file onto the native path, the same blast radius the
+    // body-bearing keywords had in 10.13.
+    //
+    // NOT ONE OF THESE FORMS WAS IN THE CORPUS. That is the exact condition the routing
+    // discipline names as fatal: routing is invisible on VALID input by construction
+    // (the native rule and the hand agree there — that is what parity work buys), so a
+    // construct absent from the invalid corpus gets routed on no evidence at all.
+    // `shape` shipped that way in #1054 and had to be un-routed in #1059; `use`/`mod`
+    // shipped that way and diverged on 8 of 18 malformed forms.
+    //
+    // These pass TODAY on the hand path. Their job is to fail loudly the moment a
+    // wrapper is routed and its recovery does not match — which is the only witness
+    // that exists for that class of regression.
     then "malformed decl WRAPPERS recover to the same tree" {
         // Every form here was checked to actually REPORT on both paths before being
         // added. An earlier draft of this block also listed `export\nfn f()`,

@@ -554,8 +554,8 @@ spec "t-47hc.4.1: emit and exec agree on the inputs that split the hand from the
         // malformed binding, and a malformed wrapper. With the hand gone they are
         // ordinary two-engine agreement checks — and they are not vacuous, because emit
         // and exec DO diverge elsewhere in this file (that is what `pin` exists for).
-        exec_oracle("@\nfn f() -> int { 1 }") == static_raw("@\nfn f() -> int { 1 }") &&
-            exec_oracle("let x: = 1\nfn f() -> int { 1 }") == static_raw("let x: = 1\nfn f() -> int { 1 }") &&
-            exec_oracle("@a\nmut\nfn f() -> int { 1 }") == static_raw("@a\nmut\nfn f() -> int { 1 }")
+        agree("@\nfn f() -> int { 1 }") &&
+            agree("let x: = 1\nfn f() -> int { 1 }") &&
+            agree("@a\nmut\nfn f() -> int { 1 }")
     }
 }

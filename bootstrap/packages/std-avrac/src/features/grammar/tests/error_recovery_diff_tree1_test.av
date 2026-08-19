@@ -59,26 +59,9 @@ spec "t-47hc.3: recovery-TREE shape == exec oracle (invalid corpus) — part 1/3
         agree_bad("mod 5\nfn f() -> int { 1 }") &&
         agree_bad("mod {\nfn f() -> int { 1 }")
     }
-    // t-47hc PHASE 4 PREREQUISITE — the DECL WRAPPERS, added BEFORE any of them is
-    // routed.
-    //
-    // All nine decl keywords are native; what keeps `@hand(decl_hand)` alive is the
-    // prefix-wrapper family (`///` doc, `//!` module doc, `@annotation`, `export`) plus
-    // the IDENT-led `Comp inst { … }`. Those wrappers are RECURSIVE — each parses its
-    // prefix and calls `parse_declaration` again — so routing them moves every
-    // declaration in the file onto the native path, the same blast radius the
-    // body-bearing keywords had in 10.13.
-    //
-    // NOT ONE OF THESE FORMS WAS IN THE CORPUS. That is the exact condition the routing
-    // discipline names as fatal: routing is invisible on VALID input by construction
-    // (the native rule and the hand agree there — that is what parity work buys), so a
-    // construct absent from the invalid corpus gets routed on no evidence at all.
-    // `shape` shipped that way in #1054 and had to be un-routed in #1059; `use`/`mod`
-    // shipped that way and diverged on 8 of 18 malformed forms.
-    //
-    // These pass TODAY on the hand path. Their job is to fail loudly the moment a
-    // wrapper is routed and its recovery does not match — which is the only witness
-    // that exists for that class of regression.
+    // The DECL-WRAPPER rationale + its tree cases live with the wrapper
+    // block in error_recovery_diff_tree2_test.av (the corpus split moved
+    // the cases there; the paragraph travelled with them).
     // t-47hc Phase 4, routing `let` / `mut` / `const`: the tree half of the binding
     // corpus above. A routed rule that reports and then builds a partial binding (a
     // nameless `let`, an initializer-less `mut`) has the same F-codes as hand's

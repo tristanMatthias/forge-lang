@@ -1261,7 +1261,8 @@ export fn output_has_ceiling_marker(out: string) -> bool {
 /// rather than ever emitting a no-op or negative limit.
 export fn retry_bounded_cmd(cmd: string, avail_mb: int) -> string {
     mut allowance = avail_mb - RETRY_RUNNER_RESERVE_MB
-    if allowance < RETRY_ALLOWANCE_FLOOR_MB { allowance = RETRY_ALLOWANCE_FLOOR_MB }
+    if allowance > RETRY_CEILING_CAP_MB { allowance = RETRY_CEILING_CAP_MB }
+    if allowance < RETRY_ALLOWANCE_FLOOR_MB { return "" }
     "export AVRA_MEM_LIMIT_MB=${string(allowance)}; ${cmd}"
 }
 
@@ -1284,6 +1285,16 @@ const RETRY_RUNNER_RESERVE_MB = 768
 /// The smallest hard ceiling the retry will ever export — never 0
 /// (which AVRA_MEM_LIMIT_MB reads as "disable the ceiling").
 const RETRY_ALLOWANCE_FLOOR_MB = 1024
+
+/// The retry ceiling is CAPPED at the highest value a hosted-fleet VM has
+/// SURVIVED, whatever the sampled availability says. Measured on the
+/// 2026-08-19 t-kdyj.12 rolls: ceilings of 7871MB and 7895MB produced
+/// legible in-process F4014 stops (runner alive both times), while a
+/// ceiling of 8814MB (avail 9582 - 768) let the shard's RSS outrun its
+/// own poll and the VM was EVICTED — the exact failure the bound exists
+/// to prevent. A retry that cannot fit under this cap fails as the
+/// honest F4014 it already produced; it must never take the box with it.
+const RETRY_CEILING_CAP_MB = 7871
 
 /// Did the SHELL report this output's producer as killed?
 ///

@@ -11,7 +11,7 @@ extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{CDEF, agree, agree_all, agree_bad, agree_error, agree_pos, agree_tree, dbrace, default_path, errcodes, errmsgs, exec_oracle, mode_env, msgs_agree_bad, pin, pin_pos, pin_tree, poslist, poslist_from, rdiags, rtree, rtree_at, sig_has_parse_code, static_raw, tpl_src, tree_agrees_everywhere, mode_parse, ModeRun, rendered}
 
 spec "t-47hc.3: recovery-TREE shape == exec oracle (invalid corpus) — part 3/3" {
-    // The TREE half for `type` — see the F-code block above.
+    // The TREE half for `type` — the F-code half lives in error_recovery_diff_codes_test.av.
     then "malformed type recovers to the same tree" {
         agree_bad("type T =\nfn f() -> int { 1 }") &&
         agree_bad("type T< = { x: int }\nfn f() -> int { 1 }") &&
@@ -60,22 +60,23 @@ spec "t-47hc.3: recovery-TREE shape == exec oracle (invalid corpus) — part 3/3
         agree_bad("type T = {\n x: int,\n")
     }
     then "a valid program renders the same NON-error tree under both modes" {
+        let t = rtree(true, "fn ok() -> int { 1 + 2 }")
         agree_tree("fn ok() -> int { 1 + 2 }") &&
-        rtree(true, "fn ok() -> int { 1 + 2 }") != "<null>" &&
-        !rtree(true, "fn ok() -> int { 1 + 2 }").contains("(error)")
+        t != "<null>" &&
+        !t.contains("(error)")
     }
 }
 
 spec "t-47hc.3: the 5c recovery-TREE divergence is CLOSED (emit-error fix)" {
     then "F-codes agree on the stray top-level `* 5`" {
-        static_raw("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }") ==
-            exec_oracle("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }")
+        agree("fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }")
     }
     then "the recovery TREES now AGREE: static yields a bare `(error)`, matching hand (not `(expr (*`)" {
         let src = "fn a() -> int { 1 }\n* 5\nfn b() -> int { 2 }"
+        let emit_t = rtree(true, src)
         agree_bad(src) &&
-        rtree(true, src).contains("(error)") &&
-        !rtree(true, src).contains("(expr (*") &&
+        emit_t.contains("(error)") &&
+        !emit_t.contains("(expr (*") &&
         !rtree(false, src).contains("(expr (*")
     }
 }

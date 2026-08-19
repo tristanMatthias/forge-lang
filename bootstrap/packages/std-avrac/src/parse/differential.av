@@ -14,7 +14,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 extern fn avra_selfhost_write_file(path: string, content: string) -> int
 use parse.{mode_parse, ModeRun, rendered}
-use core.{StmtId}
+use core.{StmtId, content_id_for, avra_getpid}
 
 /// The one fixture-writer the shell oracles need (write_fixture's twin;
 /// test_runner imports parse, so parse cannot import test_runner back).
@@ -54,18 +54,27 @@ fn diff_write(path: string, source: string) {
 // Comparing the ORDERED list (duplicates preserved) captures both the error SET
 // and the recovery ORDER + COUNT — a dropped or reordered error diverges.
 export fn errcodes(env: string, source: string) -> string {
-    let path = "/tmp/avra_errdiff.av"
+    // Process- AND content-unique: the split corpus (t-kdyj.13) runs its
+    // seven files in PARALLEL units — across shard processes and, at
+    // AVRA_TEST_JOBS>1, across worker threads in ONE process — so a fixed
+    // path let one case's `bs2 check` read another case's just-written
+    // source. The pid splits processes; the content hash splits threads
+    // (two threads writing the SAME bytes to one path is benign).
+    let path = "/tmp/avra_errdiff_${string(avra_getpid())}_${string(content_id_for(source))}.av"
     diff_write(path, source)
     avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1 | grep -oE 'F[0-9]{4}' | tr '\\n' ' '")
 }
 
-/// The EXPLICIT env prefix for a parser mode — every routing variable set, none inherited.
-///
-/// `parser_new` reads `decl_flip` and `decl_static` as `… != "0"` (ON by default) and
-/// `no_static_fallback` as `== "1"` (OFF by default), so a prefix that sets only the ONE
-/// variable distinguishing its mode is silently ambient-dependent: run the suite under
-/// `AVRA_PARSER_DECL_FLIP=0` and the "emit" and production calls BOTH collapse to the
-/// hand, and a three-path assertion passes having measured one implementation twice.
+/// The env prefix for a parser mode. It pins the TWO live routing
+/// variables — `AVRA_PARSER_DECL_STATIC` and `AVRA_PARSER_EXPR_FLIP` —
+/// explicitly per mode; `AVRA_PARSER_DECL_FLIP` is deliberately NOT
+/// pinned (a vestigial flag the modes do not disagree on — pinning it
+/// would suggest it still selects an engine), and the historic
+/// `AVRA_NO_STATIC_FALLBACK` is dead post-t-47hc.4.3 (a pin for it is
+/// rejected by `--check-parser-flags`). The point stands from the t-bw9s
+/// era: a prefix that set only the ONE variable distinguishing its mode
+/// was silently ambient-dependent, and two "different" paths could
+/// collapse onto one engine while the comparison stayed green.
 ///
 /// `rtree_at` already sets every field explicitly for exactly this reason, and says so —
 /// "the vacuity class this file exists to police". This is its shell-invocation twin, and
@@ -114,7 +123,7 @@ export fn mode_env(mode: string) -> string {
 /// the source — the hand path prints it and the two native paths do not, which is a
 /// difference in the final summary line, not in the diagnostics themselves.
 export fn errmsgs(env: string, source: string) -> string {
-    let path = "/tmp/avra_errmsg.av"
+    let path = "/tmp/avra_errmsg_${string(avra_getpid())}_${string(content_id_for(source))}.av"
     diff_write(path, source)
     avra_shell_exec("${env} ./build/bs2 check '${path}' 2>&1 | sed 's/.\\[[0-9;]*m//g' | grep -oE 'error\\[F[0-9]+\\]: .*' | tr '\\n' '|'")
 }
@@ -223,8 +232,11 @@ export fn pin(source: string, expected: string) -> bool {
 // The TREE + diagnostic-COUNT twin of `pin`, for the same reason `agree_bad` is the
 // tree twin of `agree`: an equal signature off a different tree is a real regression.
 export fn pin_tree(source: string, expected_tree: string, expected_diags: int) -> bool {
-    let t = rtree(true, source)
-    let d = rdiags(true, source)
+    // ONE parse for both reads — the agree_bad pairing (a second
+    // mode_parse would build a second store + registry for nothing).
+    let m = mode_parse("emit", source, null)
+    let t = rendered(m.r)
+    let d = m.r.bag.diagnostics.length
     if t != expected_tree || d != expected_diags {
         println("PINNED recovery tree moved")
         println(source)
@@ -238,8 +250,17 @@ export fn pin_tree(source: string, expected_tree: string, expected_diags: int) -
 // nonempty F-code signature, so the assertion pins the `had_error` contract
 // rather than passing vacuously when both parsers emit nothing.
 export fn agree_error(source: string) -> bool {
-    let sr = static_raw(source)
-    sr != "" && sr == exec_oracle(source)
+    let t = sig_triple(source)
+    t.emit != "" && t.emit == t.exec
+}
+
+/// All three engine signatures from ONE computation each — the reusable
+/// core `agree_error` / `agree_all` share, exposed so a spec needing both
+/// an agreement AND an exact signature does not re-run `bs2 check`.
+export type SigTriple = { exec: string, emit: string, prod: string }
+
+export fn sig_triple(source: string) -> SigTriple {
+    SigTriple { exec: exec_oracle(source), emit: static_raw(source), prod: default_path(source) }
 }
 
 // Agreement on ALL THREE parser paths at once: emit (fallback off), the DEFAULT
@@ -247,9 +268,10 @@ export fn agree_error(source: string) -> bool {
 // that characterise the executor's own recovery; `agree` stays emit-vs-hand so the
 // existing corpus keeps measuring exactly what it always did.
 export fn agree_all(source: string) -> bool {
-    let ex = exec_oracle(source)
-    let sr = static_raw(source)
-    let dflt = default_path(source)
+    let t = sig_triple(source)
+    let ex = t.exec
+    let sr = t.emit
+    let dflt = t.prod
     if sr != ex || dflt != ex {
         println("three-path recovery mismatch")
         println(source)

@@ -160,7 +160,9 @@ spec "t-47hc.5.1 slice C: bare-IDENT component instantiation recovers as the han
     // path from reading parse_component_block_bare; measuring it showed otherwise, so
     // it is a TREE agreement rather than an agree_bad case.
     then "a registered name + instance with no brace is two expressions, not an error" {
-        agree_all(CDEF() + "fn u() -> int {\n acct_sr a\n 0\n}")
+        // TREE, per the note above — on this clean input the signature
+        // oracle compares empty against empty and proves nothing.
+        agree_tree(CDEF() + "fn u() -> int {\n acct_sr a\n 0\n}")
     }
 
     then "and on ALL THREE parser paths, including the executor" {

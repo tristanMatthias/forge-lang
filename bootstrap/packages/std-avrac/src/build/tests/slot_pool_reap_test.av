@@ -24,12 +24,15 @@ spec "t-kdyj.12: a stale pid-less slot is reaped, not waited on forever" {
     then "a HEAVY acquire completes despite the abandoned slot (pre-fix: wedged until timeout)" {
         let pool = pool_dir()
         let stage = "rm -rf ${pool} && mkdir -p ${pool}/slot.2 && (touch -d '30 seconds ago' ${pool}/slot.2 2>/dev/null || touch -t \"$(date -v-30S +%Y%m%d%H%M.%S)\" ${pool}/slot.2)"
-        let _ = avra_shell_exec(stage)
+        let staged = avra_shell_exec_status(stage)
         // Heavy path = AVRA_USE_METADATA unset; the heavy must collect ALL
         // slots, so the stale slot.2 blocks it absent the reap. 15s >> the
         // 5s age gate + jittered retries; the wedge ran 1h+ unreaped.
-        let rc = avra_shell_exec_status("env -u AVRA_USE_METADATA AVRA_SLOT_DIR='${pool}' AVRA_FIXTURE_JOBS=4 timeout 15 bash scripts/diagnose.sh --slot-exec true > '/tmp/avra_slot_reap_${string(avra_getpid())}.log' 2>&1")
+        // `perl -e 'alarm ...; exec ...'` is the portable timeout: stock
+        // macOS has no GNU `timeout`, and this spec's whole point is the
+        // pre-fix WEDGE, which only a deadline can convert into a red.
+        let rc = avra_shell_exec_status("env -u AVRA_USE_METADATA AVRA_SLOT_DIR='${pool}' AVRA_FIXTURE_JOBS=4 perl -e 'alarm shift; exec @ARGV' 15 bash scripts/diagnose.sh --slot-exec true > '/tmp/avra_slot_reap_${string(avra_getpid())}.log' 2>&1")
         let _ = avra_shell_exec("rm -rf ${pool}")
-        rc == 0
+        staged == 0 && rc == 0
     }
 }

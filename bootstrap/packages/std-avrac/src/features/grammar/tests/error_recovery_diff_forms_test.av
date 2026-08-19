@@ -205,9 +205,9 @@ spec "t-6u9b: no token is discarded without a diagnostic" {
     // over it. Counted, not just shaped: a silent drop and a clean recovery differ
     // only in the diagnostic, and only on one of the two paths.
     then "a stray `->` left inside a fn body is reported on BOTH paths" {
-        agree_bad("fn f() -> int {\n let a = (1) ->\n return 0\n}") &&
-        rdiags(false, "fn f() -> int {\n let a = (1) ->\n return 0\n}") > 0 &&
-        rdiags(true, "fn f() -> int {\n let a = (1) ->\n return 0\n}") > 0
+        // `agree_bad` already fails on a zero count from either engine (its
+        // SILENT DROP branch) — the count intent, without two more parses.
+        agree_bad("fn f() -> int {\n let a = (1) ->\n return 0\n}")
     }
     // The second instance, found by the count oracle. `parse_primary` consumed the
     // `.` for the contextual enum-variant shorthand (`.Variant` / `.Variant(args)`),
