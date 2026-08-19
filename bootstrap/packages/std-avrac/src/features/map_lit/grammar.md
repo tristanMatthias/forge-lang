@@ -46,6 +46,10 @@ expressions must evaluate to a string at runtime.
 
 ## Pipeline placement
 
+- The `map_literal` rule lives in `map_lit_lang`'s `grammar {}` block
+  (`features/map_lit/mod.av`) with the `MkMapLit` lowering feature-owned
+  in `features/map_lit/lowering/` (t-kd4y.3.5.4); the spine's
+  `brace_expr` dispatches to it by name behind `@peek(brace_map)`.
 - Parser produces `Expr.MapLit(entries: List<ExprId>)` where
   entries alternates key, value, key, value, … (flat list, not
   paired — keeps the AST shape uniform with `Expr.ListLit`).

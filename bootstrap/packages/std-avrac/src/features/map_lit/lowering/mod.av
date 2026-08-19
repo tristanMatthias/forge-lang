@@ -1,0 +1,30 @@
+// The map feature's LOWERING (t-kd4y.3.5.4): `{ k: v, … }`. One spanned
+// row, anchored at the `{` byte. Imports ONLY features.grammar + core
+// (F4012).
+use core.{Expr, ExprId, byte_span}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_node_list}
+
+/// `{ "k": v, … }` map literal. `Expr.MapLit`'s payload is a FLAT id
+/// list `[k1,v1,k2,v2,…]`, so the two PARALLEL captures are interleaved
+/// here — a `map_entry` sub-rule can't work (a rule ref yields one
+/// CapVal, an entry needs two). Empty `{}` falls out as empty lists.
+export fn mk_map_lit(st: PState, sp_start: int, kcap: CapVal, vcap: CapVal) -> ExprId {
+    let ks = capval_to_node_list(kcap)
+    let vs = capval_to_node_list(vcap)
+    mut ids: List<ExprId> = []
+    mut i = 0
+    while i < ks.length {
+        ids.push(ks[i])
+        if i < vs.length { ids.push(vs[i]) }
+        i = i + 1
+    }
+    st.store.add_expr(Expr.MapLit(ids), byte_span(sp_start, st.cur().pos), [])
+}
+
+export fn mk_map_lit_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_map_lit(st, st.build_sp, vals[0], vals[1]))
+}
+
+export fn map_lit_builds() -> List<BuilderBind> {
+    bind_rows("features.map_lit.lowering", [bind_row("MkMapLit", "expr", 2, true, "mk_map_lit_abi", mk_map_lit_abi)])
+}

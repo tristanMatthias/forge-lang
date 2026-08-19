@@ -4089,9 +4089,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // like the sibling builds; the GENERATED parser passes the real chain start.
         "MkFieldInit" if args.length == 2 -> mk_field_init(st, env.get(args[0]), env.get(args[1]))
         "MkWithSuffix" if args.length == 1 -> CapVal.Node(mk_with_suffix(st, 0 - 1, env.get(args[0])))
-        // `[ … ]` list literal + comprehension (t-47hc.4 — DORMANT builds; the interpreter
-        // is the differential oracle so sp_start = 0 - 1 span-free, exactly like the folds).
-        "MkListLit" if args.length == 1 -> CapVal.Node(mk_list_lit(st, 0 - 1, env.get(args[0])))
         "MkTemplate" if args.length == 1 -> CapVal.Node(mk_template(st, env.get(args[0])))
         "MkQualExpr" if args.length == 4 -> CapVal.Node(mk_qualified(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]), env.get(args[3])))
         // t-47hc slice 8 — the two IDENT-led primaries (grammar block + struct literal).
@@ -4106,7 +4103,6 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkTableRow" if args.length == 1 -> CapVal.Node(mk_table_row(st, env.get(args[0])))
         "MkTableLit" if args.length == 1 -> CapVal.Node(mk_table_lit(st, 0 - 1, env.get(args[0])))
         "MkTaggedTemplate" if args.length == 2 -> CapVal.Node(mk_tagged_template(st, 0 - 1, env.get(args[0]), env.get(args[1])))
-        "MkMapLit" if args.length == 2 -> CapVal.Node(mk_map_lit(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkSplice" if args.length == 1 -> CapVal.Node(mk_splice(st, 0 - 1, env.get(args[0])))
         "MkSpliceStruct" if args.length == 2 -> CapVal.Node(mk_splice_struct(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         // ── Native `postfix_suffix` steps (t-47hc.33) ──
@@ -4146,8 +4142,10 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // grouping expr — env.get yields CapVal.Nil when absent → Tuple([]), else Grouping(e).
         // `( first, rest… )` tuple built from a SCALAR first + a REST list (t-47hc paren
         // spend). args[0] = the mandatory-comma-preceded first element, args[1] = the rest.
-        "MkListComp" if args.length == 3 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), CapVal.Nil))
-        "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
+        // MkListLit / MkListComp / MkMapLit — feature-owned (list_lit /
+        // map_lit lowerings, t-kd4y.3.5.4): the manifest dispatches them,
+        // and the §2 oracle-era MkListComp/3 arm was DELETED with the flip
+        // (toys re-point at /4 with a Nil-padded optional filter).
         "MkExprBlock" if args.length == 1 -> mk_expr_block(st, 0 - 1, env.get(args[0]))
         // MkSpawn / MkIsolated / MkChannel — feature-owned (spawn_expr /
         // isolated_expr / channels lowerings, t-kd4y.3.5.1): the manifest
@@ -5257,13 +5255,6 @@ export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
     st.store.exprs.add_leaf(Expr.InCheck(st.missing_node(), capval_to_node_list(acap)))
 }
 
-/// `[ a, b, … ]` list literal (t-47hc.4 list_lit flip — DORMANT builds, proven by a
-/// test grammar; not yet wired into avra_expr_grammar). The `acap` comma-list capture
-/// (`( a:expression ( "," a:expression )* )?`, scalar→list promotion via append_node)
-/// becomes the element list; empty/single/multi are uniform (Nil → []). Spanned
-/// [sp_start, next-token) exactly like the hand parse_list_expr alloc_at(Expr.ListLit,
-/// sp_start) (mod.av:2286/2298) — sp_start is the `[` byte (emit) or 0-1 span-free
-/// (interpreter oracle). `Expr.ListLit`'s id-list child is walker-opaque → empty edges.
 /// The primary alternation's `@fallback` tail (t-47hc.5).
 ///
 /// Fails the DSL run WITHOUT recording a diagnostic: a tail that reported here
@@ -5276,17 +5267,6 @@ export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
 export fn mk_primary_fail(st: PState) -> ExprId {
     st.note_had_error()
     st.error_node_silent()
-}
-
-export fn mk_list_lit(st: PState, sp_start: int, acap: CapVal) -> ExprId {
-    // A FAILED ELEMENT makes the whole literal a failure, mirroring the hand's
-    // `parse_list_elements`, whose `parse_expression()?` propagates: `[1,,2]` built
-    // `(list (1, (error), 2))` where the hand yields one `(error)`. Checked here rather
-    // than at each element site so both engines share the one rule.
-    for __e in capval_to_node_list(acap) {
-        if expr_id_is_error(st, __e) { return st.error_node_silent() }
-    }
-    st.store.add_expr(Expr.ListLit(capval_to_node_list(acap)), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// One `table { … }` being parsed: the row-type ascription and the header's column
@@ -5460,40 +5440,6 @@ export fn mk_splice(st: PState, sp_start: int, tcap: CapVal) -> ExprId {
 /// alloc_at(…, sp_start); span-free (-1) under the interpreter oracle.
 export fn mk_splice_struct(st: PState, sp_start: int, ncap: CapVal, fcap: CapVal) -> ExprId {
     st.store.add_expr(Expr.StructLit("~" + capval_tok_text(ncap), capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
-}
-
-/// `{ "k": v, … }` map literal (t-47hc.18). `Expr.MapLit`'s payload is a FLAT id list
-/// `[k1,v1,k2,v2,…]`, so the two PARALLEL captures are interleaved here — a `map_entry`
-/// sub-rule can't work (a rule ref yields one CapVal, an entry needs two). Empty `{}`
-/// falls out as empty lists. Spanned like the hand parse_map_literal's alloc_at.
-export fn mk_map_lit(st: PState, sp_start: int, kcap: CapVal, vcap: CapVal) -> ExprId {
-    let ks = capval_to_node_list(kcap)
-    let vs = capval_to_node_list(vcap)
-    mut ids: List<ExprId> = []
-    mut i = 0
-    while i < ks.length {
-        ids.push(ks[i])
-        if i < vs.length { ids.push(vs[i]) }
-        i = i + 1
-    }
-    st.store.add_expr(Expr.MapLit(ids), byte_span(sp_start, st.cur().pos), [])
-}
-
-/// `[ body for v in collection ( if filter )? ]` comprehension (t-47hc.4 — DORMANT).
-/// The twin of the hand parse_list_elements' `Expr.ListComp(expr_id, var_name,
-/// collection_id, filter)` (list_lit/parser.av). body/collection/filter are ExprId
-/// scalars + a nullable filter — all walker-opaque, so the comp is a leaf row (empty
-/// edges). `filt_cv` is Nil when the `( if … )?` clause is absent (→ filter none),
-/// else the parsed filter expression. Spanned [sp_start, next-token); the hand parser
-/// anchors sp_start at the FIRST ELEMENT (the byte after `[`), which the eventual @try/
-/// left-factored spend supplies as the sub-rule / branch entry byte.
-export fn mk_list_comp(st: PState, sp_start: int, body: ExprId, variable: string, collection: ExprId, filt_cv: CapVal) -> ExprId {
-    mut filter: ExprId? = none
-    match filt_cv {
-        .Nil -> {}
-        _ -> filter = capval_to_expr(st, filt_cv)
-    }
-    st.store.add_expr(Expr.ListComp(body, variable, collection, filter), byte_span(sp_start, st.cur().pos), [])
 }
 
 /// `in s..e` → the range-membership desugar `MISSING >= s && MISSING <= e`, a

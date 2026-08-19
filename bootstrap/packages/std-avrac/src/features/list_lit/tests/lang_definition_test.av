@@ -1,0 +1,74 @@
+// The collections LanguageFeature definitions (t-kd4y.3.5.4):
+// list_lit_lang carries the `[`-led gram (list_expr + list_comp — one
+// alternation, so one gram owns BOTH rows per the no-orphans validator)
+// with list_comp_lang hook-only beside it; map_lit_lang carries
+// map_literal + MkMapLit. The engine copies are DELETED, not moved.
+use @std.avrac.features.list_lit.{list_lit_lang}
+use @std.avrac.features.list_comp.{list_comp_lang}
+use @std.avrac.features.map_lit.{map_lit_lang}
+use @std.avrac.features.{feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.parse.{oracle_expr}
+
+spec "collections as LanguageFeatures" {
+    then "titles, docs, and editor snippets are carried" {
+        let l = list_lit_lang()
+        let c = list_comp_lang()
+        let m = map_lit_lang()
+        l.title.length > 0 && l.docs.contains("comprehension") && l.snippet.contains("[")
+            && c.title.length > 0
+            && m.title.length > 0 && m.snippet.contains("{")
+    }
+    then "the declared rules reach the composed whole-program view" {
+        // Structural presence FIRST: a rendered grammar can contain a name as
+        // a mere body reference, so rule DEFINITIONS are asserted on
+        // avra_program_grammar().rules (the same discipline as the decl-
+        // fragment specs). The render containments stay as the action-
+        // SPELLING pins on top of that.
+        mut le_def = false
+        mut lc_def = false
+        mut ml_def = false
+        for r in avra_program_grammar().rules {
+            if r.name == "list_expr" { le_def = true }
+            if r.name == "list_comp" { lc_def = true }
+            if r.name == "map_literal" { ml_def = true }
+        }
+        let prog = render_grammar(avra_program_grammar())
+        let lfrag = render_grammar(feature_gram(list_lit_lang()))
+        let mfrag = render_grammar(feature_gram(map_lit_lang()))
+        le_def && lc_def && ml_def
+            && lfrag.contains("MkListLit(a)")
+            && mfrag.contains("MkMapLit(k, v)")
+            && prog.contains("MkListLit(a)")
+            && prog.contains("MkListComp(b, v, c, f)")
+            && prog.contains("MkMapLit(k, v)")
+    }
+    then "the three rows ride the manifest and NOTHING is left central" {
+        mut ll = ""
+        mut lc = ""
+        mut ml = ""
+        for b in feature_builders() {
+            let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
+            if b.name == "MkListLit" { ll = row }
+            if b.name == "MkListComp" { lc = row }
+            if b.name == "MkMapLit" { ml = row }
+        }
+        ll == "expr/1/spanned/mk_list_lit_abi/features.list_lit.lowering"
+            && lc == "expr/4/spanned/mk_list_comp_abi/features.list_lit.lowering"
+            && ml == "expr/2/spanned/mk_map_lit_abi/features.map_lit.lowering"
+            && central_build_kind("MkListLit") == ""
+            && central_build_kind("MkListComp") == ""
+            && central_build_kind("MkMapLit") == ""
+    }
+}
+
+// The representative shapes, parsed by the PRODUCTION engine.
+spec "collection shapes parse to the expected trees" {
+    then "canonical renders of representative forms" {
+        (oracle_expr("[1, 2, 3]") ?? "<parse error>") == "(list (1, 2, 3))"
+            && (oracle_expr("[]") ?? "<parse error>") == "(list ())"
+            && (oracle_expr("[x for x in xs]") ?? "<parse error>") == "(list-comp x for x in xs)"
+            && (oracle_expr("[x for x in xs if x]") ?? "<parse error>") == "(list-comp x for x in xs if x)"
+            && (oracle_expr("{}") ?? "<parse error>") == "(map ())"
+    }
+}

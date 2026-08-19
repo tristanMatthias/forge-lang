@@ -2,22 +2,45 @@
 // as siblings, surface flat at `features.map_lit.{...}`. emit_map_lit
 // is in scope without a self-import.
 use codegen.{err_emit}
-use core.{feature_new, Feature, ValueType}
+use core.{ValueType}
 use features.eval.{eval_expr, eval_map_key, ok_result, error_result, value_map, map_upsert, StructField, Runtime, StepResult, step_had_error, step_runtime, step_value}
+use features.grammar.{parse_grammar}
+use features.map_lit.lowering.{map_lit_builds}
 use resolve.{resolve_expr_list_ids}
 use typeck.{check_expr_list_types, tc_er}
 
-/// Register the `{k: v, k: v}` map literal feature. Wires up
-/// resolver, typeck, codegen, and the @comptime evaluator via the
-/// standard feature registry. Spec axis 28.
-export fn map_lit_feature() -> Feature {
-    feature_new("map_lit") with {
-        expr_tag: Expr.MapLit([]),
-        emit_expr: map_lit_emit_expr,
-        resolve_expr: map_lit_resolve_expr,
-        check_expr: map_lit_check_expr,
-        eval_expr: map_lit_eval_expr,
+/// `{k: v, k: v}` map literals — the definition carries syntax, docs,
+/// surface, and the MkMapLit lowering (t-kd4y.3.5.4). Wires resolver,
+/// typeck, codegen, and the @comptime evaluator. Spec axis 28.
+/// `gram_family = "expr"`; the spine's `brace_expr` dispatches to
+/// `map_literal` by name behind the @peek(brace_map) scan.
+export fn map_lit_lang() -> LanguageFeature {
+    LanguageFeature map_lit_def {
+        name = "map_lit",
+        title = "map literals",
+        docs = """
+`{ "key": value, … }` builds a string-keyed map (`Map<string, V>`);
+`{}` in expression position is the empty map. Template-interpolated
+keys work like plain ones.
+""",
+        // VERBATIM from the spine: the VALUE propagates, like
+        // `field_init`'s — `{ "a": , … }` built a map entry over an error
+        // node instead of aborting the literal and its enclosing fn.
+        gram = grammar {
+  map_literal  = "{" ( k:expression @require ":" @onfail(bail) v:expression ( "," )? )* @require "}"
+                 @expect(":", "expected `:` after map key")
+                 @expect("}", "expected `}` after map") -> MkMapLit(k, v)
+        },
+        builders = map_lit_builds(),
+        snippet = r"{ ${1:key}: ${2:value} }",
+        expr_tag = Expr.MapLit([]),
+        emit_expr = map_lit_emit_expr,
+        resolve_expr = map_lit_resolve_expr,
+        check_expr = map_lit_check_expr,
+        eval_expr = map_lit_eval_expr,
+        gram_family = "expr",
     }
+    map_lit_def
 }
 
 /// @comptime eval hook for `MapLit` (rmzs GAP 3). `{k: v}` — and
