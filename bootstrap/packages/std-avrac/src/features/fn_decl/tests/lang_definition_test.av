@@ -84,11 +84,22 @@ spec "fn family as LanguageFeatures" {
             && central_build_kind("MkExtern") == ""
             && central_build_kind("MkTypeParam") == ""
     }
-    then "MkParam stays central — the shared base owns the `param` rule" {
+    then "MkParam is closures-owned — the `param` rule left the shared base (t-kd4y.3.5.3)" {
+        // Ownership follows the referencing rule: closures' own gram is the
+        // only spelling of MkParam, so the row rides ITS manifest and the
+        // central pentry kind row is gone. Pinned here (not only in the
+        // closures tests) because this file is where the pre-flip state was
+        // pinned — the flip must move this assertion, not fight it.
+        mut param_row = ""
         mut param_rows = 0
         for b in feature_builders() {
-            if b.name == "MkParam" { param_rows = param_rows + 1 }
+            if b.name == "MkParam" {
+                param_rows = param_rows + 1
+                param_row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
+            }
         }
-        param_rows == 0 && central_build_kind("MkParam") == "pentry"
+        param_rows == 1
+            && param_row == "pentry/2/flat/mk_param_abi/features.closures.lowering"
+            && central_build_kind("MkParam") == ""
     }
 }
