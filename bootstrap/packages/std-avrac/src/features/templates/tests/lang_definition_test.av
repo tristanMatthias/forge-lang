@@ -47,4 +47,14 @@ spec "template shapes parse to the expected trees" {
         let r = oracle_expr("tag\"h" + d + "{1}i\"")
         r != null && r!.contains("call") && r!.contains("tag")
     }
+    then "a malformed interpolation slot reports — the desugar Err path" {
+        // The slot's inner text must itself parse as an expression; a bare
+        // `+` does not, so desugar_template_in answers Err and mk_template
+        // surfaces it via error_node — a REPORTED diagnostic, which is what
+        // fails the parse (oracle_expr answers null). A change that dropped
+        // the diagnostic would hand back a clean Ok tree instead — non-null
+        // is exactly the regression this pins. Assembled lead, as above.
+        let d = "$"
+        oracle_expr("\"a " + d + "{+} b\"") == null
+    }
 }

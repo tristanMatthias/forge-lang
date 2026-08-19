@@ -53,13 +53,13 @@ parses as nested `Stmt.Annotated` layers.
         //   plain `f(args)` call). The name is `@require`d with F0040 so a
         //   BARE `@` reports the pinned message; it cannot be spelled as
         //   the leading item's FIRST-set guard (`"@"` is that guard, and
-        //   the name is the item after it). The first argument is
-        //   `@peek(not_rparen) @require`d, not merely optional: an
-        //   expression is demanded as soon as the `(` is consumed, so
-        //   `@foo(` followed by a token that starts no expression reports
-        //   F0040 about the missing ARGUMENT — left optional, the group's
-        //   FIRST test simply declined and the required `)` reported F0001
-        //   about the PAREN instead (same tree, wrong message).
+        //   the name is the item after it). The argument group is
+        //   OPTIONAL (`@foo()` is legal), so `@foo(` followed by a token
+        //   that starts no expression declines the group's FIRST test and
+        //   the required `)` reports — and that report is pinned to the
+        //   ARGUMENT story, not the paren: the `)` @expect carries F0040
+        //   "expected expression", so the malformed-argument and
+        //   missing-paren shapes surface the same coded message.
         // - t-47hc.4.3 — the doc wrapper OWNS its inner's failure, same
         //   shape as `annot_decl`. `///` cannot start an expression, so
         //   the leading `d:DOC` is its own FIRST-set guard and no `@peek`

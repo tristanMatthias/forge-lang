@@ -109,7 +109,7 @@ form (`export let` compiles to module-local allocas).
         //   `///`, `@ann`, `//!`) and the IDENT-led component
         //   instantiations — an inner `export` cannot reach those — and
         //   minus the `statement` tail, which is not a declaration. Same
-        //   `@try`/bare split, same order (`let_decl` before `letdes_decl`
+        //   `@try`/bare split, same order (`letdes_decl` before `let_decl`
         //   for the reason `declaration` records), so the two alternations
         //   cannot disagree about who owns a keyword.
         // - `exportable_decl` spells `MkStampAt` (engine-tableless): the
