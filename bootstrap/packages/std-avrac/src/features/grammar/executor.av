@@ -4122,10 +4122,10 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         "MkTupleFR" if args.length == 2 -> CapVal.Node(mk_tuple_fr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkListComp" if args.length == 3 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), CapVal.Nil))
         "MkListComp" if args.length == 4 -> CapVal.Node(mk_list_comp(st, 0 - 1, capval_to_expr(st, env.get(args[0])), capval_tok_text(env.get(args[1])), capval_to_expr(st, env.get(args[2])), env.get(args[3])))
-        "MkChannel" if args.length == 2 -> mk_channel(st, 0 - 1, env.get(args[0]), env.get(args[1]))
         "MkExprBlock" if args.length == 1 -> mk_expr_block(st, 0 - 1, env.get(args[0]))
-        "MkSpawn" if args.length == 1 -> mk_spawn(st, 0 - 1, env.get(args[0]))
-        "MkIsolated" if args.length == 1 -> mk_isolated(st, 0 - 1, env.get(args[0]))
+        // MkSpawn / MkIsolated / MkChannel — feature-owned (spawn_expr /
+        // isolated_expr / channels lowerings, t-kd4y.3.5.1): the manifest
+        // dispatches them.
         "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
         // The component definition (t-47hc slice A) — shared cores.
         // ── The COMPONENT family is feature-owned (all thirteen builds —
@@ -4463,21 +4463,6 @@ export fn mk_qualified_type(segments: List<Token>, has_gen: bool, gen_args: List
     mk_named_type(name, has_gen, gen_args, is_opt)
 }
 
-/// A typed channel constructor. The element type is represented both inline on
-/// Expr.ChannelNew and as the sole walker edge; capacity remains walker-opaque,
-/// exactly matching the retired hand parser.
-export fn mk_channel(st: PState, sp_start: int, elem_cv: CapVal, cap_cv: CapVal) -> CapVal {
-    let elem = type_expr_to_vtype(capval_to_texpr(st, elem_cv))
-    mut cap: ExprId? = null
-    if capval_present(cap_cv) { cap = capval_to_expr(st, cap_cv) }
-    let elem_id = st.store.ingest_type(elem, byte_span_none())
-    CapVal.Node(st.store.add_expr(
-        Expr.ChannelNew(elem, cap),
-        byte_span(sp_start, st.cur().pos),
-        [NodeRef.TypeRef(elem_id)]
-    ))
-}
-
 /// A `{ statement* }` expression body. Its statement ids are the payload and
 /// remain walker-opaque, exactly like the retired parse_block_expression path.
 export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
@@ -4488,31 +4473,8 @@ export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
     ))
 }
 
-/// Grammar-native `spawn { ... }`, preserving the hand parser's span and
-/// walker-opaque body id.
-// The `quote` cores (mk_quote / mk_quote_type / mk_quote_arm) moved to
-// features/quote_expr/lowering with their MkQuote / MkQuoteType / MkQuoteArm
-// manifest rows (t-kd4y.3.4). They were the LAST readers of the executor's
-// `0 - 1` sp_start convention for this family; the rows are `spanned`, so the
-// generated parser threads the rule-entry byte as st.build_sp and the
-// interpreter's bare adapter call reads the same -1 default.
-
-export fn mk_spawn(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
-    CapVal.Node(st.store.add_expr(
-        Expr.Spawn(capval_to_expr(st, body_cv)),
-        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
-        []
-    ))
-}
-
-/// Grammar-native `isolated { ... }`, the process-isolation twin of spawn.
-export fn mk_isolated(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
-    CapVal.Node(st.store.add_expr(
-        Expr.Isolated(capval_to_expr(st, body_cv)),
-        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
-        []
-    ))
-}
+// The concurrency cores (mk_spawn / mk_isolated / mk_channel) moved to
+// their features' lowerings (t-kd4y.3.5.1).
 
 /// One conditional arm of a subjectless `when` expression.
 export fn mk_when_arm(st: PState, cond_cv: CapVal, body_cv: CapVal) -> CapVal {

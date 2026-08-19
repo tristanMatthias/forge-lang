@@ -1,0 +1,22 @@
+// The isolated feature's LOWERING (t-kd4y.3.5.1) — imports ONLY
+// features.grammar + core (the F4012 import-closure invariant). One
+// `spanned` expr row, the process-isolation twin of spawn's.
+use core.{Expr, byte_span, byte_span_none}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr}
+
+/// Grammar-native `isolated { ... }`, the process-isolation twin of spawn.
+export fn mk_isolated(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
+    CapVal.Node(st.store.add_expr(
+        Expr.Isolated(capval_to_expr(st, body_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+export fn mk_isolated_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_isolated(st, st.build_sp, vals[0])
+}
+
+export fn isolated_builds() -> List<BuilderBind> {
+    bind_rows("features.isolated_expr.lowering", [bind_row("MkIsolated", "expr", 1, true, "mk_isolated_abi", mk_isolated_abi)])
+}
