@@ -65,8 +65,9 @@ spec "t-47hc slice 10: the generic decl builders exist in BOTH engines" {
             "g = \"type\" n:IDENT \"<\" ( tp:tparam )* \">\" \"=\" \"{\" ( f:field )* \"}\" -> MkTypeDeclAny(n, tp, f, al, op, opf)\n" +
             "tparam = tn:IDENT ( \":\" tb:IDENT )? -> MkTypeParam(tn, tb)\n" +
             "field = fn2:IDENT -> MkField(fn2, ft)\n")
-        // MkFnDecl is manifest-owned (features/fn_decl lowering, t-kd4y.3.3.1),
-        // so the emitted call is the ABI adapter; MkTypeDecl/3 is still central.
+        // Both are manifest-owned, so the emitted call is the ABI adapter:
+        // MkFnDecl via features/fn_decl lowering (t-kd4y.3.3.1), MkTypeDeclAny
+        // via features/struct_decl lowering (t-kd4y.3.3.2).
         fn_src.contains("mk_fn_decl_abi(st,") && ty_src.contains("mk_type_decl_any_abi(st,")
     }
 }
