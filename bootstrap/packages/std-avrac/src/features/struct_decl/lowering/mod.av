@@ -333,11 +333,19 @@ export fn mk_qualified_type(segments: List<Token>, has_gen: bool, gen_args: List
 }
 
 export fn mk_named_type_abi(st: PState, vals: List<CapVal>) -> CapVal {
-    mk_named_type(capval_tok_text(vals[0]), capval_present(vals[1]), capval_to_texpr_list(vals[1]), capval_present(vals[2]))
+    // has_gen is the ARG LIST being non-empty, never capval_present: the
+    // generated parser marshals its accumulator as CapVal.TExprs([]) even
+    // when the `<…>` group never matched, so a presence test turned every
+    // plain named type into Generic(nm, []) (`string?` rendered `str?`).
+    // The length test also matches the executor, whose unmatched label is
+    // Nil (capval_to_texpr_list(Nil) == []).
+    let gen_args = capval_to_texpr_list(vals[1])
+    mk_named_type(capval_tok_text(vals[0]), gen_args.length > 0, gen_args, capval_present(vals[2]))
 }
 
 export fn mk_qualified_type_abi(st: PState, vals: List<CapVal>) -> CapVal {
-    mk_qualified_type(capval_toks(vals[0]), capval_present(vals[1]), capval_to_texpr_list(vals[1]), capval_present(vals[2]))
+    let gen_args = capval_to_texpr_list(vals[1])
+    mk_qualified_type(capval_toks(vals[0]), gen_args.length > 0, gen_args, capval_present(vals[2]))
 }
 
 /// The named/qualified type-atom rows (t-kd4y.3.5.10).
