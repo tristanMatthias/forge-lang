@@ -2575,6 +2575,21 @@ export fn variant_index(variants: List<Variant>, name: string) -> int {
     -1
 }
 
+/// Maximum number of i64 slots needed across all variants in an
+/// enum — determines the size of the payload union in the LLVM
+/// struct layout. Each variant's payload is `fields.length` slots;
+/// the enum's overall payload sizes to the largest.
+export fn variant_max_payload(variants: List<Variant>) -> int {
+    mut max = 0
+    mut i = 0
+    while i < variants.length {
+        let here = variants[i].fields.length
+        if here > max { max = here }
+        i = i + 1
+    }
+    max
+}
+
 /// Resolved ValueType for field `name`, or Unknown when the field
 /// isn't present.
 export fn field_vtype_of(fields: List<FieldEntry>, name: string) -> ValueType {

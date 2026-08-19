@@ -953,6 +953,23 @@ export fn compile_and_jit_call_str(stmts: List<StmtId>, type_reg: TypeRegistry, 
     }
 }
 
+/// Compile and emit a native object file directly. Skips the IR-on-
+/// disk step, so no `llc` invocation is needed downstream. Disposes
+/// `ctx` after the emit.
+export fn codegen_and_emit_object(ids: List<StmtId>, output_path: string, type_reg: TypeRegistry, store: NodeStore, cache_root: string) -> Result<int, string> {
+    match codegen_program(ids, false, false, "", type_reg, false, store, cache_root) {
+        .Ok(ctx) -> {
+            let result = avra_llvm_emit_object(ctx.module, output_path)
+            ctx.dispose()
+            if result != 0 {
+                return Result.Err("failed to emit object file")
+            }
+            Result.Ok(0)
+        }
+        .Err(e) -> Result.Err(e)
+    }
+}
+
 /// Coverage variant: codegen to IR only. The in-process LLVM backend
 /// can't emit a usable object directly when instrprof intrinsics are
 /// present — they need to be lowered first by `opt -passes=instrprof`,

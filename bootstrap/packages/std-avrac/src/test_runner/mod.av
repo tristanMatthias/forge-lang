@@ -531,6 +531,33 @@ export fn cached_fixture_run(fixture_path: string) -> string {
     cached_fixture_capture(fixture_path, fixture_run_cmd(fixture_path), "run")
 }
 
+/// Assert a fixture emitted `PROBE <name>: ok`, and PRINT the whole capture
+/// when it did not.
+///
+/// The fixtures that drive heavy shell-outs (`bs2 build --lib`, a metadata
+/// pre-build) already dump their build-log tails and per-dep logs on failure.
+/// They dump to their OWN stdout — which `cached_fixture_run` returns as a
+/// string and a bare `.contains(...)` discards. The evidence was being
+/// collected and then thrown away one frame above where it was needed, so CI
+/// showed a lone `FAIL "build rc is zero"` and nothing else. Twice, on two
+/// different fixtures, for the same underlying failure.
+///
+/// It matters most for exactly these probes: `bs2 build --lib` has SIX
+/// distinct failure exits (pre-build a path-dep, per-module dispatch,
+/// stale-artifact removal, child compile rc, no IR produced, install) and the
+/// exit code alone tells them apart from none of the others.
+///
+/// Centralised because the pattern had already been written twice by hand and
+/// was about to be written a third time.
+export fn probe_ok(fixture_label: string, name: string, out: string) -> bool {
+    let ok = out.contains("PROBE ${name}: ok")
+    if !ok {
+        println("${fixture_label}[${name}]: probe absent — fixture output follows")
+        println(out)
+    }
+    ok
+}
+
 /// The two --run command shapes, defined once — cached_fixture_run*
 /// (path-only) and write_fixture_and_run* (write-through) must invoke
 /// byte-identical commands or their captures would diverge.

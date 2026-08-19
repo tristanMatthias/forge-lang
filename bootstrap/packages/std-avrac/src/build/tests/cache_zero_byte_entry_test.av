@@ -15,9 +15,9 @@
 // publishing empty content returns the original guard's error;
 // publishing real content succeeds and cache_has finds it.
 
-use @std.avrac.build.{Cache, cache_for, cache_init, cache_has, cache_publish, entry_dir_for}
+use @std.avrac.build.{Cache, cache_for, cache_init, cache_has, cache_publish, entry_dir_for, entry_ll_path}
 use @std.avrac.build.fingerprint.{Fingerprint}
-use @std.avrac.core.{avra_selfhost_write_file, avra_mkdir_p, avra_shell_exec}
+use @std.avrac.core.{avra_selfhost_write_file, avra_mkdir_p, avra_remove_file, avra_shell_exec}
 
 fn mk_fp(hex: string) -> Fingerprint {
     Fingerprint { hex: hex }

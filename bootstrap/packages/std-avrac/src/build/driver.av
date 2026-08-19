@@ -422,6 +422,15 @@ fn write_last_inputs(c: Cache, inputs: BuildInputs, fp: Fingerprint) -> bool {
     wrote
 }
 
+/// Helper for tooling and tests: read the cached IR for a fingerprint
+/// directly. Returns the empty string when the entry is missing.
+/// Wraps cache.cache_read_ll so callers don't need to reach for the
+/// cache module independently.
+export fn cached_ll_for(inputs: BuildInputs, fp: Fingerprint) -> string {
+    let cache = cache_for(inputs.project_root)
+    cache_read_ll(cache, fp)
+}
+
 /// uzs9.4: resolve the RACE-SAFE, content-addressed cache-slot IR path
 /// for a package's most-recent bin/lib build — the fingerprint is read
 /// from the `last` sidecar write_last_inputs recorded, so the caller
