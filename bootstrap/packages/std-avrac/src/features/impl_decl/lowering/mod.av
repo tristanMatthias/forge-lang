@@ -6,8 +6,8 @@
 // closure — so the F4012 import-closure invariant holds by construction;
 // the feature's grammar fragment stays in ../grammar.av.
 //
-// Neither row is `spanned`: the retired central arms took no sp_start, so
-// both nodes are span-free `add_leaf` rows on BOTH engines.
+// No row here is `spanned`: the retired central arms took no sp_start, so
+// every node is a span-free `add_leaf` row on BOTH engines.
 //
 // `MkMethodShorthand` is NOT here despite the family ticket listing it: its
 // only grammar reference is `comp_block_item` (the component instance body),
