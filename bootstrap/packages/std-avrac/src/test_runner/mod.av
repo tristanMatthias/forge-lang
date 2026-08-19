@@ -1267,7 +1267,18 @@ export fn retry_bounded_cmd(cmd: string, avail_mb: int) -> string {
 
 /// Headroom kept back from the drained box for the runner agent + OS
 /// churn during the retry (hosted runner agents alone hold ~700MB).
-const RETRY_RUNNER_RESERVE_MB = 1536
+/// SIZED FROM THE FIRST BOUNDED RUN'S MEASUREMENTS (2026-08-19, runs
+/// 32199097036/55): the drained fleet box offered 9407MB, and the whale
+/// shard (error_recovery_differential_test's batch — the documented
+/// ~8.3GB fixture) stopped at the 1536-reserve ceiling of 7871MB while
+/// still climbing. 768 puts the ceiling at ~8.6GB there — above the
+/// whale's need, still a hard stop well under the box — where 1536 was
+/// 400MB too greedy and turned a fits-when-drained shard into a
+/// deterministic red. The fixture's own ~8.3GB appetite is the real
+/// defect (an in-process parse differential has no business there) and
+/// is tracked separately; this constant only decides how much of a
+/// DRAINED box the retry may use.
+const RETRY_RUNNER_RESERVE_MB = 768
 
 /// The smallest hard ceiling the retry will ever export — never 0
 /// (which AVRA_MEM_LIMIT_MB reads as "disable the ceiling").

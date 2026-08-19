@@ -14,11 +14,13 @@ use @std.avrac.test_runner.{retry_bounded_cmd}
 
 spec "t-kdyj.12: the solo retry's hard ceiling follows the drained box" {
     then "a roomy box exports avail minus the runner reserve" {
-        retry_bounded_cmd("run_shard > log 2>&1", 8000)
-            == "export AVRA_MEM_LIMIT_MB=6464; run_shard > log 2>&1"
+        // 9407 is the first bounded run's measured drained-box avail; the
+        // 768 reserve puts the ceiling at 8639 — above the ~8.3GB whale.
+        retry_bounded_cmd("run_shard > log 2>&1", 9407)
+            == "export AVRA_MEM_LIMIT_MB=8639; run_shard > log 2>&1"
     }
     then "a tight box clamps to the floor — never 0, never negative" {
-        // 1600 - 1536 = 64 would starve any compile; 0 would DISABLE the
+        // 1600 - 768 = 832 would starve any compile; 0 would DISABLE the
         // ceiling. Both clamp to the floor.
         retry_bounded_cmd("c", 1600) == "export AVRA_MEM_LIMIT_MB=1024; c"
             && retry_bounded_cmd("c", 0) == "export AVRA_MEM_LIMIT_MB=1024; c"
@@ -28,6 +30,6 @@ spec "t-kdyj.12: the solo retry's hard ceiling follows the drained box" {
         // retry's outcome REPLACE the first F4014 capture; the wrapper
         // must not disturb it.
         let out = retry_bounded_cmd("sh -c 'x && y' > /tmp/l 2>&1", 10000)
-        out.ends_with("sh -c 'x && y' > /tmp/l 2>&1") && out.starts_with("export AVRA_MEM_LIMIT_MB=8464; ")
+        out.ends_with("sh -c 'x && y' > /tmp/l 2>&1") && out.starts_with("export AVRA_MEM_LIMIT_MB=9232; ")
     }
 }
