@@ -19,7 +19,9 @@
 // Oracle: run the generated parser AND the hand parser over the §2 expression
 // corpus and compare the canonical dump_expr trees (the same acceptance path
 // parser_equivalence_test.av's interpreter already passes).
-use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, fold_binary_expr, fold_logical_expr, unary_expr, fold_postfix_expr, dump_expr}
+use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, fold_binary_expr, fold_postfix_expr, dump_expr}
+use @std.avrac.features.logical_op.lowering.{fold_logical_expr}
+use @std.avrac.features.unary_op.lowering.{unary_expr}
 use @std.avrac.parse.{parse_expression_generated_probe}
 use @std.avrac.core.{Expr, ExprId, NodeStore}
 
