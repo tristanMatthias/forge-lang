@@ -42,6 +42,7 @@ use build.metadata.{
     MetaTraitMethod, ImplMethodRef,
 }
 use parse.{parse_body_source}
+use list_ops.{list_concat}
 
 /// Synthesise just the body — the List<StmtId> of all public-surface
 /// items, with no surrounding Module wrap. Resolver-side callers that
@@ -258,7 +259,7 @@ fn ensure_child(list: List<SubMod>, seg: string, path: List<string>, depth: int,
 
 fn trie_to_stmtlist(store: NodeStore, node: SubMod) -> List<StmtId> {
     let kid_stmts = children_to_stmts(store, node.children)
-    append_stmts(node.direct, kid_stmts)
+    list_concat(node.direct, kid_stmts)
 }
 
 // Walk children in source order, emit a Module(name, body) wrap per
@@ -373,21 +374,6 @@ export fn synthesize_unit_stmts(m: UnitMetadata, store: NodeStore) -> List<StmtI
         let out: List<StmtId> = [store.stmts.add_leaf(wrap_external_unit(store, module_node))]
         out
     }
-}
-
-fn append_stmts(a: List<StmtId>, b: List<StmtId>) -> List<StmtId> {
-    mut out: List<StmtId> = []
-    mut i = 0
-    while i < a.length {
-        out.push(a[i])
-        i = i + 1
-    }
-    mut j = 0
-    while j < b.length {
-        out.push(b[j])
-        j = j + 1
-    }
-    out
 }
 
 // ── TYPES ──

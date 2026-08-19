@@ -88,7 +88,7 @@ use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.{NameResolveResult}
 use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, resolve_dir_module_body, ModListResult}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
-use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
+use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs, path_basename}
 use @std.avrac.build.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result, source_has_mod_decls,
@@ -819,7 +819,7 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string, log_dir: string, c
             let env_prefix = "AVRA_LIB_PKG_ROOT='${lib_root}' "
             // --explain so the log carries the hit/miss line + miss
             // attribution the parent's tally reads back (pdme.5).
-            let log_path = "${log_dir}/${slug_of_path(dep.path)}.log"
+            let log_path = "${log_dir}/${path_basename(dep.path)}.log"
             cmds.push("cd \"${dep.path}\" && ${env_prefix}\"${compiler_path}\" build --lib${cov_flag} --emit_metadata --explain > \"${log_path}\" 2>&1")
         }
         i = i + 1
@@ -1010,7 +1010,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     mut i = 0
     while i < subdirs.length {
         let sub = subdirs[i]
-        let sub_name = subdir_basename(sub)
+        let sub_name = path_basename(sub)
         if sub_name == "" {
             i = i + 1
             continue
@@ -1096,7 +1096,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     mut llc_cmds = []
     mut k = 0
     while k < subdirs.length {
-        let sl = subdir_basename(subdirs[k])
+        let sl = path_basename(subdirs[k])
         if sl == "" {
             k = k + 1
             continue
@@ -1145,7 +1145,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     // build/per_mod/*.o by hand. The archive name follows the package's
     // [lib].name when the manifest declares one — same shape every
     // cargo-style tooling expects (`lib<name>.a`).
-    let archive_name = subdir_basename(manifest_name).replace("@", "").replace("/", "_")
+    let archive_name = path_basename(manifest_name).replace("@", "").replace("/", "_")
     let archive_path = "${out_dir}/lib${archive_name}.a"
     let ar_cmd = "ar rcs '${archive_path}' ${out_dir}/*.o > '${out_dir}/ar.log' 2>&1"
     let ar_rc = avra_shell_exec_status(ar_cmd)
@@ -1198,25 +1198,6 @@ fn sub_dir_mtime_le(dir: string, cap: int) -> bool {
         i = i + 1
     }
     true
-}
-
-// Return the trailing path segment of `p`, stripping any trailing
-// slash. `/foo/bar/` → `bar`. Mirrors `slug_of_path` but kept local
-// to the per-mod dispatcher so the caller doesn't have to navigate
-// through the TTY-progress code path's helpers.
-fn subdir_basename(p: string) -> string {
-    if p.length == 0 { return "" }
-    let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
-    let len = trimmed.length
-    mut i = len
-    while i > 0 {
-        let prev = i - 1
-        if trimmed.byte(prev) == 0x2F {
-            return trimmed.substring(i, len)
-        }
-        i = prev
-    }
-    trimmed
 }
 
 // g2eo Phase C: TTY progress bar for the per-module dispatcher.
@@ -1444,25 +1425,10 @@ fn slugs_from_paths(paths: List<string>) -> List<string> {
     mut out: List<string> = []
     mut i = 0
     while i < paths.length {
-        out.push(slug_of_path(paths[i]))
+        out.push(path_basename(paths[i]))
         i = i + 1
     }
     out
-}
-
-fn slug_of_path(p: string) -> string {
-    if p.length == 0 { return "" }
-    let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
-    let len = trimmed.length
-    mut i = len
-    while i > 0 {
-        let prev = i - 1
-        if trimmed.byte(prev) == 0x2F {
-            return trimmed.substring(i, len)
-        }
-        i = prev
-    }
-    trimmed
 }
 
 // Write one string per line. Build queue commands and their marker slugs are

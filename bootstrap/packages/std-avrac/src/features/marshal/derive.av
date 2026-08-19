@@ -21,6 +21,7 @@
 
 use core.{Stmt, StmtId, ExprId, Expr, FieldEntry, FieldInit, ParamEntry, ValueType, TypeParamEntry, Variant, Pattern, MatchArm, BinOp, Annotation, vtype_struct, type_short_name, FORCE_UNWRAP_FN}
 use core.{NodeStore}
+use list_ops.{list_concat}
 
 // ── Synthesis ──
 
@@ -369,7 +370,7 @@ fn build_reads_and_ctor(store: NodeStore, type_name: string, fields: List<FieldE
     let reads = build_reads(store, fields)
     let ctor = build_ctor(store, type_name, fields)
     let tail: List<StmtId> = [store.stmts.add_leaf(Stmt.Return(store.exprs.add_leaf(ctor)))]
-    append_ids(reads, tail)
+    list_concat(reads, tail)
 }
 
 fn build_reads(store: NodeStore, fields: List<FieldEntry>) -> List<StmtId> {
@@ -378,7 +379,7 @@ fn build_reads(store: NodeStore, fields: List<FieldEntry>) -> List<StmtId> {
     mut out: List<StmtId> = []
     mut i = 0
     while i < fields.length {
-        out = append_ids(out, read_one(store, fields[i].name, fields[i].resolved))
+        out = list_concat(out, read_one(store, fields[i].name, fields[i].resolved))
         i = i + 1
     }
     out
@@ -405,7 +406,7 @@ fn read_one(store: NodeStore, name: string, ty: ValueType) -> List<StmtId> {
                 [store.exprs.add_leaf(Expr.Ident("__nested_" + name))])
             let bind_stmt = Stmt.Let(name, ValueType.Unknown, store.exprs.add_leaf(from_bytes_call))
             let tail: List<StmtId> = [store.stmts.add_leaf(bind_stmt)]
-            append_ids(stmts, tail)
+            list_concat(stmts, tail)
         }
         .List(elem) -> {
             if elem is .Struct {
@@ -441,11 +442,11 @@ fn optional_read_stmts(store: NodeStore, field_name: string, inner: ValueType) -
     let inner_read = read_one(store, tmp, inner)
     let assign = Stmt.Expr(store.exprs.add_leaf(Expr.Assign(field_name, store.exprs.add_leaf(Expr.Ident(tmp)))))
     let assign_tail: List<StmtId> = [store.stmts.add_leaf(assign)]
-    let if_body_stmts = append_ids(inner_read, assign_tail)
+    let if_body_stmts = list_concat(inner_read, assign_tail)
     let if_body = store.stmts.add_leaf(Stmt.Block(if_body_stmts))
     let if_stmt = Stmt.If(store.exprs.add_leaf(Expr.Ident(present)), if_body, null)
     let trailer: List<StmtId> = [store.stmts.add_leaf(init_stmt), store.stmts.add_leaf(if_stmt)]
-    append_ids(presence, trailer)
+    list_concat(presence, trailer)
 }
 
 /// Emit `let (<value_name>, __r_<n>) = r.<reader>(); r = __r_<n>`
@@ -539,7 +540,7 @@ fn list_of_struct_reads(store: NodeStore, field_name: string, elem: ValueType) -
         store.stmts.add_leaf(while_stmt),
         store.stmts.add_leaf(bind_stmt),
     ]
-    append_ids(count_stmts, trailer)
+    list_concat(count_stmts, trailer)
 }
 
 /// Build the final `T { f1: f1, f2: f2, … }` constructor.
@@ -591,21 +592,6 @@ fn default_for(ty: ValueType) -> Expr {
     Expr.None
 }
 
-
-fn append_ids(a: List<StmtId>, b: List<StmtId>) -> List<StmtId> {
-    mut out: List<StmtId> = []
-    mut i = 0
-    while i < a.length {
-        out.push(a[i])
-        i = i + 1
-    }
-    mut j = 0
-    while j < b.length {
-        out.push(b[j])
-        j = j + 1
-    }
-    out
-}
 
 // ── Enum support (nce6.1.D) ──
 
@@ -699,7 +685,7 @@ fn build_enum_from_bytes_fn(store: NodeStore, type_name: string, variants: List<
     let tag_reads = read_then_reassign(store, "tag", "tag", "read_int")
     let dispatch = build_enum_dispatch(store, type_name, variants)
     let init_part: List<StmtId> = [store.stmts.add_leaf(init_let)]
-    let body = append_ids(init_part, append_ids(tag_reads, dispatch))
+    let body = list_concat(init_part, list_concat(tag_reads, dispatch))
     let fn_name = marshal_artifact_name("from_bytes_", type_name)
     let empty_tp: List<TypeParamEntry> = []
     let empty_args: List<ValueType> = []
@@ -721,7 +707,7 @@ fn build_enum_dispatch(store: NodeStore, type_name: string, variants: List<Varia
         let ctor = build_enum_ctor(store, type_name, v.name, v.fields)
         let ret_stmt = Stmt.Return(store.exprs.add_leaf(ctor))
         let ret_tail: List<StmtId> = [store.stmts.add_leaf(ret_stmt)]
-        let block_body = append_ids(read_payload_stmts, ret_tail)
+        let block_body = list_concat(read_payload_stmts, ret_tail)
         let is_last = i == n - 1
         let head_stmt: List<StmtId> = if is_last {
             // Final variant: emit the read+return body unguarded —
@@ -736,7 +722,7 @@ fn build_enum_dispatch(store: NodeStore, type_name: string, variants: List<Varia
             let if_stmt = Stmt.If(store.exprs.add_leaf(cmp), then_block, null)
             [store.stmts.add_leaf(if_stmt)]
         }
-        out = append_ids(out, head_stmt)
+        out = list_concat(out, head_stmt)
         i = i + 1
     }
     out

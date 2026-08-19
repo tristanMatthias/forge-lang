@@ -640,7 +640,11 @@ fn stmts_have_module_named(store: NodeStore, stmts: List<StmtId>, target_name: s
 // Trailing-segment of a path (after the last '/'). Returns the input
 // when there's no slash, "" when the input is empty. Used to derive
 // the bare directory name from a path like `packages/std-cli/src/ui`.
-fn path_basename(p: string) -> string {
+/// The last path segment, tolerating one trailing `/`. EXPORTED because the
+/// CLI needs the identical rule for its unit slugs and subdir names — it
+/// carried two byte-identical private copies (`subdir_basename`,
+/// `slug_of_path`) until they were folded back here.
+export fn path_basename(p: string) -> string {
     if p.length == 0 { return "" }
     let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
     let len = trimmed.length
