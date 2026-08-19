@@ -496,8 +496,11 @@ spec "t-kd4y.3.5.8: postfix_suffix is PURE DISPATCH over feature-owned rules" {
         // consulted before it. Sorting tuple_suffix after field_suffix would
         // send `.0` into the fallback's "expected field name after `.`".
         let s = postfix_rule_src()
-        s.index_of("parse_enum_ctor_suffix(st)") < s.index_of("parse_tuple_suffix(st)") &&
-            s.index_of("parse_tuple_suffix(st)") < s.index_of("parse_field_suffix(st)")
+        let ctor_idx = s.index_of("parse_enum_ctor_suffix(st)")
+        let tuple_idx = s.index_of("parse_tuple_suffix(st)")
+        let field_idx = s.index_of("parse_field_suffix(st)")
+        ctor_idx >= 0 && tuple_idx >= 0 && field_idx >= 0 &&
+            ctor_idx < tuple_idx && tuple_idx < field_idx
     }
     then "the overlapping heads carry their zero-width gates AT THE DISPATCH" {
         // first_follow's ambiguity guard exempts an overlapping pair only when
