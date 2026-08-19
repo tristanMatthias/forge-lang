@@ -16,56 +16,57 @@
 // round-trips through `syntax_diag_code`. Adding a code without an entry is a red
 // test here, not a silent downgrade in the field.
 use @std.avrac.diagnostics.{syntax_diag_code, error_def}
-use @std.avrac.core.{avra_selfhost_read_file}
+use @std.avrac.core.{avra_shell_exec}
+use @std.avrac.features.grammar.{avra_program_grammar}
 
-/// Every distinct `Fdddd` literal in `src`, in appearance order.
-fn f_codes_in(src: string) -> List<string> {
+/// The `@expect(…, CODE)` codes, read from the COMPOSED whole-program grammar
+/// OBJECT — every fragment, spine and feature alike. This used to scan the
+/// avra_grammar.av FILE, and the t-kd4y.3 migration drained it rule by rule
+/// as families moved into feature grams (each move carried its coded @expects
+/// out of the scan's view) until the pair-of-files extraction bottomed out at
+/// one code on the .3.5.2 slice. The grammar STRUCTURE is the surface the
+/// production parser is generated from, so a rule carries its code into this
+/// guard wherever the migration homes it.
+fn grammar_seam_codes() -> List<string> {
     mut out: List<string> = []
-    mut i = 0
-    while i + 5 <= src.length {
-        if src.substring(i, i + 1) == "F" {
-            let cand = src.substring(i, i + 5)
-            mut all_digits = true
-            mut d = 1
-            while d < 5 {
-                let c = cand.substring(d, d + 1)
-                if c < "0" || c > "9" { all_digits = false }
-                d = d + 1
-            }
-            if all_digits {
-                mut seen = false
-                for c in out { if c == cand { seen = true } }
-                if !seen { out.push(cand) }
+    let g = avra_program_grammar()
+    for r in g.rules {
+        match r.body {
+            .Alt(branches) -> {
+                for b in branches {
+                    for a in b.annots {
+                        match a {
+                            .Expect(_, _, c) -> { if c != "" { out.push(c) } }
+                            _ -> {}
+                        }
+                    }
+                }
             }
         }
-        i = i + 1
     }
     out
 }
 
-/// The codes the seam must be able to reverse: those the GRAMMAR names in an
-/// `@expect(…, CODE)` and those the executor reports via `report_coded("CODE", …)`.
-/// Read from the real sources, so the guard cannot go stale against them.
+/// The `report_coded("CODE", …)` codes, wherever the call now lives — the
+/// executor's remaining arms AND every feature lowering (mk_let_binding_g's
+/// F1203, the incident this file exists for, moved to features/let_stmt with
+/// its family). A recursive scan, for the same reason the grammar side reads
+/// the composed object: the migration relocates these sites and a fixed file
+/// list goes quietly vacuous.
+fn reporter_seam_codes() -> List<string> {
+    mut out: List<string> = []
+    let found = avra_shell_exec("grep -rho 'report_coded(\"F[0-9][0-9][0-9][0-9]\"' packages/std-avrac/src/features packages/std-avrac/src/parse 2>/dev/null | grep -o 'F[0-9][0-9][0-9][0-9]' | sort -u")
+    for c in found.split("\n") {
+        if c.length == 5 { out.push(c) }
+    }
+    out
+}
+
+/// The union both `then`s below iterate — the codes the seam must reverse.
 fn seam_codes() -> List<string> {
     mut out: List<string> = []
-    let grammar = avra_selfhost_read_file("packages/std-avrac/src/features/grammar/avra_grammar.av")
-    let exec = avra_selfhost_read_file("packages/std-avrac/src/features/grammar/executor.av")
-    // `@expect(tok, msg, CODE)` — the code is the only bare Fdddd on such a line.
-    for line in grammar.split("\n") {
-        if line.contains("@expect(") {
-            for c in f_codes_in(line) { out.push(c) }
-        }
-    }
-    // `report_coded("CODE", …)` — take the code from the call itself, not the line,
-    // so a comment mentioning an unrelated code on the same line cannot inflate this.
-    for line in exec.split("\n") {
-        if line.contains("report_coded(\"") {
-            let at = line.index_of("report_coded(\"")
-            let rest = line.substring(at + 14, line.length)
-            let end = rest.index_of("\"")
-            if end == 5 { out.push(rest.substring(0, 5)) }
-        }
-    }
+    for c in grammar_seam_codes() { out.push(c) }
+    for c in reporter_seam_codes() { out.push(c) }
     mut uniq: List<string> = []
     for c in out {
         mut seen = false
@@ -79,10 +80,15 @@ spec "every F-code the parser seam can carry is reversible by syntax_diag_code" 
     given "the codes named by the production grammar and the executor's report_coded" {
         then "the extraction is NON-VACUOUS — it really found codes in both sources" {
             // Without this, a broken reader makes the round-trip below pass on an
-            // empty list, which is the guard-that-cannot-fail shape.
-            let codes = seam_codes()
-            if codes.length < 2 { println("seam_codes found only: " + codes.join(", ")) }
-            codes.length >= 2
+            // empty list, which is the guard-that-cannot-fail shape. Asserted PER
+            // SOURCE, not on the union's size: the union stayed >= 2 for months
+            // while the grammar-file scan drained toward empty, and a single-count
+            // check only fired when the whole pair bottomed out at one code.
+            let gc = grammar_seam_codes()
+            let rc = reporter_seam_codes()
+            if gc.length == 0 { println("grammar_seam_codes found NOTHING") }
+            if rc.length == 0 { println("reporter_seam_codes found NOTHING") }
+            gc.length > 0 && rc.length > 0
         }
 
         then "each one round-trips to a DiagCode whose own code is that string" {

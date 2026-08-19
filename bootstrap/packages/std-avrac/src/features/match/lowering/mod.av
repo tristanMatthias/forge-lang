@@ -9,21 +9,11 @@
 // MkArmReturn / MkMatchTableExpr) ride `spanned` binds — the rule-entry
 // byte arrives as st.build_sp (-1 on the interpreter path, which stays
 // span-free like the retired central arms) — and the table pair's cores
-// live here now. `mk_when` stays engine-homed: the spine's `when`
-// EXPRESSION build (MkWhen) is still central until the expression section
-// composes from fragments.
-//
-// t-kd4y.3.2.6 adds the PATTERN family. The pat fragment (avra_pat_grammar,
-// ../mod.av) was already feature-owned; only its nine lowerings were
-// engine-listed, so this is a pure ownership move — the leaf cores came
-// with them (nothing else in the engine called them). Patterns are also
-// consumed by let-destructure / if-let / for-destructure, but ownership
-// follows the RULES: those features reference the composed `pattern_or`
-// and never name a pat build, exactly as the shared `match_when_arm`
-// fragment precedent settles it.
+// live here now, mk_when included (t-kd4y.3.5.2 — the when feature's
+// expression core, beside its one other caller mk_when_stmt_abi).
 
 use core.{Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, ValueType, byte_span, byte_span_none, pattern_optional_present, pattern_optional_absent}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_pat_val, capval_present, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list, capval_tok_list, capval_tok_text, capval_to_pat_list, capval_to_node_list, mk_when, param_entries_from_toks}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_pat_val, capval_present, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list, capval_tok_list, capval_tok_text, capval_to_pat_list, capval_to_node_list, param_entries_from_toks, capval_to_when_arm_list}
 
 export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
     WhenArm { cond_id: c, body_id: b }
@@ -332,6 +322,43 @@ export fn opt_absent_abi(st: PState, vals: List<CapVal>) -> CapVal {
     capval_pat_val(st, pattern_optional_absent())
 }
 
+/// Fold grammar-built when arms into the walker-opaque Expr.When leaf
+/// (moved from the engine, t-kd4y.3.5.2 — the MkWhenStmt abi above was
+/// already its one importer).
+export fn mk_when(st: PState, sp_start: int, arms_cv: CapVal) -> CapVal {
+    CapVal.Node(st.store.add_expr(
+        Expr.When(capval_to_when_arm_list(arms_cv)),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    ))
+}
+
+export fn mk_when_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_when(st, st.build_sp, vals[0])
+}
+
+/// The ordinary expression `match` (moved from the engine, t-kd4y.3.5.2).
+/// The edge set is EXACTLY the arms' PatRefs — adding the subject, or
+/// guard/body, would hand the walker a different child set than the hand
+/// parser produced. SPAN: anchors at the `match` keyword, with the
+/// interpreter's `sp_start < 0` span-free default.
+export fn mk_match_expr(st: PState, sp_start: int, subject_cv: CapVal, arms_cv: CapVal) -> CapVal {
+    let arms = capval_to_arm_list(arms_cv)
+    mut refs: List<NodeRef> = []
+    for arm in arms {
+        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
+    }
+    CapVal.Node(st.store.add_expr(
+        Expr.MatchExpr(capval_to_expr(st, subject_cv), arms),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        refs
+    ))
+}
+
+export fn mk_match_expr_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_match_expr(st, st.build_sp, vals[0], vals[1])
+}
+
 /// ALL of the match feature's rows — one list per feature. The Mk-named rows
 /// keep their grammar-side names (the row name IS the gram ref, so the flip
 /// touches no rule text); `spanned` marks the rows whose builds read
@@ -343,6 +370,8 @@ export fn match_builds() -> List<BuilderBind> {
      bind_row("build_match", "stmt", 2, false, "build_match_abi", build_match_abi),
      bind_row("MkWhenStmt", "stmt", 1, true, "mk_when_stmt_abi", mk_when_stmt_abi),
      bind_row("MkArmReturn", "expr", 1, true, "mk_arm_return_abi", mk_arm_return_abi),
+     bind_row("MkMatchExpr", "expr", 2, true, "mk_match_expr_abi", mk_match_expr_abi),
+     bind_row("MkWhen", "expr", 1, true, "mk_when_abi", mk_when_abi),
      bind_row("MkMatchTable", "stmt", 4, false, "mk_match_table_abi", mk_match_table_abi),
      bind_row("MkMatchTableExpr", "expr", 4, true, "mk_match_table_expr_abi", mk_match_table_expr_abi),
      bind_row("OrMaybe", "pat", 2, false, "or_maybe_abi", or_maybe_abi),

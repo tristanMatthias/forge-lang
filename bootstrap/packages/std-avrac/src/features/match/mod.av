@@ -114,6 +114,20 @@ export fn avra_match_stmt_grammar() -> Grammar {
   match_stmt    = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhenStmt(a)
                 | @peek(match_table) match_table_stmt
                 | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> build_match(subj, arms)
+  // The EXPRESSION `match` (t-kd4y.3.5.2 — moved from the spine, verbatim):
+  // same three shapes as match_stmt above. The subjectless form builds
+  // Expr.When (MkWhen — the when feature's row); the table form peels to
+  // match_table_expr; the ordinary form is MkMatchExpr, this feature's row.
+  // The spine's unary ladder references `match_expr` by name.
+  match_expr   = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhen(a)
+               | @peek(match_table) match_table_expr
+               | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatchExpr(subj, arms)
+  // `when` — subjectless match's expression spelling (t-kd4y.3.5.2, moved
+  // from the spine verbatim): same Expr.When node the subjectless arm above
+  // builds, so the family owns both spellings.
+  when_expr    = "when" "{" ( a:when_arm )* "}" -> MkWhen(a)
+  when_arm     = ( "_" | "else" ) "->" body:expression -> build_when_default(body)
+               | cond:expression "->" body:expression -> build_when_arm(cond, body)
     }
     grammar_checked(gp)
 }
@@ -246,6 +260,13 @@ export fn when_lang() -> LanguageFeature {
 order and takes the first truthy arm — an expression-shaped cousin of an
 if/else chain. The default arm is spelled `_` (never `else`).
 """,
+        // The when SYNTAX lives in the match feature's stmt fragment
+        // (when_expr / when_arm beside match_expr — t-kd4y.3.5.2), exactly
+        // as its STATEMENT form always did (MkWhenStmt is match_lang's
+        // row): `when` IS subjectless match, one node (Expr.When), one
+        // owner. The no-orphans validator is why the rows ride match_lang —
+        // a gram referencing a build must own it or use an engine build,
+        // and both match_expr's subjectless arm and when_expr build MkWhen.
         snippet = r"when { ${1:cond} -> ${2:body}, _ -> ${3:default} }",
         expr_tag = Expr.When(empty_arms),
         emit_expr = when_emit_expr,

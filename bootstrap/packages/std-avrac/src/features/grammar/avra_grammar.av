@@ -288,72 +288,16 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // `@require body:block_expr` gate (double-keyed @expect in fragment form).
   block_expr   = "{" @on(allow_dot_postfix) stmts:declaration* "}"
                  @expect("}", "expected `}` after block expression") -> MkExprBlock(stmts)
-  when_expr    = "when" "{" ( a:when_arm )* "}" -> MkWhen(a)
-  // t-47hc.25 — the EXPRESSION `match`, mirroring the already-native match_stmt. Same
-  // three shapes, same gates, all of them already proven on the statement side:
-  //   1. SUBJECTLESS `match { … }` builds Expr.When — the very node when_expr above
-  //      builds — so it reuses MkWhen. Its arms are match_when_arm, NOT when_arm:
-  //      a subjectless match takes `_` as the ONLY default, never `else`.
-  //   2. The TABLE sub-language is GRAMMAR-NATIVE as of t-47hc.29: the row width is a
-  //      BOUND, not a computation, and
-  //      `x{#cap}` expresses it. `@peek(match_table)` peels the form off to
-  //      `match_table_expr` (features/match.av).
-  //      Its statement twin is `match_table_stmt`; both share one builder
-  //      helper, so the two forms cannot drift.
-  //   3. The ordinary form is PREDICTIVE (table already peeled) and owns both of its
-  //      diagnostics via @require + @expect.
-  // match_arm / match_when_arm are EXTERNAL here: they are defined once in the shared
-  // fragment, emitted into the declaration parser, and called across the merged `parse/`
-  // module namespace (like parse_pattern_or). Their FIRSTs are declared in
-  // emit.rule_first_guard.
-  match_expr   = @peek(match_subjectless) "match" "{" ( a:match_when_arm ","? )* @require "}" @expect("}", "expected `}` after match arms") -> MkWhen(a)
-               | @peek(match_table) match_table_expr
-               | "match" @off(allow_struct_lit) subj:expression @require "{" ( arms:match_arm ","? )* @require "}" @expect("{", "expected `{` after match subject") @expect("}", "expected `}` after match arms") -> MkMatchExpr(subj, arms)
-  // t-47hc.24 — the EXPRESSION `if`. The bind-fresh `if let v = x { … }` is not a
-  // parse at all but a DESUGARING (a fresh temp, a none-check condition, and
-  // an unwrap-bind row PREPENDED to the then-block), so `@peek(if_let)` peels it off at
-  // the `if` — the same shape match_expr uses for its
-  // table form. The ordinary branch is then PREDICTIVE on a bare `if`.
-  //
-  // `@require t:block_expr` is the first production spend of @require on a RULE
-  // REFERENCE: the marker checks block_expr's FIRST (`{`) BEFORE the call, so an
-  // ABSENT block ("expected `{` after if condition")
-  // aborts while a MALFORMED one recovers.
-  //
-  // else_tail must keep `if_expr` as its own FIRST branch rather than folding into
-  // `expression` (which already reaches if_expr via unary). Measured, not assumed:
-  // `else if b { 2 }.foo` parses as `(field (if-expr …) foo)` — the postfix binds to the
-  // OUTER if, because the `else if` RECURSION returns
-  // directly. Routing the else through `expression` would enter unary's
-  // `base:if_expr ( postfix_suffix )*` and bind `.foo` to the ELSE-IF instead.
-  // `block_expr` likewise cannot fold in: brace_expr peeks brace_map first, so
-  // `else { "a": 1 }` would become a MAP where a block is required
-  // unconditionally.
-  // t-kd4y.3.2.1 — the bind-fresh form is the IF FEATURE's rule
-  // (`iflet_expr`, features/if_stmt), reached here the way `statement`
-  // reaches its statement twin: a `@peek(if_let)`-gated branch naming the
-  // rule. The lookahead stays HERE, with the alternation that has a
-  // plain-`if` sibling to fall to; the rule text and its lowering (MkIfLet)
-  // live with the feature that owns the syntax.
-  //
-  // EXTERNAL to this fragment, exactly as `match_expr`'s `match_table_expr`
-  // branch is: the rule arrives with the feature registry, so every view
-  // that composes it defines this reference and the dispatch-only view
-  // leaves it external by design.
-  if_expr      = @peek(if_let) iflet_expr
-               // The condition is `@onfail(bail)`: a condition that FAILED means there is no
-               // `if` to finish.
-               // Without it `else if` with nothing after it reported the missing condition
-               // (F0040) and then went on to report the missing block too — two diagnostics
-               // where one is pinned.
-               | "if" @onfail(bail) @off(allow_struct_lit) c:expression @require t:block_expr ( "else" e:else_tail )?
-                 // F0010 `ExpectedBlock` (`DiagCode.ExpectedBlock`), matching the
-                 // statement view's twin below. The expression view carried an uncoded
-                 // `@expect` and so rendered F0001.
-                 @expect("{", "expected `{` after if condition", F0010) -> MkIfExpr(c, t, e)
-  else_tail    = if_expr | block_expr | expression
-  when_arm     = ( "_" | "else" ) "->" body:expression -> build_when_default(body)
-               | cond:expression "->" body:expression -> build_when_arm(cond, body)
+  // when_expr + when_arm live with the when feature (features/match's
+  // when_lang, gram_family = "expr", t-kd4y.3.5.2) — referenced from the
+  // ladder above by name.
+  // match_expr lives with its feature (features/match's stmt fragment,
+  // t-kd4y.3.5.2) — same three shapes as match_stmt, referenced from the
+  // ladder above by name. match_arm / match_when_arm remain the shared
+  // fragment's rules (their FIRSTs declared in emit.rule_first_guard).
+  // if_expr + else_tail live with the if feature (features/if_stmt's
+  // avra_if_expr_grammar, composed into if_lang's gram — t-kd4y.3.5.2);
+  // referenced from the ladder above by name, like iflet_expr always was.
   // PREDICTIVE, by the same scan `paren_expr` uses. The `@try` rewound the cursor to
   // before `[`, so a malformed comprehension failed the list-LITERAL branch's closer with
   // the cursor sitting ON `for`, and statement-level resync then parsed a for-LOOP out of

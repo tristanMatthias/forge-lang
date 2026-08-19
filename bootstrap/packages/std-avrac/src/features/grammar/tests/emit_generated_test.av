@@ -116,15 +116,29 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
 
     then "subjectless when arms and their default are generated, not hand delegated" {
         // Post-flip (t-kd4y.3) the arm lowerings are the match feature's
-        // typed builders, spelled as their derived adapter ABI calls; the
-        // when FOLD (mk_when) stays central (span-threading — the recorded
-        // wide-migration boundary).
+        // typed builders, spelled as their derived adapter ABI calls — and
+        // since t-kd4y.3.5.2 the when FOLD is feature-owned too (MkWhen on
+        // match_builds, a spanned row), so it spells as its
+        // call_with_build_sp adapter call.
         let src = emit_all()
+        // The MkWhen adapter pin is scoped to parse_when_expr's OWN body:
+        // parse_match_expr spells the same call_with_build_sp shape, so a
+        // full-source contains() would keep passing if when_expr regressed
+        // while match_expr stayed correct (CodeRabbit find on #1277).
+        // Extracted from the checked-in source, NOT via emit_rule_fn over
+        // avra_expr_dispatch_grammar: when_expr is a FEATURE-fragment rule
+        // and rule_named answers the empty Rule there (verified — the
+        // single-rule emission rendered `fn parse_`).
+        let at = src.index_of("fn parse_when_expr(")
+        let rest = if at < 0 { "" } else { src.substring(at, src.length) }
+        let wend = rest.index_of("
+fn ")
+        let when_fn = if wend > 0 { rest.substring(0, wend) } else { rest }
         src.contains("fn parse_when_expr(st: PState) -> CapVal {") &&
         src.contains("fn parse_when_arm(st: PState) -> CapVal {") &&
         src.contains("build_when_arm_abi(st, [cond, body])") &&
         src.contains("build_when_default_abi(st, [body])") &&
-        src.contains("mk_when(st, sp_start, CapVal.WArms(a_list))")
+        when_fn.contains("call_with_build_sp(st, sp_start, mk_when_abi, [CapVal.WArms(a_list)])")
     }
 
     then "lambda expression and block bodies recurse entirely through generated rules" {

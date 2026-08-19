@@ -4126,19 +4126,14 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // MkSpawn / MkIsolated / MkChannel — feature-owned (spawn_expr /
         // isolated_expr / channels lowerings, t-kd4y.3.5.1): the manifest
         // dispatches them.
-        "MkWhen" if args.length == 1 -> mk_when(st, 0 - 1, env.get(args[0]))
+        // MkWhen / MkMatchExpr / MkIfExpr — feature-owned (when/match/if
+        // lowerings, t-kd4y.3.5.2): the manifest dispatches them.
         // The component definition (t-47hc slice A) — shared cores.
         // ── The COMPONENT family is feature-owned (all thirteen builds —
         //    features/component_decl lowering, t-kd4y.3.3.5): the manifest
         //    dispatches them. The shared definition core
         //    (mk_component_def_with_params) stays below, exported — its
         //    registration hooks close over the host Parser. ──
-        // EXPRESSION `match subj { arms }` (t-47hc.25). The interpreter has no
-        // sequence-start byte, so -1 => byte_span_none, matching every sibling build.
-        "MkMatchExpr" if args.length == 2 -> mk_match_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]))
-        // `if c { … } else …` (t-47hc.24). An ABSENT else arrives as CapVal.Nil, which
-        // mk_if_expr turns into the hand's synthesized empty (Void) block.
-        "MkIfExpr" if args.length == 3 -> mk_if_expr(st, 0 - 1, env.get(args[0]), env.get(args[1]), env.get(args[2]))
         "mk_inrange" if args.length == 2 -> CapVal.Node(mk_inrange_expr(st, env.get(args[0]), env.get(args[1])))
         "mk_enum_ctor" if args.length == 2 -> CapVal.Node(mk_enum_ctor_expr(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "mk_eqchain" if args.length == 2 -> CapVal.Node(mk_eqchain_expr(st, env.get(args[0]), env.get(args[1])))
@@ -4484,19 +4479,10 @@ export fn mk_when_arm(st: PState, cond_cv: CapVal, body_cv: CapVal) -> CapVal {
     })
 }
 
-/// The `_` / `else` arm of a subjectless `when` expression.
-export fn mk_when_default(st: PState, body_cv: CapVal) -> CapVal {
-    CapVal.WArm(WhenArm { cond_id: none, body_id: capval_to_expr(st, body_cv) })
-}
+// mk_when moved to features/match/lowering with the MkWhen row
+// (t-kd4y.3.5.2); mk_when_default died dead-code (the when_arm rule spells
+// the feature rows build_when_default / build_when_arm).
 
-/// Fold grammar-built when arms into the walker-opaque Expr.When leaf.
-export fn mk_when(st: PState, sp_start: int, arms_cv: CapVal) -> CapVal {
-    CapVal.Node(st.store.add_expr(
-        Expr.When(capval_to_when_arm_list(arms_cv)),
-        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
-        []
-    ))
-}
 
 /// A repeated `when_arm` capture is WArms for many, WArm for one, Nil for none.
 export fn capval_to_when_arm_list(v: CapVal) -> List<WhenArm> {
@@ -4998,55 +4984,7 @@ export fn mk_splice_arm(st: PState, target_cv: CapVal) -> CapVal {
     CapVal.Arm(MatchArm { pattern: sentinel_pat, pattern_id: pat_id, guard_id: none, body_id: splice_id })
 }
 
-/// The EXPRESSION twin of `mk_match` (t-47hc.25). Same arms, same child refs — only
-/// the node kind and the span differ.
-///
-/// REFS are identical to mk_match's, for the same reason: `MatchArm` is a MIXED walker
-/// node — only the PATTERN is a walked child, while guard and body ride as walker-opaque
-/// `ExprId` scalars, and the subject is opaque too so it contributes no edge. That is
-/// exactly the set the hand builds (`alloc_expr(node, span, parsed.refs)` where
-/// parsed.refs is the arms' patterns). Adding the subject, or guard/body, would hand the
-/// walker a different child set than the hand parser produces.
-///
-/// SPAN: the hand anchors at the `match` keyword (`alloc_at(..., sp_start)`), so this
-/// takes sp_start and spans to the current token, with mk_when's `sp_start < 0` guard for
-/// the interpreter path (which has no sequence-start byte to pass).
-export fn mk_match_expr(st: PState, sp_start: int, subject_cv: CapVal, arms_cv: CapVal) -> CapVal {
-    let arms = capval_to_arm_list(arms_cv)
-    mut refs: List<NodeRef> = []
-    for arm in arms {
-        if arm.pattern_id != null { refs.push(NodeRef.PatRef(arm.pattern_id!)) }
-    }
-    CapVal.Node(st.store.add_expr(
-        Expr.MatchExpr(capval_to_expr(st, subject_cv), arms),
-        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
-        refs
-    ))
-}
 
-/// `if c { … } else …` in EXPRESSION position (t-47hc.24) — the ordinary form only;
-/// the bind-fresh `if let` is its own `@peek(if_let)`-routed rule, owned by the
-/// if feature (features/if_stmt: `iflet_expr` → mk_if_let_abi, t-kd4y.3.2.1).
-///
-/// The whole reason this needs a build rather than a bare 3-capture node ctor is the
-/// ABSENT else. The hand (if_stmt/parser.av:190-202) synthesizes an EMPTY BLOCK — NOT a
-/// `0` literal — so the if-expr types `.Void` on the fall-through path, which is what
-/// keeps `if c { return X }` valid in value position and lets a diverging then-branch
-/// hand back the real ELSE type instead of a synthesized `int`. That empty block goes
-/// through `intern_expr_leaf` (hash-consed, spanless), exactly as `alloc_leaf` does, and
-/// is allocated BEFORE the IfExpr row so arena ids stay in the hand's order.
-export fn mk_if_expr(st: PState, sp_start: int, cond_cv: CapVal, then_cv: CapVal, else_cv: CapVal) -> CapVal {
-    let empty_rows: List<StmtId> = []
-    let else_id = match else_cv {
-        .Nil -> st.store.intern_expr_leaf(Expr.Block(empty_rows))
-        _ -> capval_to_expr(st, else_cv)
-    }
-    CapVal.Node(st.store.add_expr(
-        Expr.IfExpr(capval_to_expr(st, cond_cv), capval_to_expr(st, then_cv), else_id),
-        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
-        []
-    ))
-}
 
 /// A capture as a match-arm list (statement-`match`, ps3t.6.5.4): the arm `*`
 /// yields `Arms` for ≥2, a scalar `Arm` for exactly 1, `Nil` for none.
