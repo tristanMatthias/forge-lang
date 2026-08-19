@@ -125,10 +125,12 @@ spec "postfix shapes parse to the expected trees" {
             && oc.contains("field") && om.contains("map")
     }
     then "the `.`-led readings stay apart — field, tuple index, enum ctor" {
+        // Exact node kinds, not spellings: all three dispatch off the same `.`
+        // token, so the regression this pins is one reading swallowing another.
         let fa = oracle_expr("p.name") ?? "<parse error>"
         let ti = oracle_expr("t.0") ?? "<parse error>"
         let ec = oracle_expr("Color.Green(9)") ?? "<parse error>"
-        !fa.contains("error") && !ti.contains("error") && !ec.contains("error")
-            && fa.contains("name") && ti.contains("0") && ec.contains("Green")
+        fa == "(field p name)" && ti == "(tuple-idx t 0)"
+            && ec.contains("(ctor Color.Green") && ec.contains("9")
     }
 }

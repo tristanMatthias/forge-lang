@@ -432,6 +432,7 @@ spec "t-kd4y.3.5.8: a policy-marked repetition item never takes the stall fast-p
         let body = if end > 0 { rest.substring(0, end) } else { rest }
         at >= 0 &&
             body.contains("let __rep_before = st.pos") &&
+            body.contains("if st.pos == __rep_before { break }") &&
             body.contains("let __bdiag0 = st.diags.length") &&
             body.contains("st.diags.length != __bdiag0") &&
             !body.contains("let __rep_cv = parse_table_row(st)")

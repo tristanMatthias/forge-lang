@@ -1904,7 +1904,12 @@ fn rule_reaches_spec_in(g: Grammar, name: string, seen: List<string>) -> bool {
     if str_in(seen, name) { return false }
     let i = rule_index_of(g, name)
     if i < 0 { return false }
-    mut seen2 = seen
+    // A List is heap-backed, so `mut seen2 = seen` would ALIAS the caller's
+    // list and every push would leak into sibling traversals — turning the
+    // PATH-scoped cycle guard into a global visited set, whose revisit-as-false
+    // pruning can wrongly answer "cannot stall" (a break silently dropped).
+    mut seen2: List<string> = []
+    for s in seen { seen2.push(s) }
     seen2.push(name)
     match g.rules[i].body {
         .Alt(branches) -> {

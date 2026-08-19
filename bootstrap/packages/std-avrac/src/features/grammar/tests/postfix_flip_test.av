@@ -508,7 +508,8 @@ spec "t-kd4y.3.5.8: postfix_suffix is PURE DISPATCH over feature-owned rules" {
         let s = postfix_rule_src()
         let ctor_call = s.index_of("parse_enum_ctor_suffix(st)")
         let tuple_call = s.index_of("parse_tuple_suffix(st)")
-        s.substring(0, ctor_call).contains("lookahead_ok(\"dot_enum_ctor\", st)") &&
+        ctor_call >= 0 && tuple_call >= 0 &&
+            s.substring(0, ctor_call).contains("lookahead_ok(\"dot_enum_ctor\", st)") &&
             s.substring(0, tuple_call).contains("lookahead_ok(\"dot_number\", st)")
     }
 }

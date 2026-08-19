@@ -184,6 +184,24 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
         let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
         err.contains("Block") && err.contains("shadows") && err.contains("central")
     }
+    then "shadowing a TABLELESS engine build is rejected too" {
+        // MkNone has no kind row (`central_build_kind` answers ""), so the
+        // kind proxy alone let a supplied MkNone validate clean — and the
+        // manifest-first consult order in BOTH engines would then silently
+        // prefer it over the engine arm. The shadow check reads the same
+        // is_central_build the reference-resolution loop resolves with, so
+        // the kindless names (MkNone / MkStampAt / MkAnnotated) are fenced.
+        let g = grammar {
+            top  = leaf -> MkNone()
+            leaf = "ztok" -> Zed()
+        }
+        let shadow = [
+            bind("MkNone", "expr", 0, "features.toy", "none_build"),
+            bind("Zed", "expr", 0, "features.toy", "zed_build"),
+        ]
+        let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
+        err.contains("MkNone") && err.contains("shadows") && err.contains("central")
+    }
 }
 
 spec "t-kd4y.3: generated import headers derive from the manifest" {

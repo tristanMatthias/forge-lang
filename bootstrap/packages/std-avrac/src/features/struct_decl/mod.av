@@ -74,7 +74,7 @@ upper-case receiver the same syntax reads as `Type.STATIC` /
 """,
         gram = grammar {
   field_suffix = @peek(dot_plain_field) @when(dot_postfix_ok) "." n:FIELDNAME -> MkFieldAccess(n)
-               | @fallback @when(dot_postfix_ok) "." @require n:FIELDNAME @expect("FIELDNAME", "expected field name after `.`") -> MkFieldAccess(n)
+               | @fallback @when(dot_postfix_ok) "." @require n:FIELDNAME @expect("FIELDNAME", "expected field name after `.`", F0040) -> MkFieldAccess(n)
         },
         builders = field_access_builds(),
         snippet = r"${1:obj}.${2:field}",

@@ -5028,7 +5028,7 @@ fn parse_field_suffix(st: PState) -> CapVal {
         st.report("expected `.`")
     }
     let n = if (st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved) { CapVal.Tok(st.advance()) } else {
-        st.report("expected field name after `.`")
+        st.report_coded("F0040", "expected field name after `.`")
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
         CapVal.Tok(st.cur())
