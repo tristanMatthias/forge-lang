@@ -15,12 +15,6 @@ export fn render_grammar(g: Grammar) -> string {
     out + "}"
 }
 
-/// Render one rule as `name = body` in the display form (markers omitted,
-/// per the structure-only contract above).
-export fn render_rule(r: Rule) -> string {
-    "${r.name} = ${render_node(r.body, false)}"
-}
-
 /// The LOSSLESS identity of a rule: the display render PLUS every item
 /// marker and branch flag the display form omits (`^`, mode sets, `@cut`,
 /// `@require`, `@gate`, `@onfail`, `@try`, `@fallback`). compose_fragments

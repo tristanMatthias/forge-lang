@@ -4424,17 +4424,10 @@ export fn mk_expr_block(st: PState, sp_start: int, stmts_cv: CapVal) -> CapVal {
 // The concurrency cores (mk_spawn / mk_isolated / mk_channel) moved to
 // their features' lowerings (t-kd4y.3.5.1).
 
-/// One conditional arm of a subjectless `when` expression.
-export fn mk_when_arm(st: PState, cond_cv: CapVal, body_cv: CapVal) -> CapVal {
-    CapVal.WArm(WhenArm {
-        cond_id: capval_to_expr(st, cond_cv),
-        body_id: capval_to_expr(st, body_cv)
-    })
-}
-
-// mk_when moved to features/match/lowering with the MkWhen row
-// (t-kd4y.3.5.2); mk_when_default died dead-code (the when_arm rule spells
-// the feature rows build_when_default / build_when_arm).
+// The whole when trio is gone: mk_when moved to features/match/lowering
+// with the MkWhen row (t-kd4y.3.5.2); mk_when_default and mk_when_arm died
+// dead-code (the when_arm rule spells the feature rows build_when_default /
+// build_when_arm — t-kd4y.3.6's dead-helper sweep removed the last one).
 
 
 /// A repeated `when_arm` capture is WArms for many, WArm for one, Nil for none.

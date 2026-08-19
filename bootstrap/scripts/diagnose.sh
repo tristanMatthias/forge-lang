@@ -4118,11 +4118,37 @@ mode_check_central_domain() {
   for n in $(cat "$scratch/tableless"); do
     grep -q "\"$n\"" "$ex" "$em" || { err "check-central-domain: tableless name '$n' has no executor/emit arm — stale ledger entry"; bad=1; }
   done
+  # t-kd4y.3.6 item (2): everything folds from language_features() — the ONLY
+  # `register(reg, …)` call site in features/ is register_lang's own body
+  # (features/lang.av). A legacy `register(reg, X_feature())` reappearing
+  # anywhere else (init_features included) is the 47→0 conversion gauge
+  # regressing.
+  #
+  # The matcher keys on CALL SHAPE, not the literal `register(reg`: any
+  # receiver name and any spacing counts (`register( my_reg ,`), since the
+  # gauge is about the call existing at all, not about what the registry
+  # local happens to be named. It demands an identifier followed by a COMMA
+  # — or an open paren at end-of-line, the multi-line spelling — because a
+  # bare whitespace-tolerant `register\s*\(` also matches ENGLISH: three
+  # comments in features/comptime say things like "rides an integer register
+  # (matching the …)" and "reads the FP register (compile_and_jit_call_f64)".
+  # A lint that cries wolf on prose gets muted, so the comma is what
+  # separates a call from a parenthetical.
+  #
+  # The authorized site is excluded by EXACT PATH via a literal prefix test,
+  # not a `/lang.av:` pattern: the latter would exempt any future
+  # features/<x>/lang.av too, and a guard with a bypass is worse than none.
+  local features_dir="$BOOTSTRAP_DIR/packages/std-avrac/src/features"
+  local legacy
+  legacy=$(grep -rnE '\bregister[[:space:]]*\([[:space:]]*([A-Za-z_][A-Za-z0-9_]*[[:space:]]*,|$)' "$features_dir" --include='*.av' \
+    | awk -v ok="$features_dir/lang.av:" 'index($0, ok) != 1' \
+    | grep -v '/tests/' || true)
+  if [ -n "$legacy" ]; then err "check-central-domain: legacy register(reg, …) call outside features/lang.av — every feature folds from language_features() (t-kd4y.3.6 item 2):"; printf '%s\n' "$legacy" >&2; bad=1; fi
   # `return`, not `exit`: exit would bypass the RETURN trap and leak the
   # scratch dir; main's case dispatch is the script's last act, so the
   # failure status propagates to the CLI unchanged (CodeRabbit, #1263).
   [ "$bad" = 0 ] || return 1
-  ok "check-central-domain: central surface exactly classified — $(wc -l < "$scratch/core") engine-core (DSL mechanism) + $(wc -l < "$scratch/unflipped") unflipped (feature-owned; 0 = the t-kd4y.3 drain is complete)"
+  ok "check-central-domain: central surface exactly classified — $(wc -l < "$scratch/core") engine-core (DSL mechanism) + $(wc -l < "$scratch/unflipped") unflipped (feature-owned; 0 = the t-kd4y.3 drain is complete); zero legacy registers"
 }
 
 mode_check_layout_boundary() {

@@ -16,7 +16,7 @@
 // diagnose.sh --emit-gen-check / --parser-probe / --parser-tree, plus the
 // full-selfhost differential (diff-test).
 
-use @std.avrac.features.grammar.{emit_parser_file}
+use @std.avrac.features.grammar.{emit_parser_file, gen_parser_header}
 use @std.avrac.core.{avra_selfhost_read_file}
 
 spec "the checked-in production static parser stays current with THE grammar" {
@@ -34,5 +34,15 @@ spec "the checked-in production static parser stays current with THE grammar" {
         // compile + diff-test + emit-gen-check all pass right through. This guards
         // the derived-import header (gen_parser_files.av) directly.
         !emit_parser_file().contains("use @std.avrac.")
+    }
+
+    then "the banner carries NO imports — every use-line is DERIVED (t-kd4y.3.6 item 4)" {
+        // generator-owns-imports: derived_import_lines_for is the ONLY
+        // import source for the generated parser. A `use` smuggled into the
+        // banner would bypass the manifest-authoritative derivation (and its
+        // six derivation specs in builder_injection_test) while keeping the
+        // byte-equality spec above green — so the banner is pinned
+        // import-free here.
+        !gen_parser_header().contains("use ")
     }
 }
