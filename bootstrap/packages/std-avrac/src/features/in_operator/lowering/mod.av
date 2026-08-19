@@ -1,0 +1,36 @@
+// The `in` operator's LOWERINGS (t-kd4y.3.5.7): two span-free rows —
+// `mk_inlist` (list membership) and `mk_inrange` (the range desugar).
+// Both build discardable PARTIALS whose subject is a MISSING sentinel;
+// rebind_eq (features/struct_decl) retargets and spans the finals.
+// Imports ONLY features.grammar + core (F4012).
+use core.{Expr, ExprId, BinOp, LogicOp}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_to_node_list}
+
+/// `in [ a, … ]` → `Expr.InCheck(MISSING, items)` (list-membership).
+export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
+    st.store.exprs.add_leaf(Expr.InCheck(st.missing_node(), capval_to_node_list(acap)))
+}
+
+export fn mk_inlist_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_inlist_expr(st, vals[0]))
+}
+
+/// `in s..e` → the range-membership desugar `MISSING >= s && MISSING <= e`, a
+/// `Logical(Binary(_, Ge, s), And, Binary(_, Le, e))`. rebind_eq swaps BOTH
+/// sentinels for `base` (one shared id, as the retired hand parser did).
+export fn mk_inrange_expr(st: PState, scap: CapVal, ecap: CapVal) -> ExprId {
+    let s = capval_to_expr(st, scap)
+    let e = capval_to_expr(st, ecap)
+    let ge = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Ge, s))
+    let le = st.store.exprs.add_leaf(Expr.Binary(st.missing_node(), BinOp.Le, e))
+    st.store.exprs.add_leaf(Expr.Logical(ge, LogicOp.And, le))
+}
+
+export fn mk_inrange_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_inrange_expr(st, vals[0], vals[1]))
+}
+
+export fn in_operator_builds() -> List<BuilderBind> {
+    bind_rows("features.in_operator.lowering", [bind_row("mk_inlist", "expr", 1, false, "mk_inlist_abi", mk_inlist_abi),
+     bind_row("mk_inrange", "expr", 2, false, "mk_inrange_abi", mk_inrange_abi)])
+}

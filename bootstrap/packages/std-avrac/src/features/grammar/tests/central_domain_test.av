@@ -65,8 +65,13 @@ spec "t-kd4y.3.1: the purity ledger classifies the central surface exactly" {
         ok
     }
     then "the engine core stays EXACTLY the DSL mechanism — growing it is a deliberate act" {
-        // The purity ratchet: adding an eighth engine-core name means editing
-        // this spec too, so it cannot happen as a side effect of a flip.
-        engine_core_builds().length == 7
+        // The purity ratchet: adding an engine-core name means editing this
+        // spec too, so it cannot happen as a side effect of a flip. The
+        // deliberate eighth (t-kd4y.3.5.7): fold_postfix_with RECLASSIFIED
+        // from the .3.5.7 unflipped group — it is the postfix+with FOLD the
+        // ~24 spine `unary` branches spell, the same machine class as
+        // fold_binary/fold_postfix, and ownership follows the referencing
+        // rule (the spine), never the ticket a name was filed under.
+        engine_core_builds().length == 8
     }
 }

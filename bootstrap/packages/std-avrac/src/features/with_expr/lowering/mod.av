@@ -5,7 +5,7 @@ use core.{Expr, ExprId, byte_span}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_finit_list}
 
 /// Build ONE `with { … }` suffix as a PARTIAL `Expr.With` whose receiver
-/// is a placeholder — `fold_postfix_with_expr`/`fold_with_expr` rebind it
+/// is a placeholder — the engine's `fold_postfix_with_expr` rebinds it
 /// to the running base via `rebind_with`. The span is `[with-start,
 /// next-token)`: `rebind_with` reads this node's `.hi` to stamp each
 /// rebuilt `With`, so a chained `a with { } with { }` reproduces the

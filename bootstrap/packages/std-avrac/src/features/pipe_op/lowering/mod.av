@@ -1,0 +1,68 @@
+// The pipe operator's LOWERING (t-kd4y.3.5.7): one spanned row
+// (`fold_pipe`) — the `|>` desugar into plain calls. Imports ONLY
+// features.grammar + core (F4012).
+use core.{Expr, ExprId, byte_span}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_nodes}
+
+/// Left-fold `l ( "|>" r )*` into the pipe desugar — the retired hand
+/// parse_pipe: `a |> f` → `f(a)`; `a |> f(b)` → `f(a, b)` (prepend);
+/// `a |> f(_, b)` → `f(a, b)` (the `_` placeholder takes the piped value).
+/// Each `r` is a grammar-native logic_or parsed with `it`-sugar.
+/// Left-associative: `a |> f |> g` = `g(f(a))`.
+export fn fold_pipe_expr(st: PState, sp_start: int, lcap: CapVal, rcap: CapVal) -> ExprId {
+    mut acc = capval_to_expr(st, lcap)
+    // [sp_start, next-token) as the hand parse_pipe stamped each desugared Call
+    // (mod.av:1477/1481/1486). The pipe rule captures no `|>` tokens, so a
+    // per-step hi isn't recoverable; st.cur().pos is EXACT for the outermost
+    // (single) pipe — the common case — and only a chained `a |> f |> g` shares
+    // this hi across its intermediate Call (rare, span-untested). sp_start < 0
+    // (interpreter) folds to span-free.
+    let sp = byte_span(sp_start, st.cur().pos)
+    for rid in capval_nodes(rcap) {
+        acc = match st.store.exprs.get(rid) {
+            .Call(callee, args) -> {
+                if pipe_has_placeholder(st, args) {
+                    st.store.add_expr(Expr.Call(callee, pipe_replace_placeholder(st, args, acc)), sp, [])
+                } else {
+                    mut prepended: List<ExprId> = [acc]
+                    for a in args { prepended.push(a) }
+                    st.store.add_expr(Expr.Call(callee, prepended), sp, [])
+                }
+            }
+            _ -> st.store.add_expr(Expr.Call(rid, [acc]), sp, [])
+        }
+    }
+    acc
+}
+
+/// True iff any arg is the `_` pipe placeholder.
+fn pipe_has_placeholder(st: PState, args: List<ExprId>) -> bool {
+    for a in args {
+        match st.store.exprs.get(a) {
+            .Ident(n) -> if n == "_" { return true }
+            _ -> {}
+        }
+    }
+    false
+}
+
+/// Replace the `_` placeholder(s) with the piped value.
+fn pipe_replace_placeholder(st: PState, args: List<ExprId>, repl: ExprId) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for a in args {
+        let is_ph = match st.store.exprs.get(a) {
+            .Ident(n) -> n == "_"
+            _ -> false
+        }
+        if is_ph { out.push(repl) } else { out.push(a) }
+    }
+    out
+}
+
+export fn fold_pipe_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(fold_pipe_expr(st, st.build_sp, vals[0], vals[1]))
+}
+
+export fn pipe_op_builds() -> List<BuilderBind> {
+    bind_rows("features.pipe_op.lowering", [bind_row("fold_pipe", "expr", 2, true, "fold_pipe_abi", fold_pipe_abi)])
+}

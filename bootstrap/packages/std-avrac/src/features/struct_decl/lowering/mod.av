@@ -154,3 +154,96 @@ export fn struct_lit_builds() -> List<BuilderBind> {
 export fn enum_ctor_builds() -> List<BuilderBind> {
     bind_rows("features.struct_decl.lowering", [bind_row("mk_enum_ctor", "expr", 2, true, "mk_enum_ctor_abi", mk_enum_ctor_abi)])
 }
+
+/// `l ( "=" r )?` → an assignment, RETARGETING by the LHS shape (the
+/// retired hand parse_assignment: an `Ident` LHS → `Expr.Assign`, a
+/// `FieldAccess` LHS → `Expr.FieldAssign`; any other target is an
+/// F-code-worthy error). With no `=` (rcap Nil) the left passes through
+/// unchanged. Right-associative — the grammar's `r:assignment` recursion
+/// supplies the nested value (t-kd4y.3.5.7).
+export fn mk_assign_expr(st: PState, sp_start: int, lcap: CapVal, rcap: CapVal) -> ExprId {
+    let l = capval_to_expr(st, lcap)
+    match rcap {
+        .Nil -> l
+        _ -> {
+            let r = capval_to_expr(st, rcap)
+            // [sp_start, next-token) as the hand parse_assignment stamped (mod.av:1447).
+            // Right-assoc, so a nested `a = b = c` gets its own sp_start per level via
+            // the grammar's `r:assignment` recursion — each Assign spans from its own LHS.
+            let sp = byte_span(sp_start, st.cur().pos)
+            match st.store.exprs.get(l) {
+                .Ident(name) -> st.store.add_expr(Expr.Assign(name, r), sp, [])
+                .FieldAccess(obj, field) -> st.store.add_expr(Expr.FieldAssign(obj, field, r), sp, [])
+                _ -> st.error_node("invalid assignment target")
+            }
+        }
+    }
+}
+
+export fn mk_assign_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_assign_expr(st, st.build_sp, vals[0], vals[1]))
+}
+
+/// Retarget the eq_tail partial's `Expr.Missing` subject(s) to `base` —
+/// the equality-stratum sibling of the postfix rebind. With no suffix
+/// (tailcap Nil) the base passes through unchanged. The partials come
+/// from the eq_tail dispatch's three feature-owned branches (`is` /
+/// `in` / the `==`-chain); this fold is what installs the real subject
+/// and stamps the final's span (t-kd4y.3.5.7).
+export fn rebind_eq_expr(st: PState, sp_start: int, basecap: CapVal, tailcap: CapVal) -> ExprId {
+    let base = capval_to_expr(st, basecap)
+    match tailcap {
+        .Nil -> base
+        _ -> rebind_missing_subject(st, sp_start, capval_to_expr(st, tailcap), base)
+    }
+}
+
+/// Rebuild `tail` with its `Expr.Missing` subject replaced by `base` — the FINAL
+/// equality node(s), stamped [sp_start, next-token) exactly as the hand
+/// parse_equality stamped IsCheck/InCheck/the in-range Logical/the ==-chain
+/// (mod.av:1620-1630) with its rule-entry sp_start. The discardable partial rows
+/// (mk_is/mk_inlist/mk_inrange/mk_eqchain) stay span-free — only these rebound
+/// finals reach the tree. Dispatches on the partial's shape; the `==`-chain
+/// recurses down the left spine to the sentinel seed (a chained `a==b==c`'s
+/// intermediate node shares this hi — rare, span-untested; single `a==b` is exact).
+fn rebind_missing_subject(st: PState, sp_start: int, tail_id: ExprId, base: ExprId) -> ExprId {
+    let sp = byte_span(sp_start, st.cur().pos)
+    match st.store.exprs.get(tail_id) {
+        .IsCheck(_, v) -> st.store.add_expr(Expr.IsCheck(base, v), sp, [])
+        .InCheck(_, items) -> st.store.add_expr(Expr.InCheck(base, items), sp, [])
+        .Logical(ge, op, le) -> {
+            let ge2 = rebind_bin_subject(st, sp_start, ge, base)
+            let le2 = rebind_bin_subject(st, sp_start, le, base)
+            st.store.add_expr(Expr.Logical(ge2, op, le2), sp, [])
+        }
+        .Binary(l, op, r) -> st.store.add_expr(Expr.Binary(rebind_missing_subject(st, sp_start, l, base), op, r), sp, [])
+        // The sentinel seed itself: recursion bottom of a `==`-chain's left
+        // spine, and the bare-base case — the subject IS the base.
+        .Missing -> base
+        // Anything else (an Expr.Error from a failed tail coercion included)
+        // is PRESERVED, never silently swapped for the base: dropping the
+        // failed tail here would erase an error node the recovery tree owns
+        // (both engines share this lowering, so they stay in agreement).
+        _ -> tail_id
+    }
+}
+
+/// Replace the left of a single range-comparison `Binary(_, op, r)` with `base`.
+fn rebind_bin_subject(st: PState, sp_start: int, id: ExprId, base: ExprId) -> ExprId {
+    match st.store.exprs.get(id) {
+        .Binary(_, op, r) -> st.store.add_expr(Expr.Binary(base, op, r), byte_span(sp_start, st.cur().pos), [])
+        _ -> id
+    }
+}
+
+export fn rebind_eq_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(rebind_eq_expr(st, st.build_sp, vals[0], vals[1]))
+}
+
+/// The assignment/equality strata's rows (t-kd4y.3.5.7) — both spanned
+/// at their rule entry, both owned by field_assign_lang (its gram spells
+/// `assignment` and `equality`; ownership follows the referencing rule).
+export fn field_assign_builds() -> List<BuilderBind> {
+    bind_rows("features.struct_decl.lowering", [bind_row("mk_assign", "expr", 2, true, "mk_assign_abi", mk_assign_abi),
+     bind_row("rebind_eq", "expr", 2, true, "rebind_eq_abi", rebind_eq_abi)])
+}

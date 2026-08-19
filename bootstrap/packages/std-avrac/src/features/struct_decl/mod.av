@@ -3,7 +3,7 @@
 use codegen.{err_emit}
 use core.{feature_new, Feature, vtype_struct_name, ExprId}
 use features.{composed}
-use features.struct_decl.lowering.{type_decl_builds, struct_lit_builds, enum_ctor_builds}
+use features.struct_decl.lowering.{type_decl_builds, struct_lit_builds, enum_ctor_builds, field_assign_builds}
 use features.grammar.{parse_grammar}
 use resolve.{resolve_expr, resolve_expr_list_ids, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
@@ -88,18 +88,47 @@ export fn enum_ctor_lang() -> LanguageFeature {
     enum_ctor_def
 }
 
-/// Register the `obj.field = value` field-assign feature. The
-/// resolver-side mutability check (deep immutability) is handled
-/// directly in `resolve/mod.av`, so the resolver hook here is a
-/// pass-through.
-export fn field_assign_feature() -> Feature {
-    feature_new("field_assign") with {
-        expr_tag: Expr.FieldAssign(ExprId(0), "", ExprId(0)),
-        emit_expr: field_assign_emit_expr,
-        // FieldAssign resolution is handled directly in resolve/mod.av (deep immutability check)
-        resolve_expr: field_assign_resolve_expr,
-        check_expr: field_assign_check_expr,
+/// `obj.field = value` / `x = value` — the assignment + equality strata
+/// (t-kd4y.3.5.7). The definition carries the ladder's `assignment` rule
+/// (spelling mk_assign — the LHS-shape retarget into Assign/FieldAssign)
+/// and the `equality` rule (spelling rebind_eq — the fold that installs
+/// the real subject into the is/in/==-chain partials); one gram owns both
+/// rows per the no-orphans validator, and ownership follows the
+/// referencing rule. The spine keeps `eq_tail` as a pure dispatch over
+/// the three feature-owned tails. The resolver-side mutability check
+/// (deep immutability) is handled directly in `resolve/mod.av`, so the
+/// resolver hook here is a pass-through walk. `gram_family = "expr"`.
+export fn field_assign_lang() -> LanguageFeature {
+    LanguageFeature field_assign_def {
+        name = "field_assign",
+        title = "= — assignment expressions",
+        docs = """
+`x = v` rebinds a `mut` local; `obj.field = v` assigns through a field
+access (deep immutability applies — the root binding must be `mut`).
+Assignment is right-associative and yields the assigned value.
+""",
+        // VERBATIM from the spine. `@onfail(bail)` on the LHS: without it
+        // a FAILED left operand was still built on: `if let = x { 1 }`
+        // reported the missing binding name, then `assignment` consumed
+        // the `=`, parsed the rest of the fn body as an RHS ("expected
+        // }"), and mk_assign added "invalid assignment target" on top —
+        // three diagnostics where one is pinned. `bail` keys on the
+        // sub-parse FAILING, not on it reporting, which is required:
+        // `let a = (1) ->` reports and still yields `(group 1)`, a value
+        // that is kept.
+        gram = grammar {
+  assignment    = @onfail(bail) l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
+  equality      = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)
+        },
+        builders = field_assign_builds(),
+        snippet = r"${1:target} = ${2:value}",
+        expr_tag = Expr.FieldAssign(ExprId(0), "", ExprId(0)),
+        emit_expr = field_assign_emit_expr,
+        resolve_expr = field_assign_resolve_expr,
+        check_expr = field_assign_check_expr,
+        gram_family = "expr",
     }
+    field_assign_def
 }
 
 /// `type` — the declaration's definition carries syntax, docs, surface,

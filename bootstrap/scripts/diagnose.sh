@@ -2894,10 +2894,30 @@ mode_rc_strict_suite() {
   # in-shard interleaving the post-merge train does (hama). RESTORED by #1131;
   # see the workflow comments for why #1127's removal was withdrawn.
   local test_jobs="${AVRA_TEST_JOBS:-2}"
+  # t-u602: run the WHOLE strict tree under a box-scaled SOFT grant. A test
+  # unit that reaches execution without AVRA_MEM_BUDGET_MB in its env runs on
+  # the HARD box ceiling (75% of MemTotal), and the strict allocator's
+  # measured overhead pushed a legitimate ~8GB in-process-build batch
+  # (per_fn_cgu_cache_x8) straight through a 7871 MiB hard ceiling on a
+  # ~10.5GB runner — an instant F4014 with no back-off, five consecutive
+  # rc-strict reds while the SAME suite passed non-strict. The soft grant
+  # routes every process onto the designed governance instead: borrow while
+  # the box has slack, hold and re-sample under the pressure floor, yield
+  # only on a genuine cliff (t-d91l), with the runaway backstop intact. The
+  # pool's own narrower per-shard exports still rebind deeper in the tree; an
+  # operator's explicit budget (or hard AVRA_MEM_LIMIT_MB) is respected.
+  local strict_budget="${AVRA_MEM_BUDGET_MB:-}"
+  if [ -z "$strict_budget" ] && [ -r /proc/meminfo ]; then
+    strict_budget=$(awk '/^MemTotal:/ {print int($2/1024)}' /proc/meminfo)
+  fi
+  # `env` (not bare prefix assignments): the ${…:+…} expansion happens AFTER
+  # the shell has parsed assignments, so an expanded `VAR=val` word would be
+  # taken as the COMMAND. env applies expanded assignments correctly and is a
+  # no-op wrapper when the budget is empty.
   if [ -n "${1:-}" ]; then
-    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" "$BS2" test -f "$1" )
+    ( cd "$BOOTSTRAP_DIR" && env AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" ${strict_budget:+AVRA_MEM_BUDGET_MB="$strict_budget"} "$BS2" test -f "$1" )
   else
-    ( cd "$BOOTSTRAP_DIR" && AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" "$BS2" test )
+    ( cd "$BOOTSTRAP_DIR" && env AVRA_RC_STRICT=1 AVRA_TEST_JOBS="$test_jobs" ${strict_budget:+AVRA_MEM_BUDGET_MB="$strict_budget"} "$BS2" test )
   fi
 }
 

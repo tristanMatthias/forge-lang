@@ -6043,6 +6043,31 @@ int64_t avra_mem_ceiling_for(int64_t avail_kb, int64_t total_kb) {
 // than disabling the ceiling.
 static _Atomic int avra_mem_limit_soft = 0;
 
+// An UNSATISFIABLE soft grant — at or below the RSS the process already has
+// when the grant is first read — is lifted to baseline + one working quantum
+// (64 MiB). The trip precondition is rss >= limit; with a grant under
+// baseline that holds the moment the process EXISTS, so under box pressure
+// the whole back-off machinery degenerates into "kill a process that has
+// allocated nothing and has nothing to yield" — the t-u602 shape: a test
+// unit inheriting a small pool grant died as `MEMORY CEILING … during
+// startup (before parse)` on three consecutive CI runs while every spec in
+// the suite passed (7073/7073), because the deterministic shard packing put
+// its start inside the ~7 GiB @std prebuild's climb (avail under the slack
+// floor, still falling, so the release valve yielded a baseline-sized
+// process that could give nothing back). A grant below what an empty
+// process costs is a modeling error upstream, never evidence of a runaway;
+// the smallest satisfiable grant keeps the ceiling's entire purpose —
+// growth PAST baseline still trips under pressure exactly as designed, and
+// a satisfiable grant passes through untouched. PURE and separately
+// callable (the avra_mem_ceiling_for pattern) so the policy is pinned at
+// the numbers that broke, not whatever a quiet test box reports; a failed
+// baseline read (negative) changes nothing.
+int64_t avra_mem_soft_grant_floor(int64_t grant_kb, int64_t baseline_kb) {
+    if (baseline_kb < 0) return grant_kb;
+    int64_t min_kb = baseline_kb + 64 * 1024;
+    return (grant_kb < min_kb) ? min_kb : grant_kb;
+}
+
 int64_t avra_mem_limit_kb(void) {
     static _Atomic int64_t cached = -1;
     // Release/acquire pairing with the store below: the soft flag is
@@ -6059,7 +6084,8 @@ int64_t avra_mem_limit_kb(void) {
         v = strtoll(e, NULL, 10) * 1024;
         if (v < 0) v = 0;
     } else if (b && *b && strtoll(b, NULL, 10) > 0) {
-        v = strtoll(b, NULL, 10) * 1024;
+        v = avra_mem_soft_grant_floor(strtoll(b, NULL, 10) * 1024,
+                                      avra_mem_rss_kb());
         atomic_store_explicit(&avra_mem_limit_soft, 1, memory_order_relaxed);
     } else {
         v = avra_mem_ceiling_for(avra_mem_available_kb(), avra_mem_total_kb());

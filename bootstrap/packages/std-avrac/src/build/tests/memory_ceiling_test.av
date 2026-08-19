@@ -177,14 +177,17 @@ spec "t-d91l: a soft grant under the pressure floor backs off before tripping" {
         rc != 0 && out.contains("F4014") && !out.contains("backed off:")
     }
     then "with slack above the floor an over-grant compile still just borrows — clean exit, no trip" {
-        // The pre-existing borrowing semantics, as the control: floor forced
-        // to 1 MiB so availability always clears it. rc == 0 is the
-        // non-vacuity half — a timeout or unrelated failure cannot pass this
-        // as 'no F4014'. The input must therefore standalone-check CLEAN
-        // (BIG_FILE cannot: an in-package module's relative imports don't
-        // resolve standalone — its rc is 1 for reasons unrelated to memory),
-        // so this leg checks a tiny self-contained program against a 1 MiB
-        // grant — over-grant from the first allocation, borrowing throughout.
+        // The end-to-end control: floor forced to 1 MiB so availability
+        // always clears it. rc == 0 is the non-vacuity half — a timeout or
+        // unrelated failure cannot pass this as 'no F4014'. The input must
+        // standalone-check CLEAN (BIG_FILE cannot: an in-package module's
+        // relative imports don't resolve standalone), so this leg checks a
+        // tiny self-contained program against a 1 MiB grant. Since the
+        // t-u602 grant floor, that grant is LIFTED to baseline + 64 MiB, so
+        // whether this run's RSS actually crosses the floored limit depends
+        // on box and build — the leg now pins only "no spurious trip"; the
+        // BORROW DECISION itself is pinned PURE in the t-u602 spec below,
+        // where the coordinates cannot drift with fixture size.
         let src = "/tmp/avra_mem_backoff_${string(avra_getpid())}_ok.av"
         write_fixture(src, "fn main() {\n    println(\"ok\")\n}\n")
         let log = backoff_log("borrow")
@@ -418,4 +421,64 @@ fn default_ceiling_clears_memtotal_floor() -> bool {
         return false
     }
     true
+}
+
+/// The UNSATISFIABLE-grant floor, pure (t-u602): a soft grant at or below
+/// the process's first-read RSS is lifted to baseline + one 64 MiB working
+/// quantum. Pinned at the shape that broke: a test unit inheriting a small
+/// pool grant tripped `MEMORY CEILING … during startup (before parse)` on
+/// three consecutive CI runs (7073/7073 specs passing) because the
+/// deterministic shard packing started it inside the @std prebuild's climb
+/// — over an unsatisfiable grant from birth, with nothing to yield when the
+/// release valve fired. Growth past baseline still trips exactly as
+/// designed; a satisfiable grant passes through untouched.
+extern fn avra_mem_soft_grant_floor(grant_kb: int, baseline_kb: int) -> int
+
+spec "t-u602: an unsatisfiable soft grant lifts to first-read baseline + a working quantum" {
+    then "a grant below baseline lifts to baseline + 64 MiB" {
+        avra_mem_soft_grant_floor(30720, 40960) == 40960 + 65536
+    }
+    then "a grant AT baseline is equally unsatisfiable — same lift" {
+        avra_mem_soft_grant_floor(40960, 40960) == 40960 + 65536
+    }
+    then "a satisfiable grant passes through untouched" {
+        avra_mem_soft_grant_floor(1843200, 40960) == 1843200
+    }
+    then "the boundary: exactly baseline + quantum stays as granted" {
+        avra_mem_soft_grant_floor(40960 + 65536, 40960) == 40960 + 65536
+    }
+    then "a failed baseline read (negative) changes nothing" {
+        avra_mem_soft_grant_floor(30720, 0 - 1) == 30720
+    }
+}
+
+/// The soft borrow/trip DECISION, pure (CodeRabbit find on #1282): the grant
+/// floor made the end-to-end borrow leg's fixture-size-dependent — a tiny
+/// check may now finish UNDER the floored limit, so its clean exit no longer
+/// proves the borrowing path ran. The decision is pinned here at fixed
+/// coordinates instead, floor-composed so the t-u602 victim's exact shape is
+/// among them.
+extern fn avra_mem_should_trip(rss_kb: int, limit_kb: int, soft: int, avail_kb: int, floor_kb: int) -> int
+
+spec "t-u602: the soft borrow/trip decision, pure and floor-composed" {
+    then "over-limit with availability ABOVE the slack floor BORROWS (no trip)" {
+        avra_mem_should_trip(200000, 100000, 1, 2000000, 1000000) == 0
+    }
+    then "over-limit with availability UNDER the slack floor trips" {
+        avra_mem_should_trip(200000, 100000, 1, 900000, 1000000) == 1
+    }
+    then "under-limit never trips, whatever the box looks like" {
+        avra_mem_should_trip(50000, 100000, 1, 100, 1000000) == 0
+    }
+    then "the hard path ignores the floor — over-limit trips regardless of slack" {
+        avra_mem_should_trip(200000, 100000, 0, 2000000, 1000000) == 1
+    }
+    then "COMPOSED, the t-u602 victim's coordinates: an unsatisfiable 1 MiB grant lifts past baseline, so baseline RSS is UNDER the floored limit and no trip fires even at the cliff" {
+        let floored = avra_mem_soft_grant_floor(1024, 40960)
+        avra_mem_should_trip(40960, floored, 1, 100, 1000000) == 0
+    }
+    then "COMPOSED: genuine growth past the floored limit under pressure still trips — the ceiling's purpose survives the floor" {
+        let floored = avra_mem_soft_grant_floor(1024, 40960)
+        avra_mem_should_trip(floored + 1024, floored, 1, 900000, 1000000) == 1
+    }
 }

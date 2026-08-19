@@ -1,22 +1,43 @@
-// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces flat at `features.is_keyword.{...}`
+// dir-as-module (g2eo.1): codegen.av + lowering/ auto-load as siblings,
+// surface flat at `features.is_keyword.{...}`.
 use core.{feature_new, Feature, ExprId}
 use resolve.{resolve_expr}
+use features.grammar.{parse_grammar}
 use features.is_keyword.codegen.{emit_is_check}
+use features.is_keyword.lowering.{is_keyword_builds}
 use features.eval.{eval_expr, ok_result, error_result, value_bool, Runtime, StepResult, step_had_error, step_runtime, step_value, value_is_enumish}
 use typeck.{check_expr, tc_er}
 
-/// Register the `is` operator feature. Used for runtime variant
-/// checks (`x is .Some`) — produces a Bool. Wired up to the
-/// resolver, type-checker, codegen, and the @comptime evaluator
-/// via the standard tag-based dispatch.
-export fn is_keyword_feature() -> Feature {
-    feature_new("is") with {
-        expr_tag: Expr.IsCheck(ExprId(0), ""),
-        emit_expr: emit_is_check,
-        resolve_expr: is_resolve,
-        check_expr: is_check,
-        eval_expr: is_eval,
+/// `x is .Some` — the runtime variant check (produces a Bool). The
+/// definition carries `is_tail`, one branch of the spine's `eq_tail`
+/// dispatch (t-kd4y.3.5.7): the rule builds a PARTIAL `IsCheck` whose
+/// subject is a MISSING sentinel, and the `equality` stratum's rebind_eq
+/// (features/struct_decl) installs the real subject. Wired to the
+/// resolver, type-checker, codegen, and the @comptime evaluator via the
+/// standard tag-based dispatch. `gram_family = "expr"`.
+export fn is_keyword_lang() -> LanguageFeature {
+    LanguageFeature is_keyword_def {
+        name = "is",
+        title = "is — runtime variant check",
+        docs = """
+`value is .Variant` is true when an enum value currently holds that
+variant. Mutually exclusive with `==` chains and `in` at the same
+precedence — one check per comparison.
+""",
+        gram = grammar {
+  is_tail = "is" "." v:IDENT
+            @expect(".", "expected `.Variant` after `is`") -> mk_is(v)
+        },
+        builders = is_keyword_builds(),
+        snippet = r"${1:value} is .${2:Variant}",
+        expr_tag = Expr.IsCheck(ExprId(0), ""),
+        emit_expr = emit_is_check,
+        resolve_expr = is_resolve,
+        check_expr = is_check,
+        eval_expr = is_eval,
+        gram_family = "expr",
     }
+    is_keyword_def
 }
 
 /// Resolver hook for `IsCheck`. The variant name on the right-hand

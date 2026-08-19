@@ -877,10 +877,15 @@ export fn engine_build_kinds() -> List<string> {
 /// `unflipped_builds` in the same diff; that list reaching [] IS the old
 /// system fully deleted (t-kd4y.3.6).
 export fn engine_core_builds() -> List<string> {
-    // fold_binary / fold_postfix — the DSL's own fold semantics: a rule's
-    //   repetition-fold and the postfix-chain fold execute THROUGH these,
-    //   like `*` or `@try`. The operator/suffix rules riding them are
-    //   feature content (t-kd4y.3.5.7/.8); the folds are the machine.
+    // fold_binary / fold_postfix / fold_postfix_with — the DSL's own fold
+    //   semantics: a rule's repetition-fold and the postfix-chain folds
+    //   execute THROUGH these, like `*` or `@try`. The operator/suffix
+    //   rules riding them are feature content (t-kd4y.3.5.7/.8); the
+    //   folds are the machine. fold_postfix_with was ticketed with the
+    //   .3.5.7 operator families and RECLASSIFIED here instead: it is
+    //   spelled ONLY by the spine `unary` alternation's ~24 primary
+    //   branches, and ownership follows the referencing rule — moving it
+    //   would mean moving the primary dispatch skeleton itself.
     // Block / ExprStmt — how the DSL lowers a `{ stmt* }` capture and a
     //   bare-expression statement: the glue between any feature's body and
     //   the statement list. No syntax of their own.
@@ -890,7 +895,7 @@ export fn engine_core_builds() -> List<string> {
     //   side-table row, builds nothing a user spells. (Tableless: exec/emit
     //   arms only, no kind row — see central_tableless_builds.)
     // MkNone — the absent-optional-capture marshalling value. (Tableless.)
-    ["fold_binary", "fold_postfix", "Block", "ExprStmt", "MkPrimaryFail",
+    ["fold_binary", "fold_postfix", "fold_postfix_with", "Block", "ExprStmt", "MkPrimaryFail",
      "MkStampAt", "MkNone"]
 }
 
@@ -919,10 +924,6 @@ export fn unflipped_builds() -> List<string> {
      // rows flip with .3.5.8 when those rules themselves are in play;
      // MkTaggedTemplate pairs with MkTemplate in .3.5.9.
      "MkEnumCtorSuffix", "MkExprBlock", "MkTaggedTemplate",
-     // t-kd4y.3.5.7 operator families
-     "fold_logical", "fold_nullish", "fold_pipe", "fold_with",
-     "fold_postfix_with", "mk_assign", "rebind_eq", "mk_eqchain", "mk_is",
-     "mk_inlist", "mk_inrange", "Unary",
      // t-kd4y.3.5.8 postfix/call families
      "field_suffix", "index_suffix", "call_suffix", "MkCallSuffix",
      "MkIndexSuffix", "MkGenericCallSuffix", "MkCallArg", "MkFieldAccess",
@@ -947,11 +948,9 @@ export fn central_tableless_builds() -> List<string> {
 
 export fn central_build_kind(bn: string) -> string {
     match bn {
-        "fold_binary" or "fold_logical" or "fold_nullish" or "fold_pipe" or "fold_with"
-            or "fold_postfix_with" or "fold_postfix" or "mk_assign" or "rebind_eq" or "mk_is"
-            or "mk_inlist" or "mk_inrange" or "mk_eqchain"
+        "fold_binary" or "fold_postfix_with" or "fold_postfix"
             or "MkExprBlock"
-            or "Unary" or "field_suffix" or "index_suffix" or "call_suffix"
+            or "field_suffix" or "index_suffix" or "call_suffix"
             or "MkSplice" or "MkSpliceStruct"
             or "MkTemplate" or "MkTrySuffix" or "MkCatchSuffix" or "MkOptChain" or "MkTupleIndex"
             or "MkFieldAccess" or "MkIndexSuffix" or "MkCallSuffix" or "MkGenericCallSuffix"

@@ -1,0 +1,103 @@
+// The operator-family LanguageFeature definitions (t-kd4y.3.5.7): ten
+// rows across eight carriers — four NEW syntax-only features (logical_op,
+// pipe_op, eq_chain, unary_op) and four conversions (null_coalesce,
+// is, in, field_assign). The engine keeps only the dispatch skeleton
+// (eq_tail, the fold_binary strata, unary's primary alternation) and the
+// fold machinery (fold_binary / fold_postfix / fold_postfix_with);
+// `fold_with` — spelled by NO rule — was DELETED, not moved.
+use @std.avrac.features.logical_op.{logical_op_lang}
+use @std.avrac.features.pipe_op.{pipe_op_lang}
+use @std.avrac.features.eq_chain.{eq_chain_lang}
+use @std.avrac.features.unary_op.{unary_op_lang}
+use @std.avrac.features.{feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.parse.{oracle_expr}
+
+spec "operator families as LanguageFeatures" {
+    then "the four new carriers have title, docs, and snippets" {
+        let lg = logical_op_lang()
+        let pp = pipe_op_lang()
+        let eq = eq_chain_lang()
+        let un = unary_op_lang()
+        lg.title.contains("short-circuit") && lg.docs.contains("evaluates")
+            && pp.docs.contains("pipe") && eq.docs.contains("equality")
+            && un.docs.contains("Prefix") && un.snippet.contains("!")
+    }
+    then "the ladder strata reach the composed whole-program view" {
+        let prog = render_grammar(avra_program_grammar())
+        prog.contains("fold_logical(l, op, r)")
+            && prog.contains("fold_pipe(l, r)")
+            && prog.contains("fold_nullish(l, op, r)")
+            && prog.contains("mk_eqchain(op, r)")
+            && prog.contains("Unary(op, operand)")
+            && prog.contains("mk_assign(l, r)")
+            && prog.contains("rebind_eq(base, tail)")
+            && prog.contains("mk_is(v)")
+            && prog.contains("mk_inlist(a)")
+            && prog.contains("mk_inrange(s, e)")
+            && prog.contains("is_tail | in_tail | eqchain_tail")
+    }
+    then "the ten rows ride the manifest and NOTHING is left central" {
+        mut owners = ""
+        for b in feature_builders() {
+            if b.name == "fold_logical" || b.name == "fold_pipe" || b.name == "fold_nullish"
+                || b.name == "mk_eqchain" || b.name == "Unary" || b.name == "mk_assign"
+                || b.name == "rebind_eq" || b.name == "mk_is" || b.name == "mk_inlist"
+                || b.name == "mk_inrange" {
+                owners = owners + "${b.name}=${b.module}/${if b.spanned { "sp" } else { "flat" }} "
+            }
+        }
+        owners.contains("fold_logical=features.logical_op.lowering/sp")
+            && owners.contains("fold_pipe=features.pipe_op.lowering/sp")
+            && owners.contains("fold_nullish=features.null_safety.lowering/sp")
+            && owners.contains("mk_eqchain=features.eq_chain.lowering/flat")
+            && owners.contains("Unary=features.unary_op.lowering/flat")
+            && owners.contains("mk_assign=features.struct_decl.lowering/sp")
+            && owners.contains("rebind_eq=features.struct_decl.lowering/sp")
+            && owners.contains("mk_is=features.is_keyword.lowering/flat")
+            && owners.contains("mk_inlist=features.in_operator.lowering/flat")
+            && owners.contains("mk_inrange=features.in_operator.lowering/flat")
+            && central_build_kind("fold_logical") == ""
+            && central_build_kind("fold_pipe") == ""
+            && central_build_kind("fold_nullish") == ""
+            && central_build_kind("mk_eqchain") == ""
+            && central_build_kind("Unary") == ""
+            && central_build_kind("mk_assign") == ""
+            && central_build_kind("rebind_eq") == ""
+            && central_build_kind("mk_is") == ""
+            && central_build_kind("mk_inlist") == ""
+            && central_build_kind("mk_inrange") == ""
+            && central_build_kind("fold_with") == ""
+    }
+    then "the engine keeps the fold machinery" {
+        central_build_kind("fold_binary") == "expr"
+            && central_build_kind("fold_postfix") == "expr"
+            && central_build_kind("fold_postfix_with") == "expr"
+    }
+}
+
+// Representative operator shapes through the PRODUCTION engine — every
+// flipped stratum exercised end-to-end.
+spec "operator shapes parse to the expected trees" {
+    then "logical, nullish, and pipe fold LEFT — exact trees, not identifier presence" {
+        // Pinned as full renders: a right fold or a subject left Missing
+        // would contain the same identifiers, so `.contains` cannot catch
+        // an associativity or retarget regression (CodeRabbit find, #1282).
+        (oracle_expr("a && b || c") ?? "<parse error>") == "(|| (&& a b) c)"
+            && (oracle_expr("a ?? b ?? c") ?? "<parse error>") == "(?? (?? a b) c)"
+            && (oracle_expr("x |> f |> g") ?? "<parse error>") == "(call g ((call f (x))))"
+    }
+    then "the eq stratum retargets is / in / ==-chains onto the base — no Missing survives" {
+        let ischk = oracle_expr("v is .Some") ?? "<parse error>"
+        let inl = oracle_expr("x in [1, 2]") ?? "<parse error>"
+        (oracle_expr("a == b") ?? "<parse error>") == "(== a b)"
+            && (oracle_expr("n in 0..9") ?? "<parse error>") == "(&& (>= n 0) (<= n 9))"
+            && ischk.contains("Some") && !ischk.contains("missing") && !ischk.contains("error")
+            && inl.contains("x") && !inl.contains("missing") && !inl.contains("error")
+    }
+    then "prefix unary and assignment build their nodes" {
+        let asn = oracle_expr("x = 5") ?? "<parse error>"
+        (oracle_expr("!ready") ?? "<parse error>") == "(! ready)"
+            && asn.contains("x") && asn.contains("5") && !asn.contains("error")
+    }
+}

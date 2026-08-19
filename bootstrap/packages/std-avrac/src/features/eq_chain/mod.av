@@ -1,0 +1,31 @@
+// dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
+// at `features.eq_chain.{...}`. A syntax-only carrier: the chain lowers
+// to plain `Expr.Binary` nodes (the engine's fold_binary shape), so no
+// pass hooks ride this definition.
+use features.grammar.{parse_grammar}
+use features.eq_chain.lowering.{eq_chain_builds}
+
+/// `a == b` / `a != b` — the equality comparison tail (t-kd4y.3.5.7).
+/// One branch of the spine's `eq_tail` dispatch (`is` and `in` are its
+/// siblings, each with its own feature): the rule builds a PARTIAL
+/// left-assoc `Binary` chain seeded with a MISSING left, and the
+/// `equality` stratum's `rebind_eq` (features/struct_decl) retargets the
+/// sentinel to the real base. `gram_family = "expr"`.
+export fn eq_chain_lang() -> LanguageFeature {
+    LanguageFeature eq_chain_def {
+        name = "eq_chain",
+        title = "== / != — equality comparisons",
+        docs = """
+`a == b` and `a != b` compare for equality; chains associate left
+(`a == b == c` is `(a == b) == c`). Mutually exclusive with the `is`
+variant check and the `in` membership test at the same precedence.
+""",
+        gram = grammar {
+  eqchain_tail = ( op:("==" | "!=") r:bitor )+ -> mk_eqchain(op, r)
+        },
+        builders = eq_chain_builds(),
+        snippet = r"${1:a} == ${2:b}",
+        gram_family = "expr",
+    }
+    eq_chain_def
+}

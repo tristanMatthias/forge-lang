@@ -61,14 +61,16 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         emit_all().contains("fn parse_expression(st: PState) -> CapVal {\n    parse_assignment(st)\n}")
     }
 
-    then "the equality stratum retargets is/in/==-chain via rebind_eq_expr" {
+    then "the equality stratum retargets is/in/==-chain via the manifest adapters" {
         // `equality = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)` with
         // the eq_tail partial (is / in-list / in-range / ==-chain) retargeted.
+        // Feature-owned rows (t-kd4y.3.5.7): rebind_eq spanned via
+        // call_with_build_sp; the discardable partials flat.
         let src = emit_all()
-        src.contains("CapVal.Node(rebind_eq_expr(st, sp_start, base, tail))") &&
-        src.contains("CapVal.Node(mk_is_expr(st, v))") &&
-        src.contains("mk_eqchain_expr(st, CapVal.Toks(op_list), CapVal.Nodes(r_list))") &&
-        src.contains("mk_inrange_expr(st, s, e)")
+        src.contains("call_with_build_sp(st, sp_start, rebind_eq_abi, [base, tail])") &&
+        src.contains("mk_is_abi(st, [v])") &&
+        src.contains("mk_eqchain_abi(st, [CapVal.Toks(op_list), CapVal.Nodes(r_list)])") &&
+        src.contains("mk_inrange_abi(st, [s, e])")
     }
 
     then "assignment guards `=` (opt-scalar) then retargets via mk_assign_expr" {
@@ -91,7 +93,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("let l = __bres0") &&
         src.contains("if st.cur().tk == Tk.Equal {") &&
         src.contains("r = parse_assignment(st)") &&
-        src.contains("CapVal.Node(mk_assign_expr(st, sp_start, l, r))")
+        src.contains("call_with_build_sp(st, sp_start, mk_assign_abi, [l, r])")
     }
 
     then "the pipe stratum folds `|>` with native logic_or operands under it-sugar mode" {
@@ -101,7 +103,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("while st.cur().tk == Tk.PipeGt {") &&
         src.contains("parse_logic_or(st)") &&
         src.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
-        src.contains("CapVal.Node(fold_pipe_expr(st, sp_start, l, CapVal.Nodes(r_list)))")
+        src.contains("call_with_build_sp(st, sp_start, fold_pipe_abi, [l, CapVal.Nodes(r_list)])")
     }
 
     then "the channel keyword primary is generated, not a hand delegate" {
@@ -160,10 +162,13 @@ fn ")
         src.contains("call_with_build_sp(st, sp_start, mk_isolated_abi, [body])")
     }
 
-    then "the null-coalesce stratum folds `??` via fold_nullish_expr" {
+    then "the null-coalesce stratum folds `??` via the manifest adapter" {
+        // Feature-owned (features/null_safety lowering, t-kd4y.3.5.7) —
+        // emit_fold_build's manifest branch spells the spanned adapter while
+        // the operator-absent fast-path stays.
         let src = emit_all()
         src.contains("while st.cur().tk == Tk.QuestionQuestion {") &&
-        src.contains("CapVal.Node(fold_nullish_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
+        src.contains("call_with_build_sp(st, sp_start, fold_nullish_abi, [l, CapVal.Toks(ops), CapVal.Nodes(rs)])")
     }
 
     then "the uniform binary ladder collapses to ONE Pratt loop (Step G slice 1)" {
@@ -187,7 +192,7 @@ fn ")
         let src = emit_all()
         src.contains("while st.cur().tk == Tk.PipePipe || st.cur().text == \"or\" {") &&
         src.contains("while st.cur().tk == Tk.AmpAmp || st.cur().text == \"and\" {") &&
-        src.contains("CapVal.Node(fold_logical_expr(st, sp_start, l, CapVal.Toks(ops), CapVal.Nodes(rs)))")
+        src.contains("call_with_build_sp(st, sp_start, fold_logical_abi, [l, CapVal.Toks(ops), CapVal.Nodes(rs)])")
     }
 
     then "the Pratt loop climbs precedence ExprId-internal (leaf via parse_unary)" {
@@ -228,11 +233,15 @@ fn ")
         // `st.modes.quote_depth == 0 && Tk.Tilde` — so at quote_depth>0 (where `~` is the
         // quote SPLICE) it falls through to @hand(primary_base). This is the FIRST @when
         // use in the production expression grammar (grammar-native mode gating, #954).
+        // t-kd4y.3.5.7: the two prefix branches live in the feature-owned
+        // `unary_prefix` rule (features/unary_op) — parse_unary dispatches to
+        // parse_unary_prefix, and the Unary row lowers via its flat adapter.
         let src = emit_all()
         src.contains("fn parse_unary(st: PState) -> CapVal {") &&
+        src.contains("fn parse_unary_prefix(st: PState) -> CapVal {") &&
         src.contains("if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == \"not\" {") &&
         src.contains("if st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) {") &&
-        src.contains("CapVal.Node(unary_expr(st, op, operand))") &&
+        src.contains("unary_abi(st, [op, operand])") &&
         // Phase 3a-7: NUMBER + STRING (slice 1) + BOOL (slice 2) + null/none (slice 3)
         // literal primaries are grammar-owned via branches BEFORE the @hand(primary_base)
         // tail — each a `b:<lit> ( postfix_suffix )* ( with_suffix )* -> fold_postfix_with(b,p,s)`.

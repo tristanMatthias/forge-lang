@@ -1,0 +1,19 @@
+// The `is` operator's LOWERING (t-kd4y.3.5.7): one span-free row
+// (`mk_is`) — the discardable partial stays span-free; only the rebound
+// final (rebind_eq, features/struct_decl) reaches the tree with a span.
+// Imports ONLY features.grammar + core (F4012).
+use core.{Expr, ExprId}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_tok_text}
+
+/// `is .Variant` → `Expr.IsCheck(MISSING, name)` (retargeted by rebind_eq).
+export fn mk_is_expr(st: PState, vcap: CapVal) -> ExprId {
+    st.store.exprs.add_leaf(Expr.IsCheck(st.missing_node(), capval_tok_text(vcap)))
+}
+
+export fn mk_is_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_is_expr(st, vals[0]))
+}
+
+export fn is_keyword_builds() -> List<BuilderBind> {
+    bind_rows("features.is_keyword.lowering", [bind_row("mk_is", "expr", 1, false, "mk_is_abi", mk_is_abi)])
+}
