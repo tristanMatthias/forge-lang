@@ -7,7 +7,7 @@
 use features.eval.{ok_result, value_null}
 use core.{Stmt, StmtId}
 use resolve.{resolve_stmt_ids}
-use features.modules.lowering.{modules_builds, qualified_builds}
+use features.modules.lowering.{modules_builds, qualified_builds, export_builds}
 use features.grammar.{parse_grammar}
 use features.{composed}
 
@@ -73,6 +73,54 @@ may be named `defer`); the imported names themselves stay identifiers.
         eval_stmt = use_eval,
     }
     use_def
+}
+
+/// `export <decl>` (t-kd4y.3.5.9) — the module system's visibility face,
+/// so the wrapper rule + its MkExport row live here beside `use`/`mod`.
+/// `gram_family` stays "" — declaration rules, composed by the decl view
+/// (`declaration` and the annotation family's `wrapped_inner` reference
+/// `export_decl` cross-fragment by name).
+export fn export_lang() -> LanguageFeature {
+    LanguageFeature export_def {
+        name = "export",
+        title = "export — module-public declarations",
+        docs = """
+`export fn`/`export type`/`export let` (and the rest of the declaration
+forms) mark a declaration visible outside its module. Lowered as an
+`@export` annotation wrapper; `export mut` is the cross-module global
+form (`export let` compiles to module-local allocas).
+""",
+        // VERBATIM from the spine, reporting posture included:
+        // - t-myz7: `export` owns its recovery. The inner is `@require`d
+        //   with a declared message because `exportable_decl`'s FIRST is a
+        //   disjunction of keywords — there is no single token to name,
+        //   which is exactly the case `@expect("<rule>", …)` exists for.
+        // - t-47hc.5: `exportable_inner` MIRRORS `declaration`'s
+        //   alternation. A `@try` branch commits only if the callee
+        //   reported NOTHING, so a keyword whose native rule reports and
+        //   then rolls back leaves the alternation with no branch at all —
+        //   and with no tail that is `Nil`, which `MkStampAt`'s
+        //   capval_to_stmt answers with a generic "expected a statement"
+        //   ON TOP of a re-parse of the same keyword by the caller. The
+        //   keywords already BARE in `declaration` are bare here too,
+        //   because a routed rule owns its recovery and must not be given
+        //   a rollback it does not have at the top level. The branch list
+        //   is `declaration`'s, MINUS the four prefix wrappers (`export`,
+        //   `///`, `@ann`, `//!`) and the IDENT-led component
+        //   instantiations — an inner `export` cannot reach those — and
+        //   minus the `statement` tail, which is not a declaration. Same
+        //   `@try`/bare split, same order (`let_decl` before `letdes_decl`
+        //   for the reason `declaration` records), so the two alternations
+        //   cannot disagree about who owns a keyword.
+        // - `exportable_decl` spells `MkStampAt` (engine-tableless): the
+        //   wrapped declaration is stamped at the position captured right
+        //   after consuming `export`, so the stamping rule begins exactly
+        //   where the inner declaration does.
+        gram = composed([avra_export_grammar()]),
+        builders = export_builds(),
+        snippet = r"export ${1:declaration}",
+    }
+    export_def
 }
 
 /// `@pkg::mod::name` qualified references (t-kd4y.3.5.6) — the

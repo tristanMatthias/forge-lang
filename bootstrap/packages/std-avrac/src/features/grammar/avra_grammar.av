@@ -21,7 +21,8 @@ use features.struct_decl.{avra_struct_decl_grammar}
 use features.enum_decl.{avra_enum_decl_grammar}
 use features.trait_decl.{avra_trait_decl_grammar}
 use features.impl_decl.{avra_impl_decl_grammar}
-use features.modules.{avra_modules_grammar}
+use features.annotations.{avra_annotations_grammar}
+use features.modules.{avra_modules_grammar, avra_export_grammar}
 use features.select_stmt.{avra_select_grammar}
 use features.parallel_stmt.{avra_parallel_grammar}
 use features.spec_test.{avra_spec_grammar}
@@ -117,11 +118,13 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // feature (features/struct_decl's struct_lit_lang, gram_family = "expr",
   // t-kd4y.3.5.6); qualified_expr / with_suffix / the splice-struct branch
   // reference `field_init` cross-fragment by name.
-  tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
+  // `tagged_template` + `template_lit` live with the templates feature
+  // (templates_lang, gram_family = "expr", t-kd4y.3.5.9) — the primary
+  // alternation dispatches to them by name (TEMPLATE-led, and IDENT-led
+  // behind @peek(ident_template)).
   // `qualified_expr` lives with the modules feature (qualified_ref_lang,
   // gram_family = "expr", t-kd4y.3.5.6) — the @require'd-segment reporting
   // posture rides its comments there.
-  template_lit = t:TEMPLATE -> MkTemplate(t)
   brace_expr   = @peek(brace_map) map_literal | block_expr
   // `map_literal` lives with the map_lit feature (gram_family = "expr",
   // t-kd4y.3.5.4) — `brace_expr` above dispatches to it by name.
@@ -312,107 +315,14 @@ fn avra_decl_edge_grammar() -> Grammar {
   name_or_splice = @when(in_quote_body) "~" sn:IDENT -> MkSpliceName(sn)
                  | pn:IDENT -> MkPlainName(pn)
   declaration = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | export_decl | doc_decl | mdoc_decl | annot_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header | bare_comp_inst_raw | @try bare_comp_inst | statement
-  // `export <decl>` — a prefix WRAPPER.
-  //
-  // The inner is NOT `declaration`: `export` does NOT stack (`export @foo fn`
-  // is "expected declaration after `export`", not a nested wrap). A
-  // recursive inner would accept that and diverge on invalid input, which is precisely
-  // the class the corpus additions in error_recovery_differential_test exist to catch.
-  //
-  // THE INNER CARRIES ITS OWN POSITION, which is why `exportable_decl` is a rule in its
-  // own right rather than the alternation inlined into `export_decl`. The wrapped
-  // declaration is stamped with the position captured right after consuming
-  // `export`, and nothing else supplies that: the statement-list loop stamps only the
-  // outermost node, which for a wrapper is the `Stmt.Annotated`. `MkStampAt` reads its
-  // OWNING RULE's entry byte, so that rule has to begin exactly where the inner
-  // declaration does — one literal later than `export_decl`.
-  //
-  // Skipping it is not cosmetic: `Ctx.source_line` retains its previous value for a node
-  // with no recorded position, so an unstamped declaration inherits whatever statement
-  // was emitted before it, and every diagnostic position inside it — including the
-  // `avra_null_deref_trap` line baked into the IR — moves with it. diff-test caught it as
-  // selfhost line numbers drifting by 2, 3 and 41; arbitrary deltas are the tell that a
-  // position is inherited rather than shifted.
-  // t-myz7: `export` owns its recovery. The inner is `@require`d with a declared message
-  // because `exportable_decl`'s FIRST is a disjunction of keywords — there is no single
-  // token to name, which is exactly the case `@expect("<rule>", …)` exists for.
-  export_decl      = @try "export" @cut @require ed:exportable_decl
-                     @expect("exportable_decl", "expected declaration after `export`") -> MkExport(ed)
-  exportable_decl  = ei:exportable_inner -> MkStampAt(ei)
-  // t-47hc.5: this alternation MIRRORS `declaration`'s. A `@try`
-  // branch commits only if the callee reported NOTHING, so a keyword whose native rule
-  // reports and then rolls back leaves the alternation with no branch at all — and with
-  // no tail that is `Nil`, which `MkStampAt`'s `capval_to_stmt` answers with a generic
-  // "expected a statement" ON TOP of a re-parse of the same keyword by the caller.
-  // The keywords
-  // already BARE in `declaration` are bare here too, because a routed rule owns its
-  // recovery and must not be given a rollback it does not have at the top level.
-  //
-  // The branch list is `declaration`'s, MINUS the four prefix wrappers (`export`,
-  // `///`, `@ann`, `//!`) and the IDENT-led component instantiations — an inner
-  // `export` cannot reach those — and minus
-  // the `statement` tail, which is not a declaration. Same `@try`/bare split, same
-  // order (`let_decl` before `letdes_decl` for the reason `declaration` records), so
-  // the two alternations cannot disagree about who owns a keyword.
-  exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header
-  // The remaining three prefix wrappers (t-47hc Phase 4), same shape as `export_decl`
-  // with ONE deliberate difference: their inner IS recursive,
-  // so wrappers STACK — `/// doc` over `@a` over `export fn` really parses,
-  // as Annotated(doc, Annotated(a, Annotated(export, fn))). `wrapped_inner` mirrors
-  // that: the native decls (bindings and destructure included) plus the wrappers
-  // themselves, ending on the same `statement` tail `declaration` has.
-  //
-  // `docable_decl` / `annotable_decl` exist for the same reason `exportable_decl`
-  // does: `MkStampAt` reads its OWNING RULE's entry byte, and the
-  // wrapped declaration is stamped at the position captured right after consuming the
-  // prefix — so the stamping rule must begin exactly where the inner declaration does.
-  //
-  // `mdoc_decl` wraps no declaration at all (`//!` is `@module_doc` around a NoOp);
-  // the NoOp's stamp lives in the build (`MkModuleDoc` reads the token AFTER the doc
-  // lines — the post-consume current position).
-  //
-  // `annot`'s name is `IDENT`;
-  // the arg list is the call-suffix group verbatim, because it IS
-  // parse_arg_list_ids' shape (allow_dot_postfix on via call_arg's own `@on`, no it-sugar
-  // toggle — annotations read the ambient mode, exactly like a plain `f(args)` call).
-  // t-47hc.4.3 — the doc wrapper OWNS its inner's failure, for the same reason
-  // `annot_decl` does and with the same shape. `///` cannot start an expression, so the
-  // leading `d:DOC` is its own FIRST-set guard and no `@peek` is needed; what the
-  // `@require` buys is that a malformed inner (`/// d` over `let x: = 1`) reports ONCE —
-  // a rollback onto `statement` would re-parse and add an F0040 on top of
-  // the inner's own message. A bare `/// d` with nothing after it is
-  // F0040 + `(error)` — that is what the `@expect` pins.
-  doc_decl       = d:DOC ( d:DOC )* @require dd:docable_decl
-                   @expect("docable_decl", "expected expression", F0040) -> MkDocAnnotated(d, dd)
-  docable_decl   = di:wrapped_inner -> MkStampAt(di)
-  mdoc_decl      = m:MODDOC ( m:MODDOC )* -> MkModuleDoc(m)
-  // t-47hc.4.3 — `annot_decl` OWNS its inner's failure —
-  // there is nothing below it to own one. `@peek(annot_lead)` decides
-  // annotation-vs-qualified-reference predictively (see the cond for why the
-  // answer is position-dependent), and the `@cut` after the first annotation is what
-  // turns "no declaration follows" into F0040 instead of a rollback into the
-  // expression path's qualified-reference message.
-  annot_decl     = @peek(annot_lead) an:annot ( an:annot )* @require ad:annotable_decl
-                   @expect("annotable_decl", "expected expression", F0040) -> MkAnnotatedArgs(an, ad)
-  annotable_decl = ai:wrapped_inner -> MkStampAt(ai)
-  // The name is `@require`d with F0040 so a BARE `@` reports the pinned
-  // message. It cannot be spelled as the leading item's FIRST-set guard: `"@"` is that
-  // guard, and the name is the item after it.
-  // The first argument is `@peek(not_rparen) @require`d, not merely optional: an
-  // expression is demanded as soon as the `(` is consumed, so `@foo(` followed by a
-  // token that starts no expression reports F0040 about the missing ARGUMENT. Left
-  // optional, the group's FIRST test simply declined, the args were skipped, and the
-  // required `)` reported F0001 about the PAREN instead — same tree, wrong message.
-  annot          = "@" @require n:IDENT ( "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" )?
-                   @expect("IDENT", "expected expression", F0040)
-                   @expect(")", "expected expression", F0040) -> MkAnn(n, a)
-  // `component_decl` is in this set (t-myz7): an ANNOTATED or DOC-COMMENTED
-  // component must be expressible here (`@expand(expand_cli) component cli {}` —
-  // 157 sites in packages/cli/src/main.av).
-  // Its FIRST (`component`) collides with
-  // nothing else here, and `wrapped_inner` is shared by both `annot_decl` and
-  // `doc_decl`, so this covers the doc-comment form too.
-  wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | comp_header | @try use_decl | @try mod_decl | export_decl | doc_decl | annot_decl | letdes_decl | let_decl | mut_decl | const_decl | spec_decl | select_decl | parallel_decl | mdoc_decl | @try bare_comp_inst_raw | @try bare_comp_inst | statement
+  // The prefix WRAPPERS live with their features now (t-kd4y.3.5.9):
+  // `export_decl` / `exportable_decl` / `exportable_inner` with the modules
+  // feature (export_lang — the no-stack inner, the MkStampAt split, and the
+  // mirrored-alternation contract ride its comments), and `doc_decl` /
+  // `mdoc_decl` / `annot_decl` / `annot` / `wrapped_inner` with the
+  // annotations feature (annotations_lang — the stacking recursion, the
+  // F0040 reporting posture, and the component-in-wrapped_inner note ride
+  // there). `declaration` above dispatches to them by name, cross-fragment.
   // The `let` / `mut` / `const` BINDINGS live in their feature now
   // (t-kd4y.3.2.3): `let_decl` / `mut_decl` / `const_decl` / `letdes_decl`
   // in features/let_stmt/grammar.av — composed in below, referenced from
@@ -443,9 +353,19 @@ fn avra_decl_edge_grammar() -> Grammar {
     // IS `compose_fragments([head, tail])`, and compose_fragments concatenates rules in
     // list order, so the two spellings are provably identical — this one just doesn't
     // grow a paren layer per decl fragment.
+    // NOTE this list and `feature_decl_grammar_fragments` (below) carry the
+    // SAME fragment set in DIFFERENT orders — this one is what the
+    // production decl views compose, that one is what features/mod.av's
+    // registry folds; the orders differ historically and the emitted fn
+    // order is observable, so they are extended in lockstep rather than
+    // unified (a new decl fragment goes in BOTH — t-kd4y.3.5.9 was caught
+    // by exactly this: the export/annotations fragments landed in one list
+    // and the regenerated parser silently lost parse_export_decl).
     compose_fragments([
         grammar_checked(gp),
         avra_modules_grammar(),
+        avra_export_grammar(),
+        avra_annotations_grammar(),
         avra_struct_decl_grammar(),
         avra_generics_grammar(),
         avra_enum_decl_grammar(),
@@ -630,6 +550,8 @@ export fn feature_decl_grammar_fragments() -> List<Grammar> {
         avra_trait_decl_grammar(),   // trait_decl, trait_member, assoc_member, method_member
         avra_impl_decl_grammar(),    // impl_decl, impl_method
         avra_modules_grammar(),      // use_decl, mod_decl
+        avra_export_grammar(),       // export_decl + the MkStampAt split (t-kd4y.3.5.9)
+        avra_annotations_grammar(),  // doc/mdoc/annot wrappers + wrapped_inner (t-kd4y.3.5.9)
         avra_spec_grammar(),         // spec_decl, spec_item, given_blk, then_blk
         avra_generics_grammar(),     // tparam — shared by every generic decl keyword
         avra_select_grammar(),       // select_decl, select_arm

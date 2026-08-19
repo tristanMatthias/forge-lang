@@ -1,0 +1,76 @@
+// The annotations feature's LOWERINGS (t-kd4y.3.5.9): one `@name(args?)`
+// annotation, the annotation-wrapper declaration, and the two doc-comment
+// wrappers (`///` around a declaration, `//!` module doc around a NoOp).
+// Imports ONLY features.grammar + core (the F4012 import-closure
+// invariant). The inner declaration's own position stamp is `MkStampAt`'s
+// job (engine-tableless, spelled by the *_decl sub-rules), so these
+// builds wrap and never re-stamp.
+use core.{Annotation, Expr, ExprId, Stmt, SrcPos}
+use features.grammar.{PState, CapVal, BuilderBind, Token, bind_row, bind_rows, capval_tok_text, capval_tok_list, capval_to_node_list, capval_to_ann_list, capval_to_stmt}
+
+/// One `@name ( "(" args ")" )?` annotation — a name + its built argument
+/// EXPRESSIONS (arg_ids), exactly parse_annotations' entry shape. Absent
+/// args ⇒ empty arg_ids (a bare `@name`), so this subsumes the bare case
+/// too. The args reuse the DSL expression family.
+export fn mk_ann(name: string, arg_ids: List<ExprId>) -> CapVal {
+    CapVal.Ann(Annotation { name: name, arg_ids: arg_ids })
+}
+
+export fn mk_ann_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_ann(capval_tok_text(vals[0]), capval_to_node_list(vals[1]))
+}
+
+/// `( "@" name args? )+ <decl>` — one or more annotations wrapping a
+/// declaration → Stmt.Annotated(annotations, inner).
+export fn mk_annotated_args(st: PState, anns: List<Annotation>, inner: CapVal) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, capval_to_stmt(st, inner))))
+}
+
+export fn mk_annotated_args_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_annotated_args(st, capval_to_ann_list(vals[0]), vals[1])
+}
+
+// `MkDocAnnotated` deliberately does NOT ride this manifest: `doc_decl`
+// here AND impl_decl's `impl_member` both spell it (a doc-commented impl
+// method wraps in the same `@doc` annotation), and a build referenced by
+// TWO features' grams is SHARED vocabulary — it stays engine-central,
+// exactly like `MkStampAt` (spelled by three stamping sub-rules). A
+// feature may reference an engine build; supplying it here would orphan
+// impl_decl's reference at validation.
+
+/// `//!` module-doc lines: joined into ONE `@module_doc("…")` annotation
+/// around a `Stmt.NoOp` — module docs wrap no declaration. The NoOp is
+/// stamped at the CURRENT token after consuming the doc lines — i.e.
+/// whatever follows them — so the emitted path records `st.cur().pos`;
+/// the interpreter's -1 sentinel records nothing, the span-free-oracle
+/// convention of `mk_stamp_stmt_at`.
+export fn mk_module_doc(st: PState, sp_start: int, docs: List<Token>) -> CapVal {
+    mut doc_text = ""
+    mut i = 0
+    for t in docs {
+        if i > 0 { doc_text = doc_text + "\n" + t.text } else { doc_text = t.text }
+        i = i + 1
+    }
+    let arg_id = st.store.intern_expr_leaf(Expr.String("\"${doc_text}\""))
+    let anns: List<Annotation> = [Annotation { name: "module_doc", arg_ids: [arg_id] }]
+    let noop_id = st.store.stmts.add_leaf(Stmt.NoOp)
+    if sp_start >= 0 {
+        let lc = st.store.lines.to_linecol(st.cur().pos)
+        st.store.stmts.record_pos(noop_id, SrcPos { line: lc.line, col: lc.col, file: st.file })
+    }
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, noop_id)))
+}
+
+export fn mk_module_doc_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_module_doc(st, st.build_sp, capval_tok_list(vals[0]))
+}
+
+/// ALL of the annotation family's rows. `MkAnn` classifies "ann" — its
+/// value is a CapVal.Ann the wrapper's `( an:annot )+` accumulates into
+/// CapVal.Anns; `MkModuleDoc` is spanned (the NoOp stamp reads the
+/// post-consume position, gated on the exec -1 sentinel).
+export fn annotations_builds() -> List<BuilderBind> {
+    bind_rows("features.annotations.lowering", [bind_row("MkAnn", "ann", 2, false, "mk_ann_abi", mk_ann_abi),
+     bind_row("MkAnnotatedArgs", "stmt", 2, false, "mk_annotated_args_abi", mk_annotated_args_abi),
+     bind_row("MkModuleDoc", "stmt", 1, true, "mk_module_doc_abi", mk_module_doc_abi)])
+}

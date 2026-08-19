@@ -66,3 +66,19 @@ export fn avra_modules_grammar() -> Grammar {
     }
     grammar_checked(gp)
 }
+
+/// The `export` wrapper fragment (t-kd4y.3.5.9) — its own Grammar (not part
+/// of avra_modules_grammar) so export_lang's validation sees exactly the
+/// rules whose builds it supplies: `exportable_inner`'s branches reference
+/// only RULES cross-fragment, and the build refs here are MkExport (this
+/// feature's row) + MkStampAt (engine). The reporting posture and the
+/// mirrored-alternation contract ride export_lang's comments (../mod.av).
+export fn avra_export_grammar() -> Grammar {
+    let gp = grammar {
+  export_decl      = @try "export" @cut @require ed:exportable_decl
+                     @expect("exportable_decl", "expected declaration after `export`") -> MkExport(ed)
+  exportable_decl  = ei:exportable_inner -> MkStampAt(ei)
+  exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header
+    }
+    grammar_checked(gp)
+}

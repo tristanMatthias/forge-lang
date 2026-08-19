@@ -911,8 +911,19 @@ export fn engine_core_builds() -> List<string> {
     //   spine's `block_expr` (the brace primary), and ownership follows the
     //   referencing rule — moving it would mean moving the primary dispatch
     //   skeleton itself (the fold_postfix_with rationale, t-kd4y.3.5.8).
+    // MkDocAnnotated — the `@doc(...)` wrapper build, spelled by TWO
+    //   features' rules (annotations' doc_decl AND impl_decl's impl_member —
+    //   a doc-commented impl method wraps identically), so no single
+    //   feature may supply it: shared vocabulary, like MkStampAt
+    //   (t-kd4y.3.5.9).
+    // MkAnnotated — the bare-annotation wrapper, spelled ONLY by
+    //   decl_annotation_test's toy grammar (production annotation syntax is
+    //   annot_decl -> MkAnnotatedArgs, feature-owned): toy vocabulary, like
+    //   field_suffix/index_suffix/call_suffix. (Tableless — see
+    //   central_tableless_builds.)
     ["fold_binary", "fold_postfix", "fold_postfix_with", "Block", "ExprStmt", "MkPrimaryFail",
-     "MkStampAt", "MkNone", "field_suffix", "index_suffix", "call_suffix", "MkExprBlock"]
+     "MkStampAt", "MkNone", "field_suffix", "index_suffix", "call_suffix", "MkExprBlock",
+     "MkDocAnnotated", "MkAnnotated"]
 }
 
 /// Every FEATURE-OWNED central build, grouped by the family ticket that
@@ -935,12 +946,14 @@ export fn unflipped_builds() -> List<string> {
      // feature may only supply builders its OWN gram references.
      "MkSplice", "MkSpliceStruct",
      "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName",
-     // t-kd4y.3.5.9 templates + decl wrappers (MkTaggedTemplate pairs with
-     // MkTemplate; the .3.5.6/.3.5.8 remnants it was grouped with are gone —
-     // MkEnumCtorSuffix flipped with the postfix families, MkExprBlock
-     // reclassified engine-core)
-     "MkTemplate", "MkTaggedTemplate", "MkAnn", "MkAnnotatedArgs", "MkAnnotated", "MkExport",
-     "MkDocAnnotated", "MkModuleDoc",
+     // t-kd4y.3.5.9 templates + decl wrappers: FLIPPED — MkTemplate /
+     // MkTaggedTemplate with the templates feature, MkAnn / MkAnnotatedArgs /
+     // MkModuleDoc with annotations, MkExport with modules. TWO stayed, each
+     // by the referencing-rule doctrine: `MkAnnotated` is engine-tableless
+     // (only decl_annotation_test's toy grammar spells it) and
+     // `MkDocAnnotated` is engine-CENTRAL (annotations' doc_decl AND
+     // impl_decl's impl_member both spell it — shared vocabulary, like
+     // MkStampAt).
      // t-kd4y.3.5.10 type expressions
      "TyUnion", "TyDyn", "TyList", "TyParen", "MkFn", "MkNamed",
      "MkQualified"
@@ -961,8 +974,6 @@ export fn central_build_kind(bn: string) -> string {
             or "MkExprBlock"
             or "field_suffix" or "index_suffix" or "call_suffix"
             or "MkSplice" or "MkSpliceStruct"
-            or "MkTemplate"
-            or "MkTaggedTemplate"
             or "MkPrimaryFail" -> "expr"
         "ExprStmt" or "Block" -> "stmt"
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
@@ -972,10 +983,9 @@ export fn central_build_kind(bn: string) -> string {
         // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
         "MkSpliceArm" -> "arm"
         // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target.
-        "MkExport"
-            or "MkAssocTypeDef"
-            or "MkAnnotatedArgs" or "MkDocAnnotated" or "MkModuleDoc" -> "stmt"
-        "MkAnn" -> "ann"
+        // `MkDocAnnotated` is ENGINE by the shared-vocabulary rule: annotations'
+        // doc_decl AND impl_decl's impl_member both spell it (t-kd4y.3.5.9).
+        "MkAssocTypeDef" or "MkDocAnnotated" -> "stmt"
         // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
         // name string with a `~` prefix, so it must classify as `tok` and flow through
         // `capval_tok_text` exactly as a bare IDENT does.

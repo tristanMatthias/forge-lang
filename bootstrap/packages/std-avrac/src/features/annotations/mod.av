@@ -1,0 +1,87 @@
+// dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
+// at `features.annotations.{...}`. Until t-kd4y.3.5.9 the annotation and
+// doc-comment wrappers lived in the spine's declaration section —
+// annotations desugar to `Stmt.Annotated` and doc comments ARE
+// annotations (`@doc(...)` / `@module_doc(...)`), so this definition is
+// syntax + lowerings alone; every consumer reads Stmt.Annotated.
+use features.{composed}
+use features.annotations.lowering.{annotations_builds}
+
+/// `@name(args?)`, the annotation-wrapper declaration, and the two
+/// doc-comment forms — the definition carries the whole family
+/// (t-kd4y.3.5.9): six rules (in grammar.av, the decl-fragment
+/// convention) and three manifest rows — `MkDocAnnotated` stays engine
+/// (impl_decl's impl_member spells it too; see lowering/mod.av). `gram_family` stays "" — these are DECLARATION
+/// rules, composed by the decl view and referenced from its alternations
+/// by name (`declaration` dispatches to doc_decl / annot_decl /
+/// mdoc_decl; export_decl lives with the modules feature and
+/// `wrapped_inner` references it cross-fragment).
+export fn annotations_lang() -> LanguageFeature {
+    LanguageFeature annotations_def {
+        name = "annotations",
+        title = "@annotations — declaration metadata + doc comments",
+        docs = """
+`@name` or `@name(args)` above a declaration attaches metadata the
+compiler and macros read (`@derive(...)`, `@comptime`, `@expand(...)`).
+`/// text` doc-comments the declaration below; `//! text` documents the
+enclosing module. Wrappers stack: `/// doc` over `@a` over `export fn`
+parses as nested `Stmt.Annotated` layers.
+""",
+        // The rules (grammar.av) are VERBATIM from the spine, reporting
+        // posture included:
+        //
+        // - The wrappers' inner IS recursive, so wrappers STACK — `/// doc`
+        //   over `@a` over `export fn` really parses, as
+        //   Annotated(doc, Annotated(a, Annotated(export, fn))).
+        //   `wrapped_inner` mirrors that: the native decls (bindings and
+        //   destructure included) plus the wrappers themselves, ending on
+        //   the same `statement` tail `declaration` has.
+        // - `docable_decl` / `annotable_decl` exist because `MkStampAt`
+        //   reads its OWNING RULE's entry byte, and the wrapped declaration
+        //   is stamped at the position captured right after consuming the
+        //   prefix — so the stamping rule must begin exactly where the
+        //   inner declaration does. (`MkStampAt` is engine-tableless; a
+        //   feature may reference an engine build.)
+        // - `mdoc_decl` wraps no declaration at all (`//!` is
+        //   `@module_doc` around a NoOp); the NoOp's stamp lives in the
+        //   build (`MkModuleDoc` reads the token AFTER the doc lines — the
+        //   post-consume current position).
+        // - `annot`'s name is `IDENT`; the arg list is the call-suffix
+        //   group verbatim, because it IS parse_arg_list_ids' shape
+        //   (allow_dot_postfix on via call_arg's own `@on`, no it-sugar
+        //   toggle — annotations read the ambient mode, exactly like a
+        //   plain `f(args)` call). The name is `@require`d with F0040 so a
+        //   BARE `@` reports the pinned message; it cannot be spelled as
+        //   the leading item's FIRST-set guard (`"@"` is that guard, and
+        //   the name is the item after it). The first argument is
+        //   `@peek(not_rparen) @require`d, not merely optional: an
+        //   expression is demanded as soon as the `(` is consumed, so
+        //   `@foo(` followed by a token that starts no expression reports
+        //   F0040 about the missing ARGUMENT — left optional, the group's
+        //   FIRST test simply declined and the required `)` reported F0001
+        //   about the PAREN instead (same tree, wrong message).
+        // - t-47hc.4.3 — the doc wrapper OWNS its inner's failure, same
+        //   shape as `annot_decl`. `///` cannot start an expression, so
+        //   the leading `d:DOC` is its own FIRST-set guard and no `@peek`
+        //   is needed; the `@require` buys that a malformed inner reports
+        //   ONCE (a rollback onto `statement` would re-parse and add an
+        //   F0040 on top). A bare `/// d` with nothing after it is F0040 +
+        //   `(error)` — that is what the `@expect` pins.
+        // - `annot_decl`'s `@peek(annot_lead)` decides
+        //   annotation-vs-qualified-reference predictively, and the
+        //   post-annotation `@require` turns "no declaration follows" into
+        //   F0040 instead of a rollback into the expression path's
+        //   qualified-reference message.
+        // - `component_decl` is in `wrapped_inner`'s set (t-myz7): an
+        //   ANNOTATED or DOC-COMMENTED component must be expressible
+        //   (`@expand(expand_cli) component cli {}` — 157 sites in
+        //   packages/cli/src/main.av). Its FIRST (`component`) collides
+        //   with nothing else here, and `wrapped_inner` is shared by both
+        //   `annot_decl` and `doc_decl`, so this covers the doc-comment
+        //   form too.
+        gram = composed([avra_annotations_grammar()]),
+        builders = annotations_builds(),
+        snippet = r"@${1:name}(${2:args})",
+    }
+    annotations_def
+}

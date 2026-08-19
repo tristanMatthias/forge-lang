@@ -4087,14 +4087,15 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // suffix that folds a list of them (t-47hc.17). The interpreter is the
         // differential oracle, so the suffix is span-free (sp_start = 0 - 1) exactly
         // like the sibling builds; the GENERATED parser passes the real chain start.
-        "MkTemplate" if args.length == 1 -> CapVal.Node(mk_template(st, env.get(args[0])))
+        // The template family (MkTemplate/MkTaggedTemplate) is feature-owned
+        // (features/templates/lowering, t-kd4y.3.5.9): the manifest
+        // dispatches them.
         // t-47hc slice 8 — the two IDENT-led primaries (grammar block + struct literal).
         // The `table { … }` family (MkTableLit/MkTableHeader/MkTableRow) is
         // feature-owned (features/table_lit/lowering, t-kd4y.3.5.5): the
         // manifest dispatches them.
         // The primary alternation's silent tail (t-47hc.5) — see mk_primary_fail.
         "MkPrimaryFail" if args.length == 0 -> CapVal.Node(mk_primary_fail(st))
-        "MkTaggedTemplate" if args.length == 2 -> CapVal.Node(mk_tagged_template(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         "MkSplice" if args.length == 1 -> CapVal.Node(mk_splice(st, 0 - 1, env.get(args[0])))
         "MkSpliceStruct" if args.length == 2 -> CapVal.Node(mk_splice_struct(st, 0 - 1, env.get(args[0]), env.get(args[1])))
         // The postfix-suffix step builds (MkTrySuffix / MkForceUnwrap /
@@ -4260,30 +4261,21 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    the manifest, so no central arm survives here. ──
         // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7).
         //    `MkExtern` is feature-owned (features/fn_decl lowering,
-        //    t-kd4y.3.3.1). ──
-        "MkExport" if args.length == 1 -> mk_export_decl(st, env.get(args[0]))
+        //    t-kd4y.3.3.1). `MkExport` is feature-owned too (features/modules
+        //    lowering, t-kd4y.3.5.9): the manifest dispatches it. ──
         // Span-free in the interpreter (`0 - 1`), exactly like Block / While / MkIfExpr:
         // the oracle records no positions.
         "MkStampAt" if args.length == 1 -> mk_stamp_stmt_at(st, 0 - 1, env.get(args[0]))
-        // ── Prefix-wrapper builds (target: Stmt, t-47hc Phase 4) ──
+        // ── Prefix-wrapper builds (target: Stmt, t-47hc Phase 4): MkModuleDoc
+        //    / MkAnn / MkAnnotatedArgs are feature-owned (features/annotations
+        //    lowering, t-kd4y.3.5.9) and dispatch through the manifest.
+        //    `MkDocAnnotated` stays ENGINE: annotations' doc_decl AND
+        //    impl_decl's impl_member both spell it (a doc-commented impl
+        //    method wraps identically), and a build referenced by two
+        //    features' grams is shared vocabulary, like MkStampAt. The
+        //    toy-grammar `MkAnnotated` stays too (below): no production rule
+        //    spells it. ──
         "MkDocAnnotated" if args.length == 2 -> mk_doc_annotated(st, capval_tok_list(env.get(args[0])), env.get(args[1]))
-        // Span-free in the interpreter, like MkStampAt: the NoOp's position is
-        // recorded only on the emitted path.
-        "MkModuleDoc" if args.length == 1 -> mk_module_doc(st, 0 - 1, capval_tok_list(env.get(args[0])))
-        "MkAnn" if args.length == 2 -> {
-            // One annotation `@name ( "(" args ")" )?` — a name + its built
-            // argument EXPRESSIONS (arg_ids), exactly parse_annotations. Absent
-            // args ⇒ empty arg_ids (a bare `@name`), so this build subsumes the
-            // bare case too. The args reuse the DSL expression family.
-            mk_ann_g(capval_tok_text(env.get(args[0])), capval_to_node_list(env.get(args[1])))
-        }
-        "MkAnnotatedArgs" if args.length == 2 -> {
-            // `( "@" name args? )+ <decl>` — one or more annotations (WITH args)
-            // wrapping a declaration → Stmt.Annotated(annotations, inner), the
-            // args-carrying sibling of MkAnnotated. Since render_annotation_list
-            // drops arg_ids, arg equivalence is asserted directly in the test.
-            mk_annotated_args_g(st, capval_to_ann_list(env.get(args[0])), env.get(args[1]))
-        }
         "MkAnnotated" if args.length == 2 -> {
             // `( "@" name )+ <decl>` — one or more BARE annotations wrapping a
             // declaration → Stmt.Annotated(annotations, inner), exactly
@@ -4827,12 +4819,6 @@ export fn capval_to_stmt_opt(st: PState, v: CapVal) -> StmtId? {
     }
 }
 
-export fn mk_export_decl(st: PState, inner: CapVal) -> CapVal {
-    let no_args: List<ExprId> = []
-    let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, inner))))
-}
-
 // The binding cores (mk_let_binding_g / mk_const_binding_g /
 // mk_let_destructure_g) moved to features/let_stmt/lowering with the
 // binding rows (t-kd4y.3.2.3) — only their shared row helper stays.
@@ -4847,6 +4833,12 @@ export fn binding_stmt_row(st: PState, node: Stmt, ty_vt: ValueType) -> StmtId {
     st.store.add_stmt(node, byte_span_none(), [NodeRef.TypeRef(st.store.ingest_type(ty_vt, byte_span_none()))])
 }
 
+// The template + wrapper cores moved to their features (t-kd4y.3.5.9):
+// mk_template / mk_tagged_template -> features/templates/lowering (the
+// desugar stays reachable through desugar_template_in above); mk_ann /
+// mk_annotated_args / mk_module_doc -> features/annotations/lowering;
+// mk_export -> features/modules/lowering. mk_doc_annotated STAYS (engine
+// central — impl_decl's impl_member spells MkDocAnnotated too).
 /// Stamp an ALREADY-BUILT statement with its own source position and return it
 /// unchanged (the `MkStampAt` build's core). The identity build, plus one side-table
 /// write.
@@ -4879,22 +4871,6 @@ export fn mk_stamp_stmt_at(st: PState, sp_start: int, inner: CapVal) -> CapVal {
     CapVal.SNode(id)
 }
 
-/// One `@name ( "(" args ")" )?` annotation (the `MkAnn` build's core) — a name +
-/// its built argument EXPRESSIONS, exactly parse_annotations' entry shape. Absent
-/// args ⇒ empty arg_ids (a bare `@name`), so this subsumes the bare case too.
-export fn mk_ann_g(name: string, arg_ids: List<ExprId>) -> CapVal {
-    CapVal.Ann(Annotation { name: name, arg_ids: arg_ids })
-}
-
-/// `( "@" name args? )+ <decl>` — one or more annotations wrapping a declaration
-/// (the `MkAnnotatedArgs` build's core) → Stmt.Annotated(annotations, inner).
-/// The inner's own position is
-/// `mk_stamp_stmt_at`'s job, driven by the inner rule's entry byte, exactly as
-/// `mk_export_decl` splits it.
-export fn mk_annotated_args_g(st: PState, anns: List<Annotation>, inner: CapVal) -> CapVal {
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, capval_to_stmt(st, inner))))
-}
-
 /// `///`-doc lines wrapping a declaration (the `MkDocAnnotated` build's core):
 /// consecutive DOC tokens join with `\n` into ONE `@doc("…")` annotation around the
 /// inner declaration. The doc
@@ -4911,30 +4887,6 @@ export fn mk_doc_annotated(st: PState, docs: List<Token>, inner: CapVal) -> CapV
     let arg_id = st.store.intern_expr_leaf(Expr.String("\"${doc_text}\""))
     let anns: List<Annotation> = [Annotation { name: "doc", arg_ids: [arg_id] }]
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, capval_to_stmt(st, inner))))
-}
-
-/// `//!` module-doc lines (the `MkModuleDoc` build's core): joined into ONE
-/// `@module_doc("…")` annotation around a `Stmt.NoOp` — module docs wrap no
-/// declaration. The NoOp is stamped at the CURRENT token after
-/// consuming the doc lines — i.e. whatever follows
-/// them — so the emitted path records `st.cur().pos`; the interpreter passes
-/// `sp_start < 0` and records nothing, the span-free-oracle convention of
-/// `mk_stamp_stmt_at`.
-export fn mk_module_doc(st: PState, sp_start: int, docs: List<Token>) -> CapVal {
-    mut doc_text = ""
-    mut i = 0
-    for t in docs {
-        if i > 0 { doc_text = doc_text + "\n" + t.text } else { doc_text = t.text }
-        i = i + 1
-    }
-    let arg_id = st.store.intern_expr_leaf(Expr.String("\"${doc_text}\""))
-    let anns: List<Annotation> = [Annotation { name: "module_doc", arg_ids: [arg_id] }]
-    let noop_id = st.store.stmts.add_leaf(Stmt.NoOp)
-    if sp_start >= 0 {
-        let lc = st.store.lines.to_linecol(st.cur().pos)
-        st.store.stmts.record_pos(noop_id, SrcPos { line: lc.line, col: lc.col, file: st.file })
-    }
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, noop_id)))
 }
 
 /// `type Name = Concrete` — the IMPL-side associated type (the `MkAssocTypeDef` build's
@@ -5048,7 +5000,9 @@ export fn capval_to_field_list(v: CapVal) -> List<FieldEntry> {
 }
 
 /// A capture as an annotation list (@name(args) declarations, ps3t.6.5.7).
-fn capval_to_ann_list(v: CapVal) -> List<Annotation> {
+/// EXPORTED (t-kd4y.3.5.9): the annotations feature's lowering folds its
+/// `( an:annot )+` capture with this, exactly as the central arm did.
+export fn capval_to_ann_list(v: CapVal) -> List<Annotation> {
     match v {
         .Anns(xs) -> xs
         .Ann(a) -> [a]
@@ -5178,31 +5132,17 @@ export type TableCtx = { row_type: string, cols: List<string> }
 /// The header half of `table [<Row>] { a | b`, run as its own rule so its build fires
 /// BEFORE the rows are parsed — the rows need the column names.
 ///
-/// A `"…${x}…"` template primary (t-47hc.19). The desugar itself is SHARED with the
-/// hand parser via desugar_template_store — one implementation, two call sites — so the
-/// concatenation shape and format-spec routing cannot drift. The error is reported on
-/// THIS side's channel, matching the hand's set_error wording.
-export fn mk_template(st: PState, tcap: CapVal) -> ExprId {
-    match desugar_template_store(st.store, capval_tok_text(tcap)) {
-        .Ok(id) -> id
-        .Err(m) -> st.error_node(m)
-    }
+/// The template desugar, reachable from FEATURE LOWERINGS (t-kd4y.3.5.9).
+/// The desugar itself is parse-side (desugar_template_store — shared with
+/// the entry path so the concatenation shape and format-spec routing
+/// cannot drift), and a lowering's import closure is features.grammar +
+/// core only (F4012) — this seam is how the templates feature reaches it,
+/// exactly as apply_it_sugar carries the closures composition to calls.
+export fn desugar_template_in(st: PState, raw: string) -> Result<ExprId, string> {
+    desugar_template_store(st.store, raw)
 }
 
 
-
-/// A TAGGED TEMPLATE — ``tag`…` `` — the hand `parse_ident_expr`'s template branch
-/// (t-47hc slice 8). Desugars to a CALL of the tag with the interpolated template as
-/// its single argument, which is exactly what the hand builds:
-///     Expr.Call(Expr.Ident(tag), [desugar_template(raw)])
-/// The template argument goes through the same `desugar_template_store` that
-/// `mk_template` uses, so an interpolated tagged template lowers identically to a
-/// bare one — only the surrounding call differs.
-export fn mk_tagged_template(st: PState, sp_start: int, ncap: CapVal, tcap: CapVal) -> ExprId {
-    let tag_id = st.store.exprs.add_leaf(Expr.Ident(capval_tok_text(ncap)))
-    let arg_id = mk_template(st, tcap)
-    st.store.add_expr(Expr.Call(tag_id, [arg_id]), byte_span(sp_start, st.cur().pos), [])
-}
 
 
 export fn mk_splice(st: PState, sp_start: int, tcap: CapVal) -> ExprId {

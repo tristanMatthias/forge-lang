@@ -1,0 +1,76 @@
+// The annotations + export LanguageFeature definitions (t-kd4y.3.5.9):
+// the wrapper families leave the spine — annotations (annot / annot_decl /
+// doc_decl / mdoc_decl + the shared wrapped_inner) carries MkAnn /
+// MkAnnotatedArgs / MkModuleDoc, and modules' export_lang carries MkExport.
+// TWO builds stayed engine, each by the referencing-rule doctrine:
+// MkDocAnnotated (annotations' doc_decl AND impl_decl's impl_member both
+// spell it — shared vocabulary) and MkAnnotated (toy-grammar only,
+// tableless). The "ann" kind's manifest marshalling (CapVal.Anns list
+// ctor) was grown for exactly this flip.
+use @std.avrac.features.annotations.{annotations_lang}
+use @std.avrac.features.modules.{export_lang}
+use @std.avrac.features.{feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, central_tableless_builds, engine_core_builds}
+use @std.avrac.parse.{oracle_decl}
+
+fn str_has(xs: List<string>, s: string) -> bool {
+    for x in xs { if x == s { return true } }
+    false
+}
+
+spec "annotation + export wrappers as LanguageFeatures" {
+    then "the carriers have surface metadata and their rules reach the composed view" {
+        let an = annotations_lang()
+        let ex = export_lang()
+        let prog = render_grammar(avra_program_grammar())
+        an.docs.contains("metadata") && ex.docs.contains("visible")
+            && prog.contains("MkAnn(n, a)")
+            && prog.contains("MkAnnotatedArgs(an, ad)")
+            && prog.contains("MkModuleDoc(m)")
+            && prog.contains("MkExport(ed)")
+            && prog.contains("MkDocAnnotated(d, dd)")
+            && prog.contains("wrapped_inner")
+    }
+    then "the four rows ride the manifest and NOTHING flipped is left central" {
+        mut owners = ""
+        for b in feature_builders() {
+            if b.name == "MkAnn" || b.name == "MkAnnotatedArgs" || b.name == "MkModuleDoc"
+                || b.name == "MkExport" {
+                owners = owners + "${b.name}=${b.module}/${b.kind}/${if b.spanned { "sp" } else { "flat" }} "
+            }
+        }
+        owners.contains("MkAnn=features.annotations.lowering/ann/flat")
+            && owners.contains("MkAnnotatedArgs=features.annotations.lowering/stmt/flat")
+            && owners.contains("MkModuleDoc=features.annotations.lowering/stmt/sp")
+            && owners.contains("MkExport=features.modules.lowering/stmt/flat")
+            && central_build_kind("MkAnn") == ""
+            && central_build_kind("MkAnnotatedArgs") == ""
+            && central_build_kind("MkModuleDoc") == ""
+            && central_build_kind("MkExport") == ""
+    }
+    then "the two stay-centrals classify exactly as the doctrine says" {
+        // MkDocAnnotated: engine-central WITH a kind row (two features'
+        // rules spell it). MkAnnotated: engine-core AND tableless (toy
+        // vocabulary; no production rule).
+        central_build_kind("MkDocAnnotated") == "stmt"
+            && str_has(engine_core_builds(), "MkDocAnnotated")
+            && str_has(engine_core_builds(), "MkAnnotated")
+            && str_has(central_tableless_builds(), "MkAnnotated")
+            && !str_has(feature_builders().map((b) -> b.name), "MkDocAnnotated")
+    }
+}
+
+spec "wrapper shapes parse to the expected trees" {
+    then "an annotation with args wraps the declaration" {
+        let r = oracle_decl("@derive(walker)\nfn f() -> int { 1 }")
+        r != null && r!.contains("derive") && r!.contains("fn f")
+    }
+    then "doc comments wrap as @doc and stack over export" {
+        let r = oracle_decl("/// documented\nexport fn f() -> int { 1 }")
+        r != null && r!.contains("doc") && r!.contains("export") && r!.contains("fn f")
+    }
+    then "module docs wrap a NoOp" {
+        let r = oracle_decl("//! about this module")
+        r != null && r!.contains("module_doc")
+    }
+}
