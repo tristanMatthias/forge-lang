@@ -1,0 +1,89 @@
+// WHY: t-kd4y.3.6 item (3) — avra_grammar.av is ENGINE LADDER + COMPOSITION
+// ONLY, made checkable. The whole-program view minus every feature fragment's
+// rules is the engine-inline remainder; these specs pin that remainder to the
+// EXACT 25-name dispatch/glue/splice skeleton and require every build it
+// spells to be declared engine-core. This is the RULE-TEXT complement of the
+// central-domain BUILD ledger (central_domain_test): a hand-written feature
+// rule reappearing in the spine changes the remainder set and fails the first
+// spec; a spine rule spelling a feature-owned build fails the second. Growing
+// the skeleton is a deliberate act — it means editing declared_engine_rules
+// here with a rationale, the same ratchet engine_core_builds carries.
+
+use @std.avrac.features.{feature_grammar_fragments}
+use @std.avrac.features.grammar.{avra_program_grammar, grammar_build_refs, engine_core_builds, str_in, Grammar}
+use @std.avrac.features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_grammar, avra_match_table_grammar}
+
+/// Every rule name a FEATURE fragment defines. The four family registries +
+/// the decl registry all ride feature_grammar_fragments; match's standalone
+/// arm/table/pattern factories compose separately in avra_grammar.av, so they
+/// are added here the same way the views add them.
+fn fragment_rule_names() -> List<string> {
+    mut frags: List<Grammar> = [avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]
+    for g in feature_grammar_fragments() { frags.push(g) }
+    mut names: List<string> = []
+    for g in frags {
+        for r in g.rules { if !str_in(names, r.name) { names.push(r.name) } }
+    }
+    names
+}
+
+/// The engine-inline remainder: whole-program rules no feature defines.
+/// Fail-closed by construction — if fragment collection ever breaks, the
+/// remainder balloons and the exact-set spec goes red rather than vacuous.
+fn engine_rule_names() -> List<string> {
+    let frag = fragment_rule_names()
+    mut names: List<string> = []
+    for r in avra_program_grammar().rules {
+        if !str_in(frag, r.name) && !str_in(names, r.name) { names.push(r.name) }
+    }
+    names
+}
+
+/// The declared engine skeleton, by role (the t-kd4y.3.6 audit):
+///   start           — program
+///   decl edge       — name_or_splice (splice doctrine), declaration
+///                     (THE dispatch alternation), body_item (shared base)
+///   stmt glue       — statement (dispatch), block / stmt_block (Block
+///                     glue, deliberately two rules), expr_stmt
+///   precedence      — expression (entry), eq_tail (pure dispatch),
+///                     bitor bitxor bitand comparison shift term factor
+///                     (the fold_binary ladder)
+///   primary/postfix — unary (primary dispatch skeleton), brace_expr,
+///                     postfix_suffix (suffix dispatch), block_expr
+///                     (MkExprBlock glue), table_cell + null_cell (the
+///                     cell-position dispatch — lives in the expression
+///                     view for the declared-FIRST economics its comment
+///                     records, and spells no build of its own)
+///   type spine      — splice_type (splice doctrine), type_atom (dispatch)
+fn declared_engine_rules() -> List<string> {
+    ["program",
+     "name_or_splice", "declaration", "body_item",
+     "statement", "block", "stmt_block", "expr_stmt",
+     "expression", "eq_tail", "bitor", "bitxor", "bitand", "comparison", "shift", "term", "factor",
+     "unary", "brace_expr", "postfix_suffix", "block_expr", "table_cell", "null_cell",
+     "splice_type", "type_atom"]
+}
+
+fn set_eq(a: List<string>, b: List<string>) -> bool {
+    if a.length != b.length { return false }
+    for x in a { if !str_in(b, x) { return false } }
+    for x in b { if !str_in(a, x) { return false } }
+    true
+}
+
+spec "t-kd4y.3.6: the spine is engine mechanism only" {
+    then "the engine-inline rule set is EXACTLY the 25-name skeleton" {
+        set_eq(engine_rule_names(), declared_engine_rules())
+    }
+    then "every build an engine-inline rule spells is declared engine-core" {
+        // The other direction — a feature gram referencing an engine build
+        // (calls' index_tail -> MkNone) — is legal and untested here; the
+        // validator's orphan contract covers supplied rows.
+        let engine = engine_rule_names()
+        mut ok = true
+        for br in grammar_build_refs(avra_program_grammar()) {
+            if str_in(engine, br.rule) && !str_in(engine_core_builds(), br.name) { ok = false }
+        }
+        ok
+    }
+}

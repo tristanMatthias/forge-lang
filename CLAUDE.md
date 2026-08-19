@@ -362,7 +362,15 @@ exactly the 20-name engine core (folds, Block/ExprStmt glue, recovery,
 stamp/none plumbing, the toy-partial suffix vocabulary, the splice
 vocabulary — per-name rationale at `engine_core_builds()` in
 features/grammar/ast.av), `unflipped_builds()` is EMPTY, and
-`diagnose.sh --check-central-domain` holds central == engine-core exactly.
+`diagnose.sh --check-central-domain` holds central == engine-core exactly —
+plus zero legacy `register(reg, …)` calls outside lang.av (t-kd4y.3.6). The
+RULE-TEXT complement: `spine_purity_test` pins avra_grammar.av's inline
+remainder (whole-program view minus every feature fragment) to the exact
+25-name engine skeleton — dispatch alternations, the fold ladder,
+Block/ExprStmt glue, splice atoms, start — and requires every build the
+skeleton spells to be engine-core; `gen_parser_regen_test` pins the generated
+parser's banner import-free (every use-line derives via
+`derived_import_lines_for`, manifest-authoritative).
 Adding a central executor/emit arm for feature syntax is a regression against
 the everything-is-a-feature ruling — new lowerings go in the owning feature's
 manifest. Text→AST is one grammar run by two ENGINES:

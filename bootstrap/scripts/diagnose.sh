@@ -4118,11 +4118,18 @@ mode_check_central_domain() {
   for n in $(cat "$scratch/tableless"); do
     grep -q "\"$n\"" "$ex" "$em" || { err "check-central-domain: tableless name '$n' has no executor/emit arm — stale ledger entry"; bad=1; }
   done
+  # t-kd4y.3.6 item (2): everything folds from language_features() — the ONLY
+  # `register(reg, …)` call site in features/ is register_lang's own body
+  # (lang.av). A legacy `register(reg, X_feature())` reappearing anywhere else
+  # (init_features included) is the 47→0 conversion gauge regressing.
+  local legacy
+  legacy=$(grep -rn 'register(reg' "$BOOTSTRAP_DIR/packages/std-avrac/src/features" --include='*.av' | grep -v '/lang\.av:' | grep -v '/tests/' || true)
+  if [ -n "$legacy" ]; then err "check-central-domain: legacy register(reg, …) call outside features/lang.av — every feature folds from language_features() (t-kd4y.3.6 item 2):"; printf '%s\n' "$legacy" >&2; bad=1; fi
   # `return`, not `exit`: exit would bypass the RETURN trap and leak the
   # scratch dir; main's case dispatch is the script's last act, so the
   # failure status propagates to the CLI unchanged (CodeRabbit, #1263).
   [ "$bad" = 0 ] || return 1
-  ok "check-central-domain: central surface exactly classified — $(wc -l < "$scratch/core") engine-core (DSL mechanism) + $(wc -l < "$scratch/unflipped") unflipped (feature-owned; 0 = the t-kd4y.3 drain is complete)"
+  ok "check-central-domain: central surface exactly classified — $(wc -l < "$scratch/core") engine-core (DSL mechanism) + $(wc -l < "$scratch/unflipped") unflipped (feature-owned; 0 = the t-kd4y.3 drain is complete); zero legacy registers"
 }
 
 mode_check_layout_boundary() {
