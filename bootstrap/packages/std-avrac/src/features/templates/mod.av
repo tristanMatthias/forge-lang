@@ -1,0 +1,41 @@
+// dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
+// at `features.templates.{...}`. Until t-kd4y.3.5.9 this feature did not
+// exist as a directory — templates desugar to string concatenation in the
+// SHARED desugar (parse's desugar_template_store, reached via the engine's
+// desugar_template_in seam), so this definition is syntax + lowerings
+// alone; codegen sees ordinary calls and string ops.
+use features.grammar.{parse_grammar}
+use features.templates.lowering.{templates_builds}
+
+/// `"…${expr}…"` template literals and ``tag"…"`` tagged templates — the
+/// definition carries both rules and both lowerings (t-kd4y.3.5.9).
+/// `gram_family = "expr"`; the ladder's primary alternation dispatches to
+/// `template_lit` on a TEMPLATE token and to `tagged_template` behind
+/// @peek(ident_template).
+export fn templates_lang() -> LanguageFeature {
+    LanguageFeature templates_def {
+        name = "templates",
+        title = "template — string interpolation literals",
+        // The docs deliberately spell the interpolation lead as words: a
+        // literal dollar-brace inside this (non-raw) docs string would
+        // itself interpolate at compile time.
+        docs = """
+A double-quoted string interpolates expressions through a dollar-brace
+slot (the lead is two bytes — a bare `{` is ordinary content). `tag"…"`
+applies `tag` as a function to the interpolated template — a tagged
+template is exactly `tag(template)`.
+""",
+        // VERBATIM from the spine. `tagged_template` is dispatched from the
+        // primary alternation behind @peek(ident_template), so its IDENT
+        // guard token is already proven; `template_lit` fires on a bare
+        // TEMPLATE token.
+        gram = grammar {
+  template_lit = t:TEMPLATE -> MkTemplate(t)
+  tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
+        },
+        builders = templates_builds(),
+        snippet = r"""${1:tag}"${2:text}" """,
+        gram_family = "expr",
+    }
+    templates_def
+}

@@ -14,8 +14,8 @@
 // CapVals (list captures wrapped by manifest_arg_spelling,
 // capval_tok_list unwrapping singleton-preserving).
 
-use core.{Expr, ExprId, Stmt, StmtId, ValueType, byte_span}
-use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, capval_to_finit_list, capval_tok_list, capval_tok_text, capval_toks, param_entries_from_toks}
+use core.{Annotation, Expr, ExprId, Stmt, StmtId, ValueType, byte_span}
+use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, capval_to_finit_list, capval_to_stmt, capval_tok_list, capval_tok_text, capval_toks, param_entries_from_toks}
 
 /// `use seg ( . seg )* { names }` — the bare-path import (`MkUseBare`).
 export fn use_bare_build(st: PState, vals: List<CapVal>) -> CapVal {
@@ -81,4 +81,24 @@ export fn mk_qualified_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// The qualified-reference row (t-kd4y.3.5.6) — spanned at the `@` byte.
 export fn qualified_builds() -> List<BuilderBind> {
     bind_rows("features.modules.lowering", [bind_row("MkQualExpr", "expr", 4, true, "mk_qualified_abi", mk_qualified_abi)])
+}
+
+/// `export <decl>` → `Stmt.Annotated([@export], inner)` (t-kd4y.3.5.9) —
+/// the export wrapper is an ordinary annotation downstream, so the build
+/// wraps and nothing more. The inner declaration's own position stamp is
+/// `MkStampAt`'s job (spelled by `exportable_decl`, engine-tableless).
+export fn mk_export(st: PState, inner: CapVal) -> CapVal {
+    let no_args: List<ExprId> = []
+    let exp: List<Annotation> = [Annotation { name: "export", arg_ids: no_args }]
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(exp, capval_to_stmt(st, inner))))
+}
+
+export fn mk_export_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_export(st, vals[0])
+}
+
+/// The export-wrapper row (t-kd4y.3.5.9) — flat: the wrapper allocates no
+/// spanned node of its own.
+export fn export_builds() -> List<BuilderBind> {
+    bind_rows("features.modules.lowering", [bind_row("MkExport", "stmt", 1, false, "mk_export_abi", mk_export_abi)])
 }

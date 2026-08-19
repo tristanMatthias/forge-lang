@@ -586,18 +586,13 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
         // to stamp each rebuilt `With` in a chained `a with { } with { }`.
         name == "MkSplice" ||
         name == "MkSpliceStruct" ||
-        // t-47hc slice 8 — both IDENT-led primaries span from the NAME token, so they
-        // thread the rule-entry byte exactly as MkQualExpr does (a tagged template's
-        // Call node must start at the tag, not at the template literal).
-        name == "MkTaggedTemplate" ||
         // A prefix WRAPPER's inner declaration carries its OWN position, stamped from
         // the byte where the inner starts — the hand captures it right after consuming
         // the prefix. The build is the identity plus that side-table write, so its
         // owning rule must begin exactly at the inner declaration.
-        name == "MkStampAt" ||
-        // `//!` module docs wrap a NoOp the hand stamps AFTER the doc lines; sp_start
-        // here is only the emit/interpreter discriminator (the build reads st.cur()).
-        name == "MkModuleDoc"
+        // (MkTaggedTemplate and MkModuleDoc left this predicate with their
+        // families, t-kd4y.3.5.9 — their manifest rows declare `spanned`.)
+        name == "MkStampAt"
 }
 
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
@@ -2626,7 +2621,9 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // `0 - 1` (span-free) — the SAME argument the interpreter passes, and the
         // hand's unstamped `alloc_stmt_leaf`. See the `Block` note in build_uses_sp_start.
         "Block" -> "mk_block(st, 0 - 1, ${args[0]}_list)"
-        "MkTemplate" -> "CapVal.Node(mk_template(st, ${args[0]}))"
+        // The template family (MkTemplate/MkTaggedTemplate) is feature-owned
+        // (features/templates/lowering, t-kd4y.3.5.9): the manifest branch
+        // above renders the adapter calls.
         // The `table { … }` family (MkTableLit/MkTableHeader/MkTableRow)
         // is feature-owned (features/table_lit/lowering, t-kd4y.3.5.5):
         // the manifest branch above renders the adapter calls.
@@ -2634,7 +2631,6 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // t-47hc slice 8 — the field-init list arrives as a repetition capture, so it is
         // boxed as CapVal.FInits over the accumulated `_list`, exactly as MkQualExpr's
         // struct-literal half does.
-        "MkTaggedTemplate" -> "CapVal.Node(mk_tagged_template(st, sp_start, ${args[0]}, ${args[1]}))"
         "MkSplice" -> "CapVal.Node(mk_splice(st, sp_start, ${args[0]}))"
         "MkSpliceStruct" -> "CapVal.Node(mk_splice_struct(st, sp_start, ${args[0]}, CapVal.FInits(${args[1]}_list)))"
         // The postfix-suffix step builds are feature-owned (features/
@@ -2671,23 +2667,24 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // The TYPE family (MkTypeDeclAny / MkShapeDecl / MkField) is
         // manifest-owned (features/struct_decl lowering, t-kd4y.3.3.2);
         // MkTypeDecl/2 and /3 died with their exec arms.
-        "MkExport" -> "mk_export_decl(st, ${args[0]})"
+        // `MkExport` is feature-owned (features/modules lowering,
+        // t-kd4y.3.5.9): the manifest branch above renders the adapter call.
         "MkStampAt" -> "mk_stamp_stmt_at(st, sp_start, ${args[0]})"
-        // ── The prefix WRAPPERS (t-47hc Phase 4). The doc lines are a repeated
-        // TERMINAL label (List<Token>), the annotations a repeated RULE label whose
-        // accumulator is typed by kind "ann" (List<Annotation>), and the args an
-        // external EXPR-rule list — all passed to the shared cores verbatim, so the
-        // generated call and the interpreter drive ONE implementation. ──
+        // ── The prefix WRAPPERS (t-47hc Phase 4): MkModuleDoc / MkAnn /
+        // MkAnnotatedArgs are feature-owned (features/annotations lowering,
+        // t-kd4y.3.5.9) and render through the manifest branch, list captures
+        // wrapped by manifest_arg_spelling (the doc lines ride CapVal.Toks,
+        // the annotations the "ann" kind's CapVal.Anns list ctor — grown for
+        // exactly this flip). `MkDocAnnotated` stays ENGINE — spelled by BOTH
+        // annotations' doc_decl and impl_decl's impl_member, shared
+        // vocabulary like MkStampAt. ──
         "MkDocAnnotated" -> "mk_doc_annotated(st, ${args[0]}_list, ${args[1]})"
-        "MkModuleDoc" -> "mk_module_doc(st, sp_start, ${args[0]}_list)"
         // The binding declarations are manifest-owned (features/let_stmt
         // lowering, t-kd4y.3.2.3) — emit_call_build finds their rows before
         // consulting these central templates.
         // The COMPONENT family (all thirteen builds) is manifest-owned
         // (features/component_decl lowering, t-kd4y.3.3.5) — emit_call_build
         // finds its rows before these central templates.
-        "MkAnn" -> "mk_ann_g(capval_tok_text(${args[0]}), ${args[1]}_list)"
-        "MkAnnotatedArgs" -> "mk_annotated_args_g(st, ${args[0]}_list, ${args[1]})"
         // MkImpl / MkMethod — feature-owned (features/impl_decl, t-kd4y.3.3.4).
         // MkUseBare / MkUsePkg / MkModule — feature-owned (features/modules);
         // MkUse was dead (no grammar reference).
@@ -3211,7 +3208,11 @@ fn kind_row(kind: string) -> KindRow {
     if kind == "ccfg" { return KindRow { coerce: "capval_to_comp_config", elem: "CompConfig", list_ctor: "CapVal.CCfgs" } }
     if kind == "cpair" { return KindRow { coerce: "capval_to_comp_config_pair", elem: "CompConfigPair", list_ctor: "CapVal.CPairs" } }
     if kind == "cslot" { return KindRow { coerce: "capval_to_children_slot", elem: "ChildrenSlot", list_ctor: "CapVal.CSlots" } }
-    if kind == "ann" { return KindRow { coerce: "capval_to_ann", elem: "Annotation", list_ctor: "" } }
+    // list_ctor filled at t-kd4y.3.5.9: a manifest abi receives a `( an:annot )+`
+    // accumulator as ONE CapVal, so the emitted call site wraps the
+    // `List<Annotation>` in CapVal.Anns — the same marshalling growth the type
+    // kind got for MkGenericCallSuffix (CapVal.TExprs) in .3.5.8.
+    if kind == "ann" { return KindRow { coerce: "capval_to_ann", elem: "Annotation", list_ctor: "CapVal.Anns" } }
     KindRow { coerce: "capval_to_expr", elem: "ExprId", list_ctor: "CapVal.Nodes" }
 }
 

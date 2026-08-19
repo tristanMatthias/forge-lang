@@ -84,6 +84,16 @@ spec "t-kd4y.3.1: the purity ledger classifies the central surface exactly" {
         //   MkExprBlock — `{ stmt* }` in expression position, spelled ONLY
         //   by the spine's block_expr primary: the fold_postfix_with
         //   rationale verbatim.
-        engine_core_builds().length == 12
+        // The deliberate thirteenth and fourteenth (t-kd4y.3.5.9):
+        //   MkDocAnnotated — spelled by TWO features' rules (annotations'
+        //   doc_decl AND impl_decl's impl_member), so no single feature may
+        //   supply it without orphaning the other's reference: shared
+        //   vocabulary, the MkStampAt class.
+        //   MkAnnotated — spelled ONLY by decl_annotation_test's toy
+        //   grammar (production annotations are annot_decl ->
+        //   MkAnnotatedArgs, feature-owned): toy vocabulary, the
+        //   field_suffix class. Tableless, so it also rides
+        //   central_tableless_builds.
+        engine_core_builds().length == 14
     }
 }

@@ -116,12 +116,15 @@ spec "t-47hc Phase 4: the doc / module-doc / annotation wrappers are emitted as 
     then "the builds lower to the SHARED cores, not executor-only builds" {
         // emit dispatches on the build NAME. A build that exists only in executor.av
         // passes every interpreter-driven parity spec and emits nothing usable — the
-        // trap this slice's predecessors hit four separate times.
+        // trap this slice's predecessors hit four separate times. Post t-kd4y.3.5.9
+        // the wrapper rows are feature-owned: MkModuleDoc/MkAnn/MkAnnotatedArgs
+        // resolve through the manifest to the annotations lowering's adapters (one
+        // implementation, both engines); MkDocAnnotated stays engine-central.
         let src = decl_src()
         src.contains("mk_doc_annotated(st, d_list, dd)") &&
-            src.contains("mk_module_doc(st, sp_start, m_list)") &&
-            src.contains("mk_ann_g(capval_tok_text(n), a_list)") &&
-            src.contains("mk_annotated_args_g(st, an_list, ad)")
+            src.contains("call_with_build_sp(st, sp_start, mk_module_doc_abi, [CapVal.Toks(m_list)])") &&
+            src.contains("mk_ann_abi(st, [n, CapVal.Nodes(a_list)])") &&
+            src.contains("mk_annotated_args_abi(st, [CapVal.Anns(an_list), ad])")
     }
 
     then "the annotation accumulator is TYPED — List<Annotation>, coerced per iteration" {

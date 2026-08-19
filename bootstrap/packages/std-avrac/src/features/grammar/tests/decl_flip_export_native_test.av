@@ -144,8 +144,10 @@ spec "t-47hc Phase 4: `export` is emitted as a native rule" {
     then "the build lowers to the SHARED core, not an executor-only build" {
         // emit dispatches on the build NAME. A build that exists only in executor.av
         // passes every interpreter-driven parity spec and emits nothing usable — the
-        // trap this slice's predecessors hit four separate times.
-        decl_src().contains("mk_export_decl(st, ed)")
+        // trap this slice's predecessors hit four separate times. Post t-kd4y.3.5.9
+        // MkExport is feature-owned: it resolves through the manifest to the modules
+        // lowering's adapter (one implementation, both engines).
+        decl_src().contains("mk_export_abi(st, [ed])")
     }
 
     then "the alternation TAIL is still native `statement`, not a promoted @hand" {

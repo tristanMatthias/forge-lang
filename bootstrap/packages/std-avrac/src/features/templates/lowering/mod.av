@@ -1,0 +1,49 @@
+// The templates feature's LOWERINGS (t-kd4y.3.5.9): the bare template
+// literal and the tagged form. Imports ONLY features.grammar + core (the
+// F4012 import-closure invariant) — the shared desugar itself is
+// parse-side, reached through the engine's `desugar_template_in` seam
+// (the apply_it_sugar pattern), so the concatenation shape and
+// format-spec routing stay ONE implementation.
+use core.{Expr, ExprId, byte_span, byte_span_none}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_tok_text, desugar_template_in}
+
+/// A `"…${x}…"` template primary. The desugar is SHARED with the entry
+/// path via desugar_template_in — one implementation, two call sites —
+/// and the error is reported on THIS side's channel.
+export fn mk_template(st: PState, tcap: CapVal) -> ExprId {
+    match desugar_template_in(st, capval_tok_text(tcap)) {
+        .Ok(id) -> id
+        .Err(m) -> st.error_node(m)
+    }
+}
+
+export fn mk_template_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_template(st, vals[0]))
+}
+
+/// A TAGGED TEMPLATE — ``tag"…"``. Desugars to a CALL of the tag with the
+/// interpolated template as its single argument:
+///     Expr.Call(Expr.Ident(tag), [desugar_template(raw)])
+/// The template argument goes through the same desugar mk_template uses,
+/// so an interpolated tagged template lowers identically to a bare one —
+/// only the surrounding call differs. Spanned from the tag IDENT; the
+/// interpreter's -1 sentinel records no span (the mk_spawn convention).
+export fn mk_tagged_template(st: PState, sp_start: int, ncap: CapVal, tcap: CapVal) -> ExprId {
+    let tag_id = st.store.exprs.add_leaf(Expr.Ident(capval_tok_text(ncap)))
+    let arg_id = mk_template(st, tcap)
+    st.store.add_expr(
+        Expr.Call(tag_id, [arg_id]),
+        if sp_start < 0 { byte_span_none() } else { byte_span(sp_start, st.cur().pos) },
+        []
+    )
+}
+
+export fn mk_tagged_template_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_tagged_template(st, st.build_sp, vals[0], vals[1]))
+}
+
+/// BOTH of the template family's rows.
+export fn templates_builds() -> List<BuilderBind> {
+    bind_rows("features.templates.lowering", [bind_row("MkTemplate", "expr", 1, false, "mk_template_abi", mk_template_abi),
+     bind_row("MkTaggedTemplate", "expr", 2, true, "mk_tagged_template_abi", mk_tagged_template_abi)])
+}

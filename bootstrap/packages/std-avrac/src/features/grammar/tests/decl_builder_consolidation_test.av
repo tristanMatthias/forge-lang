@@ -43,10 +43,12 @@ spec "t-47hc slice 10.10: MkExport has an emit twin, not just an executor arm" {
     then "emit renders the shared core" {
         // Fails without the emit arm — the build name would fall through and render
         // nothing callable, which is exactly the state MkExtern was in before 10.6.
+        // Post t-kd4y.3.5.9 MkExport is a feature manifest row, so the shared core
+        // emit renders is the modules lowering's adapter.
         let src = emit_one(
             "g = \"export\" inner:sub -> MkExport(inner)\n" +
             "sub = \"mod\" m:IDENT -> MkModule(m)\n")
-        src.contains("mk_export_decl(st, inner)")
+        src.contains("mk_export_abi(st, [inner])")
     }
 
     then "the executor still wraps in a bare @export annotation" {

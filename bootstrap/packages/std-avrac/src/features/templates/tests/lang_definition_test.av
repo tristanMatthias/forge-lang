@@ -1,0 +1,60 @@
+// The templates LanguageFeature definition (t-kd4y.3.5.9): a NEW
+// syntax-only carrier for the two TEMPLATE-token primaries. The desugar
+// stays parse-side (ONE implementation), reached through the engine's
+// desugar_template_in seam — the apply_it_sugar pattern.
+use @std.avrac.features.templates.{templates_lang}
+use @std.avrac.features.{feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.parse.{oracle_expr}
+
+spec "templates as a LanguageFeature" {
+    then "the carrier has surface metadata and its rules reach the composed view" {
+        let t = templates_lang()
+        let prog = render_grammar(avra_program_grammar())
+        t.title.contains("template") && t.docs.contains("dollar-brace")
+            && prog.contains("MkTemplate(t)")
+            && prog.contains("MkTaggedTemplate(n, t)")
+    }
+    then "both rows ride the manifest and NOTHING is left central" {
+        mut owners = ""
+        for b in feature_builders() {
+            if b.name == "MkTemplate" || b.name == "MkTaggedTemplate" {
+                owners = owners + "${b.name}=${b.module}/${if b.spanned { "sp" } else { "flat" }} "
+            }
+        }
+        owners.contains("MkTemplate=features.templates.lowering/flat")
+            && owners.contains("MkTaggedTemplate=features.templates.lowering/sp")
+            && central_build_kind("MkTemplate") == ""
+            && central_build_kind("MkTaggedTemplate") == ""
+    }
+}
+
+spec "template shapes parse to the expected trees" {
+    then "an interpolated template desugars to concatenation" {
+        // The fixture assembles the interpolation lead at RUNTIME (a lone "$"
+        // + "{…}") so THIS file never contains the two-byte lead — the
+        // template_lit_test idiom; a literal lead here would interpolate in
+        // this test's own source.
+        let d = "$"
+        let r = oracle_expr("\"a " + d + "{x} b\"")
+        r != null && r!.contains("+") && r!.contains("string") && r!.contains("x")
+    }
+    then "a tagged template is a CALL of the tag with the template argument" {
+        // The TEMPLATE token requires an interpolation slot — `tag"hi"` (a
+        // plain string after an ident) lexes IDENT STRING and is two
+        // expressions, on the seed exactly as here. Assembled lead, as above.
+        let d = "$"
+        let r = oracle_expr("tag\"h" + d + "{1}i\"")
+        r != null && r!.contains("call") && r!.contains("tag")
+    }
+    then "a malformed interpolation slot reports — the desugar Err path" {
+        // The slot's inner text must itself parse as an expression; a bare
+        // `+` does not, so desugar_template_in answers Err and mk_template
+        // surfaces it via error_node — a REPORTED diagnostic, which is what
+        // fails the parse (oracle_expr answers null). A change that dropped
+        // the diagnostic would hand back a clean Ok tree instead — non-null
+        // is exactly the regression this pins. Assembled lead, as above.
+        let d = "$"
+        oracle_expr("\"a " + d + "{+} b\"") == null
+    }
+}
