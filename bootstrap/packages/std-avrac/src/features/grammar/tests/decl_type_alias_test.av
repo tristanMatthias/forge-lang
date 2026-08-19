@@ -22,7 +22,7 @@ use @std.avrac.core.{render_stmt_id}
 
 fn alias_grammar_src() -> string {
     "grammar Decl {\n" +
-    "  type_alias = \"type\" tname:IDENT \"=\" rhs:type_expr -> MkTypeAlias(tname, rhs)\n" +
+    "  type_alias = \"type\" tname:IDENT \"=\" rhs:type_expr -> MkTypeDeclAny(tname, pad_tp, pad_f, rhs, pad_op, pad_opf)\n" +
     // ── type family ──
     "  type_expr  = l:type_atom ( \"|\" r:type_atom )* -> TyUnion(l, r)\n" +
     "  type_atom  = fn_type | dyn_type | list_type | paren_type | named_type\n" +

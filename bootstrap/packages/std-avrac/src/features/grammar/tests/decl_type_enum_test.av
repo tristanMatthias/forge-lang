@@ -23,7 +23,7 @@ use @std.avrac.core.{render_stmt_id}
 fn type_enum_grammar_src() -> string {
     "grammar Decl {\n" +
     "  decl       = type_decl | enum_decl\n" +
-    "  type_decl  = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDecl(tname, fields)\n" +
+    "  type_decl  = \"type\" tname:IDENT \"=\" \"{\" ( fields:field \",\"? )* \"}\" -> MkTypeDeclAny(tname, pad_tp, fields, pad_al, pad_op, pad_opf)\n" +
     "  enum_decl  = \"enum\" ename:IDENT ( \"<\" tparams:tparam ( \",\" tparams:tparam )* \">\" )? \"{\" ( vars:variant \",\"? )* \"}\" -> MkEnumDecl(ename, tparams, vars)\n" +
     "  field      = fname:IDENT \":\" ftype:type_expr -> MkField(fname, ftype)\n" +
     "  tparam     = tpname:IDENT ( \":\" bound:IDENT )? -> MkTypeParam(tpname, bound)\n" +

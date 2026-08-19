@@ -1,0 +1,74 @@
+// The type/shape LanguageFeature definitions (t-kd4y.3.3.2): type_decl_lang
+// carries the fragment + THREE manifest rows (MkTypeDeclAny/6, MkShapeDecl/2,
+// MkField/2 — the field rule lives in this fragment; enum's variant
+// references it cross-fragment by name); shape_lang carries the structural
+// surface. The §2 oracle-era MkTypeDecl/2 + /3, MkTypeAlias, and MkTypeRHS
+// arms are DELETED (toys re-point at MkTypeDeclAny/6 with Nil-padded
+// captures).
+use @std.avrac.features.struct_decl.{type_decl_lang, shape_lang}
+use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+
+spec "type/shape family as LanguageFeatures" {
+    then "the keywords derive from type_decl_lang's declared grammar" {
+        mut has_type = false
+        mut has_shape = false
+        for k in feature_keywords(type_decl_lang()) {
+            if k == "type" { has_type = true }
+            if k == "shape" { has_shape = true }
+        }
+        has_type && has_shape
+    }
+    then "titles, docs, and editor snippets are carried" {
+        let t = type_decl_lang()
+        let sh = shape_lang()
+        t.title.length > 0 && t.docs.contains("newtype") && t.snippet.contains("type")
+            && sh.title.length > 0 && sh.docs.contains("width subtyping") && sh.snippet.contains("shape")
+    }
+    then "the declared rules reach the composed whole-program view" {
+        let prog = render_grammar(avra_program_grammar())
+        prog.contains("MkTypeDeclAny(tname, tparams, fields, talias, top, topf)")
+            && prog.contains("MkShapeDecl(shname, shfields)")
+            && prog.contains("MkField(fname, ftype)")
+    }
+    then "the decl-fragment registry serves type_decl, shape_decl, and field" {
+        mut ty_r = false
+        mut sh_r = false
+        mut f_r = false
+        for g in feature_decl_grammar_fragments() {
+            for r in g.rules {
+                if r.name == "type_decl" { ty_r = true }
+                if r.name == "shape_decl" { sh_r = true }
+                if r.name == "field" { f_r = true }
+            }
+        }
+        ty_r && sh_r && f_r
+    }
+    then "the three rows ride the manifest and NOTHING is left central" {
+        mut td = ""
+        mut sd = ""
+        mut fd = ""
+        for b in feature_builders() {
+            let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
+            if b.name == "MkTypeDeclAny" { td = row }
+            if b.name == "MkShapeDecl" { sd = row }
+            if b.name == "MkField" { fd = row }
+        }
+        td == "stmt/6/flat/mk_type_decl_any_abi/features.struct_decl.lowering"
+            && sd == "stmt/2/flat/mk_shape_decl_abi/features.struct_decl.lowering"
+            && fd == "field/2/flat/mk_field_abi/features.struct_decl.lowering"
+            && central_build_kind("MkTypeDeclAny") == ""
+            && central_build_kind("MkShapeDecl") == ""
+            && central_build_kind("MkField") == ""
+    }
+    then "the retired convenience builds are GONE — no row, no central kind" {
+        mut retired_rows = 0
+        for b in feature_builders() {
+            if b.name == "MkTypeDecl" || b.name == "MkTypeAlias" || b.name == "MkTypeRHS" { retired_rows = retired_rows + 1 }
+        }
+        retired_rows == 0
+            && central_build_kind("MkTypeDecl") == ""
+            && central_build_kind("MkTypeAlias") == ""
+            && central_build_kind("MkTypeRHS") == ""
+    }
+}

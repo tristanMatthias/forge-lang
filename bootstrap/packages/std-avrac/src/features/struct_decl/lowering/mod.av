@@ -1,0 +1,92 @@
+// The struct_decl feature's LOWERINGS — the type/shape declaration cores +
+// their ABI adapters + manifest rows (t-kd4y.3.3.2). This module imports
+// ONLY features.grammar + core — the F4012 import-closure invariant holds
+// by construction.
+//
+// The fragment (../grammar.av) spells THREE builds and this manifest
+// carries exactly those: MkTypeDeclAny/6 (every `type` RHS in one core),
+// MkShapeDecl/2, and MkField/2 (the `field` rule lives in this fragment —
+// enum's `variant` references it cross-fragment, which binds by name and
+// needs no row here). The §2 oracle-era MkTypeDecl/2 and /3,
+// MkTypeAlias/2, and MkTypeRHS/4 arms were DELETED with the flip (the
+// convenience purity move): every toy re-points at MkTypeDeclAny/6 with
+// Nil-padded captures, which reproduce each retired arm's exact
+// empty-list/absent-flag defaults — and give the alias toys the
+// production TypeRef edge the leaf-building MkTypeAlias arm dropped.
+use core.{FieldEntry, NodeEdges, NodeRef, Stmt, Token, TypeParamEntry, ValueType, byte_span_none, type_expr_to_vtype}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_field_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text}
+
+/// The WHOLE `type Name < tp > = …` declaration — every form the retired
+/// hand's `parse_type_declaration` produces, in one core, because the hand
+/// itself decides between them AFTER parsing the right-hand side and a
+/// grammar cannot branch on a parse RESULT.
+///
+/// Four outcomes, in the hand's own order:
+///   `= { field* }`               Stmt.TypeDecl        (fields captured, no alias)
+///   `= A | B`                    Stmt.UnionAliasDecl  (the TypeExpr came back .Union)
+///   `= Base without { f, g }`    Stmt.TypeDecl with a SYNTHETIC field list
+///   `= OtherType`                Stmt.NewtypeDecl     (the nominal wrapper)
+///
+/// The grammar reaches this with the brace form and the alias form as two
+/// OPTIONAL groups rather than two alternation branches: they are
+/// FIRST-disjoint after the `=` (`{` versus IDENT / `fn` / `[`), so exactly
+/// one fires.
+///
+/// The `without` / `only` shape is CODEGEN-COUPLED: codegen/setup.av's
+/// `resolve_type_operator` walks exactly `__base`, then `__without` /
+/// `__only`, then the user's field names. The marker is `"__" + op`.
+///
+/// Both alias outcomes carry a `NodeRef.TypeRef` over an INGESTED type — a
+/// leaf node here would drop the walker's only child.
+export fn mk_type_decl_any(st: PState, name: string, tps: List<TypeParamEntry>, fields: List<FieldEntry>, alias_cv: CapVal, has_alias: bool, op_cv: CapVal, has_op: bool, opf: List<Token>) -> CapVal {
+    if !has_alias {
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, tps, fields)))
+    }
+    let te = capval_to_texpr(st, alias_cv)
+    let vt = type_expr_to_vtype(te)
+    if has_op {
+        // `type X = Base without { a, b }` — the synthetic FieldEntry list codegen reads.
+        mut derived: List<FieldEntry> = []
+        derived.push(FieldEntry { name: "__base", resolved: vt })
+        derived.push(FieldEntry { name: "__" + capval_tok_text(op_cv), resolved: ValueType.Str })
+        for t in opf { derived.push(FieldEntry { name: t.text, resolved: ValueType.Unknown }) }
+        return CapVal.SNode(st.store.stmts.add_leaf(Stmt.TypeDecl(name, tps, derived)))
+    }
+    let ty_id = st.store.ingest_type(vt, byte_span_none())
+    match te {
+        .Union(_, _) -> CapVal.SNode(st.store.stmts.add(Stmt.UnionAliasDecl(name, vt), NodeEdges { refs: [NodeRef.TypeRef(ty_id)] }, byte_span_none()))
+        _ -> CapVal.SNode(st.store.stmts.add(Stmt.NewtypeDecl(name, vt), NodeEdges { refs: [NodeRef.TypeRef(ty_id)] }, byte_span_none()))
+    }
+}
+
+export fn mk_type_decl_any_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_type_decl_any(st, capval_tok_text(vals[0]), capval_to_tparam_list(vals[1]), capval_to_field_list(vals[2]), vals[3], capval_present(vals[3]), vals[4], capval_present(vals[4]), capval_tok_list(vals[5]))
+}
+
+/// `shape Name = { field* }` — the STRUCTURAL sibling. No type params:
+/// the retired `parse_shape_declaration` had none, unlike every other
+/// decl keyword.
+export fn mk_shape_decl(st: PState, name: string, fields: List<FieldEntry>) -> CapVal {
+    CapVal.SNode(st.store.stmts.add_leaf(Stmt.ShapeDecl(name, fields)))
+}
+
+export fn mk_shape_decl_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_shape_decl(st, capval_tok_text(vals[0]), capval_to_field_list(vals[1]))
+}
+
+/// `name : type` — a struct/variant field (the `MkField` build's core).
+export fn mk_field(st: PState, name: string, ftype: CapVal) -> CapVal {
+    CapVal.Field(FieldEntry { name: name, resolved: type_expr_to_vtype(capval_to_texpr(st, ftype)) })
+}
+
+export fn mk_field_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_field(st, capval_tok_text(vals[0]), vals[1])
+}
+
+/// ALL of the type/shape feature's rows — span-free (leaf or
+/// byte_span_none rows; the statement-list loop stamps the outermost node).
+export fn type_decl_builds() -> List<BuilderBind> {
+    bind_rows("features.struct_decl.lowering", [bind_row("MkTypeDeclAny", "stmt", 6, false, "mk_type_decl_any_abi", mk_type_decl_any_abi),
+     bind_row("MkShapeDecl", "stmt", 2, false, "mk_shape_decl_abi", mk_shape_decl_abi),
+     bind_row("MkField", "field", 2, false, "mk_field_abi", mk_field_abi)])
+}

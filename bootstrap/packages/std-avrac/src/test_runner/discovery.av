@@ -31,7 +31,7 @@ use core.{
     avra_selfhost_read_file, avra_selfhost_file_exists,
     Tk,
 }
-use parse.{parser_new_with_file}
+use parse.{parser_new_lex_only}
 use list_ops.{list_filter}
 use pathutil.{basename_no_ext}
 
@@ -133,22 +133,37 @@ export type DiscoveredFile = {
 }
 
 /// Classify one Avra source file via lex tokens. We instantiate a
-/// real `Parser` and only call `advance` — never `parse_*` — so the
-/// cost stays bounded at one tokenisation per file. Tracking braces
-/// at depth lets us reject `spec` keywords nested inside fn bodies
-/// or expressions.
+/// LEX-ONLY `Parser` (`parser_new_lex_only`) and only call `advance` —
+/// never `parse_*` — so the cost stays bounded at one tokenisation per
+/// file. Tracking braces at depth lets us reject `spec` keywords nested
+/// inside fn bodies or expressions.
+///
+/// The ctor choice is the whole cost story (t-kdyj.14): the classifier
+/// used `parser_new_with_file`, whose fresh store EAGERLY builds the
+/// full feature registry — every LanguageFeature factory re-run, every
+/// definition gram re-parsed into the never-freed program arena — ~5MB+
+/// per file and GROWING with every migrated family, all discarded
+/// unread since classification never parses. Over a whole-tree walk
+/// (`bs2 test`, `--list`, or ANY unresolvable path filter falling back
+/// to the walk) that summed to ~6.2GB in one process and raced the
+/// F4014 ceiling on CI: `bs2 test no_such_file.av` tripped the ceiling
+/// mid-walk — "phase: startup (before parse)", nothing stamped — BEFORE
+/// path validation could name the unmatched path, which is exactly the
+/// conditional red variadic_test_paths_test caught. Lexing never
+/// consults the registry (keywords are the generated trie), so the
+/// lex-only ctor is the honest dependency.
 ///
 /// The classifier never reports lex errors; a syntactically broken
 /// file is still classified by whatever tokens lex cleanly before the
 /// error, and the compile-time parser will surface the diagnostic
 /// later when the runner tries to build the bundle.
 export fn classify_av_source(path: string, source: string) -> DiscoveredFile {
-    // `parser_new_with_file` already calls `advance_token` once before
+    // The ctor already calls `advance_token` once before
     // returning, so the parser is positioned AT the first token —
     // don't `advance()` again or we'd skip past it (subtle bug: a
     // file that starts with `spec "..." { ... }` would be classified
     // as having zero entries).
-    mut p = parser_new_with_file(source, path)
+    mut p = parser_new_lex_only(source)
     mut entries: List<DiscoveredEntry> = []
     mut has_top_main = false
     mut brace_depth = 0

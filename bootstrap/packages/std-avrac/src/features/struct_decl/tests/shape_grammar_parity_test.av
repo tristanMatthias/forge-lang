@@ -75,7 +75,9 @@ spec "t-47hc slice 10.8: `shape` is native and builds the hand's node" {
     }
 
     then "emit renders the shared core — the half an executor-only build would miss" {
-        emit_parser_source(avra_program_grammar()).contains("mk_shape_decl(st, capval_tok_text(shname)")
+        // The MANIFEST spelling (t-kd4y.3.3.2): MkShapeDecl is feature-owned,
+        // so emit renders the adapter call, not the retired direct-core form.
+        emit_parser_source(avra_program_grammar()).contains("mk_shape_decl_abi(st, [shname, CapVal.Fields(shfields_list)])")
     }
 }
 
