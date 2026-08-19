@@ -419,3 +419,32 @@ fn default_ceiling_clears_memtotal_floor() -> bool {
     }
     true
 }
+
+/// The UNSATISFIABLE-grant floor, pure (t-u602): a soft grant at or below
+/// the process's first-read RSS is lifted to baseline + one 64 MiB working
+/// quantum. Pinned at the shape that broke: a test unit inheriting a small
+/// pool grant tripped `MEMORY CEILING … during startup (before parse)` on
+/// three consecutive CI runs (7073/7073 specs passing) because the
+/// deterministic shard packing started it inside the @std prebuild's climb
+/// — over an unsatisfiable grant from birth, with nothing to yield when the
+/// release valve fired. Growth past baseline still trips exactly as
+/// designed; a satisfiable grant passes through untouched.
+extern fn avra_mem_soft_grant_floor(grant_kb: int, baseline_kb: int) -> int
+
+spec "t-u602: an unsatisfiable soft grant lifts to first-read baseline + a working quantum" {
+    then "a grant below baseline lifts to baseline + 64 MiB" {
+        avra_mem_soft_grant_floor(30720, 40960) == 40960 + 65536
+    }
+    then "a grant AT baseline is equally unsatisfiable — same lift" {
+        avra_mem_soft_grant_floor(40960, 40960) == 40960 + 65536
+    }
+    then "a satisfiable grant passes through untouched" {
+        avra_mem_soft_grant_floor(1843200, 40960) == 1843200
+    }
+    then "the boundary: exactly baseline + quantum stays as granted" {
+        avra_mem_soft_grant_floor(40960 + 65536, 40960) == 40960 + 65536
+    }
+    then "a failed baseline read (negative) changes nothing" {
+        avra_mem_soft_grant_floor(30720, 0 - 1) == 30720
+    }
+}
