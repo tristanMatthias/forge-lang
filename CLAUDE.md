@@ -466,6 +466,37 @@ Anti-patterns:
 Per-file test runs are 15s each (uzs9.1 — cache miss bug). When debugging,
 isolate-and-iterate on ONE file. Don't bundle.
 
+## Dead-code sweeps: the corpus is the whole repo, and `find` will lie to you
+
+Three scope bugs in one 2026-08-19 sweep, each producing confident "this has no
+callers" claims that were false. Before deleting anything on the strength of a
+reference scan, prove the scan SEES the callers:
+
+- **`bootstrap/tests/` holds ~457 `.av` files and is NOT under `packages/`.** It
+  is where the END-TO-END fixture tests live — they drive features by shelling
+  `bs2 compile+run` on a fixture, so a function reachable only that way has zero
+  textual callers in `packages/`. A scan rooted at `packages/` deleted the
+  `avra.lock` subsystem as "unwired, no tests" while `tests/build_lock_test.av`
+  was exercising all four of its entry points through seven probes; 14 tests
+  went red. `std-avrac/src/build/` (72 files) was hidden the same way by the
+  previous iteration of the same scan.
+- **`find -path '*/build/*'` matches ACROSS SLASHES.** It is meant to skip the
+  package output dir and also silently eats `src/build/`. Anchor to one segment:
+  `find . -regextype posix-extended -not -regex '\./[^/]+/build/.*'`.
+- **A name can be reached without appearing as `name(`.** `@derive` targets are
+  emitted from STRING literals in the synthesis code (`derive/walk.av`,
+  `derive/eq.av`); generic calls carry type args (`render_answer<V>(...)`);
+  `parse_grammar` is DESUGAR-INJECTED into any file containing a `grammar { }`
+  block without being named; `from_bytes_*` do not exist until expansion; and in
+  C, `__attribute__((constructor))` functions are called by the loader — deleting
+  one also orphans its attribute line onto the NEXT function, which is valid C
+  with different semantics.
+
+And the process rule the same session broke: **build + lint + diff-test + lib
+probe can ALL be green while the suite is red.** None of them run the tests. A
+deletion sweep is not verified until `bs2 test` has finished — not started,
+finished — so do not commit or push on the strength of the fast gates alone.
+
 ## CRITICAL RULE: Build What You Need
 
 If you discover a missing language feature or infrastructure gap while working, STOP and implement the missing piece FIRST. Do NOT work around, defer, or hack a substitute. Every workaround becomes permanent tech debt.
