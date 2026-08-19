@@ -525,8 +525,22 @@ export fn avra_type_grammar() -> Grammar {
   splice_type = @when(in_quote_body) "~" sn:IDENT ( opt:"?" )? -> MkSpliceType(sn, opt)
   type_atom  = splice_type | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
     }
-    mut frags: List<Grammar> = [grammar_checked(gp)]
-    for g in feature_type_grammar_fragments() { frags.push(g) }
+    // compose contract: the FIRST fragment's start rule is the START SYMBOL,
+    // and run_grammar_type execs rules[0] as the entry. The entry `type_expr`
+    // is union_type's rule (ownership follows the referencing rule), so its
+    // fragment must LEAD — spine-first led with the @when(in_quote_body)-gated
+    // splice_type and gated the WHOLE view (type_equivalence_test went 0/8:
+    // even `int` failed at the entry).
+    mut frags: List<Grammar> = []
+    mut rest: List<Grammar> = [grammar_checked(gp)]
+    for g in feature_type_grammar_fragments() {
+        if g.rules.length > 0 && g.rules[0].name == "type_expr" {
+            frags.push(g)
+        } else {
+            rest.push(g)
+        }
+    }
+    for g in rest { frags.push(g) }
     compose_fragments(frags)
 }
 
