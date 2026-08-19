@@ -1,0 +1,68 @@
+// The ident-led LanguageFeature definitions (t-kd4y.3.5.6):
+// struct_lit_lang owns struct_lit_expr + the shared field_init (BOTH rows
+// — the no-orphans validator), enum_ctor_lang the contextual variant_ctor,
+// with_expr_lang the with_suffix, qualified_ref_lang the @pkg:: reference,
+// grammar_block_lang the grammar block. Engine copies DELETED, not moved.
+// MkEnumCtorSuffix/MkExprBlock stay ledgered for the .3.5.8 postfix flip;
+// MkTaggedTemplate for .3.5.9.
+use @std.avrac.features.struct_decl.{struct_lit_lang, enum_ctor_lang}
+use @std.avrac.features.with_expr.{with_expr_lang}
+use @std.avrac.features.modules.{qualified_ref_lang}
+use @std.avrac.features.grammar.{grammar_block_lang, render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.features.{feature_builders}
+use @std.avrac.parse.{oracle_expr}
+
+spec "ident-led family as LanguageFeatures" {
+    then "the declared rules reach the composed whole-program view" {
+        let prog = render_grammar(avra_program_grammar())
+        prog.contains("MkStructLit(n, f)")
+            && prog.contains("MkFieldInit(n, v)")
+            && prog.contains("mk_enum_ctor(v, a)")
+            && prog.contains("MkWithSuffix(f)")
+            && prog.contains("MkQualExpr(n, s, lb, f)")
+            && prog.contains("MkGrammarBlock(body)")
+    }
+    then "the six rows ride the manifest and NOTHING is left central" {
+        mut sl = ""
+        mut fi = ""
+        mut ec = ""
+        mut ws = ""
+        mut qe = ""
+        mut gb = ""
+        for b in feature_builders() {
+            let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.module}"
+            if b.name == "MkStructLit" { sl = row }
+            if b.name == "MkFieldInit" { fi = row }
+            if b.name == "mk_enum_ctor" { ec = row }
+            if b.name == "MkWithSuffix" { ws = row }
+            if b.name == "MkQualExpr" { qe = row }
+            if b.name == "MkGrammarBlock" { gb = row }
+        }
+        sl == "expr/2/spanned/features.struct_decl.lowering"
+            && fi == "finit/2/flat/features.struct_decl.lowering"
+            && ec == "expr/2/spanned/features.struct_decl.lowering"
+            && ws == "expr/1/spanned/features.with_expr.lowering"
+            && qe == "expr/4/spanned/features.modules.lowering"
+            && gb == "expr/1/spanned/features.grammar"
+            && central_build_kind("MkStructLit") == ""
+            && central_build_kind("MkFieldInit") == ""
+            && central_build_kind("mk_enum_ctor") == ""
+            && central_build_kind("MkWithSuffix") == ""
+            && central_build_kind("MkQualExpr") == ""
+            && central_build_kind("MkGrammarBlock") == ""
+    }
+    then "titles are carried on all five definitions" {
+        struct_lit_lang().title.length > 0 && enum_ctor_lang().title.length > 0
+            && with_expr_lang().title.length > 0 && qualified_ref_lang().title.length > 0
+            && grammar_block_lang().title.length > 0
+    }
+}
+
+spec "ident-led shapes parse to the expected trees" {
+    then "canonical renders of representative forms" {
+        (oracle_expr("Point { x: 1, y: 2 }") ?? "<pe>").contains("Point")
+            && (oracle_expr("p with { x: 5 }") ?? "<pe>").contains("with")
+            && (oracle_expr(".Some(1)") ?? "<pe>").contains("Some")
+            && (oracle_expr("@std::core::Foo") ?? "<pe>").contains("@std::core::Foo")
+    }
+}

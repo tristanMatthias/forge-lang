@@ -14,8 +14,8 @@
 // CapVals (list captures wrapped by manifest_arg_spelling,
 // capval_tok_list unwrapping singleton-preserving).
 
-use core.{Stmt, StmtId, ValueType}
-use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, capval_tok_list, capval_tok_text, param_entries_from_toks}
+use core.{Expr, ExprId, Stmt, StmtId, ValueType, byte_span}
+use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, capval_to_finit_list, capval_tok_list, capval_tok_text, capval_toks, param_entries_from_toks}
 
 /// `use seg ( . seg )* { names }` — the bare-path import (`MkUseBare`).
 export fn use_bare_build(st: PState, vals: List<CapVal>) -> CapVal {
@@ -56,4 +56,29 @@ export fn modules_builds() -> List<BuilderBind> {
     bind_rows("features.modules.lowering", [bind_row("MkUseBare", "stmt", 2, false, "use_bare_build", use_bare_build),
      bind_row("MkUsePkg", "stmt", 3, false, "use_pkg_build", use_pkg_build),
      bind_row("MkModule", "stmt", 1, false, "module_build", module_build)])
+}
+
+/// `@pkg::mod::name` and its struct-literal form `@pkg::mod::Name { f: v }`
+/// (t-kd4y.3.5.6). The name is rebuilt from the `@`-IDENT plus each
+/// `::`-segment token, exactly as the retired hand concatenated them. A
+/// `{ … }` suffix is taken ONLY when allow_struct_lit is on (the @when
+/// gate in the rule) — `lb` present distinguishes an EMPTY struct literal
+/// `@a::B {}` from a bare qualified ident, which both yield no field
+/// inits.
+export fn mk_qualified(st: PState, sp_start: int, ncap: CapVal, scap: CapVal, lbcap: CapVal, fcap: CapVal) -> ExprId {
+    mut name = "@" + capval_tok_text(ncap)
+    for t in capval_toks(scap) { name = name + "::" + t.text }
+    match lbcap {
+        .Nil -> st.store.exprs.add_leaf(Expr.QualifiedIdent(name))
+        _ -> st.store.add_expr(Expr.StructLit(name, capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
+    }
+}
+
+export fn mk_qualified_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_qualified(st, st.build_sp, vals[0], vals[1], vals[2], vals[3]))
+}
+
+/// The qualified-reference row (t-kd4y.3.5.6) — spanned at the `@` byte.
+export fn qualified_builds() -> List<BuilderBind> {
+    bind_rows("features.modules.lowering", [bind_row("MkQualExpr", "expr", 4, true, "mk_qualified_abi", mk_qualified_abi)])
 }

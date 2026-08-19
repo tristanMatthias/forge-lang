@@ -252,10 +252,11 @@ fn ")
         // Phase 3a-7 slice 4: the contextual enum ctor `.Variant`/`.Variant(args)` is a
         // grammar-owned RULE (variant_ctor) captured as the postfix-loop base — a `Tk.Dot`-
         // guarded branch before the @hand tail. The rule fn parses `.`, the variant IDENT,
-        // and an optional args list, building Expr.EnumCtor via mk_enum_ctor_expr.
+        // and an optional args list, building Expr.EnumCtor via the feature-owned
+        // mk_enum_ctor row (features/struct_decl lowering, t-kd4y.3.5.6).
         src.contains("fn parse_variant_ctor(st: PState) -> CapVal {") &&
         src.contains("let base = parse_variant_ctor(st)") &&
-        src.contains("CapVal.Node(mk_enum_ctor_expr(st, sp_start, v, CapVal.Nodes(a_list)))") &&
+        src.contains("call_with_build_sp(st, sp_start, mk_enum_ctor_abi, [v, CapVal.Nodes(a_list)])") &&
         // t-47hc.5 — `@hand(primary_base)` is RETIRED, so the generated parser no longer
         // calls it and there is no leading-@hand tail on this alternation at all. What
         // owns "this token starts nothing" now is the alternation's own no-match, emitted
@@ -325,13 +326,14 @@ fn ")
         src.contains("fn starts_with_suffix(st: PState) -> bool {\n    st.cur().text == \"with\"\n}") &&
         // t-47hc.17: `with_suffix` is GRAMMAR-NATIVE now (hand parse_with_suffix deleted),
         // so its delegate rule must no longer route through run_hand_expr — it parses the
-        // field list itself and folds it via mk_with_suffix. Assert the absence too, so a
+        // field list itself and folds it via the feature-owned MkWithSuffix row
+        // (features/with_expr lowering, t-kd4y.3.5.6). Assert the absence too, so a
         // regression back to the @hand leaf fails loudly here.
         // `@onfail(bail)` on the field element binds a temp and error-checks it, so the
         // direct-call form became `let __bres<N> = parse_field_init(st)` + guard + push.
         // That bail is what makes `T { x: }` abort the literal the way the hand does.
         src.contains("f_list.push(capval_to_finit(st, __bres") &&
-        src.contains("CapVal.Node(mk_with_suffix(st, sp_start, CapVal.FInits(f_list)))") &&
+        src.contains("call_with_build_sp(st, sp_start, mk_with_suffix_abi, [CapVal.FInits(f_list)])") &&
         // The two field-list diagnostics reproduce the hand exactly: the `{` message, and
         // `expected field name` on the closer — which covers BOTH a junk token and EOF,
         // because the hand's own `expected \`}\` after with fields` was unreachable.

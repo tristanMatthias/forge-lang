@@ -13,8 +13,8 @@
 // Nil-padded captures, which reproduce each retired arm's exact
 // empty-list/absent-flag defaults — and give the alias toys the
 // production TypeRef edge the leaf-building MkTypeAlias arm dropped.
-use core.{FieldEntry, NodeEdges, NodeRef, Stmt, Token, TypeParamEntry, ValueType, byte_span_none, type_expr_to_vtype}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_field_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text}
+use core.{Expr, ExprId, FieldEntry, FieldInit, NodeEdges, NodeRef, Stmt, Token, TypeParamEntry, ValueType, byte_span, byte_span_none, type_expr_to_vtype}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_field_list, capval_to_finit_list, capval_to_node_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text}
 
 /// The WHOLE `type Name < tp > = …` declaration — every form the retired
 /// hand's `parse_type_declaration` produces, in one core, because the hand
@@ -89,4 +89,68 @@ export fn type_decl_builds() -> List<BuilderBind> {
     bind_rows("features.struct_decl.lowering", [bind_row("MkTypeDeclAny", "stmt", 6, false, "mk_type_decl_any_abi", mk_type_decl_any_abi),
      bind_row("MkShapeDecl", "stmt", 2, false, "mk_shape_decl_abi", mk_shape_decl_abi),
      bind_row("MkField", "field", 2, false, "mk_field_abi", mk_field_abi)])
+}
+
+/// Build ONE struct field-init (the `MkFieldInit` build's core — the
+/// `field_init` rule lives in struct_lit_lang's fragment; qualified_expr,
+/// with_suffix, and the unary splice-struct branch reference it
+/// cross-fragment by name). `name: value`, or the SHORTHAND `name` (no
+/// `:`) which expands to `name: Expr.Ident(name)` — so an absent value
+/// must allocate that ident leaf, exactly as the retired hand
+/// `alloc_leaf(Expr.Ident(name))` did.
+export fn mk_field_init(st: PState, name_cv: CapVal, value_cv: CapVal) -> CapVal {
+    let name = capval_tok_text(name_cv)
+    let value_id = match value_cv {
+        .Nil -> st.store.exprs.add_leaf(Expr.Ident(name))
+        _ -> capval_to_expr(st, value_cv)
+    }
+    CapVal.FInit(FieldInit { name, value_id })
+}
+
+export fn mk_field_init_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_field_init(st, vals[0], vals[1])
+}
+
+/// `Name { f: v, … }` — a plain (unqualified) STRUCT LITERAL. The nominal
+/// sibling of mk_qualified's struct-literal half: same `Expr.StructLit`
+/// payload and the same finit decoding, with the name taken from one
+/// IDENT. No `lb` capture to distinguish an EMPTY literal from a bare
+/// ident, because the two are separate grammar branches: this builder is
+/// reached only when the `{` was actually matched, so `Name {}` is still
+/// a StructLit with an empty field list.
+export fn mk_struct_lit(st: PState, sp_start: int, ncap: CapVal, fcap: CapVal) -> ExprId {
+    st.store.add_expr(Expr.StructLit(capval_tok_text(ncap), capval_to_finit_list(fcap)), byte_span(sp_start, st.cur().pos), [])
+}
+
+export fn mk_struct_lit_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_struct_lit(st, st.build_sp, vals[0], vals[1]))
+}
+
+/// Contextual enum constructor `.Variant` / `.Variant(args)` — the EMPTY
+/// enum name is the contextual marker (the enum is inferred from the
+/// expected type). `acap` is the optional args list (Nil ⇒ nullary).
+/// Spanned at the `.` byte; sp_start < 0 is the interpreter's span-free
+/// sentinel.
+export fn mk_enum_ctor_expr(st: PState, sp_start: int, vcap: CapVal, acap: CapVal) -> ExprId {
+    let variant = capval_tok_text(vcap)
+    let args = capval_to_node_list(acap)
+    let sp = byte_span(sp_start, st.cur().pos)
+    st.store.add_expr(Expr.EnumCtor("", variant, args), sp, [])
+}
+
+export fn mk_enum_ctor_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    CapVal.Node(mk_enum_ctor_expr(st, st.build_sp, vals[0], vals[1]))
+}
+
+/// The struct-LITERAL family's rows (t-kd4y.3.5.6): the literal is
+/// spanned at its rule entry (the name IDENT); the field-init is a
+/// span-free FInit value.
+export fn struct_lit_builds() -> List<BuilderBind> {
+    bind_rows("features.struct_decl.lowering", [bind_row("MkStructLit", "expr", 2, true, "mk_struct_lit_abi", mk_struct_lit_abi),
+     bind_row("MkFieldInit", "finit", 2, false, "mk_field_init_abi", mk_field_init_abi)])
+}
+
+/// The contextual enum-ctor row (t-kd4y.3.5.6) — spanned at the `.` byte.
+export fn enum_ctor_builds() -> List<BuilderBind> {
+    bind_rows("features.struct_decl.lowering", [bind_row("mk_enum_ctor", "expr", 2, true, "mk_enum_ctor_abi", mk_enum_ctor_abi)])
 }

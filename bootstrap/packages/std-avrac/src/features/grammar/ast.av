@@ -914,10 +914,11 @@ export fn unflipped_builds() -> List<string> {
      // feature may only supply builders its OWN gram references.
      "MkSplice", "MkSpliceStruct",
      "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName",
-     // t-kd4y.3.5.6 ident-led + struct/with + enum-ctor + block-expr
-     "MkStructLit", "MkWithSuffix", "MkGrammarBlock", "MkTaggedTemplate",
-     "MkQualExpr", "mk_enum_ctor", "MkEnumCtorSuffix", "MkFieldInit",
-     "MkExprBlock",
+     // t-kd4y.3.5.6 re-scoped remnants: MkEnumCtorSuffix + MkExprBlock are
+     // spelled by SPINE rules (the postfix chain and block_expr), so their
+     // rows flip with .3.5.8 when those rules themselves are in play;
+     // MkTaggedTemplate pairs with MkTemplate in .3.5.9.
+     "MkEnumCtorSuffix", "MkExprBlock", "MkTaggedTemplate",
      // t-kd4y.3.5.7 operator families
      "fold_logical", "fold_nullish", "fold_pipe", "fold_with",
      "fold_postfix_with", "mk_assign", "rebind_eq", "mk_eqchain", "mk_is",
@@ -948,14 +949,14 @@ export fn central_build_kind(bn: string) -> string {
     match bn {
         "fold_binary" or "fold_logical" or "fold_nullish" or "fold_pipe" or "fold_with"
             or "fold_postfix_with" or "fold_postfix" or "mk_assign" or "rebind_eq" or "mk_is"
-            or "mk_inlist" or "mk_inrange" or "mk_enum_ctor" or "mk_eqchain"
+            or "mk_inlist" or "mk_inrange" or "mk_eqchain"
             or "MkExprBlock"
             or "Unary" or "field_suffix" or "index_suffix" or "call_suffix"
-            or "MkWithSuffix" or "MkSplice" or "MkSpliceStruct" or "MkQualExpr"
+            or "MkSplice" or "MkSpliceStruct"
             or "MkTemplate" or "MkTrySuffix" or "MkCatchSuffix" or "MkOptChain" or "MkTupleIndex"
             or "MkFieldAccess" or "MkIndexSuffix" or "MkCallSuffix" or "MkGenericCallSuffix"
-            or "MkEnumCtorSuffix" or "MkOptMethodCall" or "MkForceUnwrap" or "MkCallArg" or "MkStructLit"
-            or "MkGrammarBlock" or "MkTaggedTemplate"
+            or "MkEnumCtorSuffix" or "MkOptMethodCall" or "MkForceUnwrap" or "MkCallArg"
+            or "MkTaggedTemplate"
             or "MkPrimaryFail" -> "expr"
         "ExprStmt" or "Block" -> "stmt"
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
@@ -964,7 +965,6 @@ export fn central_build_kind(bn: string) -> string {
         // capval_to_expr default. That is the same silent tree-corruption trap the annotation
         // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
         "MkSpliceArm" -> "arm"
-        "MkFieldInit" -> "finit"
         // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target.
         "MkExport"
             or "MkAssocTypeDef"
