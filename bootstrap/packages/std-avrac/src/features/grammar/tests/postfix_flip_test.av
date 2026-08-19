@@ -46,28 +46,46 @@
 // claim about behaviour goes out of date silently, which is the whole reason those six
 // are corpus. Do not re-derive any of it from this file; the spec is the record.
 
+// THE CHAIN IS PURE DISPATCH NOW (t-kd4y.3.5.8). `postfix_suffix` keeps only
+// WHICH rules the chain tries, and in what order; every form's branch lives
+// with its feature (unwrap_suffix + catch_suffix + optcall_suffix +
+// optchain_suffix — features/null_safety; enum_ctor_suffix + field_suffix —
+// features/struct_decl; tuple_suffix — features/tuples; index_suffix +
+// call_suffix + call_arg + index_tail — features/calls) and lowers through
+// the manifest ABI adapter its owner supplies. Each pin below therefore
+// anchors on the OWNING rule's emission (`rule_src`), and the dispatch-level
+// properties (order, zero-width gates, no builds/no snap of its own) get
+// their own spec. The per-step snap moved WITH the builds: each sub-rule
+// carrying a postfix-step build freezes the chain at ITS entry — only
+// zero-width gates run between dispatch entry and sub-rule entry, so the
+// frozen base is byte-identical to the retired inline form's.
+
 use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar}
 
-fn postfix_rule_src() -> string {
+fn rule_src(name: string) -> string {
     let g = avra_expr_dispatch_grammar()
     for gr in g.rules {
-        if gr.name == "postfix_suffix" { return emit_rule_fn(g, gr) }
+        if gr.name == name { return emit_rule_fn(g, gr) }
     }
     ""
 }
 
+fn postfix_rule_src() -> string {
+    rule_src("postfix_suffix")
+}
+
 spec "t-47hc.33: `expr?` is grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_try_suffix(st)")
+    then "the owning rule emits the manifest adapter" {
+        rule_src("unwrap_suffix").contains("mk_try_suffix_abi(st, [])")
     }
     then "the guard carries the mode read — `?` in a match arm is not a Try" {
-        postfix_rule_src().contains("st.modes.allow_dot_postfix != 0")
+        rule_src("unwrap_suffix").contains("st.modes.allow_dot_postfix != 0")
     }
     then "and the token test" {
-        postfix_rule_src().contains("st.cur().tk == Tk.Question")
+        rule_src("unwrap_suffix").contains("st.cur().tk == Tk.Question")
     }
     then "and the SAME-LINE test — a `?` opening the next line ends the chain" {
-        postfix_rule_src().contains("to_linecol(st.toks[st.pos - 1].pos).line")
+        rule_src("unwrap_suffix").contains("to_linecol(st.toks[st.pos - 1].pos).line")
     }
     then "the loop over the rule keeps its no-progress break" {
         // The hand tail can return WITHOUT consuming (guard unmatched / generic-call
@@ -89,12 +107,12 @@ spec "t-47hc.33: `expr?` is grammar-native" {
 // is entered.
 
 spec "t-47hc.33: `expr?.field` is grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_opt_chain(st,")
+    then "the owning rule emits the manifest adapter" {
+        rule_src("optchain_suffix").contains("mk_opt_chain_abi(st, [")
     }
     then "it is gated by the lookahead, not by the `?.` token alone" {
         // Without the peek the branch would swallow `?.m(args)` and build the wrong node.
-        postfix_rule_src().contains("lookahead_ok(\"qdot_plain_field\", st)")
+        rule_src("optchain_suffix").contains("lookahead_ok(\"qdot_plain_field\", st)")
     }
     then "the field terminal is FIELDNAME — a reserved-keyword field is native too" {
         // Was IDENT, which is `Tk.Identifier` ALONE and therefore NARROWER than
@@ -103,7 +121,7 @@ spec "t-47hc.33: `expr?.field` is grammar-native" {
         // Asserted as the full disjunction, not the `Tk.Identifier` substring: that
         // prefix matches BOTH spellings, so it would have passed against the old
         // IDENT-only guard and proved nothing.
-        postfix_rule_src().contains("st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved")
+        rule_src("optchain_suffix").contains("st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved")
     }
 }
 
@@ -115,16 +133,16 @@ spec "t-47hc.33: `expr?.field` is grammar-native" {
 // while build-quick, --emit-regen-expr and --emit-gen-check all stayed green.
 
 spec "t-47hc.33: `expr.field` is grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_field_access(st,")
+    then "the owning rule emits the manifest adapter" {
+        rule_src("field_suffix").contains("mk_field_access_abi(st, [")
     }
     then "it is gated on the SECOND token, not just the dot" {
-        postfix_rule_src().contains("lookahead_ok(\"dot_plain_field\", st)")
+        rule_src("field_suffix").contains("lookahead_ok(\"dot_plain_field\", st)")
     }
     then "and on the whole hand entry-guard conjunct" {
         // dot_is_postfix is a decision TREE, not a conjunction of markers, so it is one
         // shared base predicate rather than @when(cell_mode) + ^ + a base read.
-        postfix_rule_src().contains("base_pred(\"dot_postfix_ok\", st)")
+        rule_src("field_suffix").contains("base_pred(\"dot_postfix_ok\", st)")
     }
 }
 
@@ -142,12 +160,25 @@ spec "t-47hc.33: `expr.field` is grammar-native" {
 // consume tokens only, where the snapshot and the live value are equal.
 
 spec "t-47hc.33: the chain base is frozen at step ENTRY" {
-    then "the rule freezes it before any item runs" {
-        postfix_rule_src().contains("st.snap_postfix_step()")
+    then "each step-building rule freezes it — the recursing form first among them" {
+        // The snap follows the BUILDS (rule_has_postfix_step_build keys on the
+        // branch's build name), so it moved into the sub-rules with the flip.
+        // index_suffix is the rule the hazard was found on (`stats[i]` built
+        // `Index(i, i)` without it); every sibling that recurses gets the same
+        // treatment by the same mechanism.
+        rule_src("index_suffix").contains("st.snap_postfix_step()") &&
+            rule_src("call_suffix").contains("st.snap_postfix_step()") &&
+            rule_src("catch_suffix").contains("st.snap_postfix_step()")
     }
     then "and the freeze is the FIRST statement — before anything can recurse" {
-        let s = postfix_rule_src()
+        let s = rule_src("index_suffix")
         s.index_of("st.snap_postfix_step()") < s.index_of("if ")
+    }
+    then "the DISPATCHER has no freeze of its own — only zero-width gates run before a sub-rule snaps" {
+        // postfix_suffix carries no builds, so the mechanism gives it no snap; the
+        // frozen base each sub-rule reads is therefore taken at (equivalently) the
+        // dispatch entry, since peeks consume nothing.
+        !postfix_rule_src().contains("st.snap_postfix_step()")
     }
     then "both engines agree on WHICH rules need it" {
         // emit's rule_has_postfix_step_build_e and executor's rule_has_postfix_step_build
@@ -164,11 +195,11 @@ spec "t-47hc.33: the chain base is frozen at step ENTRY" {
 }
 
 spec "t-47hc.33: `expr[i]` / `expr[a..b]` are grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_index_suffix(st,")
+    then "the owning rule emits the manifest adapter" {
+        rule_src("index_suffix").contains("mk_index_suffix_abi(st, [")
     }
     then "the index expression is same-line gated — a `[` on a NEW line is a list literal" {
-        postfix_rule_src().contains("to_linecol(st.toks[st.pos - 1].pos).line")
+        rule_src("index_suffix").contains("to_linecol(st.toks[st.pos - 1].pos).line")
     }
     then "the two closing-`]` messages are the hand parser's, kept distinct" {
         // One arm in the hand, two sequences here: @expect keys on the token, so each
@@ -196,17 +227,17 @@ spec "t-47hc.33: `expr[i]` / `expr[a..b]` are grammar-native" {
 // `allow_dot_postfix`, and four abort points whose messages are the hand parser's.
 
 spec "t-47hc.33: `expr catch { … }` is grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_catch_suffix(st,")
+    then "the owning rule emits the manifest adapter" {
+        rule_src("catch_suffix").contains("mk_catch_suffix_abi(st, [")
     }
     then "the body parses under allow_dot_postfix ON, and RESTORES after" {
         // The hand saves/sets/restores around parse_statement_list_ids; a leak here
         // would silently change how the REST of the enclosing expression parses.
-        postfix_rule_src().contains("modes_with_flag_on(st.modes, \"allow_dot_postfix\")") &&
-            postfix_rule_src().contains("st.set_modes(__modes_")
+        rule_src("catch_suffix").contains("modes_with_flag_on(st.modes, \"allow_dot_postfix\")") &&
+            rule_src("catch_suffix").contains("st.set_modes(__modes_")
     }
     then "the four abort messages are the hand parser's, verbatim" {
-        let s = postfix_rule_src()
+        let s = rule_src("catch_suffix")
         s.contains("expected error binding name after `catch (`") &&
             s.contains("expected `)` after catch binding") &&
             s.contains("expected `{` after catch") &&
@@ -215,15 +246,15 @@ spec "t-47hc.33: `expr catch { … }` is grammar-native" {
     then "each of them ABORTS rather than reporting and continuing" {
         // `@require`: the hand returns .Err("parse error"), so the rest of the sequence
         // must not run and consume tokens belonging to whatever follows.
-        postfix_rule_src().contains("return CapVal.Node(st.error_node_silent())")
+        rule_src("catch_suffix").contains("return CapVal.Node(st.error_node_silent())")
     }
     then "the binding is OPTIONAL — bare `catch {` needs no parens" {
-        postfix_rule_src().contains("if st.cur().tk == Tk.LeftParen {")
+        rule_src("catch_suffix").contains("if st.cur().tk == Tk.LeftParen {")
     }
     then "the mode restore precedes the closing-brace check — no leak on abort" {
         // Ordering matters: were the `}` abort emitted INSIDE the @on wrapper, a missing
         // `}` would return with allow_dot_postfix still forced on.
-        let s = postfix_rule_src()
+        let s = rule_src("catch_suffix")
         let restore = s.index_of("st.set_modes(__modes_")
         let close = s.index_of("expected `}` after catch body")
         restore >= 0 && close >= 0 && restore < close
@@ -236,8 +267,8 @@ spec "t-47hc.33: `expr catch { … }` is grammar-native" {
 // only `items[0].prim`).
 
 spec "t-47hc.33: `t.0` is grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_tuple_index(st,")
+    then "the owning rule emits the manifest adapter" {
+        rule_src("tuple_suffix").contains("mk_tuple_index_abi(st, [")
     }
     then "and it is second-token dispatched, not FIRST-token dispatched" {
         // `.` is shared with `.field`: dispatch is on the branch's FIRST TOKEN ALONE, so
@@ -246,7 +277,7 @@ spec "t-47hc.33: `t.0` is grammar-native" {
         // sibling — comptime expansion writes `.field` everywhere, so the whole compiler
         // stops building. That failure mode is invisible to build-quick, --emit-gen-check
         // and diff-test alike; the peek is what keeps the two `.` readings apart.
-        postfix_rule_src().contains("lookahead_ok(\"dot_number\", st)")
+        rule_src("tuple_suffix").contains("lookahead_ok(\"dot_number\", st)")
     }
 }
 
@@ -291,27 +322,31 @@ spec "t-47hc.33: a nested chain is invisible to the chain that contains it" {
 }
 
 spec "t-47hc.33: `f<T>(args)` is grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_generic_call_suffix(st")
+    then "the owning rule emits the manifest adapter, type args marshalled as TExprs" {
+        // The repeated type capture rides the "type" kind's CapVal.TExprs list
+        // ctor — the marshalling row grown FOR this flip (it was the one kind
+        // with no CapVal list form; manifest_arg_spelling would have emitted
+        // the loud unmapped marker).
+        rule_src("call_suffix").contains("mk_generic_call_suffix_abi(st, [CapVal.TExprs(ta_list),")
     }
     then "the guard carries the is_callable conjunct — `a < b` stays a comparison" {
-        postfix_rule_src().contains("base_pred(\"base_callable\", st)")
+        rule_src("call_suffix").contains("base_pred(\"base_callable\", st)")
     }
     then "and the token test" {
-        postfix_rule_src().contains("st.cur().tk == Tk.Less")
+        rule_src("call_suffix").contains("st.cur().tk == Tk.Less")
     }
     then "the type arguments are TYPES, not expressions" {
         // The capture is a repeated `type_expr`, so its accumulator must be declared
         // `List<TypeExpr>` and filled through capval_to_texpr. Defaulting to
         // `List<ExprId>` + capval_to_expr (what an UNDECLARED external rule kind gives)
         // is a silent tree corruption, not a compile error, on any build that accepts it.
-        postfix_rule_src().contains("mut ta_list: List<TypeExpr>") &&
-            postfix_rule_src().contains("capval_to_texpr(st, parse_type_expr(st))")
+        rule_src("call_suffix").contains("mut ta_list: List<TypeExpr>") &&
+            rule_src("call_suffix").contains("capval_to_texpr(st, parse_type_expr(st))")
     }
     then "the branch is SPECULATIVE — `<` is also the comparison operator" {
         // Without the @try, `a < b` commits to a generic call on sight of `<` and the
         // comparison operator becomes unparseable.
-        postfix_rule_src().contains("let s_pos = st.pos")
+        rule_src("call_suffix").contains("let s_pos = st.pos")
     }
     then "there is NO cut — the hand backtracks on every failure past the `<`" {
         // try_parse_generic_call restores on a bad type list, a missing `(`, a bad arg
@@ -324,110 +359,133 @@ spec "t-47hc.33: `f<T>(args)` is grammar-native" {
         // INTERPRETER's vocabulary (CapEnv, executor.av) and never appears in emitted
         // source at all, so such a check passes unconditionally and would not notice a
         // `@cut` being added here later. This one fails the moment one is.
-        let g = avra_expr_dispatch_grammar()
-        mut src = ""
-        for gr in g.rules {
-            if gr.name == "postfix_suffix" { src = emit_rule_fn(g, gr) }
-        }
-        !src.contains("s_cut")
+        !rule_src("call_suffix").contains("s_cut")
     }
     then "POSITIVE CONTROL: `s_cut` really is what a cut emits" {
         // Without this, the assertion above is only as good as the marker name — a
         // rename would silently turn it back into a check that cannot fail. paren_expr
         // DOES cut (`")" "->" @cut lb:lambda_body`), so its emitted source must contain
         // the marker that postfix_suffix's must not.
-        let g = avra_expr_dispatch_grammar()
-        mut src = ""
-        for gr in g.rules {
-            if gr.name == "paren_expr" { src = emit_rule_fn(g, gr) }
-        }
-        src.contains("s_cut")
+        rule_src("paren_expr").contains("s_cut")
     }
     then "the builder call is GATED on the diagnostic count" {
         // The generated parser must not run the build for a doomed speculative branch:
         // mk_generic_call_suffix advances the chain accumulator, and on a branch that is
         // about to roll back that leaves postfix_base pointing past the truncated store.
-        postfix_rule_src().contains("if st.diags.length == s_diags && st.had_error == s_err")
+        rule_src("call_suffix").contains("if st.diags.length == s_diags && st.had_error == s_err")
     }
 }
 
 spec "t-47hc.33: `Type.Variant(args)` is grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_enum_ctor_suffix(st")
+    then "the owning rule emits the manifest adapter" {
+        rule_src("enum_ctor_suffix").contains("mk_enum_ctor_suffix_abi(st, [")
     }
     then "it is gated on the SHAPE — `.` IDENT `(`" {
-        postfix_rule_src().contains("lookahead_ok(\"dot_enum_ctor\", st)")
+        rule_src("enum_ctor_suffix").contains("lookahead_ok(\"dot_enum_ctor\", st)")
     }
     then "and on the BASE reading as a type name" {
         // Without this, `obj.method(1)` — a lowercase receiver — would build an EnumCtor
         // instead of a Call. That is a different node, not a different spelling.
-        postfix_rule_src().contains("base_pred(\"base_upper_ident\", st)")
+        rule_src("enum_ctor_suffix").contains("base_pred(\"base_upper_ident\", st)")
     }
     then "and it carries the `.` arm's whole entry guard" {
-        postfix_rule_src().contains("base_pred(\"dot_postfix_ok\", st)")
+        rule_src("enum_ctor_suffix").contains("base_pred(\"dot_postfix_ok\", st)")
     }
-    then "the ctor branch is dispatched BEFORE the plain-field branch" {
-        // Both lead with `.`. dot_plain_field DECLINES when a `(` follows a type-shaped
-        // base (`!base_pred("base_upper_ident")`), so the two are disjoint by
-        // construction — but only while the ctor branch is reached first. Reversing them
-        // would let `.field` claim `Type.Variant(` before the ctor branch is consulted.
+    then "the ctor rule is dispatched BEFORE the plain-field rule" {
+        // Both families lead with `.`. dot_plain_field DECLINES when a `(` follows a
+        // type-shaped base, so the two are disjoint by construction — but only while
+        // the ctor rule is reached first: field_suffix carries the unguarded @fallback
+        // `.` branch, which would otherwise claim `Type.Variant(` and report. The order
+        // lives in the DISPATCHER now, as does the zero-width dot_enum_ctor gate the
+        // ambiguity guard keys on.
         let s = postfix_rule_src()
-        s.index_of("lookahead_ok(\"dot_enum_ctor\", st)") < s.index_of("lookahead_ok(\"dot_plain_field\", st)")
+        s.index_of("parse_enum_ctor_suffix(st)") >= 0 &&
+            s.index_of("parse_enum_ctor_suffix(st)") < s.index_of("parse_field_suffix(st)")
     }
-    then "the ctor is SPANNED, not interned — it uses the postfix-step node helper" {
+    then "the ctor is SPANNED, not interned — its rule snapshots the chain base" {
         // The hand alloc_at's this one (unlike the generic call, which alloc_leaf's).
-        // Both go through builders, so the assertion is that this rule still snapshots
-        // the chain base the spanned helper reads.
-        postfix_rule_src().contains("st.snap_postfix_step()")
+        // Both go through builders, so the assertion is that the owning rule still
+        // snapshots the chain base the spanned helper reads.
+        rule_src("enum_ctor_suffix").contains("st.snap_postfix_step()")
     }
 }
 
 spec "t-47hc.33: `expr?.m(args)` is grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_opt_method_call(st")
+    then "the owning rule emits the manifest adapter" {
+        rule_src("optcall_suffix").contains("mk_opt_method_call_abi(st, [")
     }
     then "it is gated on the SAME-LINE `(`, not on `?.` alone" {
         // The hand gates the call on `current_line == prev_line`: a `(` opening the NEXT
         // line is a new statement, and the `?.` reading stays a plain chain. This peek is
         // the exact complement of qdot_plain_field's last clause.
-        postfix_rule_src().contains("lookahead_ok(\"qdot_method_call\", st)")
+        rule_src("optcall_suffix").contains("lookahead_ok(\"qdot_method_call\", st)")
     }
-    then "the method-call branch is dispatched BEFORE the plain-chain branch" {
+    then "the method-call rule is dispatched BEFORE the plain-chain rule" {
         // Both lead with `?.`. They are disjoint only because the two peeks test the same
-        // line relation in opposite directions — and only while this one is consulted first.
+        // line relation in opposite directions — and only while this one is consulted
+        // first. The order is the DISPATCHER's now, with the zero-width
+        // qdot_method_call gate at the earlier branch's head for the ambiguity guard.
         let s = postfix_rule_src()
-        s.index_of("lookahead_ok(\"qdot_method_call\", st)") < s.index_of("lookahead_ok(\"qdot_plain_field\", st)")
+        s.index_of("parse_optcall_suffix(st)") >= 0 &&
+            s.index_of("parse_optcall_suffix(st)") < s.index_of("parse_optchain_suffix(st)")
     }
     then "`it` sugar is turned ON unconditionally for the arg list" {
         // NOT the plain call's @on_if(base_field_access, …) disjunction: a `?.` receiver is
         // a method receiver by construction, so the hand sets allow_it_sugar = true flat.
-        // Losing this silently un-sugars `xs?.map(it * 2)`.
-        //
-        // SCOPED to this branch. A bare contains("modes_with_flag_on") over the whole rule
-        // passes on other branches that also set modes, so it would prove nothing about
-        // `?.m(args)` — the same vacuous-assertion trap as the `s_cut` check above.
-        let s = postfix_rule_src()
-        let method_start = s.index_of("lookahead_ok(\"qdot_method_call\", st)")
-        let chain_start = s.index_of("lookahead_ok(\"qdot_plain_field\", st)")
-        method_start >= 0 && chain_start > method_start &&
-            s.substring(method_start, chain_start).contains("modes_with_flag_on")
+        // Losing this silently un-sugars `xs?.map(it * 2)`. Rule-scoped now — the owning
+        // rule has exactly this one branch, so the old substring-windowing is unneeded.
+        rule_src("optcall_suffix").contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")")
     }
     then "the two `?.` readings build DIFFERENT nodes" {
         // OptionalMethodCall desugars to the if-let shape; OptionalChain has its own node.
         // Confusing them drops the argument list, which no span or token check would catch.
-        let s = postfix_rule_src()
-        s.contains("mk_opt_method_call(st") && s.contains("mk_opt_chain(st,")
+        rule_src("optcall_suffix").contains("mk_opt_method_call_abi(st, [") &&
+            rule_src("optchain_suffix").contains("mk_opt_chain_abi(st, [")
     }
 }
 
 spec "t-47hc.33: `expr!` is grammar-native" {
-    then "the production rule emits the native builder" {
-        postfix_rule_src().contains("mk_force_unwrap(st)")
+    then "the owning rule emits the manifest adapter" {
+        rule_src("unwrap_suffix").contains("mk_force_unwrap_abi(st, [])")
     }
     then "it carries the hand entry guard — mode read AND same-line" {
         // `check(Tk.Bang) && allow_dot_postfix && current_line == prev_line`.
-        let s = postfix_rule_src()
+        let s = rule_src("unwrap_suffix")
         let start = s.index_of("st.cur().tk == Tk.Bang")
-        start >= 0 && s.substring(0, start).contains("st.modes.allow_dot_postfix != 0")
+        start >= 0 && s.contains("st.modes.allow_dot_postfix != 0")
+    }
+}
+
+// The .3.5.8 endpoint, pinned structurally: the chain rule itself.
+
+spec "t-kd4y.3.5.8: postfix_suffix is PURE DISPATCH over feature-owned rules" {
+    then "it references the nine sub-rules and builds NOTHING itself" {
+        let s = postfix_rule_src()
+        s.contains("parse_unwrap_suffix(st)") && s.contains("parse_catch_suffix(st)") &&
+            s.contains("parse_optcall_suffix(st)") && s.contains("parse_optchain_suffix(st)") &&
+            s.contains("parse_enum_ctor_suffix(st)") && s.contains("parse_tuple_suffix(st)") &&
+            s.contains("parse_field_suffix(st)") && s.contains("parse_index_suffix(st)") &&
+            s.contains("parse_call_suffix(st)") && !s.contains("_abi(st,")
+    }
+    then "the `.`-led order is ctor, tuple, field — the fallback owner LAST" {
+        // field_suffix carries the unguarded @fallback `.` branch (it owns the
+        // trailing-dot diagnostic), so both peek-gated `.` readings must be
+        // consulted before it. Sorting tuple_suffix after field_suffix would
+        // send `.0` into the fallback's "expected field name after `.`".
+        let s = postfix_rule_src()
+        s.index_of("parse_enum_ctor_suffix(st)") < s.index_of("parse_tuple_suffix(st)") &&
+            s.index_of("parse_tuple_suffix(st)") < s.index_of("parse_field_suffix(st)")
+    }
+    then "the overlapping heads carry their zero-width gates AT THE DISPATCH" {
+        // first_follow's ambiguity guard exempts an overlapping pair only when
+        // the EARLIER branch leads with @peek (seq_is_peek_led inspects
+        // items[0].prim) — a bare rule reference does not, so the dispatch
+        // spells the gates itself. Zero-width and ANDed with the rules' own
+        // leading peeks, so the duplication accepts exactly the same inputs.
+        let s = postfix_rule_src()
+        let ctor_call = s.index_of("parse_enum_ctor_suffix(st)")
+        let tuple_call = s.index_of("parse_tuple_suffix(st)")
+        s.substring(0, ctor_call).contains("lookahead_ok(\"dot_enum_ctor\", st)") &&
+            s.substring(0, tuple_call).contains("lookahead_ok(\"dot_number\", st)")
     }
 }

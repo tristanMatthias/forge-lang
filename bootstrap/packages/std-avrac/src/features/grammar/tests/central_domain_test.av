@@ -1,6 +1,6 @@
 // WHY: t-kd4y.3.1 — the purity ledger's guard. The engine's central build
 // surface is classified by ONE question (does a user's program SPELL it?):
-// never-spelled DSL mechanism lives in engine_core_builds (7 names, each
+// never-spelled DSL mechanism lives in engine_core_builds (12 names, each
 // documented at the list); everything feature-owned sits in unflipped_builds
 // until its family PR deletes it. `diagnose.sh --check-central-domain` is the
 // textual equation (central_build_kind's domain == ledger minus tableless,
@@ -72,6 +72,18 @@ spec "t-kd4y.3.1: the purity ledger classifies the central surface exactly" {
         // ~24 spine `unary` branches spell, the same machine class as
         // fold_binary/fold_postfix, and ownership follows the referencing
         // rule (the spine), never the ticket a name was filed under.
-        engine_core_builds().length == 8
+        // The deliberate ninth-through-twelfth (t-kd4y.3.5.8):
+        //   field_suffix / index_suffix / call_suffix — the PARTIAL-suffix
+        //   vocabulary of the DSL's own fold_postfix (missing-subject
+        //   FieldAccess/Index/Call the fold rebinds). Spelled only by
+        //   user/test grammars, never by a feature or the spine — a user
+        //   cannot use fold_postfix without them, so they are the machine.
+        //   NOT the production rules of the same names (those are grammar
+        //   RULES in feature fragments; builds and rules are separate
+        //   namespaces).
+        //   MkExprBlock — `{ stmt* }` in expression position, spelled ONLY
+        //   by the spine's block_expr primary: the fold_postfix_with
+        //   rationale verbatim.
+        engine_core_builds().length == 12
     }
 }
