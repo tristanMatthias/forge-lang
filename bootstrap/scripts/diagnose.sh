@@ -4095,7 +4095,11 @@ mode_check_central_domain() {
   awk '/^export fn engine_core_builds/,/^}/' "$ast" | grep -oE '"[A-Za-z_]+"' | tr -d '"' | sort -u > "$scratch/core"
   awk '/^export fn unflipped_builds/,/^}/' "$ast" | grep -oE '"[A-Za-z_]+"' | tr -d '"' | sort -u > "$scratch/unflipped"
   awk '/^export fn central_tableless_builds/,/^}/' "$ast" | grep -oE '"[A-Za-z_]+"' | tr -d '"' | sort -u > "$scratch/tableless"
-  [ -s "$scratch/core" ] && [ -s "$scratch/unflipped" ] || die "check-central-domain: ledger fns missing/empty in ast.av"
+  # engine-core can never be empty (the DSL mechanism itself); the unflipped
+  # list CAN — that is the t-kd4y.3 endpoint (drain complete) — so for it we
+  # require only that the fn exists, not that names were extracted.
+  [ -s "$scratch/core" ] || die "check-central-domain: engine_core_builds missing/empty in ast.av"
+  grep -q '^export fn unflipped_builds' "$ast" || die "check-central-domain: unflipped_builds fn missing in ast.av"
   sort -u "$scratch/core" "$scratch/unflipped" > "$scratch/ledger"
   # executor central arm heads — both the args-guarded and the bare shapes
   grep -oE '^[[:space:]]*"[A-Za-z_]+" (if args\.length|->)' "$ex" | grep -oE '"[A-Za-z_]+"' | tr -d '"' | sort -u > "$scratch/exec"
@@ -4118,7 +4122,7 @@ mode_check_central_domain() {
   # scratch dir; main's case dispatch is the script's last act, so the
   # failure status propagates to the CLI unchanged (CodeRabbit, #1263).
   [ "$bad" = 0 ] || return 1
-  ok "check-central-domain: central surface exactly classified — $(wc -l < "$scratch/core") engine-core (DSL mechanism) + $(wc -l < "$scratch/unflipped") unflipped (feature-owned, counting down)"
+  ok "check-central-domain: central surface exactly classified — $(wc -l < "$scratch/core") engine-core (DSL mechanism) + $(wc -l < "$scratch/unflipped") unflipped (feature-owned; 0 = the t-kd4y.3 drain is complete)"
 }
 
 mode_check_layout_boundary() {

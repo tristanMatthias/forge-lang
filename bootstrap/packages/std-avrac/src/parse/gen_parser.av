@@ -5,7 +5,7 @@
 // family; parse/tests/gen_parser_regen_test.av asserts it equals
 // emit_parser_file() so a grammar edit that isn't regenerated fails the suite.
 
-use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, error_stmt_of, fold_postfix_with_expr, gensym_token, literal_node, lookahead_ok, mk_assoc_type_def, mk_binary, mk_block, mk_doc_annotated, mk_expr_block, mk_grammar_block_abi, mk_none_cap, mk_plain_name, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, text_is_word}
+use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, error_stmt_of, fold_postfix_with_expr, gensym_token, literal_node, lookahead_ok, mk_binary, mk_block, mk_doc_annotated, mk_expr_block, mk_grammar_block_abi, mk_none_cap, mk_plain_name, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, text_is_word}
 use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, MatchArm, ParamEntry, PatId, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, Variant, WhenArm}
 use features.modules.lowering.{mk_export_abi, mk_qualified_abi, module_build, use_bare_build, use_pkg_build}
 use features.annotations.lowering.{mk_ann_abi, mk_annotated_args_abi, mk_module_doc_abi}
@@ -14,7 +14,7 @@ use features.generics.lowering.{mk_type_param_abi}
 use features.enum_decl.lowering.{enum_decl_build, evariant_build}
 use features.fn_decl.lowering.{mk_extern_fn_abi, mk_fn_decl_abi, mk_fn_type_abi, mk_where_param_abi}
 use features.trait_decl.lowering.{assoc_type_build, trait_decl_build, trait_method_build, ty_dyn_abi}
-use features.impl_decl.lowering.{impl_build, method_build}
+use features.impl_decl.lowering.{impl_build, method_build, mk_assoc_type_def_abi}
 use features.select_stmt.lowering.{select_arm_build, select_build}
 use features.parallel_stmt.lowering.{parallel_build}
 use features.spec_test.lowering.{given_block_build, spec_block_build, then_block_build}
@@ -1853,7 +1853,7 @@ fn parse_impl_assoc(st: PState) -> CapVal {
             }
             let aty = __rres3
             if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
-                return mk_assoc_type_def(st, capval_tok_text(aname), aty)
+                return mk_assoc_type_def_abi(st, [aname, aty])
             }
             break
         }

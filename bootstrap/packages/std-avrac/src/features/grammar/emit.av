@@ -2687,9 +2687,9 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
         // MkUse was dead (no grammar reference).
         // MkEnumDecl / MkEVariant — feature-owned (features/enum_decl).
         // MkTraitDecl / MkAssocType / MkTraitMethod — feature-owned
-        // (features/trait_decl). MkAssocTypeDef stays until the impl family
-        // flips: `impl_assoc` is the rule that references it.
-        "MkAssocTypeDef" -> "mk_assoc_type_def(st, capval_tok_text(${args[0]}), ${args[1]})"
+        // (features/trait_decl). MkAssocTypeDef — feature-owned
+        // (features/impl_decl, t-kd4y.3.7): `impl_assoc` is the rule that
+        // references it, so its row rides that feature's manifest.
         _ -> "CapVal.Node(st.error_node(\"unknown build `${name}`\"))"
     }
 }

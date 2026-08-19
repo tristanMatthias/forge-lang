@@ -921,44 +921,32 @@ export fn engine_core_builds() -> List<string> {
     //   annot_decl -> MkAnnotatedArgs, feature-owned): toy vocabulary, like
     //   field_suffix/index_suffix/call_suffix. (Tableless — see
     //   central_tableless_builds.)
+    // MkSplice / MkSpliceStruct / MkSpliceArm / MkSpliceName / MkSpliceType
+    //   / MkPlainName — the splice vocabulary (t-kd4y.3.7, reclassified from
+    //   unflipped when the drain completed). The quote family's rules moved
+    //   and MkQuote/MkQuoteType/MkQuoteArm flipped with them (t-kd4y.3.4);
+    //   the splice builds stay central because the rules that spell them
+    //   never left the engine: `~` is a branch of the spine `unary` and of
+    //   the type spine's `splice_type`, `name_or_splice` is spine dispatch,
+    //   and the quote-arm machinery is engine recovery structure. Ownership
+    //   follows the referencing rule — moving these would mean moving the
+    //   dispatch skeleton itself (the fold_postfix_with rationale).
+    //   MkPlainName is `name_or_splice`'s non-splice half: same rule, same
+    //   home.
     ["fold_binary", "fold_postfix", "fold_postfix_with", "Block", "ExprStmt", "MkPrimaryFail",
      "MkStampAt", "MkNone", "field_suffix", "index_suffix", "call_suffix", "MkExprBlock",
-     "MkDocAnnotated", "MkAnnotated"]
+     "MkDocAnnotated", "MkAnnotated",
+     "MkSplice", "MkSpliceStruct", "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName"]
 }
 
-/// Every FEATURE-OWNED central build, grouped by the family ticket that
-/// deletes it. The order is the ticket order; a flip PR removes its group
-/// and the domain lint keeps the remainder exact.
+/// Every FEATURE-OWNED central build still awaiting its flip. EMPTY since
+/// t-kd4y.3.7: the t-kd4y.3 drain is COMPLETE — every feature-owned build
+/// lives in its feature's lowering manifest, and everything still central
+/// is declared engine-core above with a per-name rationale. A name added
+/// here is a regression against the everything-is-a-feature ruling; the
+/// domain lint holds central == engine-core exactly.
 export fn unflipped_builds() -> List<string> {
-    [
-     // t-kd4y.3.3.4 impl decls. MkImpl / MkMethod are FLIPPED
-     // (features/impl_decl/lowering); `MkAssocTypeDef` remains, grouped here
-     // rather than with the trait rows it was filed under: `impl_assoc`
-     // (features/impl_decl) is the rule that references it, and a feature may
-     // only supply a builder its OWN gram references
-     // (builder_validation_error's orphan contract). Ownership follows the
-     // referencing rule, never the name.
-     "MkAssocTypeDef",
-     // t-kd4y.3.4 splices — the quote family's rules moved and MkQuote /
-     // MkQuoteType / MkQuoteArm flipped with them; the splice builds stay
-     // central because the rules that reference them did NOT move: `~` is a
-     // branch of the engine ladder's `unary` and of `type_atom`, and a
-     // feature may only supply builders its OWN gram references.
-     "MkSplice", "MkSpliceStruct",
-     "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName",
-     // t-kd4y.3.5.9 templates + decl wrappers: FLIPPED — MkTemplate /
-     // MkTaggedTemplate with the templates feature, MkAnn / MkAnnotatedArgs /
-     // MkModuleDoc with annotations, MkExport with modules. TWO stayed, each
-     // by the referencing-rule doctrine: `MkAnnotated` is engine-tableless
-     // (only decl_annotation_test's toy grammar spells it) and
-     // `MkDocAnnotated` is engine-CENTRAL (annotations' doc_decl AND
-     // impl_decl's impl_member both spell it — shared vocabulary, like
-     // MkStampAt).
-     // t-kd4y.3.5.10 type expressions: FLIPPED — TyUnion -> union_type,
-     // TyDyn -> trait_decl, TyList -> list_lit, TyParen -> tuples, MkFn ->
-     // fn_decl, MkNamed/MkQualified -> struct_decl (one shared constructor
-     // core, so both rows ride one lowering).
-    ]
+    []
 }
 
 /// Names with executor/emit arms but NO `central_build_kind` row — their
@@ -986,7 +974,8 @@ export fn central_build_kind(bn: string) -> string {
         // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target.
         // `MkDocAnnotated` is ENGINE by the shared-vocabulary rule: annotations'
         // doc_decl AND impl_decl's impl_member both spell it (t-kd4y.3.5.9).
-        "MkAssocTypeDef" or "MkDocAnnotated" -> "stmt"
+        // `MkAssocTypeDef` is feature-owned (features/impl_decl, t-kd4y.3.7).
+        "MkDocAnnotated" -> "stmt"
         // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
         // name string with a `~` prefix, so it must classify as `tok` and flow through
         // `capval_tok_text` exactly as a bare IDENT does.

@@ -355,8 +355,17 @@ too — no flag needed.
 ### The grammar owns the front end — zero hand parsers, zero escape hatches
 
 t-47hc's endpoint is LANDED: the DSL has no `@hand` primitive, no hand-leaf
-table, no refusal probe, and no hand parser left in any family. Text→AST is
-one grammar run by two ENGINES:
+table, no refusal probe, and no hand parser left in any family. **And the
+t-kd4y.3 builder drain is COMPLETE (2026-08-19):** every feature-owned build
+lives in its feature's `lowering/` manifest; the engine's central tables hold
+exactly the 20-name engine core (folds, Block/ExprStmt glue, recovery,
+stamp/none plumbing, the toy-partial suffix vocabulary, the splice
+vocabulary — per-name rationale at `engine_core_builds()` in
+features/grammar/ast.av), `unflipped_builds()` is EMPTY, and
+`diagnose.sh --check-central-domain` holds central == engine-core exactly.
+Adding a central executor/emit arm for feature syntax is a regression against
+the everything-is-a-feature ruling — new lowerings go in the owning feature's
+manifest. Text→AST is one grammar run by two ENGINES:
 
 | env | which engine |
 |---|---|

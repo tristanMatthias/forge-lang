@@ -4248,14 +4248,11 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         // ── Trait declaration builds (target: Stmt, ps3t.6.5.7) ──
         // `MkTraitDecl` / `MkAssocType` / `MkTraitMethod` are feature-owned
         // (features/trait_decl/lowering, t-kd4y.3.3.3); the manifest
-        // dispatches them. `MkAssocTypeDef` stays here until the IMPL family
-        // flips (t-kd4y.3.3.4) — `impl_assoc` is the rule that references it,
-        // and a supplied builder must be referenced by the gram that carries
-        // it, so the row belongs to whoever owns that rule.
-        "MkAssocTypeDef" if args.length == 2 -> mk_assoc_type_def(st, capval_tok_text(env.get(args[0])), env.get(args[1]))
+        // dispatches them.
         // ── Impl declaration builds — feature-owned (features/impl_decl
-        //    lowering, t-kd4y.3.3.4): `MkImpl` / `MkMethod` dispatch through
-        //    the manifest, so no central arm survives here. ──
+        //    lowering, t-kd4y.3.3.4 + the t-kd4y.3.7 MkAssocTypeDef
+        //    completion): `MkImpl` / `MkMethod` / `MkAssocTypeDef` dispatch
+        //    through the manifest, so no central arm survives here. ──
         // ── Modifier declaration builds (target: Stmt, ps3t.6.5.7).
         //    `MkExtern` is feature-owned (features/fn_decl lowering,
         //    t-kd4y.3.3.1). `MkExport` is feature-owned too (features/modules
@@ -4827,20 +4824,6 @@ export fn mk_doc_annotated(st: PState, docs: List<Token>, inner: CapVal) -> CapV
     let arg_id = st.store.intern_expr_leaf(Expr.String("\"${doc_text}\""))
     let anns: List<Annotation> = [Annotation { name: "doc", arg_ids: [arg_id] }]
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.Annotated(anns, capval_to_stmt(st, inner))))
-}
-
-/// `type Name = Concrete` — the IMPL-side associated type (the `MkAssocTypeDef` build's
-/// core). Same `Stmt.AssocType` row as the trait-side member (`MkAssocType`, feature-owned
-/// in features/trait_decl/lowering), with the type FILLED IN rather than left Unknown: a
-/// trait DECLARES the association and an impl DEFINES it, and `render_stmt` already tells
-/// the two apart on exactly that field.
-///
-/// A separate build NAME rather than a second arity of `MkAssocType`, because emit
-/// dispatches on the name alone — a 2-arg call rendered through the 1-arg arm would put
-/// the type where nothing reads it, silently, in the generated parser only (t-gnk7).
-export fn mk_assoc_type_def(st: PState, name: string, ty_cv: CapVal) -> CapVal {
-    let ty = type_expr_to_vtype(capval_to_texpr(st, ty_cv))
-    CapVal.SNode(st.store.stmts.add_leaf(Stmt.AssocType(name, ty)))
 }
 
 /// Generated-parser twin of the `MkArm` executor build.
