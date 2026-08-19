@@ -1,0 +1,23 @@
+// The union-type feature's LOWERING (t-kd4y.3.5.10): the type ladder's
+// entry rule `type_expr` folds `A | B | C` left-associatively. Imports
+// ONLY features.grammar + core (the F4012 import-closure invariant).
+use core.{TypeExpr}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_texpr, capval_to_texpr_list}
+
+/// The union FOLD (the `TyUnion` build's core): zero tail atoms pass the
+/// head through untouched, so a non-union `type_expr` stays whatever its
+/// atom built.
+export fn fold_type_union(st: PState, l: CapVal, rs: List<TypeExpr>) -> CapVal {
+    if rs.length == 0 { return l }
+    mut acc = capval_to_texpr(st, l)
+    for rt in rs { acc = TypeExpr.Union(acc, rt) }
+    CapVal.TExpr(acc)
+}
+
+export fn ty_union_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    fold_type_union(st, vals[0], capval_to_texpr_list(vals[1]))
+}
+
+export fn union_type_builds() -> List<BuilderBind> {
+    bind_rows("features.union_type.lowering", [bind_row("TyUnion", "type", 2, false, "ty_union_abi", ty_union_abi)])
+}

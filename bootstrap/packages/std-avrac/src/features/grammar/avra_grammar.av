@@ -9,7 +9,7 @@ use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_gr
 // `gram_family = "expr"`, folded in by `avra_expr_core`, so an expression
 // keyword's rules live ONLY in its feature file while the ladder that
 // DISPATCHES to them stays here.
-use features.{feature_stmt_grammar_fragments, feature_expr_grammar_fragments}
+use features.{feature_stmt_grammar_fragments, feature_expr_grammar_fragments, feature_type_grammar_fragments}
 // t-47hc slice 9 — the DECL-keyword grammar fragments, each owned by the feature
 // that owns the keyword (the same colocation `match` already has for
 // patterns). Imported here rather than assembled in features/mod.av because this
@@ -502,8 +502,13 @@ export fn avra_decl_dispatch_grammar() -> Grammar {
 /// expressions. The entry `type_expr` mirrors parse_type_expr (left-assoc
 /// union over type atoms).
 export fn avra_type_grammar() -> Grammar {
+    // The type SPINE keeps only the dispatch skeleton (`type_atom`) and the
+    // splice atom (splice doctrine: `~` is referenced from the engine
+    // ladder, so its build stays central) — every owned rule lives in its
+    // feature's "type"-family fragment (t-kd4y.3.5.10), composed here the
+    // way the statement and expression views fold theirs. Consumers keep
+    // calling THIS fn; the split is internal.
     let gp = grammar {
-  type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
   // t-47hc.4.3 — `~var` in TYPE position, as its own atom rather than a widened
   // `named_type`. `consume_name_or_splice`'s encoding is the
   // ordinary name string PREFIXED with `~` for the quote lowerer to read back; this
@@ -519,14 +524,10 @@ export fn avra_type_grammar() -> Grammar {
   // untouched. Placed BEFORE `named_type` because `~` starts no other atom.
   splice_type = @when(in_quote_body) "~" sn:IDENT ( opt:"?" )? -> MkSpliceType(sn, opt)
   type_atom  = splice_type | qualified_type | fn_type | dyn_type | list_type | paren_type | named_type
-  qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
-  fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
-  dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)
-  list_type  = "[" e:type_expr "]" -> TyList(e)
-  paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
-  named_type = name:IDENT ( "." name:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
     }
-    grammar_checked(gp)
+    mut frags: List<Grammar> = [grammar_checked(gp)]
+    for g in feature_type_grammar_fragments() { frags.push(g) }
+    compose_fragments(frags)
 }
 
 

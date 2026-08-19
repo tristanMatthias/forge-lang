@@ -4201,15 +4201,12 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
         //    delegates to the SHARED constructor core (fold_type_union /
         //    mk_named_type / mk_paren_type / mk_fn_type), so apply_build and the
         //    generated static type parser build byte-identical trees. ──
-        "TyUnion" if args.length == 2 -> fold_type_union(st, env.get(args[0]), capval_to_texpr_list(env.get(args[1])))
+        // The owned type-expression builds are feature-owned (t-kd4y.3.5.10):
+        // TyUnion -> union_type, MkNamed/MkQualified -> struct_decl, TyList
+        // -> list_lit, TyParen -> tuples, TyDyn -> trait_decl, MkFn ->
+        // fn_decl — the manifest dispatches them. Only the splice atom
+        // stays (splice doctrine: the engine ladder references it).
         "MkSpliceType" if args.length == 2 -> mk_splice_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])))
-        "MkNamed" if args.length == 3 -> mk_named_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
-        "MkQualified" if args.length == 3 -> mk_qualified_type(capval_toks(env.get(args[0])), capval_present(env.get(args[1])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])))
-        "TyList" if args.length == 1 -> CapVal.TExpr(TypeExpr.ListType(capval_to_texpr(st, env.get(args[0]))))
-        "TyParen" if args.length == 1 -> mk_paren_type(capval_to_texpr_list(env.get(args[0])))
-        "TyDyn" if args.length == 1 -> mk_dyn_type(capval_tok_text(env.get(args[0])), false)
-        "TyDyn" if args.length == 2 -> mk_dyn_type(capval_tok_text(env.get(args[0])), capval_present(env.get(args[1])))
-        "MkFn" if args.length == 3 -> mk_fn_type(st, capval_present(env.get(args[0])), capval_to_texpr_list(env.get(args[1])), capval_present(env.get(args[2])), env.get(args[2]))
         // ── Remaining statement builds (target: Stmt, ps3t.6.5.4). The
         //    BINDING family is feature-owned now (MkLetBinding / MkMutBinding /
         //    MkConstBinding / MkDestructure, features/let_stmt lowering —

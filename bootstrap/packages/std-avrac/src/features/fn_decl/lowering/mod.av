@@ -13,8 +13,8 @@
 // purity move — and the toys re-point at /6 with unbound (Nil) captures for
 // the type-param/where slots, which coerce to the same empty lists the
 // production rule's absent groups produce.
-use core.{ParamEntry, Stmt, StmtId, Token, TypeParamEntry, ValueType, byte_span_none, type_expr_to_vtype}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_pentry_list, capval_to_stmt_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text, fn_decl_edges}
+use core.{byte_span_none, ParamEntry, Stmt, StmtId, Token, type_expr_to_vtype, TypeExpr, TypeParamEntry, ValueType}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_pentry_list, capval_to_stmt_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text, fn_decl_edges, capval_to_texpr_list}
 
 /// `fn name < tp > ( params ) -> ret { body }` — the generic core. Absent
 /// return type defaults to Void; the type-param list is a payload, not an
@@ -102,4 +102,23 @@ export fn fn_builds() -> List<BuilderBind> {
     bind_rows("features.fn_decl.lowering", [bind_row("MkFnDecl", "stmt", 6, false, "mk_fn_decl_abi", mk_fn_decl_abi),
      bind_row("MkWhereParam", "tparam", 2, false, "mk_where_param_abi", mk_where_param_abi),
      bind_row("MkExtern", "stmt", 3, false, "mk_extern_fn_abi", mk_extern_fn_abi)])
+}
+
+/// A `fn` TYPE — the `MkFn` build's core (t-kd4y.3.5.10). A bare `fn`
+/// (neither param parens nor an arrow) is the under-determined
+/// `Named("fn")`; any `(`/`->` makes it a `FnType` (params default [],
+/// ret defaults `Infer`). Mirrors parse_type_atom's `fn` branch.
+export fn mk_fn_type(st: PState, has_params: bool, params: List<TypeExpr>, has_ret: bool, ret_cv: CapVal) -> CapVal {
+    if !has_params && !has_ret { return CapVal.TExpr(TypeExpr.Named("fn")) }
+    let ret = if has_ret { capval_to_texpr(st, ret_cv) } else { TypeExpr.Infer }
+    CapVal.TExpr(TypeExpr.FnType(params, ret))
+}
+
+export fn mk_fn_type_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_fn_type(st, capval_present(vals[0]), capval_to_texpr_list(vals[1]), capval_present(vals[2]), vals[2])
+}
+
+/// The fn-TYPE row (t-kd4y.3.5.10) — the type-position face of the fn family.
+export fn fn_type_builds() -> List<BuilderBind> {
+    bind_rows("features.fn_decl.lowering", [bind_row("MkFn", "type", 3, false, "mk_fn_type_abi", mk_fn_type_abi)])
 }

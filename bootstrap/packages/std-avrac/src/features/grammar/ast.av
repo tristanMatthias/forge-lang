@@ -954,9 +954,10 @@ export fn unflipped_builds() -> List<string> {
      // `MkDocAnnotated` is engine-CENTRAL (annotations' doc_decl AND
      // impl_decl's impl_member both spell it — shared vocabulary, like
      // MkStampAt).
-     // t-kd4y.3.5.10 type expressions
-     "TyUnion", "TyDyn", "TyList", "TyParen", "MkFn", "MkNamed",
-     "MkQualified"
+     // t-kd4y.3.5.10 type expressions: FLIPPED — TyUnion -> union_type,
+     // TyDyn -> trait_decl, TyList -> list_lit, TyParen -> tuples, MkFn ->
+     // fn_decl, MkNamed/MkQualified -> struct_decl (one shared constructor
+     // core, so both rows ride one lowering).
     ]
 }
 
@@ -993,8 +994,8 @@ export fn central_build_kind(bn: string) -> string {
         // sibling atom, not a name-slot splice (t-47hc.4.3).
         "MkSpliceType" -> "type"
         "MkSpliceName" or "MkPlainName" -> "tok"
-        "TyUnion" or "MkFn" or "TyDyn" or "TyList" or "TyParen"
-            or "MkNamed" or "MkQualified" -> "type"
+        // The owned type builds left with t-kd4y.3.5.10; only the splice
+        // atom classifies centrally now.
         _ -> ""
     }
 }

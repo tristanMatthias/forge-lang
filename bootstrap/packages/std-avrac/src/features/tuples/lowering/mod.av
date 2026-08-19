@@ -3,8 +3,8 @@
 // (postfix_step_node reads the frozen step base), NOT st.build_sp — the
 // row is FLAT and the chain loop's snap owns the span. Imports ONLY
 // features.grammar + core (F4012).
-use core.{Expr, ExprId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_tok_text, postfix_step_node}
+use core.{Expr, ExprId, TypeExpr}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_tok_text, postfix_step_node, capval_to_texpr_list}
 
 /// `expr.0` — tuple index (t-47hc.33 form 4). The hand takes the NUMBER lexeme and
 /// `int()`s it, so a float-shaped `.0.1` lexes as one NUMBER and would differ; the
@@ -20,4 +20,21 @@ export fn mk_tuple_index_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// tuple_index_lang's row (its `tuple_suffix` rule spells it).
 export fn tuple_index_builds() -> List<BuilderBind> {
     bind_rows("features.tuples.lowering", [bind_row("MkTupleIndex", "expr", 1, false, "mk_tuple_index_abi", mk_tuple_index_abi)])
+}
+
+/// A parenthesised type — the `TyParen` build's core (t-kd4y.3.5.10).
+/// Exactly one element is a grouping (the type itself); zero or >=2 are a
+/// tuple `Generic("__tuple", ...)`, matching parse_type_atom's paren
+/// branch — the type-position face of the tuple family.
+export fn mk_paren_type(tes: List<TypeExpr>) -> CapVal {
+    if tes.length == 1 { return CapVal.TExpr(tes[0]) }
+    CapVal.TExpr(TypeExpr.Generic("__tuple", tes))
+}
+
+export fn ty_paren_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_paren_type(capval_to_texpr_list(vals[0]))
+}
+
+export fn paren_type_builds() -> List<BuilderBind> {
+    bind_rows("features.tuples.lowering", [bind_row("TyParen", "type", 1, false, "ty_paren_abi", ty_paren_abi)])
 }

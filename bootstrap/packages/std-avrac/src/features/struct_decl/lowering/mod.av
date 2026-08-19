@@ -13,8 +13,8 @@
 // Nil-padded captures, which reproduce each retired arm's exact
 // empty-list/absent-flag defaults — and give the alias toys the
 // production TypeRef edge the leaf-building MkTypeAlias arm dropped.
-use core.{Expr, ExprId, FieldEntry, FieldInit, NodeEdges, NodeRef, Stmt, Token, TypeParamEntry, ValueType, byte_span, byte_span_none, type_expr_to_vtype}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_field_list, capval_to_finit_list, capval_to_node_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text, postfix_step_node}
+use core.{byte_span, byte_span_none, Expr, ExprId, FieldEntry, FieldInit, NodeEdges, NodeRef, Stmt, Token, type_expr_to_vtype, TypeExpr, TypeParamEntry, ValueType}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_field_list, capval_to_finit_list, capval_to_node_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text, postfix_step_node, capval_to_texpr_list, capval_toks}
 
 /// The WHOLE `type Name < tp > = …` declaration — every form the retired
 /// hand's `parse_type_declaration` produces, in one core, because the hand
@@ -304,4 +304,44 @@ export fn rebind_eq_abi(st: PState, vals: List<CapVal>) -> CapVal {
 export fn field_assign_builds() -> List<BuilderBind> {
     bind_rows("features.struct_decl.lowering", [bind_row("mk_assign", "expr", 2, true, "mk_assign_abi", mk_assign_abi),
      bind_row("rebind_eq", "expr", 2, true, "rebind_eq_abi", rebind_eq_abi)])
+}
+
+/// A named type (optionally generic, optionally nullable) — the `MkNamed`
+/// build's core (t-kd4y.3.5.10). `has_gen` => `Generic(nm, gen_args)`,
+/// else `Named(nm)`; `is_opt` wraps `Optional`. Mirrors parse_type_atom's
+/// identifier branch — the type-position face of the type-decl family.
+export fn mk_named_type(nm: string, has_gen: bool, gen_args: List<TypeExpr>, is_opt: bool) -> CapVal {
+    mut base = if has_gen { TypeExpr.Generic(nm, gen_args) } else { TypeExpr.Named(nm) }
+    if is_opt { base = TypeExpr.Optional(base) }
+    CapVal.TExpr(base)
+}
+
+/// A package-qualified type atom (`MkQualified`). Punctuation is
+/// structural in the grammar, so the canonical `@pkg::mod::Type` spelling
+/// is rebuilt from the captured segments, then the same generic/optional
+/// wrappers apply — one shared core with mk_named_type, which is why both
+/// rows live here.
+export fn mk_qualified_type(segments: List<Token>, has_gen: bool, gen_args: List<TypeExpr>, is_opt: bool) -> CapVal {
+    mut name = "@"
+    mut i = 0
+    for segment in segments {
+        if i > 0 { name = name + "::" }
+        name = name + segment.text
+        i = i + 1
+    }
+    mk_named_type(name, has_gen, gen_args, is_opt)
+}
+
+export fn mk_named_type_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_named_type(capval_tok_text(vals[0]), capval_present(vals[1]), capval_to_texpr_list(vals[1]), capval_present(vals[2]))
+}
+
+export fn mk_qualified_type_abi(st: PState, vals: List<CapVal>) -> CapVal {
+    mk_qualified_type(capval_toks(vals[0]), capval_present(vals[1]), capval_to_texpr_list(vals[1]), capval_present(vals[2]))
+}
+
+/// The named/qualified type-atom rows (t-kd4y.3.5.10).
+export fn named_type_builds() -> List<BuilderBind> {
+    bind_rows("features.struct_decl.lowering", [bind_row("MkNamed", "type", 3, false, "mk_named_type_abi", mk_named_type_abi),
+     bind_row("MkQualified", "type", 3, false, "mk_qualified_type_abi", mk_qualified_type_abi)])
 }
