@@ -79,6 +79,32 @@ spec "t-47hc.4.5: grammar-native list_expr recovers == exec oracle" {
     }
 }
 
+spec "t-47hc.36: grammar-native paren/tuple recovers == exec oracle" {
+    then "a stray comma REPORTS — it is not absorbed into a smaller tuple" {
+        // `(1,,2)` built `(tuple (1, 2))` on BOTH engines with NO diagnostic —
+        // indistinguishable from the valid `(1,2)`. The tuple branch spelled its
+        // separator `( "," ( rest:expression )? )+`, and that optional element
+        // swallows an empty slot ANYWHERE, not just a trailing one. Every sibling
+        // construct (list_expr, call_suffix, fn_decl params) already used
+        // `( @peek(comma_not_r*) "," @onfail(bail) elem )* ( "," )?`, which routes
+        // a TRAILING comma to its own slot and makes a MISSING element a hard
+        // failure; the tuple was the one rule that diverged from it.
+        //
+        // agree_bad is the assertion that catches this class: agree_tree alone
+        // passes a silent drop, because both engines agree on the wrong tree.
+        agree_error("fn f() -> int {\n let z = (1,,2)\n return 0\n}") &&
+        agree_bad("fn f() -> int {\n let z = (1,,2)\n return 0\n}") &&
+        agree_bad("fn f() -> int {\n let z = (1,,)\n return 0\n}")
+    }
+    then "trailing comma, 1-tuple and group still parse — the fix does not over-reject" {
+        // The optional element existed to permit `(1,)` and `(1, 2,)`; the
+        // replacement must keep both, keep `(1)` a GROUP rather than a 1-tuple,
+        // and keep the arity of a well-formed tuple unchanged.
+        let ok = "fn f() -> int {\n let a = (1,)\n let b = (1, 2,)\n let c = (1, 2)\n let d = (1)\n return 0\n}"
+        agree(ok) && static_raw(ok) == ""
+    }
+}
+
 spec "t-47hc.19: grammar-native template_lit recovers == exec oracle" {
     then "malformed interpolations REPORT and agree" {
         // unterminated `${x` and an invalid sub-expression `${(}`

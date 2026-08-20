@@ -4629,17 +4629,16 @@ fn parse_paren_expr(st: PState) -> CapVal {
         st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
         let first = parse_expression(st)
         st.set_modes(__modes_1)
-        if !(st.cur().tk == Tk.Comma) {
-            st.report("expected at least one repetition")
-        }
-        while st.cur().tk == Tk.Comma {
+        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
             let _ = st.advance()
-            if starts_expression(st) {
-                let __modes_0 = st.modes
-                st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
-                rest_list.push(capval_to_expr(st, parse_expression(st)))
-                st.set_modes(__modes_0)
-            }
+            let __modes_1 = st.modes
+            st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
+            let __bres1 = parse_expression(st)
+            rest_list.push(capval_to_expr(st, __bres1))
+            st.set_modes(__modes_1)
+        }
+        if st.cur().tk == Tk.Comma {
+            let _ = st.advance()
         }
         if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
             st.report("expected `)`")
