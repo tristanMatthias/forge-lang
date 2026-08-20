@@ -921,6 +921,25 @@ fn validate_fallbacks(g: Grammar) -> string {
                     }
                     i = i + 1
                 }
+                // A `@try` SIBLING is rejected too, not just `@try` on the fallback
+                // branch itself (which the parser already rejects as a contradiction).
+                // The two engines read the pair differently: emit_dispatch gates its
+                // fallback tail on `!has_spec` (emit.av), so ONE speculative sibling
+                // silently demotes the fallback to an ordinary FIRST-guarded branch,
+                // while the executor's fallback loop still runs it unconditionally. On
+                // input matching no branch the interpreter would report the fallback's
+                // `@expect` and the generated parser the alternation's generic message
+                // — a divergence between the engines, which is the one thing the
+                // grammar may never express. Reject rather than diverge.
+                mut has_fallback = false
+                for b in branches { if b.fallback { has_fallback = true } }
+                if has_fallback {
+                    for b in branches {
+                        if b.speculative {
+                            return "rule `${r.name}` marks a branch `@try` alongside a `@fallback` branch — emit drops the fallback tail whenever any sibling is speculative, so the generated parser and the interpreter would disagree about what runs when nothing matches"
+                        }
+                    }
+                }
             }
         }
     }
