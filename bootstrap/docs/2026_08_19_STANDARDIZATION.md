@@ -156,9 +156,15 @@ GENERATED from the terminal declarations.
 - `Tk` drops 147 -> ~90 variants while GAINING the distinction.
 - `maybe_split_shr` (`parse/mod.av`) becomes a property of the `>>` terminal's
   declaration, not a special case.
-- Cost is small: of 257 `Tk.Kw*` refs, 120 are in `token_table.av` /
-  `gen_keyword_scanner.av` (deleted or generated), 18 in `gen_parser.av`
-  (generated), 3 in dead code. **Hand-written surface: ~50 refs, ~10 files.**
+- Cost, AUDITED: of 257 `Tk.Kw*` refs at this document's base, 120 are in
+  `token_table.av` / `gen_keyword_scanner.av` (deleted or generated) and **31**
+  (not 18) in `gen_parser.av` (generated); P1 removed **9** (not 3) with the dead
+  parsers. **Hand-written surface: 66 refs across 7 files** —
+  `executor.av` 34, `parse/mod.av` 21, `emit.av` 5, plus four files with 1-2
+  each. Counting every `.Kw*` spelling rather than the `Tk.`-qualified form it is
+  **166**, because `core/ast.av` alone carries 95 bare match arms
+  (`tk_keyword_str` + `tk_name`) that the original number missed entirely. The
+  original "~50" also failed its own arithmetic: 257-120-18-3 is 116.
 
 **No seed hazard.** `Tk` never crosses the metadata/comptime decode boundary, so
 the pinned seed's baked matches only ever see tokens ITS OWN lexer produced — it
@@ -200,8 +206,13 @@ identity/syntax/passes split (considered, declined).
 `core/registry.av`'s `Feature` duplicates `LanguageFeature`'s 13 hook fields, and
 `register_lang` copies them one at a time. It types `emit_expr: int` /
 `emit_stmt: int` — **function pointers stored as untyped ints**, a rule-16
-violation sitting in `core/`. Collapse to one record; the nine `noop_*` in
-`core/` die with it (the component's `config` defaults already cover them).
+violation sitting in `core/`. Collapse to one record. AUDITED CORRECTION: the nine `noop_*` do **NOT** die
+with it — they ARE the `LanguageFeature` component's `config` defaults
+(`features/mod.av:96-104`), so killing `Feature` / `feature_new` leaves every one
+of them live and referenced. Also unmentioned here and worth folding in:
+`Registry.expr_parsers` stores `f.parse_expr` and `lookup_expr_parser -> int?`
+reads it back as an untyped int — `registry.av:299` already names it "the same
+rule-16 defect as the old `Feature.emit_expr: int`" (tracked as t-y2i7.11).
 
 ## 8. Derive, never declare
 
@@ -227,8 +238,12 @@ Retired hand parsers whose live namesakes are the GENERATED functions in
   `parse_arg_list_ids_inner` are reachable ONLY through it.
 
 Live and NOT parsers, so they move rather than die: `closures/parser.av`
-(`expr_contains_it` / `wrap_in_it_lambda` — AST helpers -> `lowering.av`) and
-`grammar/parser.av` (raw-brace capture for `grammar { }` -> moves with the engine).
+(`expr_contains_it` / `wrap_in_it_lambda` — AST helpers, DONE: now
+`closures/lowering/it_pronoun.av`) and `grammar/parser.av` (raw-brace capture
+for `grammar { }`). CONTRADICTION RESOLVED (audit): section 10 is authoritative
+— `grammar/parser.av` leaves as part of `features/grammar_block/`, NOT with the
+engine. Section 10's ~120-line figure for the surface feature only works if it
+does (`grammar/mod.av` 73 + `grammar/parser.av` 45 = 118).
 
 Before deleting on the strength of any scan, re-read CLAUDE.md's dead-code-sweep
 section: `bootstrap/tests/` is ~457 fixtures OUTSIDE `packages/`, `find -path
@@ -316,12 +331,18 @@ instrumentation for `call_site()` / `trace()`.
 A closed set held as strings, checked at runtime by list membership, in a
 language with enums and exhaustive matching.
 
-- **`engine_build_kinds()`** — 21 strings (`"expr" "stmt" "arm" "warm" "sarm"
+- **`engine_build_kinds()`** — **20** strings (AUDITED; the list quoted below is 20) (`"expr" "stmt" "arm" "warm" "sarm"
   "pat" "type" "tok" "toks" "pentry" "tparam" "field" "variant" "finit" "ccfg"
   "cpair" "cslot" "ccfgs" "cslots" "ann"`), with `BuilderBind.kind: string` and
-  32 `== "stmt"`-style comparisons. -> `enum BuildKind`.
-- **`emit.av`'s `kind_row` / `kind_coerce` / `kind_elem_type` / `kind_list_ctor`**
-  — four functions keyed on that string. -> one `match` on the enum.
+  ~24 hand-written build-kind comparisons plus 15 more in the generated parser
+  (AUDITED; the original "32" swept in `Quote`-kind and `gram_family`
+  comparisons, which are DIFFERENT stringly enums). -> `enum BuildKind`.
+- **`emit.av`'s `kind_row`** — ONE ladder of 15 `if kind == …` arms plus an
+  `expr` fallback (`emit.av:3193`). `kind_coerce` / `kind_elem_type` /
+  `kind_list_ctor` are one-line DELEGATES to it, not siblings: the `KindRow`
+  consolidation already happened. -> one `match` on the enum. (AUDITED: the
+  original called these "four functions keyed on that string"; the work is one
+  ladder.)
 - **`Token = { kind: string, text: string, pos: int, tk: Tk }`** (grammar/lex.av)
   — `kind` and `tk` are the SAME information twice, one stringly-typed. Fixed as
   part of the `Tk.Keyword(KwId)` work (§5) or not at all.
@@ -336,39 +357,70 @@ that is the whole inventory. The identifiers that are still bare `string`:
 
 - **module paths** — `bind_rows("features.tuples.lowering", ...)` x40 (§8).
 - **build names** — `"MkTupleIndex"`, matched by string across two dispatchers.
-- **rule names** — the start-rule parameter of the one seam (§3).
+- **rule names** — `Rule.name` and the rule-reference sites. (AUDITED: this
+  previously said "the start-rule parameter of the one seam (§3)", but §3 records
+  `parse_at(self, start: RuleName)` as DECLINED, so no such parameter exists.)
 - **F-codes**.
 
 `type ModulePath = string` makes a derived path un-typo-able where a bare string
 never can be. This is the concrete form of "no hardcoded strings anywhere".
 
-## 15. Two headline features have ONE real use each — the same line
+## 15. The compiler barely uses its own language — AUDITED, and worse than section 15 first claimed
 
-```avra
-// features/lang.av:61 — the only real pipe AND the only real comprehension
-[t for t in grammar_literals(feature_gram(f)) if text_is_word(t)] |> list_dedup_str
-```
+**Every number in the original version of this section was measured by a grep
+that swept in comments, doc strings, diagnostic text and editor snippets. An
+audit re-measured them against code only. Two CONCLUSIONS were wrong, not just
+the counts.**
 
-Every other `|>` hit is the pipe feature's own implementation or a comment.
-Meanwhile `mut out: List<X> = []` + `for` + `.push` runs to hundreds of sites —
-`fold_builders`, `feature_*_fragments`, `list_avra_module_files`, and
-`builder_validation_error` are all comprehensions written longhand.
+| feature | originally claimed | ACTUAL (compiler source, excl. tests) |
+|---|---|---|
+| `\|>` pipe | 1 real use | **1** — correct, `features/lang.av:61` |
+| list comprehension | 1 real use | **2** — `lang.av:61` AND `typeck/mod.av:209` |
+| `with` | 203 | **173** (207 raw minus comments/doc strings) |
+| `@comptime` | 267 | **102** real annotations; 98 of them in `features/derive/` |
+| `table` literal | 41 | **~2 real literals** (`test_runner/mod.av:106,128`); the rest prose |
+| `dyn Trait` | 25 | **0** |
+| trait impls (`impl X for Y`) | 31 | **0** |
+| trait DECLARATIONS | — | **0** |
+| `quote { }` | 183 | **0** |
+| `errdefer` | 60 | **~2** |
+| `defer` | 1 | **~1** |
 
-NOT a gap, and deliberately not on the work list: `defer` (1 use). The codebase
-threads state through every function, so there is rarely a scope-exit obligation
-to defer. Adding it would be dogfooding for its own sake. The 60 `errdefer`s are
-already in the places that own resources.
+**CONCLUSION THAT WAS WRONG #1.** The original section said "Healthy already:
+`with`, `table`, `dyn Trait`, trait impls, `@comptime`, `quote`". Four of those
+six are at or near ZERO. **The compiler declares no traits, implements no
+traits, uses no `dyn`, and writes no `quote { }` blocks.** Section 6's decision
+(component over trait) happens to still stand — a feature is data with no state
+— but the tree gives no evidence either way, because there is no trait usage to
+generalise from.
 
-Healthy already: `with` (203), `table` (41), `dyn Trait` (25), trait impls (31),
-`@comptime` (267), `quote` (183).
+**CONCLUSION THAT WAS WRONG #2.** The original said "`defer`/`errdefer` are not
+the gap … the 60 `errdefer`s are already in the places that own resources."
+There are about TWO. The reasoning — threaded state means few scope-exit
+obligations — may still be right, but it was argued from a number that was off
+by ~30x and must be re-argued from scratch before it is trusted.
 
+What survives: `|>` and list comprehensions really are near-unused, and the
+longhand sites named in the original still exist (`fold_builders`,
+`list_avra_module_files`, `builder_validation_error`, the `feature_*_fragments`
+family).
 
 ## 16. Execution plan
 
 Ordering rationale: delete first (shrinks everything downstream), then unify,
-then generate. The engine move is LATE — slices P1-P2 delete ~1,650 lines
-INSIDE `features/grammar/`, so moving first renames code that is about to not
-exist, and it is the one slice that conflicts with everything.
+then generate.
+
+**The engine move (P6) is LATE, but the reason originally given was FALSE and
+has been replaced.** This said "P1-P2 delete ~1,650 lines INSIDE
+`features/grammar/`". AUDITED: P1 deleted **zero** lines there — net +3 — and
+P2's grammar/-resident budget is the ~187 lines of rule-less views. The premise
+was off by roughly 8x.
+
+The ordering still holds, on the reason that actually survives: P6 renames every
+`use features.grammar.{...}` in the tree INCLUDING the generated parser's import
+header and 40 `bind_rows` path strings, so it must be alone in flight. Doing it
+first would force every later slice to rebase across that rename. That is a
+merge-serialisation argument, not a line-count one.
 
 Collisions were resolved by MERGING slices, not parallelising them: the original
 "delete dead code" and "one seam" both operate on `parse/mod.av` (`postfix_step`
@@ -400,11 +452,11 @@ Not across branches — three hot files (`features/lang.av` 175,
 `features/mod.av` 235, `parse/mod.av` 2066) are touched by nearly every slice.
 The volume is INSIDE slices, where units are independent:
 
-- **P4: 60 independent feature directories.** Nothing crosses a feature
+- **P4: 51 independent feature directories** (AUDITED; 70 feature *definitions* live in them, 40 have a `lowering/`). Nothing crosses a feature
   boundary; `--check-feature-layout` is the join.
-- **P8:** ~140 keyword/operator rows redistributing to owning features.
-- **P3:** 42 `bind_rows` sites.
-- **P2:** `gram_family` removal, 39 files, one line each.
+- **P8:** **97** rows redistributing to owning features — 59 keyword + 38 operator (AUDITED; the original ~140 more than doubled the operator count).
+- **P3:** **58** `bind_rows` call sites across 41 files (AUDITED; 42 was the FILE count and included the definition).
+- **P2:** `gram_family` removal — 39 files but **117 lines** (48 code, 69 comment/doc); only 7 files have exactly one line, and `avra_grammar.av` alone has 16 (AUDITED).
 
 ### The real bottleneck is gates, not edits
 
