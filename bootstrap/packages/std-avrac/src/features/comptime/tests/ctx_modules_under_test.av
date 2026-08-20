@@ -28,12 +28,18 @@ spec "ResolverCtx: ctx_modules_under enumerates the module graph" {
             "\n" +
             "@comptime\n" +
             "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
-            // An empty prefix matches every module: proves the set is populated
-            // at all. A bogus prefix must match none: proves the prefix filter
-            // is real rather than the whole set being returned regardless.
+            // Three prefixes, because two are not enough to pin the filter.
+            // An empty prefix matches every module (the set is populated at
+            // all) and a bogus one must match none (the filter is real) — but
+            // an implementation that answered `every` for "" and [] for
+            // everything else would satisfy both. The REAL prefix is what
+            // separates them: it must select a subset that is neither empty
+            // nor the whole graph. It is also the query P5 actually issues.
             "    let every = ctx_modules_under(ctx, \"\")\n" +
+            "    let feats = ctx_modules_under(ctx, \"@std::avrac::features\")\n" +
             "    let bogus = ctx_modules_under(ctx, \"@no::such::prefix\")\n" +
-            "    let msg = \"all=\" + string(every.length > 1) + \"; none=\" + string(bogus.length)\n" +
+            "    let proper = feats.length > 10 && feats.length < every.length\n" +
+            "    let msg = \"all=\" + string(every.length > 1) + \"; subset=\" + string(proper) + \"; none=\" + string(bogus.length)\n" +
             "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
             "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
             "}\n" +
@@ -42,6 +48,6 @@ spec "ResolverCtx: ctx_modules_under enumerates the module graph" {
             "fn placeholder() {}\n" +
             "\n" +
             "fn main() {}\n")
-        out.contains("all=true") && out.contains("none=0") && !out.contains("error[")
+        out.contains("all=true") && out.contains("subset=true") && out.contains("none=0") && !out.contains("error[")
     }
 }
