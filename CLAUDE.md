@@ -496,8 +496,11 @@ reference scan, prove the scan SEES the callers:
 
 And the process rule the same session broke: **build + lint + diff-test + lib
 probe can ALL be green while the suite is red.** None of them run the tests. A
-deletion sweep is not verified until `bs2 test` has finished — not started,
-finished — so do not commit or push on the strength of the fast gates alone.
+deletion sweep is not verified until a COLD full `bs2 test` has finished — not
+started, finished, and cold because the fixture-stdout cache will otherwise
+replay the previous compiler's captures (`rm -rf bootstrap/build/cache/fixture_stdout`
+first). Do not commit, push, or merge on the strength of the fast gates alone,
+and record the run's result where the reviewer can see it.
 
 ## CRITICAL RULE: Build What You Need
 

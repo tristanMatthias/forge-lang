@@ -1157,8 +1157,7 @@ impl Parser {
         let modes = self.current_modes()
         // One reusable host delegate per file (see ensure_host).
         // SYNC it to THIS parser's exact cursor + line state so it parses the
-        // expression's leaves carrying the accumulated line (incl. the
-        // is_map_literal nudges) — then ADOPT its end
+        // expression's leaves carrying the accumulated line — then ADOPT its end
         // state so this parser continues from the expression's end with the
         // same accumulated line. This keeps the
         // line accounting byte-for-byte consistent across the split parse.
@@ -1183,8 +1182,8 @@ impl Parser {
             // The delegate can lag stop_byte — the DSL itself
             // consumed trailing STRUCTURAL tokens (the `]` of `in
             // [...]`, a `)`, etc.). Forward-
-            // advance it to stop_byte (lexing those tokens — they are not blocks,
-            // so they add their newlines but NO is_map_literal nudge), so its
+            // advance it to stop_byte (lexing those tokens adds their newlines and
+            // nothing else — they are not blocks), so its
             // position AND line match the expression's true end, then adopt.
             d.resync_to_stop_byte(dsl.stop_byte)
             self.copy_cursor_from(d)

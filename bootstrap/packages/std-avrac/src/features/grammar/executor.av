@@ -13,7 +13,7 @@ use features.grammar.{rule_result_kind, gprim_ref_name, BuildKindRow}
 // The field-name acceptance set (t-47hc.33.1).
 use core.{tk_is_field_name}
 use core.{SelectArm}
-use core.{CompConfig, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct, lookup_stmt_parser}
+use core.{CompConfig, CompConfigPair, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct, lookup_stmt_parser}
 use features.grammar.{code_at, is_ident_start_code}
 // The RAW-SOURCE lookahead cores (t-47hc.5.1 slice B1), SHARED with
 // Parser's peek_after_ident_is_* wrappers. The component config-pair
@@ -1616,7 +1616,7 @@ fn ident_lbrace_owned_elsewhere(st: PState) -> bool {
 ///     own IDENT FIRST token, but included so the predicate
 ///     is correct in any position.)
 ///   stmt_block — the current token is `{` and the next two tokens are not STRING `:`;
-///     the statement-position twin of Parser.is_stmt_map_literal.
+///     the statement-position brace disambiguation (see the cond below).
 ///   for_destructure — current is `for` and next is `(`.
 ///   comma_ident — current is `,` and next is IDENT, separating it from a trailing comma.
 ///   double_colon — current and next are adjacent `:` tokens.
@@ -1659,9 +1659,9 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // zero-width, already nullable, and already lowered by emit through THIS function —
     // so the two engines agree by construction instead of by a second implementation.
     if cond == "always" { return true }
-    // Statement-position brace disambiguation, the token-level twin of
-    // Parser.is_stmt_map_literal: only a string-keyed `{ "key": ... }` is a map
-    // expression here. Empty braces and every other leading token are blocks.
+    // Statement-position brace disambiguation: only a string-keyed
+    // `{ "key": ... }` is a map expression here. Empty braces and every other
+    // leading token are blocks.
     if cond == "stmt_block" {
         if st.cur().text != "{" { return false }
         if st.pos + 2 >= st.toks.length { return true }
@@ -1672,9 +1672,9 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         let k = st.toks[st.pos + 1]
         return !((k.kind == "STRING" || k.kind == "TEMPLATE") && st.toks[st.pos + 2].text == ":")
     }
-    // Expression-position brace: the token twin of Parser.is_map_literal. `{ }` is an
-    // EMPTY MAP here (unlike statement position, where it stays a block), otherwise a
-    // map needs a string/template key followed by `:`. Everything else is a block.
+    // Expression-position brace: `{ }` is an EMPTY MAP here (unlike statement
+    // position, where it stays a block), otherwise a map needs a string/template
+    // key followed by `:`. Everything else is a block.
     if cond == "brace_map" {
         if st.cur().text != "{" { return false }
         if st.pos + 1 >= st.toks.length { return false }

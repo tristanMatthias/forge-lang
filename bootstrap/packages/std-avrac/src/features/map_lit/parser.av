@@ -1,5 +1,6 @@
 // WHY: parses map literal expressions `{ "key": value, ... }`.
-// is_map_literal does lookahead to disambiguate map literals from blocks.
+// The map-vs-block disambiguation itself is grammar-owned — the `brace_map` /
+// `stmt_block` @peek conds (features/grammar/executor.av) — not done here.
 
 use core.{Expr, ExprId}
 use parse.{Parser, ArgListIds}
@@ -8,10 +9,9 @@ use core.{Tk}
 impl Parser {
     // A map-literal key starts with a string literal OR an interpolated string
     // (`"a${x}b"`, which lexes as Tk.Template) — both are string-valued keys. The
-    // `{` detection lookahead (is_map_literal / is_stmt_map_literal) recognises a
-    // map by this key token followed by `:`. parse_map_entries already parses the
-    // key via parse_expression, which handles either form, so only the lookahead
-    // was string-only.
+    // grammar's `{` detection recognises a map by this key token followed by `:`.
+    // parse_map_entries already parses the key via parse_expression, which handles
+    // either form, so only the lookahead was ever string-only.
     fn at_map_key_token(self) -> bool {
         self.check(Tk.String) || self.check(Tk.Template)
     }
