@@ -6,7 +6,7 @@
 // in features/struct_decl/grammar.av — the cross-fragment reference binds by
 // name after the merge, exactly as `match_arm` already references `pattern_or`
 // across the two match fragments.
-use features.grammar.{parse_grammar, grammar_checked, Grammar}
+use features.grammar.{Grammar, grammar_checked, parse_grammar}
 
 /// The `enum` declaration and its variant rule (bare or payload-carrying).
 export fn avra_enum_decl_grammar() -> Grammar {

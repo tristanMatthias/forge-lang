@@ -3,8 +3,6 @@
 //   `list.map(it * 2)` → `list.map((it) -> { it * 2 })`
 
 use core.{NodeStore, Expr, Stmt, StmtId, ParamEntry, ValueType, ExprId}
-use parse.{Parser}
-use core.{Tk}
 use list_ops.{list_any}
 
 /// True when `expr` references the implicit `it` pronoun. Used

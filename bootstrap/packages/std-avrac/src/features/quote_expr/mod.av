@@ -12,8 +12,8 @@
 // flat at `features.quote_expr.{...}`.
 
 use core.{Expr, ExprId}
-use features.grammar.{parse_grammar}
 use features.quote_expr.lowering.{quote_builds}
+use features.grammar.{parse_grammar}
 
 /// The `quote` expression family. THREE rules, because the three bodies are
 /// structurally different — a block, a type, and a match arm — and

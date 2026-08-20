@@ -9,8 +9,8 @@
 // type on the surrounding SExpr so downstream `.length` / index /
 // `.map` see a proper element type).
 
-use core.{Expr, ExprId, VarBinding, ValueType, env_extend, vtype_list_elem}
-use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_value_ptr, emit_value_ty}
+use core.{ExprId, VarBinding, env_extend, vtype_list_elem}
+use codegen.{Ctx, EmitValue, ok_emit, emit_value_ptr, emit_value_ty}
 
 /// Lower a list comprehension to LLVM IR. Produces a fresh
 /// `avra_array_new` list, iterates `collection`, optionally filters

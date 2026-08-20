@@ -4,8 +4,8 @@
 use codegen.{err_emit}
 use resolve.{resolve_expr_list_ids}
 use typeck.{tc_er}
-use features.grammar.{parse_grammar}
 use features.list_lit.lowering.{list_lit_builds, list_type_builds}
+use features.grammar.{parse_grammar}
 
 /// `[a, b, c]` list literals + the `[`-led comprehension — the definition
 /// carries both (t-kd4y.3.5.4): `list_expr` is ONE alternation whose

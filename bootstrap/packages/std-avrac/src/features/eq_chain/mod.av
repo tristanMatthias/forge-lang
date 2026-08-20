@@ -2,8 +2,8 @@
 // at `features.eq_chain.{...}`. A syntax-only carrier: the chain lowers
 // to plain `Expr.Binary` nodes (the engine's fold_binary shape), so no
 // pass hooks ride this definition.
-use features.grammar.{parse_grammar}
 use features.eq_chain.lowering.{eq_chain_builds}
+use features.grammar.{parse_grammar}
 
 /// `a == b` / `a != b` — the equality comparison tail (t-kd4y.3.5.7).
 /// One branch of the spine's `eq_tail` dispatch (`is` and `in` are its

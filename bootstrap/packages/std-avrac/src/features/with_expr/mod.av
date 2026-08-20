@@ -3,9 +3,9 @@
 use core.{vtype_struct_name, ExprId}
 use resolve.{resolve_expr, resolve_field_init_list}
 use features.struct_decl.{check_field_inits, check_struct_lit_fields}
-use features.grammar.{parse_grammar}
 use features.with_expr.lowering.{with_expr_builds}
 use typeck.{check_expr, tc_er}
+use features.grammar.{parse_grammar}
 
 /// `point with { x: 5 }` — a shallow-copied struct value with selected
 /// fields overridden (spec axis 28). The definition carries the
