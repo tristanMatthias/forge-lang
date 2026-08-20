@@ -891,7 +891,13 @@ impl Parser {
     /// its forward-progress arms). Snapshot-then-merge order is preserved from
     /// the original three copies.
     fn seam_merge_delegate(self, d: Parser) {
-        self.seam_merge_delegate(d)
+        let d_had_error = d.had_error
+        let d_error_message = d.error_message
+        self.bag = bag_merge(self.bag, d.bag)
+        if !self.had_error && d_had_error {
+            self.had_error = true
+            self.error_message = d_error_message
+        }
     }
 
     /// Replay a DSL run's diagnostics, each under its own declared code. Shared
