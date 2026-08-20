@@ -5193,9 +5193,35 @@ window_src_list() {
 # resolution and must not reuse a stale PASS marker. Test files are
 # excluded: main.av's import graph never reaches */tests/*, so
 # test-only commits must not bust the cache.
+# The TOOLCHAIN identity a window binary was produced by (t-47hc.14). The
+# window fingerprint used to cover only the seed and the source list, so a
+# window RESTORED from cache could have been linked by a different `cc`, a
+# different LLVM, or different runtime flags than the run now reusing it — and
+# `dt_recheck_without_cache`'s own comment concedes the gap: the key "covers
+# the seed and the ref SHA but not the environment that linked it".
+#
+# That is the shape the recorded evidence fits. A restored diff-test window
+# emitted different IR than a fresh build of the same commit, reproducibly,
+# INSIDE ONE CI JOB — which rules out "different runner image between runs" as
+# the whole story but not "the cached artifact came from a different toolchain
+# than this job's". Keying on the toolchain makes such a window a MISS (rebuild)
+# instead of a silent reuse, so a divergence can no longer be manufactured by
+# the cache.
+#
+# This does NOT answer the deeper question the ticket exists for — whether one
+# binary can emit different IR twice — and must not be read as closing it. It
+# removes one confound so the next occurrence is attributable.
+window_toolchain_id() {
+  { cc --version 2>/dev/null | head -1
+    "$LLVM_CONFIG" --version 2>/dev/null
+    echo "runtime_opt:$RUNTIME_OPT"
+  } | $SHA256_CMD | awk '{print $1}'
+}
+
 window_fingerprint() {
   local seed_id="$1" commit="$2"
   { echo "seed:$seed_id"
+    echo "toolchain:$(window_toolchain_id)"
     window_src_list "$commit" | grep -v '/tests/'
   } | $SHA256_CMD | awk '{print $1}'
 }
