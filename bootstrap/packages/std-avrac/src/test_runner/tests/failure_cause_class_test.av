@@ -160,6 +160,20 @@ spec "a compile failure with no F-code is still named (t-xlf3)" {
         classify_shard_failure(log, 0, 0).contains("DISK FULL")
     }
 
+    then "the VERBATIM message from the CI run that motivated this classifies" {
+        // Not a paraphrase. This is the log line from rc-strict run
+        // 32413166572, which reported `cause not classified` while carrying
+        // its own reason — the whole point of the rule. A synthetic message
+        // proves the rule fires; only the real one proves it fires on what
+        // actually appears.
+        let log = "[batch] 8 files: /home/runner/work/forge-lang/forge-lang/bootstrap/packages/std-avrac/src/core/tests/intern_test.av\n[test-cache] miss 7770a7c4afe7 — no previous build for unit `test_shard:intern_test_x8_d8ac7240ad49`\nshard compile failed: module resolve error in /home/runner/work/forge-lang/forge-lang/bootstrap/packages/std-avrac/src/parse/tests/scan_trivia_test.av: error in module `modules`: parse error at 18:14: expected `}`\n"
+        let c = classify_shard_failure(log, 0, 0)
+        c.contains("COMPILE FAILED") && !c.contains("cause not classified")
+            // The module and the position survive into the summary, which is
+            // what makes the log dive unnecessary rather than merely shorter.
+            && c.contains("module `modules`") && c.contains("18:14")
+    }
+
     then "a test that merely QUOTES the marker is NOT a compile failure" {
         // shard_basename_collision_test asserts on this exact string. A
         // substring match would report its assertion failure as a phantom
