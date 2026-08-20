@@ -34,13 +34,34 @@ spec "the feature-layout lint is real" {
 }
 
 spec "the lint names non-feature directories rather than mis-reporting them" {
-    then "a directory with no `<name>_lang()` is called out as machinery, not a missing mod.av" {
+    then "a subsystem directory is named as ACCEPTED, not as drift and not as a missing mod.av" {
         // derive/, marshal/, walker/, comptime/ and friends define ZERO
         // *_lang() and are not registered in features/mod.av. They are @derive
-        // and comptime MACHINERY living under features/ by historical accident.
-        // Requiring mod.av of them would report a missing FILE when the real
-        // finding is a misplaced DIRECTORY.
+        // and comptime MACHINERY. Requiring mod.av of them would report a
+        // missing FILE when the real finding is a misplaced DIRECTORY.
+        //
+        // They used to be reported as "(not a feature … P4c)" — i.e. as work
+        // pending relocation. P4c relocated only `eval` (a genuine pass) and
+        // the user ruled the rest STAY, so that label described work that will
+        // not happen. They are ACCEPTED now: still listed, because "features/
+        // means a language feature" having named exceptions is the point, but
+        // no longer counted as drift.
         let out = avra_shell_exec("bash scripts/diagnose.sh --check-feature-layout --list 2>&1")
-        out.contains("not a feature") && out.contains("derive") && out.contains("walker")
+        out.contains("ACCEPTED here by decision") && out.contains("derive") && out.contains("walker")
+    }
+    then "an UNLISTED non-feature directory is still DRIFT — the acceptance is not a blanket exemption" {
+        // The accepted set only means something if a NEW non-feature directory
+        // still FAILS. Otherwise "ACCEPTED" would have quietly become a blanket
+        // exemption for the whole category, which is the opposite of the point.
+        // Same plant-and-clean idiom as the OFF-LIST case above.
+        let d = "packages/std-avrac/src/features/zz_unlisted_probe"
+        let _ = avra_shell_exec("mkdir -p '${d}' && printf 'export fn zz_helper() -> int { 1 }\n' > '${d}/mod.av'")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --check-feature-layout --list 2>&1")
+        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${d}'")
+        rc != 0 && out.contains("no decision on record")
+    }
+    then "and it passes again once the planted directory is gone" {
+        avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1") == 0
     }
 }
