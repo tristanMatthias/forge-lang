@@ -16,7 +16,7 @@
 // Tracked under forge-crafting-intepreters-iinq (epic
 // forge-crafting-intepreters-a1el — the build system).
 
-use core.{ValueType, FieldEntry, Variant, ParamEntry, TypeParamEntry, vtype_struct, content_id_for}
+use core.{ValueType, FieldEntry, Variant, ParamEntry, TypeParamEntry, content_id_for}
 
 extern fn avra_bytes_make(len: int) -> bytes
 extern fn avra_bytes_set(b: bytes, idx: int, val: int)
