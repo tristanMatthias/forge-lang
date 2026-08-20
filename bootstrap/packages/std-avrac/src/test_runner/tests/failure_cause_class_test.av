@@ -118,3 +118,54 @@ spec "t-65td: the cause class is named, not left to a log dive" {
         }
     }
 }
+
+// A compile failure with NO F-code. `classify_shard_failure`'s COMPILE FAILED
+// rule keys on `error[F`, so the runner's own `fail("shard compile failed: ...")`
+// — raised before any diagnostic is coded, which is where module-resolve errors
+// arrive — matched nothing and fell through to `cause not classified`.
+//
+// Observed on a real CI run: a shard reported
+//   shard compile failed: module resolve error in .../scan_trivia_test.av:
+//   error in module `modules`: parse error at 18:14: expected `}`
+// and the summary said "cause not classified; read the log" — with the reason
+// sitting in the log it declined to read. That is the t-xlf3 shape (an
+// unnameable shard death) produced not by a missing log but by the classifier.
+spec "a compile failure with no F-code is still named (t-xlf3)" {
+    then "the shard-compile-failed message is classified, not left unnamed" {
+        let log = "[batch] 8 files: a.av b.av\nshard compile failed: module resolve error in x.av: parse error at 18:14: expected `}`\n"
+        let c = classify_shard_failure(log, 0, 0)
+        c.contains("COMPILE FAILED") && !c.contains("cause not classified")
+    }
+
+    then "the reason is QUOTED, so the log dive is unnecessary" {
+        let log = "shard compile failed: module resolve error in x.av: parse error at 18:14: expected `}`\n"
+        classify_shard_failure(log, 0, 0).contains("module resolve error in x.av")
+    }
+
+    then "only the FIRST line of the reason is quoted" {
+        let log = "shard compile failed: resolve error: undefined name\n  note: a whole diagnostic body follows\n"
+        let c = classify_shard_failure(log, 0, 0)
+        c.contains("undefined name") && !c.contains("whole diagnostic body")
+    }
+
+    then "an F-coded compile failure still wins — it names the code" {
+        // The existing rule is more specific and must keep precedence.
+        let log = "error[F0001]: expected `}`\nshard compile failed: parse error\n"
+        classify_shard_failure(log, 0, 0).contains("F0001")
+    }
+
+    then "the ENVIRONMENTAL classes still outrank it" {
+        // A disk-full box makes compiles fail; the box is the cause, not the code.
+        let log = "shard compile failed: write error\nNo space left on device\n"
+        classify_shard_failure(log, 0, 0).contains("DISK FULL")
+    }
+
+    then "a test that merely QUOTES the marker is NOT a compile failure" {
+        // shard_basename_collision_test asserts on this exact string. A
+        // substring match would report its assertion failure as a phantom
+        // compile failure — the misattribution this file exists to prevent,
+        // reintroduced by the new rule. Hence the line anchor.
+        let log = "spec \"collision\"\n    FAIL \"no shard compile failed: appears\"\n[shard-summary] pass=0 fail=1 total=1\n"
+        classify_shard_failure(log, 1, 0).contains("TEST FAILURE")
+    }
+}

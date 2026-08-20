@@ -1214,6 +1214,23 @@ export fn classify_shard_failure(out: string, fail: int, crashes: int) -> string
         let named = if code == "" { "" } else { " (first: ${code})" }
         return "COMPILE FAILED${named}"
     }
+    // A compile failure with NO F-code. The runner's own `fail("shard compile
+    // failed: ...")` covers errors raised before a diagnostic is coded — a
+    // module-resolve failure, most of what parse reports through that path —
+    // so the rule above (which keys on `error[F`) misses them entirely and
+    // they fell through to `cause not classified` with a perfectly legible
+    // reason sitting in the log.
+    //
+    // Observed: `shard compile failed: module resolve error in
+    // parse/tests/scan_trivia_test.av: error in module `modules`: parse error
+    // at 18:14: expected `}`` — reported as UNCLASSIFIED. That is the t-xlf3
+    // shape (a shard death nothing can name) arising not from a missing log
+    // but from a classifier that would not read the one it had.
+    if output_has_shard_compile_failure(out) {
+        let why = extract_after(out, "shard compile failed: ")
+        let named = if why == "" { "" } else { " (${first_line_of(why)})" }
+        return "COMPILE FAILED — no F-code${named}"
+    }
     if crashes > 0 {
         return "${string(crashes)} spec(s) CRASHED on a fatal signal"
     }
@@ -1346,6 +1363,32 @@ fn membership_in(sets: List<List<string>>, want: List<string>) -> bool {
         }
     }
     false
+}
+
+/// Did the RUNNER refuse this shard because its compile failed?
+///
+/// LINE-ANCHORED, for the reason `output_has_kill_marker` is: this tree
+/// contains a test that asserts on this very string
+/// (shard_basename_collision_test's `!out.contains("shard compile failed")`),
+/// and a substring match would classify that test's own failure as a compile
+/// failure — the misattribution the classifier exists to prevent,
+/// reintroduced by the classifier.
+///
+/// The runner emits it via `fail(...)` at the start of a line, so the anchor
+/// costs nothing real and buys immunity from every quotation of it.
+export fn output_has_shard_compile_failure(out: string) -> bool {
+    out.contains("\nshard compile failed: ") || out.starts_with("shard compile failed: ")
+}
+
+/// The first line of `s` — the compile error's own message, without the
+/// diagnostic body that may follow it.
+fn first_line_of(s: string) -> string {
+    mut i = 0
+    while i < s.length {
+        if s.substring(i, i + 1) == "\n" { return s.substring(0, i) }
+        i = i + 1
+    }
+    s
 }
 
 /// Did the SHELL report this output's producer as killed?
