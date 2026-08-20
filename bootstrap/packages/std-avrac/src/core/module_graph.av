@@ -25,7 +25,7 @@
 //   cannot change the path's meaning — the anchor is fixed.
 
 use core.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr,
-                  avra_map_has_cstr, avra_intmap_new, avra_intmap_set,
+                  avra_map_has_cstr, avra_map_keys_cstr, avra_intmap_new, avra_intmap_set,
                   avra_intmap_get, avra_intmap_has}
 
 // ── Logical newtypes (carried as int for bootstrap simplicity) ───────
@@ -135,13 +135,6 @@ export type ModuleGraphNode = {
     parent: int,
     package: int,
     file: string,
-    // The module's canonical dotted name (e.g. "@std::avrac::features::tuples"),
-    // "" until module_graph_set_canonical names it. Stored ON THE NODE and not
-    // only in `by_canonical` so the module set can be ENUMERATED, not merely
-    // looked up: by_canonical is a C-side map with no iteration accessor, so
-    // without this a caller holding the graph can answer "is X a module?" but
-    // never "which modules are there?" (t-y2i7.5 needs the latter).
-    canonical: string,
     children: ptr,
     items: ptr,
 }
@@ -241,16 +234,19 @@ export fn module_graph_is_exported(g: ModuleGraph, canonical: string) -> bool {
 /// `module_graph_find_by_canonical` lookups become O(1).
 export fn module_graph_set_canonical(g: ModuleGraph, canonical: string, mod_id: int) -> ModuleGraph {
     avra_map_set_cstr(g.by_canonical, canonical, mod_id)
-    // Mirror onto the node so the set is enumerable (see ModuleGraphNode.canonical).
-    mut mods: List<ModuleGraphNode> = []
-    for m in g.modules {
-        if m.id == mod_id {
-            mods.push(m with { canonical: canonical })
-        } else {
-            mods.push(m)
-        }
-    }
-    g with { modules: mods }
+    g
+}
+
+/// EVERY canonical path registered in this graph, in map order.
+///
+/// The map is the one source of truth and it is many-to-one: the same file
+/// reached from a second parent is deduplicated to the existing node and
+/// registered again under the new path (graph_build's `walk_mod_decl`), so a
+/// module can hold several canonical names. Enumerating the map keeps all of
+/// them. Mirroring the name onto the node instead — the shape this replaced —
+/// kept only whichever path was registered last.
+export fn module_graph_canonicals(g: ModuleGraph) -> List<string> {
+    avra_map_keys_cstr(g.by_canonical)
 }
 
 /// Look up a ModuleId by its canonical path (the same string format
@@ -279,7 +275,6 @@ export fn module_graph_add(g: ModuleGraph, file: string, parent: int, package: i
         parent,
         package,
         file,
-        canonical: "",
         children: avra_map_new_cstr(),
         items: avra_map_new_cstr(),
     }
@@ -332,7 +327,6 @@ export fn module_graph_add_package_root(g: ModuleGraph, file: string) -> AddPack
         parent: ID_NONE,
         package: pkg_id,
         file,
-        canonical: "",
         children: avra_map_new_cstr(),
         items: avra_map_new_cstr(),
     }

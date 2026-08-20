@@ -1,0 +1,70 @@
+// t-y2i7.5 — `module_graph_canonicals` returns EVERY canonical path a module
+// was registered under, not merely the last one.
+//
+// The map is many-to-one BY DESIGN. `walk_mod_decl` (features/modules/
+// graph_build.av) deduplicates by file: the second time a source file is
+// reached — from a different parent — it links the edge to the EXISTING node
+// and calls `module_graph_set_canonical` again, with a different path, for the
+// same id. `by_canonical` keeps both.
+//
+// The shape this replaced mirrored the name onto ModuleGraphNode.canonical and
+// enumerated the nodes, which kept whichever path was registered LAST and
+// silently dropped the rest. It also duplicated state the map already owned.
+// Enumerating the map keeps every path by construction and leaves one source
+// of truth. Caught in review on #1314.
+
+use @std.avrac.core.{module_graph_new, module_graph_add, module_graph_set_canonical,
+                     module_graph_canonicals, module_graph_find_by_canonical, ID_NONE}
+
+fn has(xs: List<string>, want: string) -> bool {
+    for x in xs { if x == want { return true } }
+    false
+}
+
+fn count_of(xs: List<string>, want: string) -> int {
+    mut n = 0
+    for x in xs { if x == want { n = n + 1 } }
+    n
+}
+
+spec "module_graph_canonicals: every registered path survives" {
+    then "a module reached through TWO parents returns BOTH names" {
+        let g0 = module_graph_new()
+        let added = module_graph_add(g0, "/src/shared.av", ID_NONE, 0)
+        // The same node, registered twice — exactly what the file-dedup branch
+        // of walk_mod_decl does on the second reach.
+        let g1 = module_graph_set_canonical(added.graph, "pkg::a::shared", added.id)
+        let g2 = module_graph_set_canonical(g1, "pkg::b::shared", added.id)
+        let cs = module_graph_canonicals(g2)
+        // The assertion that fails under the node-mirror shape: it kept only
+        // "pkg::b::shared", so the first name vanished.
+        has(cs, "pkg::a::shared") && has(cs, "pkg::b::shared")
+    }
+
+    then "both names still resolve to the SAME module id" {
+        let g0 = module_graph_new()
+        let added = module_graph_add(g0, "/src/shared.av", ID_NONE, 0)
+        let g1 = module_graph_set_canonical(added.graph, "pkg::a::shared", added.id)
+        let g2 = module_graph_set_canonical(g1, "pkg::b::shared", added.id)
+        module_graph_find_by_canonical(g2, "pkg::a::shared") == added.id &&
+            module_graph_find_by_canonical(g2, "pkg::b::shared") == added.id
+    }
+
+    then "re-registering the SAME path does not duplicate it" {
+        let g0 = module_graph_new()
+        let added = module_graph_add(g0, "/src/one.av", ID_NONE, 0)
+        let g1 = module_graph_set_canonical(added.graph, "pkg::one", added.id)
+        let g2 = module_graph_set_canonical(g1, "pkg::one", added.id)
+        count_of(module_graph_canonicals(g2), "pkg::one") == 1
+    }
+
+    then "distinct modules each contribute their own path" {
+        let g0 = module_graph_new()
+        let a = module_graph_add(g0, "/src/a.av", ID_NONE, 0)
+        let ga = module_graph_set_canonical(a.graph, "pkg::a", a.id)
+        let b = module_graph_add(ga, "/src/b.av", ID_NONE, 0)
+        let gb = module_graph_set_canonical(b.graph, "pkg::b", b.id)
+        let cs = module_graph_canonicals(gb)
+        has(cs, "pkg::a") && has(cs, "pkg::b") && a.id != b.id
+    }
+}
