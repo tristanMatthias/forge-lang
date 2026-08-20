@@ -1641,6 +1641,7 @@ fn ctx_kind_from_path(path: string) -> string {
     if last == "ctx_fresh_ident"    { return "fresh_ident" }
     if last == "ctx_unwrap_path_to" { return "unwrap_path_to" }
     if last == "ctx_modules_under"  { return "modules_under" }
+    if last == "ctx_items_with_suffix" { return "items_with_suffix" }
     ""
 }
 
@@ -1664,6 +1665,9 @@ extern fn avra_resolver_fresh_id() -> int
 // runtime.c for the lifecycle.
 extern fn avra_rd_get_current_module() -> string
 extern fn avra_rd_module_count() -> int
+extern fn avra_rd_global_count() -> int
+extern fn avra_rd_global_name_at(i: int) -> string
+extern fn avra_rd_global_canonical_at(i: int) -> string
 extern fn avra_rd_module_at(i: int) -> string
 extern fn avra_rd_lookup_alias(name: string) -> string
 extern fn avra_rd_lookup_global(name: string) -> string
@@ -1678,6 +1682,23 @@ extern fn avra_rd_type_field_type(type_id: int, idx: int) -> string
 /// lookup_type, qualify_ident, unwrap_path_to — all read from the
 /// C-side resolver-data layer populated by expand_macro.av before
 /// each macro invocation.
+/// Push `name` unless it is already present.
+///
+/// The rd buckets are APPEND-ONLY within an expansion pass —
+/// `populate_resolver_data_into` deliberately does not clear, so
+/// `register_and_repopulate` can re-populate after a splice without wiping
+/// types the earlier pass registered (so07.7.1). A fixpoint of N iterations
+/// therefore stores every item N times. Both set-shaped ctx_* queries answer a
+/// SET question ("which modules/items exist"), so the duplication is the
+/// query's to remove, not the caller's — a P5-style registration list built
+/// from a duplicated answer would register every feature N times.
+fn push_unique(acc: List<Value>, name: string) -> List<Value> {
+    mut out = acc
+    for v in out { if v.text == name { return out } }
+    out.push(value_string(name))
+    out
+}
+
 fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<ExprId>) -> StepResult {
     let args_result = eval_arg_list(runtime, args)
     if args_result.had_error != 0 {
@@ -1695,7 +1716,21 @@ fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<ExprId>) ->
         mut i = 0
         while i < avra_rd_module_count() {
             let name = avra_rd_module_at(i)
-            if name.starts_with(prefix) { hits.push(value_string(name)) }
+            if name.starts_with(prefix) { hits = push_unique(hits, name) }
+            i = i + 1
+        }
+        return ok_result(rt, value_list(hits))
+    }
+    if kind == "items_with_suffix" {
+        // args[0] = ctx, args[1] = suffix
+        if args_result.values.length < 2 { return ok_result(rt, value_list([])) }
+        let suffix = args_result.values[1].text
+        mut hits: List<Value> = []
+        mut i = 0
+        while i < avra_rd_global_count() {
+            if avra_rd_global_name_at(i).ends_with(suffix) {
+                hits = push_unique(hits, avra_rd_global_canonical_at(i))
+            }
             i = i + 1
         }
         return ok_result(rt, value_list(hits))

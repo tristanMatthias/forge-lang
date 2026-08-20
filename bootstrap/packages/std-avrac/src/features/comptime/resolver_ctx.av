@@ -74,6 +74,21 @@ export fn ctx_current_module(ctx: ResolverCtx) -> string {
     ""
 }
 
+/// Every top-level item whose SHORT name ends with `suffix`, returned as
+/// canonical names — e.g. `ctx_items_with_suffix(ctx, "_lang")` finds every
+/// feature's `<name>_lang()` regardless of which module declares it.
+///
+/// The sibling of ctx_modules_under, and needed for the same reason: a feature
+/// directory can export SEVERAL `_lang` fns (defer/ exports defer_lang AND
+/// errdefer_lang; let_stmt/ exports four), so knowing the module set is not
+/// enough to know the function set.
+///
+/// Same purity story: these are items the resolver already registered, not a
+/// filesystem read.
+export fn ctx_items_with_suffix(ctx: ResolverCtx, suffix: string) -> List<string> {
+    []
+}
+
 /// Every module whose canonical name starts with `prefix`, e.g.
 /// `ctx_modules_under(ctx, "@std::avrac::features")`. The answer comes from the
 /// compiler's own module graph — the resolver already walked those directories —

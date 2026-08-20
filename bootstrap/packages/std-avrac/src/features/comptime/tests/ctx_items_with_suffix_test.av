@@ -1,0 +1,74 @@
+// WHY: t-y2i7.5's other half. ctx_modules_under answers "which modules exist";
+// this answers "which ITEMS exist", which is what P5 actually needs — a feature
+// directory can export SEVERAL `<name>_lang()` fns (defer/ exports defer_lang
+// AND errdefer_lang; let_stmt/ exports four), so the module set alone cannot
+// produce the registration list.
+//
+// Purity story is identical to its sibling: these are items the resolver already
+// registered. No filesystem read, so no F4008, and no stale-cache hazard.
+//
+// Same evidence discipline as the other ctx_* specs: a real macro emits a
+// println of what it found, so RUNTIME OUTPUT is the proof and the [] stub
+// cannot fake it.
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "ResolverCtx: ctx_items_with_suffix enumerates items by name" {
+    then "a suffix selects exactly the matching items; a bogus suffix selects none" {
+        // NOTE THE TRAILING ";" IN THE ASSERTION. `contains("markers=2")` is a
+        // PREFIX match on the number — it is satisfied by "markers=21" and
+        // "markers=215". The first version of this spec asserted exactly that
+        // and passed against a real value of 21, which is a false green with no
+        // symptom. Anchor numeric expectations on their delimiter.
+        //
+        // The suffix is `_zzq_mark`, not `_marker`: the resolver-data globals
+        // span the WHOLE compilation, and 21 items tree-wide end in "_marker".
+        // A fixture asserting a count must pick a suffix only the fixture owns.
+        let out = write_fixture_and_run("/tmp/avra_ctx_items_with_suffix_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_items_with_suffix}\n" +
+            "\n" +
+            "fn alpha_zzq_mark() -> int { 1 }\n" +
+            "fn beta_zzq_mark() -> int { 2 }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            // Two fns share the `_marker` suffix, so the count is a property of
+            // the FILTER, not of whatever happens to be registered.
+            "    let found = ctx_items_with_suffix(ctx, \"_zzq_mark\")\n" +
+            "    let bogus = ctx_items_with_suffix(ctx, \"_no_such_suffix\")\n" +
+            "    let msg = \"markers=\" + string(found.length) + \"; bogus=\" + string(bogus.length)\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+                out.contains("markers=2;") && out.contains("bogus=0") && !out.contains("error[")
+    }
+    // NO SPEC ARM FOR THE SET PROPERTY — and that absence is deliberate.
+    //
+    // The rd buckets are APPEND-ONLY within an expansion pass
+    // (populate_resolver_data_into does not clear, by design — so07.7.1), so a
+    // multi-iteration fixpoint stores every item repeatedly. Both set-shaped
+    // ctx_* queries therefore de-duplicate, in eval/mod.av's push_unique.
+    //
+    // THE DUPLICATION IS REAL AND MEASURED: with push_unique removed, a fixture
+    // declaring THREE `_qqx_tag` fns and three @expand sites reports tags=51
+    // on a direct `bs2 run`, against tags=3 with it. That is the defect the
+    // de-duplication fixes — a P5-style registration list built from the raw
+    // answer would register every feature seventeen times over.
+    //
+    // But it CANNOT BE ASSERTED FROM HERE. Inside write_fixture_and_run the
+    // same fixture reports tags=3 either way: the harness's compile does not
+    // drive the fixpoint far enough to accumulate. I wrote the arm, verified it
+    // by REMOVING push_unique, and it stayed green — so it was decoration, and
+    // decoration that reads as protection is worse than an honest gap. Removed
+    // rather than left in place.
+    //
+    // To cover it properly you need a fixture whose expansion genuinely
+    // iterates (splice-driven re-population via register_and_repopulate), or a
+    // unit test over push_unique itself. Neither is in scope here.
+}

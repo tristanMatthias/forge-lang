@@ -8301,6 +8301,20 @@ void avra_rd_add_global(const char* short_name, const char* canonical) {
                   short_name, canonical);
 }
 
+// Enumeration over the globals bucket. No new storage — the keys/vals arrays
+// already exist for lookup; these just expose them in order, so a macro can ask
+// "which items end in _lang?" instead of only "what is X?". Same reason
+// avra_rd_module_at exists: a lookup-only map cannot answer a set question.
+int64_t avra_rd_global_count(void) { return avra_rd_global_n; }
+
+const char* avra_rd_global_name_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_global_n) ? avra_rd_global_keys[i] : "";
+}
+
+const char* avra_rd_global_canonical_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_global_n) ? avra_rd_global_vals[i] : "";
+}
+
 const char* avra_rd_lookup_global(const char* name) {
     return rd_strmap_lookup(avra_rd_global_keys, avra_rd_global_vals,
                             avra_rd_global_n, name);
