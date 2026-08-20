@@ -58,7 +58,7 @@ use @std.cli.ui.{run_with_progress}
 use @std.json.{json_str}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
-use @std.avrac.test_runner.{assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure, output_has_ceiling_marker, retry_bounded_cmd}
+use @std.avrac.test_runner.{assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure, output_has_ceiling_marker, retry_bounded_cmd, post_split_membership}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path, filter_by_paths}
 use @std.avrac.test_runner.{
     scan_gate_diagnostics, render_gate_scan,
@@ -2538,13 +2538,15 @@ fn run_per_file_test_command(project_dir: string, accepted_paths: List<string>, 
     // not the static one: a jetsam kill is the strongest evidence the
     // static model under-booked, and the correction is most needed there.
     retry_jetsam_killed(shards, cx, gov.estimate_mb)
-    retry_ceiling_stopped(shards, cx, gov.estimate_mb)
+    // A ceiling-stopped BATCH may be replaced by its single-file splits,
+    // so aggregation must walk what the retry left behind, not the plan.
+    let final_shards = retry_ceiling_stopped(shards, cx, gov.estimate_mb)
     tp = shard_phase_ms("parent:retry_check", tp)
 
     // Capture BEFORE the probe: this call's value is the command's exit
     // code, and a trailing statement would silently become the return
     // value instead (a timestamp), making `bs2 test` always exit non-zero.
-    let rc = aggregate_shard_logs(shards, t_start)
+    let rc = aggregate_shard_logs(final_shards, t_start)
     tp = shard_phase_ms("parent:aggregate_logs", tp)
     rc
 }
@@ -3161,9 +3163,9 @@ fn ceiling_stopped_victims(shards: List<Shard>) -> List<Shard> {
 // log before aggregation. A genuine F4014 (quiet box, normal input — a
 // compiler bug by definition) re-trips and stays red, now with a log free of
 // the pressure confound.
-fn retry_ceiling_stopped(shards: List<Shard>, cx: RunCtx, per_shard_mb: int) {
+fn retry_ceiling_stopped(shards: List<Shard>, cx: RunCtx, per_shard_mb: int) -> List<Shard> {
     let victims = ceiling_stopped_victims(shards)
-    if victims.length == 0 { return }
+    if victims.length == 0 { return shards }
     // t-kdyj.12: the retry gets the whole drained box, but the BOX must
     // survive the attempt — each victim's command carries a hard ceiling
     // matched to the drained box (retry_bounded_cmd), so a shard that
@@ -3197,10 +3199,85 @@ fn retry_ceiling_stopped(shards: List<Shard>, cx: RunCtx, per_shard_mb: int) {
     if skipped > 0 {
         eprintln("[per-file] ${string(skipped)} ceiling-stopped shard(s) NOT retried — available memory is under the retry floor; their first F4014 stands")
     }
-    if bounded.length == 0 { return }
+    if bounded.length == 0 { return shards }
     eprintln("[per-file] retrying ${string(bounded.length)} memory-ceiling-stopped shard(s) solo on the drained box (hard-bounded to it; avail ${string(eff_avail)}MB)")
     let retry_cx = cx with { jobs: 1, per_shard_mb: per_shard_mb, snapshot: snap }
     let _ = dispatch_shards(bounded, retry_cx, per_shard_mb)
+    split_ceiling_stopped(shards, bounded, retry_cx, per_shard_mb, eff_avail)
+}
+
+/// The LAST degradation step: a BATCH that trips its ceiling even alone
+/// on the drained box is re-run as one shard PER MEMBER (t-f16w).
+///
+/// The pool already degrades batch -> solo; solo was the end of the road,
+/// so a batch whose members only collectively exceed the ceiling stayed
+/// red with nothing left to try. That is not a hypothetical: the
+/// `per_fn_cgu_run_test` batch of 8 asks for 7875MB against the 7871MB
+/// retry cap — FOUR mebibytes — and reproduced on the integration branch
+/// with no PR in flight, blocking every queued gate at once.
+///
+/// Splitting is the fix rather than raising the cap, following t-kdyj.13
+/// (which split the 8.4GB error-recovery whale per scenario instead of
+/// buying it headroom). The cap is not arbitrary: 7871 and 7895 both
+/// produced legible in-process F4014 stops with the runner alive, while
+/// 8814 let a shard outrun its own poll and the VM was EVICTED. Raising
+/// it to clear this batch by 20MB would spend most of a measured-safe
+/// margin on one batch and leave the next one to rediscover the cliff;
+/// K shards of 1 file each need a FRACTION of the batch's peak and need
+/// no constant to be right.
+///
+/// A split member that STILL trips is a genuine single-file whale — a
+/// compiler bug by the F4014 contract — and keeps its own honest,
+/// phase-carrying F4014. Single-member victims are returned untouched:
+/// there is nothing left to split, and re-running one file as "one file"
+/// would just burn a second doomed compile.
+///
+/// The returned list is what AGGREGATION must walk: each split member is
+/// a fully-formed shard with its own slug, log and results sidecar, so
+/// replacing the victim with its members keeps one summary per shard.
+/// Leaving the victim in place would re-read the F4014 log it just
+/// superseded and report the run red on a result no longer standing.
+fn split_ceiling_stopped(shards: List<Shard>, retried: List<Shard>, retry_cx: RunCtx, per_shard_mb: int, eff_avail: int) -> List<Shard> {
+    let still = list_filter(ceiling_stopped_victims(retried), (s: Shard) -> s.paths.length > 1)
+    if still.length == 0 { return shards }
+    mut split: List<Shard> = []
+    for v in still {
+        for p in v.paths { split.push(retry_cx.shard_for([p])) }
+    }
+    mut bounded: List<Shard> = []
+    for sh in split {
+        let bcmd = retry_bounded_cmd(sh.cmd, eff_avail)
+        if bcmd != "" { bounded.push(sh with { cmd: bcmd }) }
+    }
+    if bounded.length == 0 { return shards }
+    eprintln("[per-file] ${string(still.length)} shard(s) still over the ceiling ALONE — splitting into ${string(bounded.length)} single-file shard(s)")
+    let _ = dispatch_shards(bounded, retry_cx, per_shard_mb)
+    // Swap each split victim out for the members that now carry its
+    // result. The membership decision is `post_split_membership` — a pure,
+    // spec-covered function — so the list AGGREGATION walks is decided by
+    // tested code rather than by a loop that only production exercises.
+    let want = post_split_membership(list_map(shards, (sh: Shard) -> sh.paths),
+                                     list_map(still, (sh: Shard) -> sh.paths))
+    mut out: List<Shard> = []
+    for m in want {
+        mut found = false
+        for b in bounded { if !found && paths_eq(b.paths, m) { out.push(b) found = true } }
+        if !found {
+            for sh in shards { if !found && paths_eq(sh.paths, m) { out.push(sh) found = true } }
+        }
+    }
+    out
+}
+
+/// Membership equality on a shard's member paths.
+fn paths_eq(a: List<string>, b: List<string>) -> bool {
+    if a.length != b.length { return false }
+    mut i = 0
+    while i < a.length {
+        if a[i] != b[i] { return false }
+        i = i + 1
+    }
+    true
 }
 
 // Walk each shard's log file, print it verbatim (preserving per-shard

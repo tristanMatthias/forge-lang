@@ -1214,6 +1214,23 @@ export fn classify_shard_failure(out: string, fail: int, crashes: int) -> string
         let named = if code == "" { "" } else { " (first: ${code})" }
         return "COMPILE FAILED${named}"
     }
+    // A compile failure with NO F-code. The runner's own `fail("shard compile
+    // failed: ...")` covers errors raised before a diagnostic is coded — a
+    // module-resolve failure, most of what parse reports through that path —
+    // so the rule above (which keys on `error[F`) misses them entirely and
+    // they fell through to `cause not classified` with a perfectly legible
+    // reason sitting in the log.
+    //
+    // Observed: `shard compile failed: module resolve error in
+    // parse/tests/scan_trivia_test.av: error in module `modules`: parse error
+    // at 18:14: expected `}`` — reported as UNCLASSIFIED. That is the t-xlf3
+    // shape (a shard death nothing can name) arising not from a missing log
+    // but from a classifier that would not read the one it had.
+    if output_has_shard_compile_failure(out) {
+        let why = extract_after(out, "shard compile failed: ")
+        let named = if why == "" { "" } else { " (${first_line_of(why)})" }
+        return "COMPILE FAILED — no F-code${named}"
+    }
     if crashes > 0 {
         return "${string(crashes)} spec(s) CRASHED on a fatal signal"
     }
@@ -1295,6 +1312,84 @@ const RETRY_ALLOWANCE_FLOOR_MB = 1024
 /// to prevent. A retry that cannot fit under this cap fails as the
 /// honest F4014 it already produced; it must never take the box with it.
 const RETRY_CEILING_CAP_MB = 7871
+
+/// Which shards AGGREGATION must walk once ceiling-stopped batches have
+/// been split into single-file shards (t-f16w).
+///
+/// `planned` is the membership of every dispatched shard; `victims` is the
+/// membership of those that tripped their ceiling even ALONE on the drained
+/// box. Each victim is replaced, IN PLACE, by one singleton per member —
+/// the shards that actually carry its results now. Everything else is
+/// passed through untouched and in order.
+///
+/// This is the half where a bug makes the SUITE LIE rather than merely go
+/// red, which is why it is a pure function over membership instead of
+/// living inside the dispatch loop. Leave a split victim in the list and
+/// aggregation re-reads the F4014 log its own splits just superseded,
+/// reporting a red that no longer stands; drop it without inserting the
+/// members and the run silently loses their specs, reporting green over
+/// tests that never got counted.
+///
+/// A single-member victim is passed through unchanged: there is nothing to
+/// split, and re-running one file as "one file" only burns a second doomed
+/// compile. Its honest F4014 stands, which is the F4014 contract — on a
+/// quiet box with a normal input that is a compiler bug, not a box problem.
+export fn post_split_membership(planned: List<List<string>>, victims: List<List<string>>) -> List<List<string>> {
+    mut out: List<List<string>> = []
+    for shard in planned {
+        if membership_in(victims, shard) && shard.length > 1 {
+            for path in shard { out.push([path]) }
+        } else {
+            out.push(shard)
+        }
+    }
+    out
+}
+
+/// Membership-set equality — same paths, same order, as `plan_shards`
+/// produced them. Identity by CONTENT, not by slug: the caller holds
+/// path lists, and hashing them to compare would just be the slug by
+/// another name.
+fn membership_in(sets: List<List<string>>, want: List<string>) -> bool {
+    for s in sets {
+        if s.length == want.length {
+            mut same = true
+            mut i = 0
+            while i < s.length {
+                if s[i] != want[i] { same = false }
+                i = i + 1
+            }
+            if same { return true }
+        }
+    }
+    false
+}
+
+/// Did the RUNNER refuse this shard because its compile failed?
+///
+/// LINE-ANCHORED, for the reason `output_has_kill_marker` is: this tree
+/// contains a test that asserts on this very string
+/// (shard_basename_collision_test's `!out.contains("shard compile failed")`),
+/// and a substring match would classify that test's own failure as a compile
+/// failure — the misattribution the classifier exists to prevent,
+/// reintroduced by the classifier.
+///
+/// The runner emits it via `fail(...)` at the start of a line, so the anchor
+/// costs nothing real and buys immunity from every quotation of it.
+export fn output_has_shard_compile_failure(out: string) -> bool {
+    out.contains("\nshard compile failed: ") || out.starts_with("shard compile failed: ")
+}
+
+/// The first line of `s` — the compile error's own message, without the
+/// diagnostic body that may follow it.
+fn first_line_of(s: string) -> string {
+    mut i = 0
+    while i < s.length {
+        if s.substring(i, i + 1) == "\n" { return s.substring(0, i) }
+        i = i + 1
+    }
+    s
+}
 
 /// Did the SHELL report this output's producer as killed?
 ///
