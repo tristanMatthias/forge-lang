@@ -141,13 +141,17 @@ export type Registry = {
     stmt_checkers: ptr,
     expr_evals: ptr,
     stmt_evals: ptr,
-    stmt_parsers: ptr,
+    // Component names declared so far — a SET, not a handler map. The
+    // value slot is a constant 1: nothing ever invoked the handler this
+    // map used to store, and the one consumer (`is_registered_component`)
+    // only ever asked whether the key was present.
+    component_names: ptr,
     // Keyword → `parse_expr` handler for `kw { … }` expression
     // constructs (grammar/sql/regex …). Consulted by parse_primary.
     expr_parsers: ptr,
     // Component names declared with `body: TokenStream` (vez6.9) —
-    // parse-time routing state alongside the name's stmt_parsers
-    // handler, so every instance-block production (keyword-free,
+    // parse-time routing state alongside the name's component_names
+    // entry, so every instance-block production (keyword-free,
     // keyword-prefixed, nested) agrees on raw-vs-structured capture.
     raw_body_comps: ptr,
     // Feature-supplied grammar-build lowerings (t-kd4y.3) — the composed
@@ -169,7 +173,7 @@ export fn registry_new() -> Registry {
         stmt_checkers: avra_intmap_new(),
         expr_evals: avra_intmap_new(),
         stmt_evals: avra_intmap_new(),
-        stmt_parsers: avra_map_new_cstr(),
+        component_names: avra_map_new_cstr(),
         expr_parsers: avra_map_new_cstr(),
         raw_body_comps: avra_map_new_cstr(),
         builder_binds: [],
@@ -196,7 +200,7 @@ export fn register(reg: Registry, f: Feature) {
     }
     // stmt_keyword/parse_stmt died measured-unread (t-kd4y slice-1 evidence:
     // these writes keyed kw_*-style names the token-text lookup could never
-    // match; the stmt_parsers map serves component names, written by
+    // match; the component_names set serves component names, written by
     // register_component_name). Batch A deleted the fields.
     if f.expr_keyword.length > 0 {
         avra_map_set_cstr(reg.expr_parsers, f.expr_keyword, f.parse_expr)
@@ -280,10 +284,21 @@ export fn dispatch_stmt_eval(reg: Registry, tag: int, rt: Runtime, stmt: Stmt) -
 
 /// Look up a decl parser by leading keyword (e.g. `"fn"`). Returns
 
-/// Look up a stmt parser by leading keyword.
-export fn lookup_stmt_parser(reg: Registry, keyword: string) -> int? {
-    if avra_map_has_cstr(reg.stmt_parsers, keyword) == 0 { return null }
-    avra_map_get_cstr(reg.stmt_parsers, keyword)
+/// True when `name` was declared as a component. This is the whole
+/// contract: the `@peek(is_known_component)` gate in the grammar executor
+/// asks nothing else of it.
+///
+/// It used to be `lookup_stmt_parser(...) -> int?`, storing a
+/// `fn(Parser) -> Result<StmtId, string>` per name — but NOTHING ever
+/// invoked the stored value (the generated parser handles instantiation
+/// natively via `parse_bare_comp_inst`/`_raw`), and the sole consumer
+/// tested `!= null`. So the map was a SET wearing a handler map's
+/// signature, and the two closures that fed it were the only thing keeping
+/// ~650 lines of retired hand parser alive to satisfy an argument nobody
+/// read. Storing a function pointer as an untyped `int` was also the same
+/// rule-16 defect as the old `Feature.emit_expr: int`.
+export fn is_registered_component(reg: Registry, name: string) -> bool {
+    avra_map_has_cstr(reg.component_names, name) != 0
 }
 
 /// Look up an expression parser by leading keyword (e.g. `"grammar"`).
@@ -298,8 +313,8 @@ export fn lookup_expr_parser(reg: Registry, keyword: string) -> int? {
 /// this, `name instance { ... }` at statement level is parsed as a
 /// ComponentBlock — the component declaration's name acts as a
 /// pseudo-keyword in the stmt parser.
-export fn register_component_name(reg: Registry, name: string, handler: fn(Parser) -> Result<StmtId, string>) {
-    avra_map_set_cstr(reg.stmt_parsers, name, handler)
+export fn register_component_name(reg: Registry, name: string) {
+    avra_map_set_cstr(reg.component_names, name, 1)
 }
 
 /// Mark `name` as a `body: TokenStream` component (vez6.9): its

@@ -57,10 +57,26 @@ error, not a convention.
 
 ## Status
 
-The contract above is the TARGET. Not yet true of the tree: 13 features still
-keep a separate `grammar.av`; 7 still carry a `parser.av` (4 fully dead); pass
-hooks are inconsistently split (codegen/typeck get files, resolve/eval hide
-inside `mod.av`); five directories are test-only orphans (`defer_stmt/`,
-`match_expr/`, `desugar/`, `float_lit/`, `error_messages/`); and `lowering/` is
-a directory holding one `mod.av` rather than a file, pending file-modules in the
-resolver.
+The contract above is the TARGET. `parser.av` is GONE from every feature —
+five were dead islands, and the one live file (the `it`-pronoun desugar) moved
+to `closures/lowering/it_pronoun.av`, where it belongs: it is parse-time
+lowering, not parsing.
+
+Still not true of the tree:
+
+- 13 features keep a separate `grammar.av` reached via `gram = composed([...])`
+  instead of declaring `gram = grammar { ... }` inline.
+- Pass hooks are split inconsistently — `codegen.av` (26 features) and
+  `typeck.av` (8) get their own files, while resolve and eval hooks still hide
+  inside `mod.av`.
+- 12 features still carry a per-feature `WHY.md`.
+- `lowering/` is a directory holding one `mod.av` rather than a file, pending
+  file-modules in the resolver (see the design record, section 11 — a bare
+  `lowering.av` would flatten into `features.X.*` and widen the generated
+  parser's import closure past grammar+core).
+
+A note on what is NOT drift: two directories that looked like test-only orphans
+(`desugar/`, `float_lit/`) held REAL tracked tests, and those moved to the
+module that owns the behaviour rather than being deleted. Two others
+(`defer_stmt/`, `match_expr/`) were genuinely empty — renamed away in
+`33293cfee`, leaving only untracked cache sidecars that made them look alive.

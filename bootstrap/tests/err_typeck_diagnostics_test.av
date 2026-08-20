@@ -1,0 +1,53 @@
+// WHY: four negative examples rescued from features/error_messages/examples/
+// (t-y2i7.1). They carried `expect-error:` directives for a "diagnostics test
+// harness" that does not exist — nothing in the tree reads any `examples/`
+// dir, and `dir_module.av` explicitly excludes it from module synthesis — so
+// they had been inert for as long as they have existed.
+//
+// They are NOT deleted with the rest of that directory because a coverage
+// sweep found two of the four diagnostics have ZERO other tests anywhere
+// (`catch` body type mismatch, and `const` requiring a constant initializer),
+// and the other two only incidental mentions. Deleting them would have lost
+// the only recorded reproducers.
+//
+// Converted to the convention the other eight `err_*` specs already use: the
+// bad source lives in `tests/err_<name>/main.av`, and the assertion shells out
+// to a real `bs2 compile` and matches the F-CODE.
+//
+// The assertion is on the CODE, never the prose. F-codes are stable
+// identifiers by spec (Axis 20); wording drifts, and a wording assertion would
+// turn every diagnostic improvement into a red test.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+fn compile_out(dir: string) -> string {
+    avra_shell_exec("./build/bs2 compile tests/${dir}/main.av 2>&1 || true")
+}
+
+spec "typeck negative examples still produce their diagnostics" {
+    then "a `catch` body whose type mismatches the fallible expression is F1000" {
+        compile_out("err_catch_type_mismatch").contains("F1000")
+    }
+    then "a `const` initialised by a fn call is F1000" {
+        // `const` requires a compile-time constant expression; a call is not one.
+        compile_out("err_const_non_constant").contains("F1000")
+    }
+    then "a mutating method on a `let` binding is F3001" {
+        compile_out("err_mutating_method_let").contains("F3001")
+    }
+    then "assigning a string literal to an `int` binding is F1000" {
+        compile_out("err_type_mismatch").contains("F1000")
+    }
+}
+
+spec "the negative examples are genuinely negative" {
+    then "every one of them FAILS to compile — the anti-vacuity half" {
+        // Without this, a fixture that silently started COMPILING would still
+        // satisfy the F-code assertions above if the code appeared anywhere in
+        // the output, and the specs would pass while testing nothing.
+        compile_out("err_catch_type_mismatch").contains("error[")
+            && compile_out("err_const_non_constant").contains("error[")
+            && compile_out("err_mutating_method_let").contains("error[")
+            && compile_out("err_type_mismatch").contains("error[")
+    }
+}
