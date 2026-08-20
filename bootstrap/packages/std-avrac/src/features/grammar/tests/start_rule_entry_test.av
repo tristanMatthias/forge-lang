@@ -1,0 +1,216 @@
+// WHY: t-y2i7 section 1 — "the four parse entries differ only in which START
+// RULE they name". P2c wants to migrate ~150 test references off the family
+// VIEWS (avra_expr_grammar & co) onto ONE whole-language grammar plus a start
+// rule, and then delete the views.
+//
+// That migration rests on an assumption worth measuring first: that running
+// the FULL grammar from `expression` parses the same tree as running the expr
+// VIEW from its own `rules[0]`. It is not obviously true — the views
+// deliberately leave cross-family references EXTERNAL (see rule_kind_v's
+// external-rule block) so that generated files call one another instead of
+// re-emitting duplicate rules. Composing everything RESOLVES those references,
+// which is a real difference in the rule set being executed.
+//
+// The design record has been wrong SIX times about something being redundant,
+// every time caught by checking rather than reasoning. So this measures it
+// before a single caller moves. If these specs pass, the P2c migration is
+// sound and mechanical; if they fail, P2c needs a different shape and this
+// file says which inputs diverge.
+
+use @std.avrac.features.grammar.{avra_expr_grammar, avra_program_grammar, run_grammar_expr, run_grammar_expr_at}
+use @std.avrac.features.grammar.{avra_stmt_flip_grammar, avra_decl_flip_grammar, run_grammar_stmt, run_grammar_stmt_at}
+use @std.avrac.features.grammar.{avra_type_grammar, run_grammar_type, run_grammar_type_at}
+use @std.avrac.core.{render_expr_id, render_stmt_id, render_type_id}
+
+/// The view entry: whole family grammar, start = its own rules[0].
+fn via_view(src: string) -> string {
+    let r = run_grammar_expr(avra_expr_grammar(), src)
+    if r.had_error { return "<err>" }
+    render_expr_id(r.store, r.root)
+}
+
+/// The proposed replacement: ONE whole-language grammar, start NAMED.
+fn via_full(src: string) -> string {
+    let r = run_grammar_expr_at(avra_program_grammar(), "expression", src)
+    if r.had_error { return "<err>" }
+    render_expr_id(r.store, r.root)
+}
+
+fn agree(src: string) -> bool {
+    let a = via_view(src)
+    let b = via_full(src)
+    if a != b {
+        println("start-rule entry mismatch: ${src}")
+        println("  via view: ${a}")
+        println("  via full: ${b}")
+    }
+    a == b
+}
+
+spec "P2c gate: full grammar + named start == the family view entry" {
+    then "arithmetic and precedence" {
+        agree("1 + 2 * 3") && agree("(1 + 2) * 3") && agree("a - b - c")
+    }
+    then "comparison, logic and unary" {
+        agree("a == b && c != d") && agree("!x || y") && agree("0 - n")
+    }
+    then "calls, fields, indexing and chains" {
+        agree("f(1, 2)") && agree("a.b.c") && agree("xs[0]") && agree("a.b(1).c[2]")
+    }
+    then "literals, lists and maps" {
+        agree("[1, 2, 3]") && agree("{a: 1}") && agree("\"s\"") && agree("true")
+    }
+    then "null-safety and pipe operators" {
+        agree("a?.b") && agree("x ?? y") && agree("v |> f")
+    }
+    then "an expression containing STATEMENTS — the SCC case that motivates the check" {
+        // `expression` reaches `statement` (measured in family_reachability_test),
+        // so a block-bearing expression is exactly where a view's external
+        // references and the full grammar's resolved ones could diverge.
+        agree("if a { 1 } else { 2 }") && agree("(x) -> { let y = 1\ny }")
+    }
+    then "a malformed input agrees too — both must FAIL, not one" {
+        // Anti-vacuity: without this, two entries that both returned "<err>"
+        // for everything would satisfy every spec above.
+        agree("1 +") && via_view("1 + 2") != "<err>"
+    }
+}
+
+// ── STATEMENT entry ──────────────────────────────────────────────────────────
+
+fn s_via_view(src: string) -> string {
+    let r = run_grammar_stmt(avra_stmt_flip_grammar(), src)
+    if r.had_error { return "<err>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn s_via_full(src: string) -> string {
+    let r = run_grammar_stmt_at(avra_program_grammar(), "statement", src)
+    if r.had_error { return "<err>" }
+    render_stmt_id(r.store, r.root)
+}
+
+fn s_agree(src: string) -> bool {
+    let a = s_via_view(src)
+    let b = s_via_full(src)
+    if a != b {
+        println("stmt start-rule mismatch: ${src}")
+        println("  via view: ${a}")
+        println("  via full: ${b}")
+    }
+    a == b
+}
+
+spec "P2c gate: statement entry" {
+    then "assignment" {
+        // NOT `let`/`mut` — those are DECLARATIONS in this grammar, so they
+        // error on BOTH entries and would make this spec agree vacuously.
+        // They are covered by the declaration gate below. (Measured: the
+        // anti-vacuity spec caught them here first.)
+        s_agree("x = 3") && s_agree("xs[0] = 4")
+    }
+    then "control flow" {
+        s_agree("if a { b() }") && s_agree("while c { d() }") && s_agree("for i in 0..3 { f(i) }")
+    }
+    then "jumps and defer" {
+        s_agree("return 1") && s_agree("break") && s_agree("continue") && s_agree("defer g()")
+    }
+    then "an expression statement — the SCC direction back into `expression`" {
+        s_agree("f(1) |> g") && s_agree("a.b.c")
+    }
+    then "malformed agrees, and a well-formed one is NOT an error — anti-vacuity" {
+        s_agree("while {") && s_via_view("while c { d() }") != "<err>"
+    }
+}
+
+// ── TYPE entry ───────────────────────────────────────────────────────────────
+//
+// The interesting one. `avra_type_grammar` has NO rules of its own; it exists
+// to HOIST whichever fragment defines `type_expr` to the FRONT, because
+// compose_fragments takes the first fragment's start rule as the grammar's
+// start symbol and the type entry execs rules[0]. Spine-first once led with the
+// @when(in_quote_body)-gated `splice_type` and gated the entire view —
+// type_equivalence_test went 0/8, with even `int` failing at the entry.
+//
+// Naming the start is exactly what makes that hoist unnecessary. If these pass,
+// the hoist is replaceable by `run_grammar_type_at(full, "type_expr", …)` and
+// avra_type_grammar stops being a special case among the views.
+
+fn t_via_view(src: string) -> string {
+    let r = run_grammar_type(avra_type_grammar(), src)
+    if r.had_error { return "<err>" }
+    render_type_id(r.store, r.root)
+}
+
+fn t_via_full(src: string) -> string {
+    let r = run_grammar_type_at(avra_program_grammar(), "type_expr", src)
+    if r.had_error { return "<err>" }
+    render_type_id(r.store, r.root)
+}
+
+fn t_agree(src: string) -> bool {
+    let a = t_via_view(src)
+    let b = t_via_full(src)
+    if a != b {
+        println("type start-rule mismatch: ${src}")
+        println("  via view: ${a}")
+        println("  via full: ${b}")
+    }
+    a == b
+}
+
+spec "P2c gate: type entry — the start-symbol HOIST case" {
+    then "primitives" {
+        t_agree("int") && t_agree("string") && t_agree("bool") && t_agree("float")
+    }
+    then "generics and nesting" {
+        t_agree("List<int>") && t_agree("Map<string, int>") && t_agree("List<List<int>>")
+    }
+    then "nullable and function types" {
+        t_agree("int?") && t_agree("List<int>?")
+    }
+    then "a named/user type" {
+        t_agree("Foo") && t_agree("Result<int, string>")
+    }
+    then "malformed agrees, and `int` is NOT an error — the exact 0/8 signature" {
+        // If the hoist were lost, `int` itself fails at the entry. Pinning the
+        // positive case here is what makes this spec able to catch that.
+        t_agree("List<") && t_via_view("int") != "<err>" && t_via_full("int") != "<err>"
+    }
+}
+
+// ── DECLARATION entry ────────────────────────────────────────────────────────
+//
+// `let` / `mut` are DECLARATIONS, not statements — measured, not assumed: both
+// error on the statement entry, which is what the statement anti-vacuity spec
+// caught when they were first (wrongly) listed there.
+//
+// There is no "decl view entry" to compare against, and that is itself a P2c
+// finding: `avra_decl_flip_grammar` is referenced only as a RULE SET (the
+// peek-cond lockstep and ladder-rules lint specs), never as a parse entry — its
+// rules[0] is the first decl fragment, not `declaration`, so parsing through it
+// errors on every declaration. So for this family the named start is not
+// replacing an entry; it is providing one that did not exist.
+
+fn d_via_full(src: string) -> string {
+    let r = run_grammar_stmt_at(avra_program_grammar(), "declaration", src)
+    if r.had_error { return "<err>" }
+    render_stmt_id(r.store, r.root)
+}
+
+spec "P2c gate: declaration entry — a named start provides what no view did" {
+    then "bindings" {
+        d_via_full("let x = 1") == "(let x:<unknown> 1)" && d_via_full("mut y = 2") != "<err>"
+    }
+    then "type and function declarations" {
+        d_via_full("fn f(a: int) -> int { return a }") == "(fn f (a:int) -> int (return a))"
+            && d_via_full("type T = { a: int }") != "<err>"
+            && d_via_full("enum E { A, B }") != "<err>"
+    }
+    then "imports and modules" {
+        d_via_full("use foo.{bar}") == "(use foo (bar))" && d_via_full("mod m { }") != "<err>"
+    }
+    then "and a malformed declaration still FAILS — anti-vacuity" {
+        d_via_full("let = ") == "<err>" && d_via_full("fn (") == "<err>"
+    }
+}
