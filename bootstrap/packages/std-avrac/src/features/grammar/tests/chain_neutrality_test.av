@@ -23,11 +23,11 @@
 // pins the emitted shape, this pins what the shape has to achieve, run through the
 // interpreter over the real production grammar.
 
-use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.core.{render_expr_id}
 
 fn r(src: string) -> string {
-    let out = run_grammar_expr(avra_expr_grammar(), src)
+    let out = run_grammar_expr_at(avra_program_grammar(), "expression", src)
     render_expr_id(out.store, out.root)
 }
 

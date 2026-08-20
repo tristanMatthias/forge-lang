@@ -32,11 +32,11 @@
 // render tests below are the complement — they pin that widening the gate did not change
 // the tree that comes out.
 
-use @std.avrac.features.grammar.{avra_expr_grammar, avra_expr_dispatch_grammar, run_grammar_expr, new_pstate, lookahead_ok, emit_rule_fn, Grammar}
+use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, new_pstate, lookahead_ok, emit_rule_fn, Grammar, avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.core.{render_expr_id, tk_is_field_name, Tk}
 
 fn r(src: string) -> string {
-    let out = run_grammar_expr(avra_expr_grammar(), src)
+    let out = run_grammar_expr_at(avra_program_grammar(), "expression", src)
     render_expr_id(out.store, out.root)
 }
 
