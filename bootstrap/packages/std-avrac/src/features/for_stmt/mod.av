@@ -13,51 +13,9 @@
 // surface flat at `features.for_stmt.{...}`. Sibling exports (emit_for,
 // emit_for_in) are in scope without explicit self-imports.
 use core.{vtype_list_elem}
-use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
-use features.eval.{Runtime, StepResult, execute_for_range, execute_for_in, error_result}
 use features.for_stmt.lowering.{for_builds}
 use features.grammar.{parse_grammar}
-
-/// `for v in lo ( ".." hi )? body` — ONE rule, TWO statements: a present
-/// `..` picks the integer-range `Stmt.For`, an absent one the collection
-/// `Stmt.ForIn` (the retired mk_for_loop's exact split, keyed on the same
-/// Nil probe via capval_to_expr_opt). Home in the feature file (t-47hc.8
-/// dissolution) — the engine's checked-in `_gb_` adapter imports it back.
-/// Resolver hook for `for i in start..end { body }`. Resolves
-/// both bounds in the outer scope, opens a new scope for the
-/// loop variable, then resolves the body.
-fn for_resolve(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .For(variable, start, end, body) -> {
-            let after_start = resolve_expr(r, r.nodes.exprs.get(start))
-            let after_end = resolve_expr(after_start, r.nodes.exprs.get(end))
-            let entered = enter_resolve_scope(after_end)
-            let declared = declare_name(entered, variable)
-            let defined = define_name(declared, variable)
-            let after_body = resolve_stmt(defined, r.nodes.stmts.get(body))
-            exit_resolve_scope(after_body)
-        }
-        _ -> r
-    }
-}
-
-/// Resolver hook for `for x in collection { body }`. Resolves
-/// the collection in the outer scope, opens a fresh scope for
-/// the element binding, then resolves the body.
-fn for_in_resolve(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .ForIn(variable, collection, body) -> {
-            let after_coll = resolve_expr(r, r.nodes.exprs.get(collection))
-            let entered = enter_resolve_scope(after_coll)
-            let declared = declare_name(entered, variable)
-            let defined = define_name(declared, variable)
-            let after_body = resolve_stmt(defined, r.nodes.stmts.get(body))
-            exit_resolve_scope(after_body)
-        }
-        _ -> r
-    }
-}
 
 /// Type-check hook for the range form. Both bounds must be Int;
 /// the loop variable enters scope as Int.
@@ -92,30 +50,11 @@ fn for_in_check(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
-/// Tree-walk eval hook for the range form. Delegates the iteration
-/// itself to `execute_for_range` so the loop mechanics + scope
-/// discipline live alongside `execute_while` rather than spreading
-/// across feature modules. Without this hook eval would fall back to
-/// `noop_eval_stmt`, breaking any `@comptime` macro that iterates
-/// with `for i in 0..n`.
-fn for_eval(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .For(variable, start, end, body) -> execute_for_range(rt, variable, rt.nodes.exprs.get(start), rt.nodes.exprs.get(end), rt.nodes.stmts.get(body))
-        _ -> error_result(rt, "expected For")
-    }
-}
-
-/// Tree-walk eval hook for `for x in collection { body }`.
-/// Companion to `for_eval` for the iterator form. Required for
-/// `@comptime` macros that iterate over lists — derive_walker
-/// uses this to walk variant lists, field lists, etc.
-fn for_in_eval(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .ForIn(variable, collection, body) -> execute_for_in(rt, variable, rt.nodes.exprs.get(collection), rt.nodes.stmts.get(body))
-        _ -> error_result(rt, "expected ForIn")
-    }
-}
-
+/// `for v in lo ( ".." hi )? body` — ONE rule, TWO statements: a present
+/// `..` picks the integer-range `Stmt.For`, an absent one the collection
+/// `Stmt.ForIn` (the retired mk_for_loop's exact split, keyed on the same
+/// Nil probe via capval_to_expr_opt). Home in the feature file (t-47hc.8
+/// dissolution) — the engine's checked-in `_gb_` adapter imports it back.
 export fn for_lang() -> LanguageFeature {
     LanguageFeature for_def {
         name = "for",

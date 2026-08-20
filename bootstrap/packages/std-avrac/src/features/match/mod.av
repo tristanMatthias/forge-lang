@@ -1,12 +1,12 @@
-// match / when — pattern matching (spec Axis 4). ONE file carries the
-// feature whole: the pattern + arm grammar fragments (the single source
-// grammar composition consumes), the definitions, and every pass hook —
-// resolver, typeck (exhaustiveness), codegen, and the @comptime evaluator.
+// match / when — pattern matching (spec Axis 4). mod.av is the CONTAINER
+// (features/WHY.md): the pattern + arm grammar fragments (the single source
+// grammar composition consumes), the definitions naming which fn implements
+// each pass, and the typeck (exhaustiveness) + codegen passes. The RESOLVER
+// and @comptime EVALUATOR hooks live in the sibling resolve.av / eval.av —
+// one file per pass, all flattened into one module by dir-as-module.
 
 use codegen.{err_emit, StmtResult, err_sr, Ctx, EmitValue, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type, emit_optional_is_none, emit_optional_unwrap, emit_if_optional_canon, body_ids_mix_null, arm_store_value_mixed, arm_merge_ty_mixed, ok_sr}
-use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy, value_is_enumish, step_runtime, step_value, step_had_error, step_is_return, step_error_message}
 use core.{Pattern, MatchArm, ParamEntry, Expr, Stmt, WhenArm, PatId, Variant, ValueType, FieldEntry, TypeArg, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types, type_short_name, vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding, VarBinding, variant_lookup, ExprId}
-use resolve.{resolve_expr, Resolver, enter_resolve_scope, exit_resolve_scope, declare_params, declare_name, define_name}
 use typeck.{check_expr, tc_er, EnumTypeReg, ExprResult, TC, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_exit, tc_gate_unthreaded_lambda, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use features.grammar.{parse_grammar, grammar_checked, Grammar}
 use features.match.lowering.{match_builds}
@@ -191,7 +191,7 @@ export fn avra_match_table_grammar() -> Grammar {
     ))
 }
 
-// ── definitions + eval ──
+// ── definitions ──
 
 /// The `match` feature definition — statement + expression positions.
 export fn match_lang() -> LanguageFeature {
@@ -277,282 +277,12 @@ if/else chain. The default arm is spelled `_` (never `else`).
     when_def
 }
 
-/// Resolver hook for `Match`. Resolves the subject in the
-/// current scope, then walks every arm via `resolve_match_arms`.
-fn match_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .Match(subject, arms) -> {
-            let after_subject = resolve_expr(r, r.nodes.exprs.get(subject))
-            resolve_match_arms(after_subject, arms)
-        }
-        _ -> r
-    }
-}
-
-/// Resolver hook for `MatchExpr`. Mirror of
-/// `match_resolve_stmt` for expression-position matches.
-fn match_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .MatchExpr(subject, arms) -> {
-            let after_subject = resolve_expr(r, r.nodes.exprs.get(subject))
-            resolve_match_arms(after_subject, arms)
-        }
-        _ -> r
-    }
-}
-
-/// Tree-walk evaluator hook for `Match`. ty5v: Implements pattern
-/// matching for the @comptime tree-walk evaluator. Evaluates the
-/// subject, walks each arm trying patterns, runs the first matching
-/// arm's body in an extended scope.
-fn match_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .Match(subject, arms) -> {
-            let subject_result = eval_expr(rt, rt.nodes.exprs.get(subject))
-            if step_had_error(subject_result) { return subject_result }
-            eval_match_arms(step_runtime(subject_result), step_value(subject_result), arms)
-        }
-        _ -> error_result(rt, "expected Match")
-    }
-}
-
-/// Tree-walk evaluator hook for `MatchExpr`. Same logic as
-/// `match_eval_stmt` — both produce a value via the body of the
-/// first matching arm.
-fn match_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .MatchExpr(subject, arms) -> {
-            let subject_result = eval_expr(rt, rt.nodes.exprs.get(subject))
-            if step_had_error(subject_result) { return subject_result }
-            eval_match_arms(step_runtime(subject_result), step_value(subject_result), arms)
-        }
-        _ -> error_result(rt, "expected MatchExpr")
-    }
-}
-
-/// Result of attempting to match a pattern against a value:
-/// `matched` flags success, `runtime` carries any pattern-bound
-/// values that should be visible inside the arm body.
-type MatchAttempt = {
-    matched: int,
-    runtime: Runtime,
-}
-
-/// Walk the arm list, attempting each pattern in turn. On the
-/// first match, evaluates the arm body in the extended scope.
-/// Errors when no arm matches — match must be exhaustive (codegen
-/// emits a trap; eval surfaces a real error).
-fn eval_match_arms(rt: Runtime, subject: Value, arms: List<MatchArm>) -> StepResult {
-    // Indexed walk: try each arm in source order (first match wins).
-    // The prior cons-list recursion threaded the "skip to next arm"
-    // through a tail-call; we re-encode that via `mut current_rt`
-    // + an explicit early-return on the first matching arm.
-    mut current_rt = rt
-    mut i = 0
-    while i < arms.length {
-        let arm = arms[i]
-        let scoped = enter_scope(current_rt)
-        let attempt = try_match_pattern(scoped, arm.pattern, subject)
-        if attempt.matched {
-            if arm.guard_id != null {
-                let guard_result = eval_expr(attempt.runtime, attempt.runtime.nodes.exprs.get(arm.guard_id!))
-                if step_had_error(guard_result) {
-                    let _exited = exit_scope(step_runtime(guard_result))
-                    return guard_result
-                }
-                if !is_truthy(step_value(guard_result)) {
-                    current_rt = exit_scope(step_runtime(guard_result))
-                    i = i + 1
-                    continue
-                }
-                let body_result = eval_match_body(step_runtime(guard_result), arm.body_id)
-                return finalize_arm_result(body_result)
-            }
-            let body_result = eval_match_body(attempt.runtime, arm.body_id)
-            return finalize_arm_result(body_result)
-        }
-        current_rt = exit_scope(attempt.runtime)
-        i = i + 1
-    }
-    error_result(current_rt, "no match arm matched")
-}
-
-/// Pop the arm's scope before returning. Preserves error / return
-/// flags so a `return` inside the arm body keeps propagating up
-/// through the enclosing fn body.
-fn finalize_arm_result(body_result: StepResult) -> StepResult {
-    let exited = exit_scope(step_runtime(body_result))
-    if step_had_error(body_result) {
-        return StepResult {
-            runtime: exited,
-            value: value_null(),
-            had_error: true,
-            is_return: false,
-            error_message: step_error_message(body_result),
-        }
-    }
-    if step_is_return(body_result) {
-        return StepResult {
-            runtime: exited,
-            value: step_value(body_result),
-            had_error: false,
-            is_return: true,
-            error_message: "",
-        }
-    }
-    ok_result(exited, step_value(body_result))
-}
-
-/// Evaluate an arm body. The body is an expression id; when it is an
-/// `Expr.Block` (multi-stmt body, e.g. `{ return Stmt.Foo() }`),
-/// route through `execute_stmt` so `return` statements flip
-/// `is_return` and propagate up.
-fn eval_match_body(rt: Runtime, body_id: ExprId) -> StepResult {
-    let body = rt.nodes.exprs.get(body_id)
-    match body {
-        .Block(stmts) -> execute_stmt(rt, Stmt.Block(stmts))
-        _ -> eval_expr(rt, body)
-    }
-}
-
-/// Try to match `pattern` against `value`. On success, returns the
-/// runtime extended with any pattern-introduced bindings. On
-/// failure, returns the input runtime unchanged with `matched=0`.
-fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttempt {
-    match pattern {
-        .Wildcard -> MatchAttempt { matched: true, runtime: rt }
-        .Rest -> MatchAttempt { matched: true, runtime: rt }
-        .LitString(s) -> {
-            if value.kind == "string" && value.text == s {
-                MatchAttempt { matched: true, runtime: rt }
-            } else {
-                MatchAttempt { matched: false, runtime: rt }
-            }
-        }
-        .LitInt(n) -> {
-            if value.kind == "number" {
-                let parsed = parse_int_text(value.number_text)
-                if parsed == n {
-                    return MatchAttempt { matched: true, runtime: rt }
-                }
-            }
-            MatchAttempt { matched: false, runtime: rt }
-        }
-        .LitBool(b) -> {
-            if value.kind == "bool" && value.bool_value == b {
-                MatchAttempt { matched: true, runtime: rt }
-            } else {
-                MatchAttempt { matched: false, runtime: rt }
-            }
-        }
-        .LitFloat(f) -> {
-            if value.kind == "number" && value.number_text == f {
-                MatchAttempt { matched: true, runtime: rt }
-            } else {
-                MatchAttempt { matched: false, runtime: rt }
-            }
-        }
-        .Variant(name, bindings) -> {
-            if !value_is_enumish(value) {
-                return MatchAttempt { matched: false, runtime: rt }
-            }
-            if value.enum_variant != name {
-                return MatchAttempt { matched: false, runtime: rt }
-            }
-            let bound_rt = bind_param_list_payload(rt, bindings, value.enum_payload, 0)
-            MatchAttempt { matched: true, runtime: bound_rt }
-        }
-        .NestedVariant(name, sub_patterns) -> {
-            if !value_is_enumish(value) {
-                return MatchAttempt { matched: false, runtime: rt }
-            }
-            if value.enum_variant != name {
-                return MatchAttempt { matched: false, runtime: rt }
-            }
-            try_match_pattern_list(rt, sub_patterns, value.enum_payload, 0)
-        }
-        .Or(left, right) -> {
-            let left_attempt = try_match_pattern(rt, rt.nodes.pats.get(left), value)
-            if left_attempt.matched { return left_attempt }
-            try_match_pattern(rt, rt.nodes.pats.get(right), value)
-        }
-        .TypePattern(_type_name, binding) -> {
-            // Eval values are dynamically typed — we don't reify
-            // union member tags. Bind the subject under the named
-            // binding and let the body run; the arm order in source
-            // determines dispatch.
-            let bound = define_binding(rt, binding, false, value)
-            MatchAttempt { matched: true, runtime: bound }
-        }
-    }
-}
-
-/// Bind every name in a `List<ParamEntry>` to the corresponding payload
-/// slot. Used by `.Variant(name, bindings)` patterns. `_` names
-/// are skipped — they're explicit "ignore this slot" markers.
-fn bind_param_list_payload(rt: Runtime, bindings: List<ParamEntry>, payload: List<Value>, idx: int) -> Runtime {
-    mut cur = rt
-    for (i, binding) in bindings.enumerate() {
-        let slot = idx + i
-        if slot >= payload.length { return cur }
-        let name = binding.name
-        if name != "_" {
-            cur = define_binding(cur, name, false, payload[slot])
-        }
-    }
-    cur
-}
-
-/// Pairwise-match a nested pattern's id list (F2) against a payload list,
-/// resolving each row through the runtime's store. Used by
-/// nested constructor patterns. If any sub-pattern fails, the
-/// whole nested match fails.
-fn try_match_pattern_list(rt: Runtime, patterns: List<PatId>, payload: List<Value>, idx: int) -> MatchAttempt {
-    mut current_rt = rt
-    for (i, pid) in patterns.enumerate() {
-        let pat = rt.nodes.pats.get(pid)
-        if idx + i >= payload.length {
-            return MatchAttempt { matched: false, runtime: current_rt }
-        }
-        let attempt = try_match_pattern(current_rt, pat, payload[idx + i])
-        if !attempt.matched { return attempt }
-        current_rt = attempt.runtime
-    }
-    MatchAttempt { matched: true, runtime: current_rt }
-}
-
-extern fn avra_selfhost_string_to_int(s: string) -> int
-
-/// Parse decimal-int text via the runtime helper that backs the
-/// numeric-literal evaluator. Mirrors features.eval's `parse_num`
-/// but inlined here to avoid exporting another helper just for
-/// this one call site.
-fn parse_int_text(s: string) -> int { avra_selfhost_string_to_int(s) }
-
-/// Resolver hook for `When`. Walks every arm's condition + body
-/// through `resolve_when_arms`.
-fn when_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .When(arms) -> resolve_when_arms(r, arms)
-        _ -> r
-    }
-}
-
 /// Type-check hook for `When`. Forwards to `check_when_expr`
 /// which infers a unifying result type across the arms.
 fn when_check_expr(tc: TC, expr: Expr) -> ExprResult {
     match expr {
         .When(arms) -> check_when_expr(tc, arms)
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-/// Tree-walk evaluator hook for `When`. Currently unsupported
-/// — subjectless matching is codegen-only.
-fn when_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .When(_) -> error_result(rt, "subjectless match is not supported by the tree-walk evaluator")
-        _ -> error_result(rt, "expected When")
     }
 }
 
@@ -608,72 +338,6 @@ fn match_check_expr(tc: TC, expr: Expr) -> ExprResult {
         }
         _ -> tc_er(tc, .Unknown)
     }
-}
-
-// ── resolver ──
-
-/// Resolve every arm of a `match` expression. For each arm:
-/// open a fresh scope, declare the pattern's captured names,
-/// resolve the optional guard, then resolve the arm body —
-/// finally pop the scope. Stops on first resolver error.
-export fn resolve_match_arms(r: Resolver, arms: List<MatchArm>) -> Resolver {
-    mut res = r
-    mut i = 0
-    while i < arms.length {
-        if res.had_error { return res }
-        let arm = arms[i]
-        let entered = enter_resolve_scope(res)
-        let with_bindings = declare_pattern_bindings(entered, arm.pattern)
-        let after_guard = if arm.guard_id != null { resolve_expr(with_bindings, res.nodes.exprs.get(arm.guard_id!)) } else { with_bindings }
-        let after_body = resolve_expr(after_guard, res.nodes.exprs.get(arm.body_id))
-        res = exit_resolve_scope(after_body)
-        i = i + 1
-    }
-    res
-}
-
-/// Walk a pattern declaring every captured name in the
-/// resolver. Variant patterns descend into payload bindings;
-/// `is`-patterns (TypePattern) declare the single binding;
-/// literals and wildcards bind nothing.
-fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
-    match pattern {
-        .Wildcard -> r
-        .Rest -> r
-        .Variant(_, bindings) -> declare_params(r, bindings)
-        .NestedVariant(_, sub_pats) -> declare_pattern_list(r, sub_pats)
-        .TypePattern(_, binding) -> define_name(declare_name(r, binding), binding)
-        _ -> r  // Literal patterns don't bind variables
-    }
-}
-
-/// Walk a nested pattern's id list (F2) declaring captures from every
-/// store-resolved sub-pattern.
-fn declare_pattern_list(r: Resolver, pats: List<PatId>) -> Resolver {
-    mut acc = r
-    mut i = 0
-    while i < pats.length {
-        acc = declare_pattern_bindings(acc, r.nodes.pats.get(pats[i]))
-        i = i + 1
-    }
-    acc
-}
-
-/// Resolve every arm of a `when` (subjectless `match`)
-/// expression. No pattern bindings — each arm has just an
-/// optional condition + body, both resolved in the outer
-/// scope.
-export fn resolve_when_arms(r: Resolver, arms: List<WhenArm>) -> Resolver {
-    mut res = r
-    mut i = 0
-    while i < arms.length {
-        if res.had_error { return res }
-        let arm = arms[i]
-        let after_cond = if arm.cond_id == null { res } else { resolve_expr(res, res.nodes.exprs.get(arm.cond_id!)) }
-        res = resolve_expr(after_cond, res.nodes.exprs.get(arm.body_id))
-        i = i + 1
-    }
-    res
 }
 
 // ── typeck ──

@@ -1,0 +1,17 @@
+// The `spawn` feature's RESOLVER hook. One file per pass
+// (features/WHY.md): a feature's mod.av is the CONTAINER — identity, gram,
+// and which fn implements each pass — and the pass logic lives in the file
+// named for that pass. Module-PRIVATE and staying so: dir-as-module
+// flattens every sibling .av into one flat namespace, so mod.av reaches it
+// exactly as before the move.
+use core.{Expr}
+use resolve.{Resolver, resolve_expr}
+
+/// Resolver hook for `Spawn`. The body resolves in the enclosing
+/// scope so captured names work as expected.
+fn spawn_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Spawn(body) -> resolve_expr(r, r.nodes.exprs.get(body))
+        _ -> r
+    }
+}

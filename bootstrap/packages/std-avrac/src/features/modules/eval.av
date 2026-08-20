@@ -1,0 +1,27 @@
+// The module system's EVALUATOR hooks — the @comptime tree-walk path. One
+// file per pass (features/WHY.md): a feature's mod.av is the CONTAINER —
+// identity, gram, and which fn implements each pass — and the pass logic
+// lives in the file named for that pass. Module-PRIVATE and staying so:
+// dir-as-module flattens every sibling .av into one flat namespace, so
+// mod.av reaches them exactly as before the move.
+use core.{Stmt}
+use features.eval.{Runtime, StepResult, ok_result, value_null}
+
+/// Tree-walk evaluator hook for `mod`. The evaluator doesn't yet
+/// model module scoping — return null and let body evaluation
+/// fall back to the surrounding scope.
+fn mod_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Module(_, _) -> ok_result(rt, value_null())
+        _ -> ok_result(rt, value_null())
+    }
+}
+
+/// Tree-walk evaluator hook for `use`. `use` is a compile-time
+/// directive only — the evaluator returns null without effect.
+fn use_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Use(_, _) -> ok_result(rt, value_null())
+        _ -> ok_result(rt, value_null())
+    }
+}

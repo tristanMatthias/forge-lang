@@ -11,7 +11,6 @@
 
 use core.{ExprId}
 use features.isolated_expr.lowering.{isolated_builds}
-use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
 use features.grammar.{parse_grammar}
 
@@ -42,16 +41,6 @@ the parent, not a process-wide death.
         gram_family = "expr",
     }
     isolated_def
-}
-
-/// Resolver hook for `Isolated`. Body resolves in the enclosing
-/// scope — fork() preserves captured names via COW so identifiers
-/// from the outer scope work inside the body.
-fn isolated_resolve(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .Isolated(body) -> resolve_expr(r, r.nodes.exprs.get(body))
-        _ -> r
-    }
 }
 
 /// Type-check hook for `Isolated`. Walks the body for its errors

@@ -6,7 +6,6 @@
 
 use core.{ValueType, vtype_display}
 use features.channels.lowering.{channels_builds}
-use resolve.{resolve_expr}
 use features.grammar.{parse_grammar}
 
 /// `channel<T>(cap)` — the definition carries the feature whole
@@ -46,15 +45,4 @@ closed-and-drained (spec Axis 18).
 /// is an ICE-grade backstop; typeck reports first in practice).
 export fn channel_methods_help(elem: ValueType) -> string {
     ".send(value), .recv() -> ${vtype_display(elem)}?, .try_recv() -> ${vtype_display(elem)}?, .close()"
-}
-
-/// Resolver hook: the capacity expression resolves in the enclosing
-/// scope (it can reference locals, e.g. `channel<int>(jobs)`).
-fn channel_resolve(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .ChannelNew(_, capacity) -> {
-            if capacity == null { r } else { resolve_expr(r, r.nodes.exprs.get(capacity!)) }
-        }
-        _ -> r
-    }
 }

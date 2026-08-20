@@ -4,12 +4,10 @@
 // rows live in lowering/ (t-kd4y.3.2.3).
 use codegen.{StmtResult}
 use codegen.{ok_sr, err_sr}
-use features.eval.{error_result, ok_result, eval_expr, define_binding, value_null}
 use core.{vtype_display}
 use diagnostics.{DiagCode}
 use features.{composed}
 use features.let_stmt.lowering.{let_builds}
-use resolve.{define_param_names, resolve_expr}
 use features.tuples.{emit_let_destructure}
 use typeck.{check_expr, tc_report}
 
@@ -89,19 +87,6 @@ export fn let_destructure_lang() -> LanguageFeature {
     letdes_def
 }
 
-/// Resolver hook for `let (a, b, c) = ...`. Resolves the
-/// initializer first, then defines each tuple-position name in
-/// the post-init scope.
-fn let_destructure_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .LetDestructure(names, initializer) -> {
-            let after_init = resolve_expr(r, r.nodes.exprs.get(initializer))
-            define_param_names(after_init, names)
-        }
-        _ -> r
-    }
-}
-
 /// Type-check hook for `let (a, b, c) = ...`. Checks the
 /// initializer then binds each destructured name with its tuple-
 /// position type via `bind_destructure`.
@@ -139,32 +124,6 @@ fn let_destructure_check_stmt(tc: TC, stmt: Stmt) -> TC {
             bind_destructure(reported, names, r.ty)
         }
         _ -> tc
-    }
-}
-
-/// Tree-walk evaluator hook for `let (a, b) = expr`. Evaluates the
-/// initializer to a tuple/list Value and binds each name to the
-/// matching positional element (missing positions bind null). Tuples
-/// and the index/element pairs from `enumerate()`/`zip()` are both
-/// represented as list-kind Values, so this also powers
-/// `for (i, x) in xs.enumerate()` inside @comptime macros.
-fn let_destructure_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .LetDestructure(names, initializer) -> {
-            let init = eval_expr(rt, rt.nodes.exprs.get(initializer))
-            if init.had_error { return init }
-            if init.value.kind != "list" {
-                return error_result(init.runtime, "cannot destructure non-tuple value (kind=${init.value.kind})")
-            }
-            let payload = init.value.list_payload
-            mut cur = init.runtime
-            for (i, entry) in names.enumerate() {
-                let v = if i < payload.length { payload[i] } else { value_null() }
-                cur = define_binding(cur, entry.name, false, v)
-            }
-            ok_result(cur, value_null())
-        }
-        _ -> error_result(rt, "expected LetDestructure")
     }
 }
 

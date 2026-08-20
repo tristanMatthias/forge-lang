@@ -1,0 +1,49 @@
+// The `if` family's EVALUATOR hooks — the @comptime tree-walk path.
+// One file per pass (features/WHY.md); module-private, reached from mod.av
+// through the dir-as-module flat namespace.
+use core.{Expr, Stmt}
+use features.eval.{Runtime, StepResult, eval_expr, execute_stmt, error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
+
+/// Tree-walk evaluator hook for `IfExpr`. Evaluates the condition
+/// and returns the value of whichever branch the truthiness picks.
+/// Branches are Exprs (not Stmts), so the recursion stays in
+/// `eval_expr` — important for `@comptime` macros that use
+/// `if cond { a } else { b }` to choose between AST fragments.
+fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .IfExpr(condition, then_branch, else_branch) -> {
+            let cond_result = eval_expr(rt, rt.nodes.exprs.get(condition))
+            if step_had_error(cond_result) {
+                return cond_result
+            }
+            if is_truthy(step_value(cond_result)) {
+                eval_expr(step_runtime(cond_result), rt.nodes.exprs.get(then_branch))
+            } else {
+                eval_expr(step_runtime(cond_result), rt.nodes.exprs.get(else_branch))
+            }
+        }
+        _ -> error_result(rt, "expected IfExpr")
+    }
+}
+
+/// Tree-walk evaluator hook for `If` statements. Evaluates the
+/// condition, then dispatches to the matching branch (or returns
+/// null when no else-branch exists).
+fn if_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .If(condition, then_branch, else_branch) -> {
+            let cond_result = eval_expr(rt, rt.nodes.exprs.get(condition))
+            if step_had_error(cond_result) {
+                return cond_result
+            }
+            if is_truthy(step_value(cond_result)) {
+                return execute_stmt(step_runtime(cond_result), rt.nodes.stmts.get(then_branch))
+            }
+            if else_branch != null {
+                return execute_stmt(step_runtime(cond_result), rt.nodes.stmts.get(else_branch!))
+            }
+            ok_result(step_runtime(cond_result), value_null())
+        }
+        _ -> error_result(rt, "expected If")
+    }
+}

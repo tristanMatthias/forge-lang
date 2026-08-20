@@ -5,7 +5,6 @@
 // surface flat at `features.spawn_expr.{...}`.
 use core.{ExprId}
 use features.spawn_expr.lowering.{spawn_builds}
-use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
 use features.grammar.{parse_grammar}
 
@@ -46,15 +45,6 @@ explicitly (spec Axis 18).
         gram_family = "expr",
     }
     spawn_def
-}
-
-/// Resolver hook for `Spawn`. The body resolves in the enclosing
-/// scope so captured names work as expected.
-fn spawn_resolve(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .Spawn(body) -> resolve_expr(r, r.nodes.exprs.get(body))
-        _ -> r
-    }
 }
 
 /// Type-check hook for `Spawn`. Walks the body for its errors

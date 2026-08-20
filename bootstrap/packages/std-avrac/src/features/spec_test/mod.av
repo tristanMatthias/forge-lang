@@ -1,11 +1,9 @@
 // dir-as-module (g2eo.1): parser.av + codegen.av + reporter.av auto-load
 // as siblings, surface flat at `features.spec_test.{...}`.
-use features.eval.{error_result, ok_result, value_null}
 use features.{composed}
 use features.spec_test.grammar.{avra_spec_grammar}
 use features.spec_test.lowering.{spec_builds}
 use core.{MatchArm, WhenArm, FieldInit}
-use resolve.{resolve_expr, resolve_stmt_ids}
 use typeck.{check_expr, check_stmt, tc_report_at}
 use diagnostics.{DiagCode}
 
@@ -259,57 +257,5 @@ fn then_check_stmt(tc: TC, stmt: Stmt) -> TC {
             check_expr(after, after.nodes.exprs.get(cond)).tc
         }
         _ -> tc
-    }
-}
-
-/// Resolver hook for `SpecBlock`. Walks the body's statements.
-fn spec_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .SpecBlock(_, body) -> resolve_stmt_ids(r, body)
-        _ -> r
-    }
-}
-
-/// Tree-walk evaluator hook for `SpecBlock`. The eval path
-/// doesn't run tests — return null and skip.
-fn spec_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .SpecBlock(_, _) -> ok_result(rt, value_null())
-        _ -> error_result(rt, "expected SpecBlock")
-    }
-}
-
-/// Resolver hook for `GivenBlock`. Walks the body's statements.
-fn given_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .GivenBlock(_, body) -> resolve_stmt_ids(r, body)
-        _ -> r
-    }
-}
-
-/// Tree-walk evaluator hook for `GivenBlock`. Mirror of
-/// `spec_eval_stmt`.
-fn given_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .GivenBlock(_, _) -> ok_result(rt, value_null())
-        _ -> error_result(rt, "expected GivenBlock")
-    }
-}
-
-/// Resolver hook for `ThenBlock`. Walks the condition expression
-/// only — there's no body, just an expression.
-fn then_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .ThenBlock(_, cond) -> resolve_expr(r, r.nodes.exprs.get(cond))
-        _ -> r
-    }
-}
-
-/// Tree-walk evaluator hook for `ThenBlock`. Mirror of
-/// `spec_eval_stmt`.
-fn then_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .ThenBlock(_, _) -> ok_result(rt, value_null())
-        _ -> error_result(rt, "expected ThenBlock")
     }
 }

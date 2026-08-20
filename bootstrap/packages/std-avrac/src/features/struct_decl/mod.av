@@ -4,7 +4,6 @@ use codegen.{err_emit}
 use core.{vtype_struct_name, ExprId}
 use features.{composed}
 use features.struct_decl.lowering.{type_decl_builds, struct_lit_builds, enum_ctor_builds, field_assign_builds, field_access_builds, named_type_builds}
-use resolve.{resolve_expr, resolve_expr_list_ids, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
 use typeck.{tc_enum_find_by_variant}
 use typeck.{check_expr, check_expr_list, tc_er, tc_report, tc_struct_lit_vtype}
@@ -204,16 +203,6 @@ fn struct_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<E
     }
 }
 
-/// Resolver hook for `StructLit`. Walks every field's value
-/// expression — the field names themselves don't go through the
-/// resolver.
-fn struct_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .StructLit(_, inits) -> resolve_field_init_list(r, inits)
-        _ -> r
-    }
-}
-
 /// Type-check hook for `StructLit`. Type-checks every field
 /// initializer and declares the result as `Struct(name)`.
 fn struct_lit_check_expr(tc: TC, expr: Expr) -> ExprResult {
@@ -252,28 +241,6 @@ fn field_access_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result
     }
 }
 
-/// Resolver hook for `FieldAccess`. Skips name resolution when
-/// the receiver is an upper-case identifier (to leave room for
-/// `Type.STATIC` / `EnumName.Variant` shorthand). Otherwise
-/// resolves the receiver normally.
-fn field_access_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .FieldAccess(obj, _) -> {
-            let obj_expr = r.nodes.exprs.get(obj)
-            match obj_expr {
-                .Ident(name) -> {
-                    if starts_with_upper(name) {
-                        return r
-                    }
-                    resolve_expr(r, obj_expr)
-                }
-                _ -> resolve_expr(r, obj_expr)
-            }
-        }
-        _ -> r
-    }
-}
-
 /// Type-check hook for `FieldAccess`. Forwards to
 /// `check_field_access` which knows about narrowing + enum
 /// shorthand.
@@ -289,14 +256,6 @@ fn enum_ctor_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Em
     match expr {
         .EnumCtor(type_name, variant, args) -> emit_enum_ctor(ctx, env, type_name, variant, args)
         _ -> err_emit("expected EnumCtor")
-    }
-}
-
-/// Resolver hook for `EnumCtor`. Walks the constructor args.
-fn enum_ctor_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .EnumCtor(_, _, args) -> resolve_expr_list_ids(r, args)
-        _ -> r
     }
 }
 
@@ -323,12 +282,6 @@ fn field_assign_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result
         .FieldAssign(obj, field, value) -> emit_field_assign(ctx, env, ctx.nodes.exprs.get(obj), field, ctx.nodes.exprs.get(value))
         _ -> err_emit("expected FieldAssign")
     }
-}
-
-/// Resolver hook for `FieldAssign`. No-op — the deep-immutability
-/// check happens in `resolve/mod.av` via a dedicated path.
-fn field_assign_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    r
 }
 
 /// Type-check hook for `FieldAssign`. Checks the receiver and

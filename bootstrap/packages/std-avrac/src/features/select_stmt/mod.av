@@ -11,12 +11,6 @@ use typeck.{check_expr, check_stmt_ids, tc_enter, tc_exit, tc_bind}
 use features.{composed}
 use features.select_stmt.lowering.{select_builds}
 
-/// Resolver hook for `select`. Forwards to `resolve_select_arms`
-/// which walks each channel expression and arm body.
-fn select_resolve(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt { .Select(arms) -> resolve_select_arms(r, arms), _ -> r }
-}
-
 /// Type-check hook for `select`. Each arm's channel expression is
 /// checked in the enclosing scope; a typed channel (Channel<elem>)
 /// gives the arm binding `elem`, a legacy raw-extern channel (ptr)

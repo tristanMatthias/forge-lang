@@ -1,0 +1,26 @@
+// The tuple family's EVALUATOR hook — the @comptime tree-walk path. One file
+// per pass (features/WHY.md); module-private, reached from mod.av through the
+// dir-as-module flat namespace.
+use core.{Expr}
+use features.eval.{Runtime, StepResult, eval_expr, ok_result, error_result, value_list}
+
+/// Tree-walk evaluator hook for `(a, b, c)`. Evaluates each element
+/// left-to-right and packs the results into a list-kind Value — the
+/// same representation `let (a, b) = …` destructures, so tuples work
+/// uniformly in @comptime macros.
+fn tuple_eval(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .Tuple(elements) -> {
+            mut vals: List<Value> = []
+            mut cur = rt
+            for el in elements {
+                let r = eval_expr(cur, rt.nodes.exprs.get(el))
+                if r.had_error { return r }
+                cur = r.runtime
+                vals = vals.push(r.value)
+            }
+            ok_result(cur, value_list(vals))
+        }
+        _ -> error_result(rt, "expected Tuple")
+    }
+}

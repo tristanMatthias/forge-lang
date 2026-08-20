@@ -1,0 +1,105 @@
+// The match/when family's RESOLVER hooks. One file per pass
+// (features/WHY.md): a feature's mod.av is the CONTAINER — identity, gram, and
+// which fn implements each pass — and the pass logic lives in the file named
+// for that pass. These are module-PRIVATE and stay so: dir-as-module flattens
+// every sibling .av into one flat namespace, so mod.av reaches them exactly as
+// before the move.
+use core.{Expr, Stmt, Pattern, PatId, MatchArm, WhenArm}
+use resolve.{Resolver, resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_params, declare_name, define_name}
+
+/// Resolver hook for `Match`. Resolves the subject in the
+/// current scope, then walks every arm via `resolve_match_arms`.
+fn match_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .Match(subject, arms) -> {
+            let after_subject = resolve_expr(r, r.nodes.exprs.get(subject))
+            resolve_match_arms(after_subject, arms)
+        }
+        _ -> r
+    }
+}
+
+/// Resolver hook for `MatchExpr`. Mirror of
+/// `match_resolve_stmt` for expression-position matches.
+fn match_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .MatchExpr(subject, arms) -> {
+            let after_subject = resolve_expr(r, r.nodes.exprs.get(subject))
+            resolve_match_arms(after_subject, arms)
+        }
+        _ -> r
+    }
+}
+
+/// Resolver hook for `When`. Walks every arm's condition + body
+/// through `resolve_when_arms`.
+fn when_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .When(arms) -> resolve_when_arms(r, arms)
+        _ -> r
+    }
+}
+
+/// Resolve every arm of a `match` expression. For each arm:
+/// open a fresh scope, declare the pattern's captured names,
+/// resolve the optional guard, then resolve the arm body —
+/// finally pop the scope. Stops on first resolver error.
+export fn resolve_match_arms(r: Resolver, arms: List<MatchArm>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < arms.length {
+        if res.had_error { return res }
+        let arm = arms[i]
+        let entered = enter_resolve_scope(res)
+        let with_bindings = declare_pattern_bindings(entered, arm.pattern)
+        let after_guard = if arm.guard_id != null { resolve_expr(with_bindings, res.nodes.exprs.get(arm.guard_id!)) } else { with_bindings }
+        let after_body = resolve_expr(after_guard, res.nodes.exprs.get(arm.body_id))
+        res = exit_resolve_scope(after_body)
+        i = i + 1
+    }
+    res
+}
+
+/// Walk a pattern declaring every captured name in the
+/// resolver. Variant patterns descend into payload bindings;
+/// `is`-patterns (TypePattern) declare the single binding;
+/// literals and wildcards bind nothing.
+fn declare_pattern_bindings(r: Resolver, pattern: Pattern) -> Resolver {
+    match pattern {
+        .Wildcard -> r
+        .Rest -> r
+        .Variant(_, bindings) -> declare_params(r, bindings)
+        .NestedVariant(_, sub_pats) -> declare_pattern_list(r, sub_pats)
+        .TypePattern(_, binding) -> define_name(declare_name(r, binding), binding)
+        _ -> r  // Literal patterns don't bind variables
+    }
+}
+
+/// Walk a nested pattern's id list (F2) declaring captures from every
+/// store-resolved sub-pattern.
+fn declare_pattern_list(r: Resolver, pats: List<PatId>) -> Resolver {
+    mut acc = r
+    mut i = 0
+    while i < pats.length {
+        acc = declare_pattern_bindings(acc, r.nodes.pats.get(pats[i]))
+        i = i + 1
+    }
+    acc
+}
+
+/// Resolve every arm of a `when` (subjectless `match`)
+/// expression. No pattern bindings — each arm has just an
+/// optional condition + body, both resolved in the outer
+/// scope.
+export fn resolve_when_arms(r: Resolver, arms: List<WhenArm>) -> Resolver {
+    mut res = r
+    mut i = 0
+    while i < arms.length {
+        if res.had_error { return res }
+        let arm = arms[i]
+        let after_cond = if arm.cond_id == null { res } else { resolve_expr(res, res.nodes.exprs.get(arm.cond_id!)) }
+        res = resolve_expr(after_cond, res.nodes.exprs.get(arm.body_id))
+        i = i + 1
+    }
+    res
+}

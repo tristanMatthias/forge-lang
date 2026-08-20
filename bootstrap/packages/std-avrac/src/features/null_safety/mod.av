@@ -5,7 +5,6 @@
 use codegen.{err_emit}
 use core.{vtype_wrap_optional, vtype_is_optional, vtype_is_unknown, ExprId}
 use features.null_safety.lowering.{null_coalesce_builds, try_builds, catch_builds, optional_chain_builds, optional_method_call_builds}
-use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er, check_method_call}
 use features.grammar.{parse_grammar}
@@ -165,26 +164,6 @@ expression is the recovery value.
     catch_def
 }
 
-/// Resolver hook for `NullCoalesce`. Walks both sides.
-fn null_coalesce_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .NullCoalesce(left, right) -> {
-            let after_left = resolve_expr(r, r.nodes.exprs.get(left))
-            resolve_expr(after_left, r.nodes.exprs.get(right))
-        }
-        _ -> r
-    }
-}
-
-/// Resolver hook for `OptionalChain`. Only the receiver needs
-/// name resolution.
-fn optional_chain_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .OptionalChain(obj, _) -> resolve_expr(r, r.nodes.exprs.get(obj))
-        _ -> r
-    }
-}
-
 /// Type-check hook for `OptionalChain`. Same behaviour as
 /// `check_field_access` — the optional-ness widens the result
 /// to nullable downstream but the field lookup itself is the
@@ -200,32 +179,6 @@ fn optional_chain_check_expr(tc: TC, expr: Expr) -> ExprResult {
             tc_er(r.tc, vtype_wrap_optional(r.ty))
         }
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-/// Resolver hook for `Try`. Walks the inner expression.
-fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .Try(inner) -> resolve_expr(r, r.nodes.exprs.get(inner))
-        _ -> r
-    }
-}
-
-/// Resolver hook for `Catch`. Walks the inner expression, then
-/// (when an error binding name is given) opens a new scope with
-/// the binding visible inside the catch body.
-fn catch_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .Catch(inner, binding, body, _, _) -> {
-            let ri = resolve_expr(r, r.nodes.exprs.get(inner))
-            let scoped = if binding.length > 0 {
-                let entered = enter_resolve_scope(ri)
-                define_name(declare_name(entered, binding), binding)
-            } else { ri }
-            let rb = resolve_expr(scoped, scoped.nodes.exprs.get(body))
-            if binding.length > 0 { exit_resolve_scope(rb) } else { rb }
-        }
-        _ -> r
     }
 }
 
@@ -260,22 +213,6 @@ fn optional_method_call_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -
     match expr {
         .OptionalMethodCall(obj, method, args) -> emit_optional_method_call(ctx, env, ctx.nodes.exprs.get(obj), method, args)
         _ -> err_emit("expected OptionalMethodCall")
-    }
-}
-
-/// Resolver hook for `OptionalMethodCall`. Walks the receiver and each arg.
-fn optional_method_call_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .OptionalMethodCall(obj, _, args) -> {
-            mut acc = resolve_expr(r, r.nodes.exprs.get(obj))
-            mut i = 0
-            while i < args.length {
-                acc = resolve_expr(acc, r.nodes.exprs.get(args[i]))
-                i = i + 1
-            }
-            acc
-        }
-        _ -> r
     }
 }
 

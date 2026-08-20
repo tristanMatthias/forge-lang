@@ -9,14 +9,7 @@
 use core.{stmt_unwrap, StmtId}
 use features.{composed}
 use features.parallel_stmt.lowering.{parallel_builds}
-use resolve.{resolve_stmt_ids}
 use typeck.{TC, check_stmt_ids, tc_enter, tc_exit, tc_gate_unthreaded_lambda}
-
-/// Resolver hook for `parallel { ... }`. Walks the body's statement
-/// list so name resolution still happens inside the parallel block.
-fn parallel_resolve(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt { .Parallel(body) -> resolve_stmt_ids(r, body), _ -> r }
-}
 
 /// Type-check hook for `parallel { ... }`. The body statements were
 /// previously never type-checked at all — every gate (including the
