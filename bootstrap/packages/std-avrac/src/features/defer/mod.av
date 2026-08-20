@@ -3,7 +3,7 @@
 // and hooks. The shared DeferStack machinery (unwound by return / `?` /
 // fall-through emitters) stays in defer/codegen.av.
 use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
-use features.eval.{ok_result, value_null}
+use eval.{ok_result, value_null}
 use typeck.{check_expr, tc_gate_unthreaded_lambda}
 use features.defer.lowering.{defer_builds, errdefer_builds}
 use list_ops.{list_push_copy}

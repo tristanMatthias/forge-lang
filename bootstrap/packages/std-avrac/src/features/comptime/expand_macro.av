@@ -47,7 +47,7 @@ use core.{module_graph_canonicals}
 use features.grammar.{synthesize_typed_builders}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, reresolve_use_aliases, resolve_names_pre_expand, rewrite_uses, rewrite_uses_macro_only, validate_scopes_after_expand, dots_to_colons}
 use features.comptime.{CompTimeRegistry, comptime_has, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns_ids, stmt_to_value}
-use features.eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt_id, list_value_to_stmt_id_list}
+use eval.{Runtime, Value, StructField, struct_field, value_struct, value_string, value_number, value_list, value_enum, eval_expr, eval_fn_with_resolved_args, step_value, step_had_error, step_error_message, path_last_segment, value_to_stmt_id, list_value_to_stmt_id_list}
 use features.quote_expr.{construct_expr}
 use diagnostics.{DiagnosticBag, DiagCode, Span, MacroFnOrigin, bag_new, bag_report, bag_merge, bag_errors_all_imports, diag_error, diag_warning, span_at}
 use list_ops.{list_concat, list_contains_str}

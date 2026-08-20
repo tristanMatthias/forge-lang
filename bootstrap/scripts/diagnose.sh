@@ -4317,7 +4317,16 @@ mode_check_feature_layout() {
     # here by historical accident, not language features. Requiring mod.av of
     # them would report a missing file when the real finding is a misplaced
     # directory, so they are named as their own category (P4c decides the home).
-    if grep -rqs 'fn [a-z_]*_lang()' "$d"*.av; then
+    # A directory with NO .av files at all is not a misplaced subsystem — it is
+    # EMPTY, usually leftover untracked build sidecars (*.avra-sha256) whose
+    # sources were deleted. Reporting those as "not a feature" invents a P4c
+    # directory that does not exist: features/error_messages/ read that way on a
+    # local tree while being four orphaned sidecars and nothing else, and is
+    # absent from a clean checkout entirely. The two need different actions, so
+    # they get different lines.
+    if ! ls "$d"*.av >/dev/null 2>&1; then
+      out="$out  (empty — no .av files; stale sidecars? not a P4c directory) $name"$'\n'
+    elif grep -rqs 'fn [a-z_]*_lang()' "$d"*.av; then
       [ -f "$d/mod.av" ] || { out="$out  MISSING mod.av in $name"$'\n'; drift=$((drift + 1)); }
     else
       out="$out  (not a feature — no <name>_lang(), P4c) $name"$'\n'

@@ -5,7 +5,7 @@
 // dir-as-module flattens every sibling .av into one flat namespace, so
 // mod.av reaches it exactly as before the move.
 use core.{Expr}
-use features.eval.{eval_expr, eval_map_key, ok_result, error_result, value_map, map_upsert, StructField, Runtime, StepResult, step_had_error, step_runtime, step_value}
+use eval.{eval_expr, eval_map_key, ok_result, error_result, value_map, map_upsert, StructField, Runtime, StepResult, step_had_error, step_runtime, step_value}
 
 /// @comptime eval hook for `MapLit` (rmzs GAP 3). `{k: v}` — and
 /// crucially the EMPTY `{}` that an idle match-arm body parses to —

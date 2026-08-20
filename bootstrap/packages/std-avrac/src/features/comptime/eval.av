@@ -24,7 +24,7 @@
 
 use core.{expr_id_store_key}
 use core.{Expr, ExprId, Stmt, StmtId, FieldInit, NodeStore, TypeParamEntry, ValueType, ParamEntry, BinOp, stmt_unwrap}
-use features.eval.{Runtime, Value, StructField, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num, num_text_is_float, render_float}
+use eval.{Runtime, Value, StructField, eval_expr, eval_fn_with_resolved_args, literal_args_to_values, step_value, step_had_error, step_error_message, is_boxed_ast_kind, value_to_stmt, render_number, parse_num, num_text_is_float, render_float}
 use features.comptime.{CompTimeFn, CompTimeRegistry, comptime_lookup_lazy, comptime_lookup, record_fold_error, collect_calls_in_stmts}
 use features.quote_expr.{construct_stmt}
 use codegen.{compile_and_jit_call, compile_and_jit_call_f64, compile_and_jit_call_str}

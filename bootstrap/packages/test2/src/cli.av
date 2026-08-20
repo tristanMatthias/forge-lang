@@ -1,0 +1,27 @@
+use @std.cli.{Runnable, CliResult, App}
+use @std.cli.cmdgen.{expand_cli, expand_command}
+use @std.avrac.core.{exit}
+
+// `cli`/`command` are components — the parser only recognizes the block
+// forms below after it has parsed these `component` definitions in this
+// same file. `@expand(expand_cli)` rewrites `cli test { … }` into a
+// top-level `let test = App { … }`; `@expand(expand_command)` rewrites
+// each `command X { fn run(args) … }` into a `Runnable` impl.
+@expand(expand_cli)
+component cli {}
+
+@expand(expand_command)
+component command implements Runnable {}
+
+cli test {
+  command hey {
+    fn run(args: CliResult) -> int {
+      println("Hello")
+      return 0
+    }
+  }
+}
+
+fn main() {
+  exit(test.run())
+}

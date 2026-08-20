@@ -3,7 +3,7 @@
 // feature-specific code in core/") and nothing enforced it, which is how
 // core/registry.av accumulated SEVEN live upward imports — into codegen/,
 // typeck/ AND features/ — without anyone noticing. A dependency spelled
-// `use features.eval.{value_null}` simply does not read as a layer claim.
+// `use features.eval.{value_null}` simply did not read as a layer claim.
 //
 // Built BEFORE the fix on purpose, the way --check-feature-layout was (P4a):
 // the ALLOWLIST is the measurement, and it must shrink. Two files are on it

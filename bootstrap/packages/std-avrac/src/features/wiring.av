@@ -19,7 +19,7 @@ extern fn avra_stmt_tag(stmt: int) -> int
 extern fn avra_intmap_set(map: ptr, key: int, val: int)
 use codegen.{err_emit, err_sr, StmtResult}
 use typeck.{tc_er}
-use features.eval.{value_null, Runtime, StepResult}
+use eval.{value_null, Runtime, StepResult}
 
 
 /// Codegen no-op for expressions — `err_emit("no expr handler")`.

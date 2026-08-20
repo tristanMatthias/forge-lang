@@ -2,7 +2,7 @@
 // per pass (features/WHY.md); module-private, reached from mod.av through the
 // dir-as-module flat namespace.
 use core.{Expr}
-use features.eval.{Runtime, StepResult, eval_expr, ok_result, error_result, value_list}
+use eval.{Runtime, StepResult, eval_expr, ok_result, error_result, value_list}
 
 /// Tree-walk evaluator hook for `(a, b, c)`. Evaluates each element
 /// left-to-right and packs the results into a list-kind Value — the
