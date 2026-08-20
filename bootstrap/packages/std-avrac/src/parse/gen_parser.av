@@ -4620,31 +4620,45 @@ fn parse_paren_expr(st: PState) -> CapVal {
         let s_mark = st.store.mark()
         let s_diags = st.diags.length
         let s_err = st.had_error
+        mut s_cut = false
         let s_gensym = st.gensym_seq
         let s_postfix = st.save_postfix_state()
         let sp_start = st.cur().pos
-        mut rest_list: List<ExprId> = []
-        let _ = st.advance()
-        let __modes_1 = st.modes
-        st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
-        let first = parse_expression(st)
-        st.set_modes(__modes_1)
-        while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
+        while true {
+            mut rest_list: List<ExprId> = []
             let _ = st.advance()
             let __modes_1 = st.modes
             st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
-            let __bres1 = parse_expression(st)
-            rest_list.push(capval_to_expr(st, __bres1))
+            let first = parse_expression(st)
             st.set_modes(__modes_1)
-        }
-        if st.cur().tk == Tk.Comma {
-            let _ = st.advance()
-        }
-        if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
-            st.report("expected `)`")
-        }
-        if st.diags.length == s_diags && st.had_error == s_err {
-            return call_with_build_sp(st, sp_start, mk_tuple_fr_abi, [first, CapVal.Nodes(rest_list)])
+            if st.diags.length == s_diags && st.had_error == s_err { s_cut = true }
+            if !s_cut { break }
+            while lookahead_ok("comma_not_rparen", st) && (st.cur().tk == Tk.Comma) {
+                let _ = st.advance()
+                let __modes_1 = st.modes
+                st.set_modes(modes_with_flag_on(st.modes, "allow_dot_postfix"))
+                let __bdiag1 = st.diags.length
+                let __bres1 = parse_expression(st)
+                if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
+                    if s_cut {
+                        st.set_abort_prop(true)
+                    st.set_modes(__modes_1)
+                    return CapVal.Node(st.error_node_silent())
+                    }
+                }
+                rest_list.push(capval_to_expr(st, __bres1))
+                st.set_modes(__modes_1)
+            }
+            if st.cur().tk == Tk.Comma {
+                let _ = st.advance()
+            }
+            if st.cur().tk == Tk.RightParen { let _ = st.advance() } else {
+                st.report("expected `)`")
+            }
+            if s_cut || (st.diags.length == s_diags && st.had_error == s_err) {
+                return call_with_build_sp(st, sp_start, mk_tuple_fr_abi, [first, CapVal.Nodes(rest_list)])
+            }
+            break
         }
         st.store.truncate_to_mark(s_mark)
         st.restore_to(s_pos, s_diags, s_err)
