@@ -80,7 +80,7 @@ spec "grammar-DSL composed whole-program == hand parser (ps3t.6.5.11 precursor)"
             agree("use @std.core { List, Map }\n") &&
             // the real dotted import form (`@std.core.{…}`) + a deep path.
             agree("use @std.core.{ List, Map }\n") &&
-            agree("use @std.avrac.features.grammar.{ parse_grammar, run_grammar_stmt }\n")
+            agree("use @std.avrac.features.grammar.{parse_grammar, run_grammar_stmt}\n")
             && agree("use features.defer.{defer_lang}\n")
             && agree("use a.match.b.{x}\n")
         }

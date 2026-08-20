@@ -18,8 +18,7 @@
 // inlining its fragments would drop that. Section 2's own correction records
 // what breaks otherwise — type_equivalence_test went 0/8, even `int` failing.
 
-use @std.avrac.features.grammar.{Grammar, avra_program_grammar, avra_expr_spine_grammar,
-                                 avra_type_spine_grammar, avra_type_grammar}
+use @std.avrac.features.grammar.{Grammar, avra_program_grammar, avra_expr_spine_grammar, avra_type_spine_grammar, avra_type_grammar}
 
 fn rule_names(g: Grammar) -> List<string> {
     mut out: List<string> = []

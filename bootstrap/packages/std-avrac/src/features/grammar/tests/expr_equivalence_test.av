@@ -13,7 +13,7 @@
 //
 // Interpolated sources are built by concatenating a lone "$" with "{...}", so no
 // interpolation syntax appears in this file (which would interpolate here).
-use @std.avrac.features.grammar.{avra_expr_grammar, avra_program_grammar, run_grammar_expr_at}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.parse.{oracle_expr}
 use @std.avrac.core.{render_expr_id}
 

@@ -17,16 +17,18 @@
 // sound and mechanical; if they fail, P2c needs a different shape and this
 // file says which inputs diverge.
 
-use @std.avrac.features.grammar.{avra_expr_grammar, avra_program_grammar, run_grammar_expr, run_grammar_expr_at}
-use @std.avrac.features.grammar.{avra_stmt_flip_grammar, avra_decl_flip_grammar, run_grammar_stmt, run_grammar_stmt_at}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_expr, run_grammar_expr_at}
+use @std.avrac.features.grammar.{run_grammar_stmt, run_grammar_stmt_at}
 use @std.avrac.features.grammar.{avra_type_grammar, run_grammar_type, run_grammar_type_at}
+use @std.avrac.parse.{oracle_expr}
 use @std.avrac.core.{render_expr_id, render_stmt_id, render_type_id}
 
-/// The view entry: whole family grammar, start = its own rules[0].
+/// The ORACLE. This compared against the expr VIEW until P2c(c) deleted the
+/// views; rather than drop the differential, it now compares against the HAND
+/// parser, which is a stronger oracle anyway — the views were themselves built
+/// from the same grammar, so view-vs-full only ever cross-checked composition.
 fn via_view(src: string) -> string {
-    let r = run_grammar_expr(avra_expr_grammar(), src)
-    if r.had_error { return "<err>" }
-    render_expr_id(r.store, r.root)
+    oracle_expr(src) ?? "<err>"
 }
 
 /// The proposed replacement: ONE whole-language grammar, start NAMED.
@@ -79,7 +81,7 @@ spec "P2c gate: full grammar + named start == the family view entry" {
 // ── STATEMENT entry ──────────────────────────────────────────────────────────
 
 fn s_via_view(src: string) -> string {
-    let r = run_grammar_stmt(avra_stmt_flip_grammar(), src)
+    let r = run_grammar_stmt_at(avra_program_grammar(), "statement", src)
     if r.had_error { return "<err>" }
     render_stmt_id(r.store, r.root)
 }
