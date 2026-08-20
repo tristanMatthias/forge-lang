@@ -1,0 +1,59 @@
+// WHY: this is P5's ENTIRE MECHANISM in miniature (t-y2i7.5), proven end to end.
+//
+// features/mod.av hand-maintains a 70-entry `language_features()` array plus 42
+// `use features.<name>.{<name>_lang}` lines. Adding a feature means editing
+// three places. P5 replaces both with a macro that DISCOVERS the registration
+// fns and EMITS the list.
+//
+// Every link is exercised here:
+//   1. discover items by suffix          ctx_items_with_suffix
+//   2. synthesize a CALL to each          Expr.Call(Expr.Ident(<canonical>), [])
+//   3. emit a whole FUNCTION returning them   Stmt.Function(…, [Return(ListLit)])
+//   4. and have ordinary code CALL that function
+//
+// The imports fall out for free: a synthesized call carries a CANONICAL name,
+// so the emitting module never needs a `use` line for the discovered fn. That
+// is why P5 removes 42 imports as well as the array.
+//
+// Evidence is arithmetic, not a shape assertion: the two discovered fns return
+// 1 and 2, and main sums what the generated fn returns. total=3 can only happen
+// if discovery, synthesis, emission and resolution ALL worked — a partial
+// success gives 0, 1, or 2.
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "P5's mechanism: discover, synthesize, emit a fn, call it" {
+    then "a macro-emitted fn returns calls to the fns it discovered" {
+        let out = write_fixture_and_run("/tmp/avra_synth_fn_from_discovery_test.av",
+            "use @std.avrac.core.{Stmt, Expr, ValueType}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, synth_stmt_id}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_items_with_suffix}\n" +
+            "\n" +
+            "fn one_zed() -> int { 1 }\n" +
+            "fn two_zed() -> int { 2 }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let found = ctx_items_with_suffix(ctx, \"_zed\")\n" +
+            "    mut calls: List<ExprId> = []\n" +
+            "    for canonical in found {\n" +
+            "        calls.push(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(canonical)), [])))\n" +
+            "    }\n" +
+            "    let lit = synth_expr_id(Expr.ListLit(calls))\n" +
+            "    let body = [synth_stmt_id(Stmt.Return(lit))]\n" +
+            "    Stmt.Function(\"all_zeds\", [], [], ValueType.List(ValueType.Int), body)\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {\n" +
+            "    mut total = 0\n" +
+            "    for v in all_zeds() { total = total + v }\n" +
+            "    println(\"total=\" + string(total))\n" +
+            "}\n")
+        // "total=3;"-style anchoring is unnecessary here (3 is the last char of
+        // the line) but the negative arms matter: a macro that emitted an empty
+        // list still compiles and prints total=0.
+        out.contains("total=3") && !out.contains("total=0") && !out.contains("error[")
+    }
+}
