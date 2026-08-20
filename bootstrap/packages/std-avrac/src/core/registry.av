@@ -52,25 +52,18 @@ export type Registry = {
     stmt_checkers: ptr,
     expr_evals: ptr,
     stmt_evals: ptr,
-    // Component names declared so far — a SET, not a handler map. The
-    // value slot is a constant 1: nothing ever invoked the handler this
-    // map used to store, and the one consumer (`is_registered_component`)
-    // only ever asked whether the key was present.
-    component_names: ptr,
-    // The keywords that lead a `kw { … }` expression construct — a SET, like
-    // component_names above, and for the same reason: the value slot is a
-    // constant 1 because nothing ever invoked the handler this map used to
-    // store, and its one consumer only ever asks whether the key is PRESENT.
-    // That presence test is genuinely load-bearing: it drives the
-    // `ident_lbrace_plain` / `ident_lbrace_feature` peek conditions that
-    // disambiguate `IDENT {` between a struct literal, `grammar { … }` and
-    // `table { … }`.
-    expr_keywords: ptr,
-    // Component names declared with `body: TokenStream` (vez6.9) —
-    // parse-time routing state alongside the name's component_names
-    // entry, so every instance-block production (keyword-free,
-    // keyword-prefixed, nested) agrees on raw-vs-structured capture.
-    raw_body_comps: ptr,
+    // GENERIC named sets, keyed "<set>:<key>". core/ deliberately does NOT know
+    // what sets exist — `component_names`, `expr_keywords` and `raw_body_comps`
+    // used to be three FIELDS here, which made core/ aware of components and of
+    // `kw { … }` expression forms: feature-specific knowledge in the layer every
+    // feature imports (CLAUDE.md, "core is infrastructure only"). The set NAMES
+    // now live with the features that own them; core only stores strings.
+    //
+    // Composite keys rather than a map-of-maps: the value slot is an int, so
+    // nesting would mean storing a ptr as an int and coercing it back. Set names
+    // and keys are both identifiers, so ":" cannot occur in either and the
+    // composite is unambiguous.
+    named_sets: ptr,
     // Feature-supplied grammar-build lowerings (t-kd4y.3) — the composed
     // manifest from `feature_builders()`, consulted by the grammar
     // executor's `apply_build` before its central dispatch. Populated
@@ -90,9 +83,7 @@ export fn registry_new() -> Registry {
         stmt_checkers: avra_intmap_new(),
         expr_evals: avra_intmap_new(),
         stmt_evals: avra_intmap_new(),
-        component_names: avra_map_new_cstr(),
-        expr_keywords: avra_map_new_cstr(),
-        raw_body_comps: avra_map_new_cstr(),
+        named_sets: avra_map_new_cstr(),
         builder_binds: [],
     }
 }
@@ -128,53 +119,22 @@ export fn registry_new() -> Registry {
 /// natively via `parse_bare_comp_inst`/`_raw`), and the sole consumer
 /// tested `!= null`. So the map was a SET wearing a handler map's
 /// signature, and the two closures that fed it were the only thing keeping
-/// ~650 lines of retired hand parser alive to satisfy an argument nobody
-/// read. Storing a function pointer as an untyped `int` was also the same
-/// rule-16 defect as the old `Feature.emit_expr: int`.
-export fn is_registered_component(reg: Registry, name: string) -> bool {
-    avra_map_has_cstr(reg.component_names, name) != 0
+/// Add `key` to the named set `set`. The ONE write primitive for every
+/// registry set; core/ stores the string and knows nothing about what the set
+/// means. See the `named_sets` field for why the key is composite.
+export fn registry_set_add(reg: Registry, set: string, key: string) {
+    avra_map_set_cstr(reg.named_sets, set + ":" + key, 1)
 }
 
-/// True when `keyword` leads a registered `kw { … }` expression construct
-/// (e.g. `grammar`). This is the whole contract — the executor's
-/// `ident_lbrace_plain` / `ident_lbrace_feature` peek conditions ask nothing
-/// else of it, and through them the generated parser decides whether `IDENT {`
-/// opens a struct literal, a `grammar { … }` block or a `table { … }`.
+/// True when `key` is in the named set `set`. The ONE read primitive.
 ///
-/// It used to be `lookup_expr_parser(...) -> int?`, returning "the parse_expr
-/// handler-fn-as-int" — and nothing ever retrieved it. The map's only read was
-/// `avra_map_has_cstr` (presence); no consumer ever called `avra_map_get_cstr`
-/// on it, so the stored handler could not run.
-///
-/// Note the value COULD have been called, contrary to what an earlier version
-/// of this comment claimed: `dispatch_expr_emit` (below) does exactly that for
-/// the emitter maps — `avra_intmap_get` returns an `int` which is bound to a
-/// fn-typed local and invoked. That coercion is the language's ambient
-/// int-as-fn-pointer convention, and it is why `Feature.emit_expr: int` still
-/// works. So this was dead by DISUSE, not by impossibility.
-///
-/// The old doc also cited `parse_primary`, which t-47hc deleted.
-export fn is_expr_keyword(reg: Registry, keyword: string) -> bool {
-    avra_map_has_cstr(reg.expr_keywords, keyword) != 0
-}
-
-/// Register a component name for keyword-free instantiation. After
-/// this, `name instance { ... }` at statement level is parsed as a
-/// ComponentBlock — the component declaration's name acts as a
-/// pseudo-keyword in the stmt parser.
-export fn register_component_name(reg: Registry, name: string) {
-    avra_map_set_cstr(reg.component_names, name, 1)
-}
-
-/// Mark `name` as a `body: TokenStream` component (vez6.9): its
-/// instance blocks capture raw tokens instead of structured Avra.
-export fn register_raw_body_component(reg: Registry, name: string) {
-    avra_map_set_cstr(reg.raw_body_comps, name, 1)
-}
-
-/// True when `name` was declared with `body: TokenStream`.
-export fn component_is_raw_body(reg: Registry, name: string) -> bool {
-    avra_map_get_cstr(reg.raw_body_comps, name) != 0
+/// Every consumer of the sets this replaced only ever asked PRESENCE —
+/// `is_registered_component`, `is_expr_keyword` and `component_is_raw_body`
+/// were all a single `avra_map_has_cstr` / `!= 0`. Nothing retrieved a value,
+/// which is why a set (not a handler map) was the honest shape and why one
+/// generic primitive covers all three.
+export fn registry_set_has(reg: Registry, set: string, key: string) -> bool {
+    avra_map_has_cstr(reg.named_sets, set + ":" + key) != 0
 }
 
 // ── Build the registry ──
