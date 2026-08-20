@@ -2566,14 +2566,31 @@ fn exec_node_at(g: Grammar, node: GNode, st: PState, env: CapEnv, multi: bool, o
                     }
                 }
             }
-            // No branch's FIRST matched. A `@fallback` branch is the UNCONDITIONAL tail:
+            // No branch's FIRST matched. A `@fallback` branch is the UNCONDITIONAL
+            // tail — and UNCONDITIONAL includes "after a `@try` rolled back"
+            // (t-47hc.35). This scan used to sit under `!tried_spec`, which is
+            // where the two engines disagreed: emit reaches its fallback tail
+            // through `dispatch_has_tail`, which makes `track_spec` FALSE, so the
+            // tail is emitted with no `tried_spec` guard and runs whatever a
+            // speculative sibling did. The validator papered over the split by
+            // rejecting `@try` + `@fallback` outright rather than deciding which
+            // engine was right.
+            //
+            // emit's reading is the right one, and its own comment says why: the
+            // tail "OWNS every token no branch matched, including one a rolled-back
+            // `@try` left behind — the tail rule's recovery is exactly what it
+            // exists to reach". A rolled-back attempt restored the cursor, so the
+            // tail sees the same input it would have seen without the `@try`;
+            // skipping it there would drop the rule's own recovery for no reason.
+            //
+            // `tried_spec` still gates the NO-tail case below, which is what it was
+            // for: with nothing to recover into, a rolled-back attempt is a clean
+            // "no match" and must not synthesise a parse error.
             mut fb_declined = false
-            if !tried_spec {
-                for fb in branches {
-                    if fb.fallback {
-                        if branch_pred_ok(fb, st) { return exec_seq(g, fb, st, env, multi, outer_annots) }
-                        fb_declined = true
-                    }
+            for fb in branches {
+                if fb.fallback {
+                    if branch_pred_ok(fb, st) { return exec_seq(g, fb, st, env, multi, outer_annots) }
+                    fb_declined = true
                 }
             }
             // A SINGLE-branch alternation is run UNCONDITIONALLY by emit — there is

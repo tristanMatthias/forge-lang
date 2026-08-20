@@ -889,46 +889,37 @@ fn validate_fallbacks(g: Grammar) -> string {
                 if seen > 1 {
                     return "rule `${r.name}` has more than one `@fallback` branch — only the last alternative can be the unconditional tail"
                 }
-                // A NON-LAST fallback is legal only when the branch is `@when`/`@peek`-
-                // GUARDED (postfix_suffix's `.` branch): a guarded fallback participates
-                // in ordered dispatch under its own guard in BOTH engines — emit renders
-                // it as an ordinary guarded branch (its fallback arm keys on last
-                // position), and the executor scans it in order, adding only the guarded
-                // clean-DECLINE after the loop (t-lqzu) — so later branches stay
-                // reachable and the marker means the same thing in both. An UNGUARDED
-                // non-last fallback is different: emit silently drops the marker (an
-                // ordinary FIRST-guarded branch) while the executor would run it as the
-                // after-loop tail — the silent-no-op/divergence class this validator
-                // exists to reject. (This distinction was invisible while the grammar
-                // accessors swallowed `.error`; grammar_checked made it load-bearing.)
+                // `@fallback` must be the LAST alternative. THE DECLARED SEMANTIC
+                // (t-47hc.35), implemented identically in emit_dispatch and
+                // exec_node:
+                //
+                //   A `@fallback` branch is the alternation's UNCONDITIONAL TAIL.
+                //   It runs when no branch's FIRST matched — including after a
+                //   `@try` sibling rolled back. If it carries a `@when`/`@peek`
+                //   guard and the guard declines, the rule yields a clean
+                //   no-match rather than a synthesised error.
+                //
+                // Requiring LAST is what makes the marker mean one thing. emit
+                // honours it only in last position (`b.fallback && i == last`);
+                // elsewhere the branch emits as an ordinary FIRST-guarded one and
+                // the marker is a silent no-op. The executor used to scan for a
+                // fallback at ANY position, so a non-last one meant two different
+                // things depending on which engine read it.
+                //
+                // The previous exemption for a GUARDED non-last fallback existed
+                // for `postfix_suffix`'s `.` branch. That rule no longer has a
+                // fallback at all — the postfix flip rewrote it as an alternation
+                // of named suffix rules — so the exemption guarded nothing and was
+                // the last surface on which the engines could disagree. Rejecting
+                // it outright is the "reject only genuinely-meaningless spellings"
+                // reduction: a marker emit drops IS meaningless, and a reader
+                // cannot tell that from the grammar text.
                 mut i = 0
-                mut fb_is_last = false
                 for b in branches {
-                    if b.fallback && i == branches.length - 1 { fb_is_last = true }
-                    if b.fallback && i != branches.length - 1 && !seq_has_guard(b) {
-                        return "`@fallback` must be the LAST alternative of rule `${r.name}` unless the branch is `@when`/`@peek`-guarded — emit honours an unguarded fallback only in last position, so ordering it earlier is a silent no-op in the generated parser"
+                    if b.fallback && i != branches.length - 1 {
+                        return "`@fallback` must be the LAST alternative of rule `${r.name}` — emit honours it only in last position, so ordering it earlier is a silent no-op in the generated parser while the interpreter would still run it as the tail"
                     }
                     i = i + 1
-                }
-                // A LAST-position fallback with a `@try` sibling: emit's fallback TAIL
-                // is suppressed when the rule has a speculative branch (`!has_spec`)
-                // while the executor still runs the fallback when no speculation was
-                // TRIED (`!tried_spec`, t-lqzu) — on input matching no branch's FIRST
-                // the interpreter reports the fallback's own `@expect`, the generated
-                // parser the alternation's generic message. Reject the combination
-                // rather than ship a marker that means two different things depending
-                // on which engine reads it. The guarded NON-last form is exempt: no
-                // emitted tail is involved there (ordinary guarded branch in both
-                // engines, and the executor's after-loop arm is `!tried_spec`-gated
-                // the same way). Lifting the last-position case means teaching
-                // emit_dispatch to run the fallback before its `tried_spec ? Nil :
-                // error_node` fallthrough — at which point this check comes out.
-                if seen == 1 && fb_is_last {
-                    for b in branches {
-                        if b.speculative {
-                            return "rule `${r.name}` combines `@try` and `@fallback` — a speculative sibling suppresses the emitted fallback tail while the interpreter still runs it, so the two engines would disagree on the diagnostic"
-                        }
-                    }
                 }
             }
         }
@@ -1475,18 +1466,6 @@ fn prim_is_pred_e_sp(prim: GPrim) -> bool {
         .Peek(_) -> true
         _ -> false
     }
-}
-
-/// True iff the branch carries a `@when`/`@peek` guard anywhere — the condition
-/// under which a NON-last `@fallback` is meaningful (validate_fallbacks): the
-/// guard makes the branch an ordinary ordered-dispatch participant in both
-/// engines, with the executor's after-loop arm adding only the guarded
-/// clean-decline (t-lqzu).
-fn seq_has_guard(b: GSeq) -> bool {
-    for item in b.items {
-        if prim_is_pred_e_sp(item.prim) { return true }
-    }
-    false
 }
 
 /// True iff a branch's build is one of the legacy expr-fold helpers that take the

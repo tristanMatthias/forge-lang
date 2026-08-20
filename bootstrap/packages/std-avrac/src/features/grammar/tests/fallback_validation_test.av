@@ -1,16 +1,41 @@
-// WHY: pins validate_fallbacks' position/combination semantics, which became
-// load-bearing when grammar_checked made grammar-parse errors fatal (they were
-// silently swallowed by every `.grammar` accessor before): the production
-// postfix_suffix rule carries a GUARDED non-last `@fallback` alongside a `@try`
-// sibling, so the validator must accept exactly that shape while still
-// rejecting the forms the engines genuinely diverge on. See the WHY comments in
-// seed_parser.validate_fallbacks for the per-form engine analysis.
+// WHY: pins `@fallback`'s DECLARED SEMANTIC, which became load-bearing when
+// grammar_checked made grammar-parse errors fatal (every `.grammar` accessor
+// swallowed them before).
+//
+// THE SEMANTIC (t-47hc.35), implemented identically in emit_dispatch and
+// exec_node:
+//
+//   A `@fallback` branch is the alternation's UNCONDITIONAL TAIL. It must be
+//   the LAST alternative, and unique. It runs when no branch's FIRST matched —
+//   including after a `@try` sibling rolled back. If it carries a
+//   `@when`/`@peek` guard and the guard declines, the rule yields a clean
+//   no-match rather than a synthesised error.
+//
+// WHAT THIS REPLACED. The marker used to mean three different things:
+//   - emit honoured it only at last position; elsewhere the branch emitted as
+//     an ordinary FIRST-guarded one and the marker was a silent no-op;
+//   - the executor scanned for a fallback at ANY position, gated on
+//     `!tried_spec`, so it ran one emit had dropped and skipped one emit ran;
+//   - the validator rejected `@try` + last-`@fallback` outright rather than
+//     deciding which engine was right, and exempted a GUARDED non-last
+//     fallback for `postfix_suffix`'s `.` branch.
+// That rule no longer has a fallback at all (the postfix flip rewrote it as an
+// alternation of named suffix rules), so the exemption guarded nothing while
+// remaining the last surface on which the engines could disagree.
+//
+// The `@try` combination is now LEGAL because both engines answer it the same
+// way: emit reaches its tail through `dispatch_has_tail`, which makes
+// `track_spec` false so the tail carries no `tried_spec` guard; the executor's
+// fallback scan no longer sits under `!tried_spec`. A rolled-back attempt
+// restores the cursor, so the tail sees the input it would have seen anyway —
+// and emit's own comment states the intent: the tail "OWNS every token no
+// branch matched, including one a rolled-back `@try` left behind".
 use @std.avrac.features.grammar.{parse_grammar}
 
-spec "validate_fallbacks: position and @try-combination semantics" {
-    given "a GUARDED non-last fallback (the postfix_suffix shape)" {
-        then "it is accepted — ordered dispatch under its own guard in both engines" {
-            let gp = parse_grammar("r = @when(allow_struct_lit) \"a\" | @fallback @when(allow_struct_lit) \".\" \"b\" | \"c\"")
+spec "validate_fallbacks: @fallback is the LAST alternative, and unique" {
+    given "an unguarded LAST fallback (the use_tail / index_tail shape)" {
+        then "it is accepted — this is the only shape the grammar uses today" {
+            let gp = parse_grammar("r = \"a\" | @fallback \"]\" \"b\"")
             gp.error == ""
         }
     }
@@ -20,24 +45,45 @@ spec "validate_fallbacks: position and @try-combination semantics" {
             gp.error != "" && gp.error.contains("must be the LAST alternative")
         }
     }
-    given "an unguarded LAST fallback (the index_tail shape)" {
-        then "it stays accepted" {
-            let gp = parse_grammar("r = \"a\" | @fallback \"]\" \"b\"")
-            gp.error == ""
+    given "a GUARDED non-last fallback" {
+        then "it is rejected too — the guard no longer buys an exemption" {
+            // Accepted until t-47hc.35. emit renders it as an ordinary guarded
+            // branch (marker dropped) while the executor also ran it as the
+            // after-loop tail: one spelling, two behaviours. Nothing in the
+            // grammar relies on it, so the divergence surface is closed rather
+            // than documented.
+            let gp = parse_grammar("r = @when(allow_struct_lit) \"a\" | @fallback @when(allow_struct_lit) \".\" \"b\" | \"c\"")
+            gp.error != "" && gp.error.contains("must be the LAST alternative")
         }
     }
+    given "TWO fallback branches" {
+        then "it is rejected by COUNT, naming the duplicate rather than the position" {
+            // Two fallbacks necessarily also violate "must be last", so the
+            // count check runs first or the duplicate would never be named.
+            let gp = parse_grammar("r = @fallback \"a\" | @fallback \"b\"")
+            gp.error != "" && gp.error.contains("more than one `@fallback`")
+        }
+    }
+}
+
+spec "validate_fallbacks: @try + a LAST fallback is now LEGAL" {
     given "a LAST fallback with a @try sibling" {
-        then "the combination is still rejected — the emitted tail is has_spec-suppressed" {
+        then "it is accepted — both engines run the tail after a rollback" {
+            // Rejected until t-47hc.35, purely because the engines disagreed.
+            // They no longer do.
             let gp = parse_grammar("r = @try \"a\" \"x\" | @fallback \"]\" \"b\"")
-            gp.error != "" && gp.error.contains("combines `@try` and `@fallback`")
-        }
-    }
-    given "a GUARDED non-last fallback with a @try sibling (postfix_suffix exactly)" {
-        then "it is accepted — no emitted tail is involved" {
-            let gp = parse_grammar("r = @try \"a\" \"x\" | @fallback @when(allow_struct_lit) \".\" \"b\" | \"c\"")
             gp.error == ""
         }
     }
+    given "a @try sibling with a NON-last fallback" {
+        then "it is still rejected — on position, which the @try does not excuse" {
+            let gp = parse_grammar("r = @try \"a\" \"x\" | @fallback \".\" \"b\" | \"c\"")
+            gp.error != "" && gp.error.contains("must be the LAST alternative")
+        }
+    }
+}
+
+spec "validate_fallbacks: @require interacts with a fallback's leading item" {
     given "@require on a fallback's LEADING item (index_tail's `]`)" {
         then "it is accepted — a fallback's leading item is NOT FIRST-proved" {
             let gp = parse_grammar("r = \"a\" | @fallback @require \"]\" @expect(\"]\", \"expected `]`\") -> MkNone()")
