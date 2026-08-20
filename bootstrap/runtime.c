@@ -8177,6 +8177,10 @@ static const char** avra_rd_global_keys = NULL;
 static const char** avra_rd_global_vals = NULL;
 static int64_t avra_rd_global_n = 0;
 static int64_t avra_rd_global_cap = 0;
+static const char** avra_rd_ret_keys = NULL;
+static const char** avra_rd_ret_vals = NULL;
+static int64_t avra_rd_ret_n = 0;
+static int64_t avra_rd_ret_cap = 0;
 
 static const char** avra_rd_type_canonicals = NULL;
 static const char** avra_rd_type_kinds = NULL;
@@ -8244,6 +8248,7 @@ void avra_rd_clear(void) {
     avra_rd_alias_n = 0;
     avra_rd_module_n = 0;
     avra_rd_global_n = 0;
+    avra_rd_ret_n = 0;
     avra_rd_type_n = 0;
     avra_rd_field_n = 0;
     // Keep capacity; future fill of similar size will reuse without
@@ -8323,6 +8328,36 @@ void avra_rd_add_global(const char* short_name, const char* canonical) {
 // already exist for lookup; these just expose them in order, so a macro can ask
 // "which items end in _lang?" instead of only "what is X?". Same reason
 // avra_rd_module_at exists: a lookup-only map cannot answer a set question.
+// ── Return-type bucket (t-y2i7.5) ────────────────────────────────────
+//
+// Keyed canonical -> return type name. A THIRD bucket rather than a field on
+// the globals map, for the same reason the modules bucket is separate: these
+// arrays are the lookup structure, and widening them would touch every
+// existing reader.
+//
+// WHY a macro needs this: discovering "the feature registration functions" by
+// NAME does not work. There are 71 `*_lang` fns and only 70 features — the
+// extra is `register_lang`, the registration helper — and no naming rule
+// separates them (49 of 71 fns do not match their own module's name, because
+// one module routinely defines several features). The SIGNATURE does separate
+// them exactly: the 70 return LanguageFeature, the helper returns nothing.
+// Discriminating structurally is what the repo rules require in place of
+// string-matching.
+void avra_rd_add_ret(const char* canonical, const char* ret_type) {
+    rd_strmap_add(&avra_rd_ret_keys, &avra_rd_ret_vals,
+                  &avra_rd_ret_n, &avra_rd_ret_cap, canonical, ret_type);
+}
+
+int64_t avra_rd_ret_count(void) { return avra_rd_ret_n; }
+
+const char* avra_rd_ret_name_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_ret_n) ? avra_rd_ret_keys[i] : "";
+}
+
+const char* avra_rd_ret_type_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_ret_n) ? avra_rd_ret_vals[i] : "";
+}
+
 int64_t avra_rd_global_count(void) { return avra_rd_global_n; }
 
 const char* avra_rd_global_name_at(int64_t i) {
