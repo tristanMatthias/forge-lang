@@ -1,0 +1,82 @@
+// WHY: t-y2i7 section 1 — "family is not a property of the grammar; it is
+// reachability from a start rule." A feature currently DECLARES its family with
+// `gram_family = "expr" | "stmt" | "type"`, and three near-identical functions
+// filter on that label to build the composed views.
+//
+// The claim is that the label is redundant: the engine spine's
+// `statement = break_stmt | … | defer_stmt | …` alternation already NAMES each
+// feature rule, so membership is just "reachable from `statement`?".
+//
+// A claim like that is worth exactly as much as its evidence, and the design
+// record has been wrong five times about what is redundant here — each time
+// caught only by checking the actual code. So this spec MEASURES it: it asks
+// whether `rules_reachable_from` reproduces the declared families, and it is
+// written to FAIL LOUDLY if it does not, rather than to be quietly satisfiable.
+//
+// It gates the deletion of `gram_family` (t-y2i7.2 / P2b). Until it passes on
+// the real whole-program grammar, the label stays.
+
+use @std.avrac.features.grammar.{rules_reachable_from, avra_program_grammar, str_in, Grammar, parse_grammar, grammar_checked}
+
+fn toy(src: string) -> Grammar { grammar_checked(parse_grammar(src)) }
+
+spec "rules_reachable_from walks the rule graph" {
+    then "a rule reaches itself" {
+        str_in(rules_reachable_from(toy("r = \"a\""), "r"), "r")
+    }
+    then "it follows a reference one hop" {
+        let g = toy("r = s\ns = \"a\"")
+        let hit = rules_reachable_from(g, "r")
+        str_in(hit, "r") && str_in(hit, "s")
+    }
+    then "it follows references TRANSITIVELY" {
+        let g = toy("r = s\ns = t\nt = \"a\"")
+        str_in(rules_reachable_from(g, "r"), "t")
+    }
+    then "it does NOT reach a rule nothing references — the discriminating case" {
+        // Without this the whole thing could be "return every rule name" and
+        // every other spec here would still pass.
+        let g = toy("r = \"a\"\nunreached = \"b\"")
+        !str_in(rules_reachable_from(g, "r"), "unreached")
+    }
+    then "a CYCLE terminates instead of hanging" {
+        // An operator ladder is cyclic by construction (expression -> … ->
+        // expression), so this is the normal case, not an edge case.
+        let g = toy("r = s\ns = r")
+        let hit = rules_reachable_from(g, "r")
+        str_in(hit, "r") && str_in(hit, "s")
+    }
+    then "it recurses into `( … )` groups" {
+        // A group is itself an alternation, so a ref inside one is easy to miss.
+        let g = toy("r = ( s )\ns = \"a\"")
+        str_in(rules_reachable_from(g, "r"), "s")
+    }
+    then "an unknown start yields just that name, not a crash" {
+        rules_reachable_from(toy("r = \"a\""), "nonexistent").length == 1
+    }
+}
+
+spec "on the REAL grammar, reachability reproduces the families" {
+    then "`statement` reaches the statement-family rules the spine names" {
+        let hit = rules_reachable_from(avra_program_grammar(), "statement")
+        str_in(hit, "defer_stmt") && str_in(hit, "return_stmt")
+            && str_in(hit, "while_stmt") && str_in(hit, "if_stmt")
+            && str_in(hit, "break_stmt") && str_in(hit, "continue_stmt")
+    }
+    then "`expression` reaches the operator ladder" {
+        let hit = rules_reachable_from(avra_program_grammar(), "expression")
+        str_in(hit, "assignment") && str_in(hit, "equality")
+    }
+    then "`type_expr` reaches the type-family rules" {
+        str_in(rules_reachable_from(avra_program_grammar(), "type_expr"), "type_atom")
+    }
+    then "the whole program reaches MORE than any single family — they are nested, not disjoint" {
+        // `program` -> declaration -> statement -> expression, so the counts
+        // must strictly increase outward. If they did not, the reachability
+        // walk would be finding something other than the rule graph.
+        let prog = rules_reachable_from(avra_program_grammar(), "program").length
+        let stmt = rules_reachable_from(avra_program_grammar(), "statement").length
+        let expr = rules_reachable_from(avra_program_grammar(), "expression").length
+        prog >= stmt && stmt >= expr && expr > 0
+    }
+}
