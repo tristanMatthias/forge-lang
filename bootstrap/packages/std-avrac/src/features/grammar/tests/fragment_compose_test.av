@@ -7,7 +7,7 @@
 // adding a feature adds only its fragment; the composer joins them, no central
 // edit. The cross-MODULE compose (grammar + match) is the load-bearing
 // assertion: fragments genuinely live with their owning features.
-use @std.avrac.features.grammar.{compose_fragments, compose_grammars, fragment_rule_conflicts, avra_expr_dispatch_grammar, avra_type_grammar, Grammar, parse_grammar}
+use @std.avrac.features.grammar.{compose_fragments, compose_grammars, fragment_rule_conflicts, avra_type_grammar, Grammar, parse_grammar, avra_expr_spine_grammar}
 use @std.avrac.features.match.{avra_pat_grammar}
 
 // Two tiny fragments that intentionally CLASH on a rule name (`shared`), to
@@ -30,17 +30,21 @@ fn frag_y() -> Grammar {
 
 spec "t-47hc.8: per-feature grammar fragments compose cross-module" {
     then "compose_fragments of a single fragment is identity on the rule set" {
-        let e = avra_expr_dispatch_grammar()
+        let e = avra_expr_spine_grammar()
         let c = compose_fragments([e])
         c.rules.length == e.rules.length && c.name == e.name
     }
     then "expr (features.grammar) + pat (features.match) compose; rule set is the union" {
-        let e = avra_expr_dispatch_grammar()
+        let e = avra_expr_spine_grammar()
         let p = avra_pat_grammar()
         let c = compose_fragments([e, p])
         c.rules.length == e.rules.length + p.rules.length
     }
     then "THREE disjoint fragments (expr + pat + type) compose to the ordered union" {
+        // Uses the expr SPINE rather than the dispatch view: these assertions
+        // are RELATIVE (identity, pairwise union, N-ary union), so they need
+        // only rule-disjoint fragments, not a particular family. The spine is
+        // a subset of the old dispatch view and stays disjoint from pat/type.
         // Exercises the N-ary path beyond the legacy 2-fragment case: an impl
         // that dropped fragment 3+ would pass the pair test but fail here. expr
         // (features.grammar), pat (features.match), and type (features.grammar)
@@ -49,7 +53,7 @@ spec "t-47hc.8: per-feature grammar fragments compose cross-module" {
         // The interpreter expression view already includes the type family for
         // typed-lambda resolution; use its dispatch/core view when composing the
         // expression and type fragments as separate, disjoint modules.
-        let e = avra_expr_dispatch_grammar()
+        let e = avra_expr_spine_grammar()
         let p = avra_pat_grammar()
         let t = avra_type_grammar()
         let c = compose_fragments([e, p, t])
@@ -59,16 +63,16 @@ spec "t-47hc.8: per-feature grammar fragments compose cross-module" {
             && fragment_rule_conflicts([e, p, t]).length == 0
     }
     then "the FIRST fragment's start rule leads the composition" {
-        let e = avra_expr_dispatch_grammar()
+        let e = avra_expr_spine_grammar()
         let p = avra_pat_grammar()
         let c = compose_fragments([e, p])
         c.rules[0].name == e.rules[0].name && c.name == e.name
     }
     then "disjoint cross-module fragments report NO conflicts" {
-        fragment_rule_conflicts([avra_expr_dispatch_grammar(), avra_pat_grammar()]).length == 0
+        fragment_rule_conflicts([avra_expr_spine_grammar(), avra_pat_grammar()]).length == 0
     }
     then "compose_grammars is the 2-fragment case of compose_fragments" {
-        let e = avra_expr_dispatch_grammar()
+        let e = avra_expr_spine_grammar()
         let p = avra_pat_grammar()
         compose_grammars(e, p).rules.length == compose_fragments([e, p]).rules.length
     }

@@ -10,7 +10,7 @@
 // `add_stmt_leaf` for the statement one, so neither has a span to thread).
 use @std.avrac.features.if_stmt.{if_lang, avra_if_stmt_grammar, avra_iflet_expr_grammar}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar, avra_expr_grammar, avra_expr_dispatch_grammar, central_build_kind, grammar_build_refs, Grammar}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, grammar_build_refs, Grammar}
 
 spec "if as a LanguageFeature" {
     then "the keywords derive from the declared grammar" {
@@ -29,19 +29,19 @@ spec "if as a LanguageFeature" {
         // head + the feature-owned lowering.
         let rule = "if_stmt = \"if\" c:expression t:block ( \"else\" e:statement )? -> build_if(c, t, e)"
         render_grammar(feature_gram(if_lang())).contains(rule)
-            && render_grammar(avra_stmt_flip_grammar()).contains(rule)
+            && render_grammar(avra_program_grammar()).contains(rule)
     }
     then "the whole-program view lowers through the same builder" {
         let prod = render_grammar(avra_program_grammar())
         prod.contains("build_if(") && !prod.contains("-> If(")
     }
-    then "if_stmt is a DEFINED rule in every view's rule TABLE, build arity and all" {
+    then "if_stmt is a DEFINED rule in the feature fragment AND the production grammar, build arity and all" {
         // The structural twin of the spelling pins above (review find on
         // #1243): a rendered substring proves the display form, the rule
         // table + grammar_build_refs prove the rule EXISTS and references
         // build_if at arity 3 — an unresolved reference cannot satisfy this.
         mut ok = true
-        for g in [feature_gram(if_lang()), avra_stmt_flip_grammar(), avra_program_grammar()] {
+        for g in [feature_gram(if_lang()), avra_program_grammar()] {
             mut has_rule = false
             for r in g.rules { if r.name == "if_stmt" { has_rule = true } }
             mut has_ref = false
@@ -167,21 +167,19 @@ spec "if let is feature-owned — rules and lowerings both" {
         // one route — the feature registry — so the expression views get
         // iflet_expr through the statement family they already compose.
         mut ok = true
-        for g in [avra_stmt_flip_grammar(), avra_program_grammar(), avra_expr_grammar()] {
+        for g in [avra_program_grammar()] {
             if !defines(g, "iflet_stmt") || !defines(g, "iflet_expr") { ok = false }
         }
         ok
     }
-    then "the DISPATCH-only expression view leaves it external, like match_table_expr" {
-        // avra_expr_dispatch_grammar is bare avra_expr_core: a composition
-        // internal whose feature-owned references resolve after the merge.
-        // Composing the fragment in HERE would double-count it against the
-        // registry fold — the disjointness property fragment_registry_test
-        // pins — so the reference stays external, the shape `match_expr`'s
-        // table branch already has.
-        !defines(avra_expr_dispatch_grammar(), "iflet_expr")
-            && !defines(avra_expr_dispatch_grammar(), "match_table_expr")
-    }
+    // DELETED (P2c(c)): "the DISPATCH-only expression view leaves it external,
+    // like match_table_expr". Its subject was avra_expr_dispatch_grammar — the
+    // bare avra_expr_core composition internal — which no longer exists. With
+    // ONE grammar there is no view that leaves iflet_expr/match_table_expr
+    // external; the composed whole defines both, which the spec above asserts.
+    // The disjointness property the deleted spec cited (composing a fragment in
+    // here would double-count it against the registry fold) is pinned by
+    // fragment_registry_test, so nothing is lost by removing this one.
     then "the spine keeps the @peek-gated reference, not the rule body" {
         // if_expr reaches the form by NAMING it, exactly as `statement` does —
         // so the plain-if branch is still the alternation's sibling. The

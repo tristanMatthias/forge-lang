@@ -1,0 +1,253 @@
+// WHY: P2c(c) replaces the nested view chain with ONE flat composition —
+// design record section 2's `compose_fragments([engine_spine()] + feature_fragments())`.
+// The whole risk is ORDER: composed rule order IS the emitted parser's fn order
+// (t-kd4y.3.5.9), so a recomposition that reorders is IR-observable and needs
+// `intended-ir-change`, while one that preserves order lands as a no-op.
+//
+// This measures which it is, WITHOUT touching the production chain. The nesting
+// today is:
+//   avra_program_grammar   = compose([program_rule, decl_flip])
+//   avra_decl_flip_grammar = compose([decl_edge, stmt_flip])
+//   avra_stmt_flip_grammar = compose([stmt_common, expr_core, decl_edge, type, pat] + stmt_family)
+//   avra_expr_core         = compose([expr_spine] + expr_fragments)
+// and `compose_grammars(a, b)` is literally `compose_fragments([a, b])`, so the
+// whole chain is ONE associative operator and the flattening is well defined.
+//
+// avra_type_grammar is kept as a UNIT on purpose: it carries the start-symbol
+// HOIST (it promotes whichever fragment defines `type_expr` to the front), and
+// inlining its fragments would drop that. Section 2's own correction records
+// what breaks otherwise — type_equivalence_test went 0/8, even `int` failing.
+
+use @std.avrac.features.grammar.{Grammar, avra_program_grammar, avra_expr_spine_grammar, avra_type_spine_grammar, avra_type_grammar}
+
+fn rule_names(g: Grammar) -> List<string> {
+    mut out: List<string> = []
+    for r in g.rules { out.push(r.name) }
+    out
+}
+
+fn joined(xs: List<string>) -> string {
+    mut s = ""
+    for x in xs { s = s + x + "," }
+    s
+}
+
+spec "P2c(c): the FLAT composition reproduces the nested chain's rule order" {
+    then "the nested chain has rules at all — anti-vacuity" {
+        // If avra_program_grammar ever returned empty, every order comparison
+        // below would pass on two empty lists.
+        rule_names(avra_program_grammar()).length > 50
+    }
+    then "`program` leads — the start symbol is the first fragment's start rule" {
+        rule_names(avra_program_grammar())[0] == "program"
+    }
+    then "the type view still leads with `type_expr` — the HOIST survives" {
+        // The invariant P2c(c) must not lose. Pinned here so a flattening that
+        // inlines the type fragments trips this rather than type_equivalence.
+        rule_names(avra_type_grammar())[0] == "type_expr"
+    }
+    then "the COMPLETE ORDERED rule sequence is unchanged — not merely its membership" {
+        // The membership spec above is NOT enough, and the gap is the exact risk
+        // P2c(c) carries (review find on #1311). Composed rule ORDER determines
+        // the emitted parser's fn order, which is IR-observable — so a fragment
+        // reordering would keep every rule present, pass a membership check, and
+        // silently move emitted IR.
+        //
+        // This baseline was CAPTURED at the commit where flattening was proven
+        // IR-neutral by two independent oracles: regenerating parse/gen_parser.av
+        // produced NO diff (byte-identical, 298334 bytes) and diff-test reported
+        // selfhost byte-identical + 25/25 corpus. So the sequence below is not a
+        // guess about what the order should be — it is the order that was MEASURED
+        // to reproduce the pre-flattening parser exactly.
+        //
+        // It is deliberately a CHECKED-IN LITERAL rather than anything derived from
+        // avra_program_grammar(), because a baseline computed from the subject under
+        // test cannot fail. If this spec goes red, the emitted parser's fn order has
+        // moved: regenerate parse/gen_parser.av, read that diff, and treat a real
+        // change as `intended-ir-change` with a run-equivalence oracle.
+        let expected =
+        "program\n" +
+        "name_or_splice\n" +
+        "declaration\n" +
+        "body_item\n" +
+        "use_decl\n" +
+        "use_tail\n" +
+        "mod_decl\n" +
+        "export_decl\n" +
+        "exportable_decl\n" +
+        "exportable_inner\n" +
+        "doc_decl\n" +
+        "docable_decl\n" +
+        "mdoc_decl\n" +
+        "annot_decl\n" +
+        "annotable_decl\n" +
+        "annot\n" +
+        "wrapped_inner\n" +
+        "type_decl\n" +
+        "shape_decl\n" +
+        "field\n" +
+        "tparam\n" +
+        "enum_decl\n" +
+        "variant\n" +
+        "fn_decl\n" +
+        "where_param\n" +
+        "extern_decl\n" +
+        "trait_decl\n" +
+        "trait_member\n" +
+        "assoc_member\n" +
+        "method_member\n" +
+        "impl_decl\n" +
+        "impl_member\n" +
+        "impl_assoc\n" +
+        "impl_method\n" +
+        "select_decl\n" +
+        "select_arm\n" +
+        "parallel_decl\n" +
+        "spec_decl\n" +
+        "spec_item\n" +
+        "given_blk\n" +
+        "then_blk\n" +
+        "let_decl\n" +
+        "mut_decl\n" +
+        "const_decl\n" +
+        "letdes_decl\n" +
+        "comp_header\n" +
+        "comp_config_block\n" +
+        "comp_children_block\n" +
+        "comp_body_marker\n" +
+        "comp_implements\n" +
+        "comp_paren_decl\n" +
+        "comp_impl_inst\n" +
+        "component_decl\n" +
+        "config_entry\n" +
+        "children_slot\n" +
+        "comp_inst\n" +
+        "bare_comp_inst\n" +
+        "bare_comp_inst_raw\n" +
+        "config_pair\n" +
+        "comp_block_item\n" +
+        "comp_item\n" +
+        "comp_field\n" +
+        "statement\n" +
+        "block\n" +
+        "stmt_block\n" +
+        "expr_stmt\n" +
+        "expression\n" +
+        "eq_tail\n" +
+        "bitor\n" +
+        "bitxor\n" +
+        "bitand\n" +
+        "comparison\n" +
+        "shift\n" +
+        "term\n" +
+        "factor\n" +
+        "unary\n" +
+        "brace_expr\n" +
+        "postfix_suffix\n" +
+        "block_expr\n" +
+        "table_cell\n" +
+        "null_cell\n" +
+        "qualified_expr\n" +
+        "quote_type_expr\n" +
+        "quote_arm_expr\n" +
+        "quote_expr\n" +
+        "paren_expr\n" +
+        "lambda_body\n" +
+        "param\n" +
+        "tuple_suffix\n" +
+        "list_expr\n" +
+        "list_comp\n" +
+        "map_literal\n" +
+        "table_lit\n" +
+        "table_head\n" +
+        "table_row\n" +
+        "struct_lit_expr\n" +
+        "field_init\n" +
+        "variant_ctor\n" +
+        "enum_ctor_suffix\n" +
+        "field_suffix\n" +
+        "with_suffix\n" +
+        "grammar_expr\n" +
+        "spawn_expr\n" +
+        "isolated_expr\n" +
+        "channel_expr\n" +
+        "assignment\n" +
+        "equality\n" +
+        "null_coalesce\n" +
+        "optchain_suffix\n" +
+        "optcall_suffix\n" +
+        "unwrap_suffix\n" +
+        "catch_suffix\n" +
+        "index_suffix\n" +
+        "index_tail\n" +
+        "call_suffix\n" +
+        "call_arg\n" +
+        "logic_or\n" +
+        "logic_and\n" +
+        "pipe\n" +
+        "pipe_arg\n" +
+        "eqchain_tail\n" +
+        "is_tail\n" +
+        "in_tail\n" +
+        "in_rhs\n" +
+        "unary_prefix\n" +
+        "template_lit\n" +
+        "tagged_template\n" +
+        "type_expr\n" +
+        "splice_type\n" +
+        "type_atom\n" +
+        "fn_type\n" +
+        "dyn_type\n" +
+        "list_type\n" +
+        "paren_type\n" +
+        "qualified_type\n" +
+        "named_type\n" +
+        "pattern_or\n" +
+        "pattern\n" +
+        "opt_present\n" +
+        "opt_absent\n" +
+        "variant_pat\n" +
+        "ident_pat\n" +
+        "bool_pat\n" +
+        "str_pat\n" +
+        "neg_pat\n" +
+        "num_pat\n" +
+        "match_when_arm\n" +
+        "match_arm\n" +
+        "arm_body\n" +
+        "match_stmt\n" +
+        "match_expr\n" +
+        "when_expr\n" +
+        "when_arm\n" +
+        "match_table_stmt\n" +
+        "match_table_expr\n" +
+        "defer_stmt\n" +
+        "errdefer_stmt\n" +
+        "return_stmt\n" +
+        "while_stmt\n" +
+        "if_stmt\n" +
+        "iflet_stmt\n" +
+        "iflet_expr\n" +
+        "if_expr\n" +
+        "else_tail\n" +
+        "for_stmt\n" +
+        "for_binding\n" +
+        "break_stmt\n" +
+        "continue_stmt\n"
+        mut actual = ""
+        for r in avra_program_grammar().rules { actual = actual + r.name + "\n" }
+        actual == expected
+    }
+    then "the engine's rule-bearing fragments are all present in the composed whole" {
+        // Only the EXPORTED rule-bearing views can be named here.
+        // avra_decl_edge_grammar / avra_stmt_common_grammar / avra_expr_core are
+        // PRIVATE — which is itself a P2c(c) finding: three of the views have no
+        // external consumer at all and can be restructured without touching a
+        // single caller.
+        let all = joined(rule_names(avra_program_grammar()))
+        mut ok = true
+        for r in rule_names(avra_expr_spine_grammar()) { if !all.contains(r + ",") { ok = false } }
+        for r in rule_names(avra_type_spine_grammar()) { if !all.contains(r + ",") { ok = false } }
+        ok
+    }
+}

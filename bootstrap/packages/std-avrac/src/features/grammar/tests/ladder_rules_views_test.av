@@ -6,7 +6,7 @@
 // pins rule DEFINITIONS (g.rules, never rendered text — a render shows a
 // reference without a definition behind it) across every composed view that
 // derives expressions.
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_stmt_flip_grammar, avra_decl_flip_grammar, avra_program_grammar, Grammar}
+use @std.avrac.features.grammar.{avra_program_grammar, Grammar}
 
 fn ladder_rules() -> List<string> {
     ["assignment", "equality", "pipe", "pipe_arg", "null_coalesce",
@@ -25,16 +25,12 @@ fn missing_in(g: Grammar) -> string {
     ""
 }
 
-spec "every composed view DEFINES the externally owned operator-ladder rules" {
-    then "the expression dispatch view" {
-        missing_in(avra_expr_dispatch_grammar()) == ""
-    }
-    then "the statement-flip view" {
-        missing_in(avra_stmt_flip_grammar()) == ""
-    }
-    then "the declaration-flip view" {
-        missing_in(avra_decl_flip_grammar()) == ""
-    }
+// P2c(c): the per-VIEW arms are gone with the views. Their premise was that
+// MULTIPLE compositions could diverge — "a fragment dropped from ONE view's
+// composition would leave that view with dangling references while the others
+// stay green". With one grammar there is nothing to diverge FROM, so the check
+// collapses to the whole-program arm, which is the one that always mattered.
+spec "the composed language DEFINES the externally owned operator-ladder rules" {
     then "the whole-program view" {
         missing_in(avra_program_grammar()) == ""
     }

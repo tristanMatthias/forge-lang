@@ -3,7 +3,8 @@
 // `p.match(...)` / `collect x +=` / `p.node(...)`). These specs pin, per rule
 // family, that the emitted text is the CapVal/PState static form.
 //
-// ps3t.6.7 Step C: avra_expr_grammar now owns only the DECLARATIVE operator
+// ps3t.6.7 Step C (historical — the views are gone as of P2c(c); the whole
+// grammar carries this now): the expression family owns the DECLARATIVE operator
 // ladder (logic_or → factor); the PROCEDURAL leaf (unary/postfix/primary) is a
 // single `@hand(hand_unary)` delegation — the hand postfix chain is newline-
 // sensitive + mode-stateful, so it is NOT expressible byte-identically in the
@@ -15,7 +16,7 @@
 // mode (a full nested compile+run, too heavy for every `bs2 test`).
 
 use @std.avrac.core.{avra_selfhost_read_file}
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, Grammar, Rule, GNode, checked_in_parser_source}
+use @std.avrac.features.grammar.{emit_rule_fn, Grammar, Rule, GNode, checked_in_parser_source, avra_program_grammar}
 
 // The canonical §2 expression grammar is the SOURCE-OF-TRUTH `grammar { }`
 // block dogfooded into compiler src/ (avra_grammar.av, ps3t.6.5.11); the
@@ -370,7 +371,7 @@ fn ")
     then "the single-rule entry keeps grammar context (ref FIRST-sets resolve)" {
         // emit_rule_fn(g, term) needs the grammar to resolve factor's FIRST set
         // for its `while` guard — the operator group here (Tk-dispatched, ps3t.6.7 perf).
-        let g = avra_expr_dispatch_grammar()
+        let g = avra_program_grammar()
         let term = emit_rule_fn(g, rule_named(g, "term"))
         term.contains("while st.cur().tk == Tk.Plus || st.cur().tk == Tk.Minus {")
     }

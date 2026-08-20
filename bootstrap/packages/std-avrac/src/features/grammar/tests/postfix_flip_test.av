@@ -60,7 +60,7 @@
 // zero-width gates run between dispatch entry and sub-rule entry, so the
 // frozen base is byte-identical to the retired inline form's.
 
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, emit_parser_source, Grammar}
+use @std.avrac.features.grammar.{emit_rule_fn, emit_parser_source, Grammar, avra_program_grammar}
 
 /// The emitted ENTRY GUARD (`fn starts_<name>`) of one rule, cut from the
 /// full emitted source. A SINGLE-branch rule's leading zero-width gates
@@ -70,7 +70,7 @@ use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, emit_rule_fn, emit_
 /// branch conditions inline, which is why the unwrap/catch pins read the
 /// body). Empty string when the rule has no emitted guard.
 fn guard_src(name: string) -> string {
-    let s = emit_parser_source(avra_expr_dispatch_grammar())
+    let s = emit_parser_source(avra_program_grammar())
     let start = s.index_of("fn starts_${name}(")
     if start < 0 { return "" }
     // index_of has no from-offset arity — cut the tail first, then find the
@@ -82,7 +82,7 @@ fn guard_src(name: string) -> string {
 }
 
 fn rule_src(name: string) -> string {
-    let g = avra_expr_dispatch_grammar()
+    let g = avra_program_grammar()
     for gr in g.rules {
         if gr.name == name { return emit_rule_fn(g, gr) }
     }
@@ -110,7 +110,7 @@ spec "t-47hc.33: `expr?` is grammar-native" {
         // The hand tail can return WITHOUT consuming (guard unmatched / generic-call
         // speculation failed / trailing non-postfix arm). The break is the loop's exit;
         // losing it when the rule went partly-native would spin forever.
-        let g = avra_expr_dispatch_grammar()
+        let g = avra_program_grammar()
         mut src = ""
         for gr in g.rules {
             if gr.name == "unary" { src = emit_rule_fn(g, gr) }
@@ -208,7 +208,7 @@ spec "t-47hc.33: the chain base is frozen at step ENTRY" {
         // carry the same build-name list in separate modules. If they drift, one engine
         // snapshots and the other does not — the exact divergence class this suite exists
         // for. A rule with no postfix-step build must emit no snapshot at all.
-        let g = avra_expr_dispatch_grammar()
+        let g = avra_program_grammar()
         mut with_suffix_src = ""
         for gr in g.rules {
             if gr.name == "with_suffix" { with_suffix_src = emit_rule_fn(g, gr) }
@@ -228,7 +228,7 @@ spec "t-47hc.33: `expr[i]` / `expr[a..b]` are grammar-native" {
         // One arm in the hand, two sequences here: @expect keys on the token, so each
         // wording needs its own sequence. Dispatch is on `..`, not speculation — the hand
         // parses the index expression exactly once and a @try would parse it twice.
-        let g = avra_expr_dispatch_grammar()
+        let g = avra_program_grammar()
         mut tail = ""
         for gr in g.rules {
             if gr.name == "index_tail" { tail = emit_rule_fn(g, gr) }
@@ -236,7 +236,7 @@ spec "t-47hc.33: `expr[i]` / `expr[a..b]` are grammar-native" {
         tail.contains("expected `]` after slice") && tail.contains("expected `]` after index")
     }
     then "the `]` branch is the unguarded @fallback tail — it owns `a[1 2]`" {
-        let g = avra_expr_dispatch_grammar()
+        let g = avra_program_grammar()
         mut tail = ""
         for gr in g.rules {
             if gr.name == "index_tail" { tail = emit_rule_fn(g, gr) }
@@ -313,7 +313,7 @@ spec "t-47hc.33: a nested chain is invisible to the chain that contains it" {
         // once the call form lands) used to overwrite the frozen base before the outer
         // step's build read it, leaving the suffix folded onto the WRONG node. The hand
         // parser has no such hazard because its `rid` is a LOCAL of parse_call.
-        let g = avra_expr_dispatch_grammar()
+        let g = avra_program_grammar()
         mut u = ""
         for gr in g.rules {
             if gr.name == "unary" { u = emit_rule_fn(g, gr) }
@@ -325,7 +325,7 @@ spec "t-47hc.33: a nested chain is invisible to the chain that contains it" {
     then "the restore runs AFTER the fold, not before it" {
         // Restoring early would undo the chain's own ( postfix_suffix )* threading and
         // the fold would pick up the pre-chain base.
-        let g = avra_expr_dispatch_grammar()
+        let g = avra_program_grammar()
         mut u = ""
         for gr in g.rules {
             if gr.name == "unary" { u = emit_rule_fn(g, gr) }
@@ -335,7 +335,7 @@ spec "t-47hc.33: a nested chain is invisible to the chain that contains it" {
     then "the wrapper delegates to a SEPARATE fn rather than inlining the restore" {
         // The body has many `return` points and the restore has to run after every one
         // of them — a wrapper is the only shape that gets that for free.
-        let g = avra_expr_dispatch_grammar()
+        let g = avra_program_grammar()
         mut u = ""
         for gr in g.rules {
             if gr.name == "unary" { u = emit_rule_fn(g, gr) }

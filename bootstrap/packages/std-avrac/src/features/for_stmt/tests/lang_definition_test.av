@@ -7,7 +7,7 @@
 // owns every build its grammar references.
 use @std.avrac.features.for_stmt.{for_lang, for_in_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar, grammar_build_refs, Grammar}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, grammar_build_refs, Grammar}
 
 spec "for as a LanguageFeature (every build its gram references is feature-owned)" {
     then "the keywords derive from the declared grammar" {
@@ -20,13 +20,13 @@ spec "for as a LanguageFeature (every build its gram references is feature-owned
         f.title.length > 0 && f.docs.contains("half-open") && f.snippet.contains("for")
             && fi.title.length > 0 && feature_gram(for_in_lang()).rules.length == 0
     }
-    then "for_stmt + for_binding are DEFINED rules in every view's table, build refs and all" {
+    then "for_stmt + for_binding are DEFINED rules in the feature fragment AND the production grammar, build refs and all" {
         // Structural (the #1243 discipline): the rule table proves the rules
         // exist; grammar_build_refs proves the branch lowerings — build_for
         // at arity 4 AND the destructure pair's references — survive
         // composition. All three resolve to manifest rows now.
         mut ok = true
-        for g in [feature_gram(for_lang()), avra_stmt_flip_grammar(), avra_program_grammar()] {
+        for g in [feature_gram(for_lang()), avra_program_grammar()] {
             mut has_stmt = false
             mut has_binding = false
             for r in g.rules {

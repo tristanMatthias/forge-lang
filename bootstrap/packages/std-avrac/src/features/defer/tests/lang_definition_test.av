@@ -5,7 +5,7 @@
 // composition consumes the definitions directly (t-kd4y follow-up).
 use @std.avrac.features.defer.{defer_lang, errdefer_lang}
 use @std.avrac.features.{feature_keywords, feature_gram}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, grammar_build_refs}
 
 spec "defer as a LanguageFeature" {
     then "keywords derive from the declared grammar" {
@@ -24,11 +24,50 @@ spec "defer as a LanguageFeature" {
         // feature's build_defer/build_errdefer, which every spine copy
         // references identically. This spec is the flip's spelling lockstep:
         // a spine copy left on the old central name fails here.
-        let stmt_view = render_grammar(avra_stmt_flip_grammar())
+        let stmt_view = render_grammar(avra_program_grammar())
         let defer_rule = "defer_stmt = \"defer\" e:expression -> build_defer(e)"
         let errdefer_rule = "errdefer_stmt = \"errdefer\" e:expression -> build_errdefer(e)"
         render_grammar(feature_gram(defer_lang())).contains(defer_rule) && stmt_view.contains(defer_rule)
             && render_grammar(feature_gram(errdefer_lang())).contains(errdefer_rule) && stmt_view.contains(errdefer_rule)
+    }
+    then "the rules and their builds are STRUCTURALLY present, not merely spelled" {
+        // The #1243 discipline, applied here too: render_grammar(...).contains(...)
+        // above pins the SPELLING, but a rendered substring can match inside a
+        // DIFFERENT rule's text, so containment alone does not prove the rule
+        // exists under that name. g.rules proves the rule NAME is defined and
+        // grammar_build_refs proves the lowering is attached at the right arity.
+        //
+        // defer and errdefer are SEPARATE features with separate fragments, so
+        // each rule is checked in its OWN fragment; both must also survive into
+        // the composed production grammar.
+        mut has_defer = false
+        mut has_errdefer = false
+        mut ref_defer = false
+        mut ref_errdefer = false
+        for r in feature_gram(defer_lang()).rules { if r.name == "defer_stmt" { has_defer = true } }
+        for r in feature_gram(errdefer_lang()).rules { if r.name == "errdefer_stmt" { has_errdefer = true } }
+        for br in grammar_build_refs(feature_gram(defer_lang())) {
+            if br.name == "build_defer" && br.argc == 1 { ref_defer = true }
+        }
+        for br in grammar_build_refs(feature_gram(errdefer_lang())) {
+            if br.name == "build_errdefer" && br.argc == 1 { ref_errdefer = true }
+        }
+        // ...and both survive composition into the whole-program grammar.
+        let prod = avra_program_grammar()
+        mut prod_defer = false
+        mut prod_errdefer = false
+        mut prod_ref_defer = false
+        mut prod_ref_errdefer = false
+        for r in prod.rules {
+            if r.name == "defer_stmt" { prod_defer = true }
+            if r.name == "errdefer_stmt" { prod_errdefer = true }
+        }
+        for br in grammar_build_refs(prod) {
+            if br.name == "build_defer" && br.argc == 1 { prod_ref_defer = true }
+            if br.name == "build_errdefer" && br.argc == 1 { prod_ref_errdefer = true }
+        }
+        has_defer && has_errdefer && ref_defer && ref_errdefer
+            && prod_defer && prod_errdefer && prod_ref_defer && prod_ref_errdefer
     }
     then "the whole-program view lowers through the same builders" {
         let prod = render_grammar(avra_program_grammar())

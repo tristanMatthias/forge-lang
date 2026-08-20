@@ -8,7 +8,7 @@
 // other fragments (a clean union with a well-defined start symbol) — so this
 // spec is the gate that keeps the modular assembly honest, not a snapshot.
 use @std.avrac.features.{feature_grammar_fragments}
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_expr_spine_grammar, avra_type_spine_grammar, avra_program_grammar, compose_fragments, fragment_rule_conflicts, feature_decl_grammar_fragments, Grammar}
+use @std.avrac.features.grammar.{avra_expr_spine_grammar, avra_type_spine_grammar, avra_program_grammar, compose_fragments, fragment_rule_conflicts, feature_decl_grammar_fragments, Grammar}
 
 // The shared cross-cutting base (owned by no single feature) followed by every
 // per-feature fragment the registry collects — the composer's full input.
@@ -129,8 +129,12 @@ spec "t-47hc.8: feature grammar-fragment registry assembles cleanly" {
         let c = compose_fragments(all)
         c.rules.length == total_rules(all)
             && c.rules[0].name == avra_expr_spine_grammar().rules[0].name
-            // …and the dispatch view still LEADS with the same start rule, so
-            // splitting spine from composed core moved no start symbol.
-            && avra_expr_dispatch_grammar().rules[0].name == avra_expr_spine_grammar().rules[0].name
+            // The second clause here compared the DISPATCH VIEW's start rule to
+            // the spine's, pinning that "splitting spine from composed core moved
+            // no start symbol". P2c(c) deleted that view, so the clause lost its
+            // subject rather than its meaning: the surviving statement of the same
+            // property is that the whole-program grammar still leads with
+            // `program`, which one_spine_equivalence_test asserts directly.
+            && avra_program_grammar().rules[0].name == "program"
     }
 }

@@ -5,7 +5,7 @@
 // engine's Break()/Continue() builds surviving as toy-grammar vocabulary.
 use @std.avrac.features.break_continue.{break_lang, continue_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar, grammar_build_refs, Grammar}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, grammar_build_refs, Grammar}
 
 spec "break / continue as LanguageFeatures" {
     then "the keywords derive from the declared grammars" {
@@ -19,9 +19,9 @@ spec "break / continue as LanguageFeatures" {
         b.title.length > 0 && b.docs.contains("innermost") && b.snippet == "break"
             && c.title.length > 0 && c.docs.contains("next iteration") && c.snippet == "continue"
     }
-    then "both rules are DEFINED in every view's table with their zero-arg builds" {
+    then "both rules are DEFINED in the production grammar with their zero-arg builds" {
         mut ok = true
-        for g in [avra_stmt_flip_grammar(), avra_program_grammar()] {
+        for g in [avra_program_grammar()] {
             mut has_break = false
             mut has_continue = false
             for r in g.rules {

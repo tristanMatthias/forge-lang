@@ -8,7 +8,7 @@
 // pinned here too.
 use @std.avrac.features.while_stmt.{while_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, grammar_build_refs}
 
 spec "while as a LanguageFeature" {
     then "the keyword derives from the declared grammar" {
@@ -25,7 +25,27 @@ spec "while as a LanguageFeature" {
         // head + the feature-owned lowering.
         let rule = "while_stmt = \"while\" c:expression body:block -> build_while(c, body)"
         render_grammar(feature_gram(while_lang())).contains(rule)
-            && render_grammar(avra_stmt_flip_grammar()).contains(rule)
+            && render_grammar(avra_program_grammar()).contains(rule)
+    }
+    then "the rules and their builds are STRUCTURALLY present, not merely spelled" {
+        // The #1243 discipline, applied here too: render_grammar(...).contains(...)
+        // above pins the SPELLING, but a rendered substring can match inside a
+        // DIFFERENT rule's text, so containment alone does not prove the rule
+        // exists under that name. g.rules proves the rule NAME is defined and
+        // grammar_build_refs proves the lowering is attached at the right arity.
+        mut ok = true
+        for g in [feature_gram(while_lang()), avra_program_grammar()] {
+            mut has_while_stmt = false
+            for r in g.rules {
+                if r.name == "while_stmt" { has_while_stmt = true }
+            }
+            mut ref_build_while = false
+            for br in grammar_build_refs(g) {
+                if br.name == "build_while" && br.argc == 2 { ref_build_while = true }
+            }
+            if !has_while_stmt || !ref_build_while { ok = false }
+        }
+        ok
     }
     then "the whole-program view lowers through the same builder" {
         let prod = render_grammar(avra_program_grammar())

@@ -3,21 +3,22 @@
 // rule (a block's `stmts:statement*`), the generated twin of the hand parser's
 // parse_statement_list_ids (parse/mod.av:821).
 //
-// avra_stmt_flip_grammar() carries the `block = "{" stmts:statement* "}" -> Block`
+// avra_program_grammar() carries the `block = "{" stmts:statement* "}" -> Block`
 // rule (landed #983), so emitting IT exercises emit_stmt_list_loop. This is a
 // STRUCTURAL guard on the emitter — proving the loop shape is byte-identical to
 // parse_statement_list_ids (loop-until-`}`/EOF, per-child SrcPos via to_linecol,
 // panic-mode synchronize_stmt + positioned Stmt.Error on a failed child). It is
-// DORMANT: the PRODUCTION static parser (gen_decl_parser) is emitted from
-// avra_stmt_dispatch_grammar, which has NO block rule, so this changes no
+// DORMANT: the PRODUCTION static parser was emitted from a statement dispatch
+// view with NO block rule (that view is deleted as of P2c(c) — the production
+// parser is now emitted from avra_program_grammar), so this changes no
 // production emit (diagnose.sh --emit-gen-check stays GENPASS). The BEHAVIOURAL
 // byte-identity proof lands at STEP 4 (the recovery-tree oracle over the real
 // static parser once block/if/for/while mirror into the dispatch grammar).
 use @std.avrac.features.grammar.{emitted_rule_body, checked_in_parser_source}
-use @std.avrac.features.grammar.{avra_stmt_flip_grammar, emit_parser_source, checked_in_parser_source}
+use @std.avrac.features.grammar.{emit_parser_source, checked_in_parser_source, avra_program_grammar}
 
 fn emit_flip() -> string {
-    emit_parser_source(avra_stmt_flip_grammar())
+    emit_parser_source(avra_program_grammar())
 }
 
 /// The two other loop shapes come from REAL rules in the declaration grammar —

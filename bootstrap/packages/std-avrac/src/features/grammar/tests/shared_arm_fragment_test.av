@@ -17,7 +17,7 @@
 // language silently; duplicating them lets the copies drift into the same outcome. Being
 // ONE definition is the whole point, so that is what these specs pin.
 use @std.avrac.features.match.{avra_match_arm_grammar}
-use @std.avrac.features.grammar.{avra_decl_dispatch_grammar, avra_stmt_flip_grammar, avra_decl_flip_grammar, fragment_rule_conflicts, render_grammar, emit_parser_source, Grammar}
+use @std.avrac.features.grammar.{fragment_rule_conflicts, render_grammar, emit_parser_source, Grammar, avra_program_grammar}
 use @std.avrac.features.{feature_grammar_fragments}
 
 fn arm_rules() -> string { render_grammar(avra_match_arm_grammar()) }
@@ -66,17 +66,17 @@ spec "t-47hc.25: every grammar that references the arms also DEFINES them" {
     then "the declaration dispatch grammar (the emitted static parser's source)" {
         // Not external: the rules must be present in the merged set the decl parser is
         // emitted from, or the generated parser calls an undeclared-FIRST stub (#1021).
-        defines_arms(avra_decl_dispatch_grammar())
+        defines_arms(avra_program_grammar())
     }
     then "the statement FLIP grammar (the interpreter path)" {
         // The one this file originally missed. The interpreter WALKS the composed
         // Grammar — there is no cross-file linking to save it — so an unresolved
         // match_arm makes the DSL error on every `match` statement and silently fall
         // back to the hand parser: right answer, no diagnostic, flip quietly off.
-        defines_arms(avra_stmt_flip_grammar())
+        defines_arms(avra_program_grammar())
     }
     then "the declaration FLIP grammar (the interpreter path the decl flip runs)" {
-        defines_arms(avra_decl_flip_grammar())
+        defines_arms(avra_program_grammar())
     }
     then "composing it a second time WOULD be a conflict — the disjointness is real" {
         // Guards the duplicate-definition mistake directly: if someone re-adds the rules

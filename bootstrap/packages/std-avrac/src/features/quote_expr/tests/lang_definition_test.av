@@ -19,7 +19,7 @@
 use @std.avrac.features.quote_expr.{quote_lang}
 use @std.avrac.features.quote_expr.lowering.{quote_builds}
 use @std.avrac.features.{feature_keywords, feature_gram, builder_validation_error}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_expr_grammar, central_build_kind, BuildKind}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, BuildKind}
 
 fn has(xs: List<string>, s: string) -> bool {
     for x in xs { if x == s { return true } }
@@ -67,7 +67,7 @@ spec "quote as a LanguageFeature" {
         rule_lines(mine).length == 3
     }
     then "the declared rules reach the composed expression view, spelling and all" {
-        rules_reach(render_grammar(avra_expr_grammar()))
+        rules_reach(render_grammar(avra_program_grammar()))
     }
     then "and the whole-program view, through the same fragment registry" {
         rules_reach(render_grammar(avra_program_grammar()))

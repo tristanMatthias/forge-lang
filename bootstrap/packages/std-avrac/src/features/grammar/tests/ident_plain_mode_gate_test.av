@@ -21,7 +21,7 @@
 // idiom. Every one of them FAILS against the unconditional-decline version, which is the
 // property that makes them worth having.
 //
-// An end-to-end assertion through `avra_expr_grammar()` is deliberately NOT here: while
+// An end-to-end assertion through `avra_program_grammar()` is deliberately NOT here: while
 // the `@hand(primary_base)` tail is still in `unary`, `match x { … }` parses either way
 // and such a spec would pass without measuring anything (the t-6u9b vacuous-agreement
 // shape this whole ticket is about). It belongs to the commit that deletes the tail.

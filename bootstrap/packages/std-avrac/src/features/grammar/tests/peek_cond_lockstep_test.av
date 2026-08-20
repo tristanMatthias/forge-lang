@@ -8,7 +8,7 @@
 // Two nets here: (1) every Peek cond reachable from the production grammars is
 // non-empty and allowlisted; (2) the parse-time rejection actually surfaces via
 // `.error`, which `grammar_checked` (the production unwrap) now enforces.
-use @std.avrac.features.grammar.{Grammar, GNode, GSeq, GItem, GPrim, parse_grammar, grammar_checked, peek_cond_supported, peek_cond_names, peek_cond_expected_list, avra_expr_grammar, avra_stmt_flip_grammar, avra_type_grammar, avra_program_grammar, avra_decl_flip_grammar, avra_decl_dispatch_grammar}
+use @std.avrac.features.grammar.{Grammar, GNode, GSeq, GItem, GPrim, parse_grammar, grammar_checked, peek_cond_supported, peek_cond_names, peek_cond_expected_list, avra_type_grammar, avra_program_grammar}
 
 /// Collect every `@peek` cond reachable in `g` (recursing into groups).
 fn peek_conds(g: Grammar) -> List<string> {
@@ -42,8 +42,9 @@ fn collect_node(n: GNode) -> List<string> {
 /// True iff every cond in every production grammar is non-empty and supported.
 /// Prints the offender on failure so the red run names it.
 fn all_conds_supported() -> bool {
-    let grammars = [avra_expr_grammar(), avra_stmt_flip_grammar(), avra_type_grammar(),
-                    avra_program_grammar(), avra_decl_flip_grammar(), avra_decl_dispatch_grammar()]
+    // P2c(c): six views collapsed to the two grammars that remain — the whole
+    // program and the type view (which survives for its start-symbol hoist).
+    let grammars = [avra_program_grammar(), avra_type_grammar()]
     mut ok = true
     for g in grammars {
         for c in peek_conds(g) {
@@ -64,7 +65,7 @@ spec "@peek conds in the production grammars are allowlisted (lockstep guard)" {
         // A vacuous walk (zero conds found) would green-light silently — the
         // decl flip grammar alone carries several (`comma_ident`, `body_marker`,
         // `kw_let`, `decl_lead`).
-        peek_conds(avra_decl_flip_grammar()).length > 0
+        peek_conds(avra_program_grammar()).length > 0
     }
 }
 
