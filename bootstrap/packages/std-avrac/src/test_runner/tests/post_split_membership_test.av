@@ -1,0 +1,99 @@
+// t-f16w — which shards AGGREGATION walks after a ceiling-stopped batch is
+// split into single-file shards.
+//
+// The runner degrades batch -> solo -> split. The first two steps only ever
+// make a run RED or GREEN on their own merits; this one decides what the
+// aggregator READS, so a bug here does not fail loudly, it makes the suite
+// LIE. Leave a split victim in the list and aggregation re-reads the F4014
+// log its own splits just superseded — red on a result that no longer
+// stands. Drop it without inserting the members and the run silently loses
+// their specs — GREEN over tests that were never counted. Both directions
+// are pinned below.
+//
+// Pure over membership rather than over Shard, deliberately: Shard lives in
+// the cli package and carries a slug, a log path, a results sidecar and a
+// command line, none of which this decision depends on.
+
+use @std.avrac.test_runner.{post_split_membership}
+
+fn render_sets(sets: List<List<string>>) -> string {
+    mut out = ""
+    for s in sets {
+        if out != "" { out = out + " | " }
+        mut inner = ""
+        for p in s {
+            if inner != "" { inner = inner + "," }
+            inner = inner + p
+        }
+        out = out + "[" + inner + "]"
+    }
+    out
+}
+
+spec "t-f16w: a split victim is replaced, in place, by its members" {
+    then "the victim becomes one singleton per member" {
+        let planned = [["a", "b", "c"]]
+        render_sets(post_split_membership(planned, [["a", "b", "c"]])) == "[a] | [b] | [c]"
+    }
+
+    then "non-victims pass through untouched and IN ORDER" {
+        let planned = [["x", "y"], ["a", "b", "c"], ["z"]]
+        // Only the middle shard split; the outer two keep their membership
+        // and their positions.
+        render_sets(post_split_membership(planned, [["a", "b", "c"]])) ==
+            "[x,y] | [a] | [b] | [c] | [z]"
+    }
+
+    then "NOTHING is lost: every planned path still appears afterwards" {
+        let planned = [["x", "y"], ["a", "b", "c"], ["z"]]
+        let after = post_split_membership(planned, [["a", "b", "c"]])
+        mut seen = 0
+        for s in after { seen = seen + s.length }
+        // 2 + 3 + 1 planned paths, still 6 after the split — the GREEN-over-
+        // uncounted-specs direction.
+        seen == 6
+    }
+
+    then "no victim SURVIVES alongside its splits" {
+        let after = post_split_membership([["a", "b"]], [["a", "b"]])
+        // The red-on-a-superseded-log direction: the 2-member shard must be
+        // gone entirely, not merely accompanied.
+        render_sets(after) == "[a] | [b]" && after.length == 2
+    }
+
+    then "an empty victim list is the identity" {
+        let planned = [["x", "y"], ["z"]]
+        render_sets(post_split_membership(planned, [])) == "[x,y] | [z]"
+    }
+}
+
+spec "t-f16w: a single-member victim has nothing to split" {
+    then "it is passed through unchanged, not re-dispatched as itself" {
+        // Re-running one file as "one file" burns a second doomed compile;
+        // its honest F4014 stands instead.
+        render_sets(post_split_membership([["solo"]], [["solo"]])) == "[solo]"
+    }
+
+    then "a single-member victim beside a real one splits only the real one" {
+        let planned = [["solo"], ["a", "b"]]
+        render_sets(post_split_membership(planned, [["solo"], ["a", "b"]])) ==
+            "[solo] | [a] | [b]"
+    }
+}
+
+spec "t-f16w: victim identity is by MEMBERSHIP, not by coincidence" {
+    then "a shard with the same paths in a DIFFERENT order is not the victim" {
+        // plan_shards emits a stable order, so a reordered set is a
+        // different shard — matching it would split an innocent one.
+        render_sets(post_split_membership([["b", "a"]], [["a", "b"]])) == "[b,a]"
+    }
+
+    then "a PREFIX of the victim is not the victim" {
+        render_sets(post_split_membership([["a"], ["a", "b"]], [["a", "b"]])) ==
+            "[a] | [a] | [b]"
+    }
+
+    then "a superset of the victim is not the victim" {
+        render_sets(post_split_membership([["a", "b", "c"]], [["a", "b"]])) == "[a,b,c]"
+    }
+}

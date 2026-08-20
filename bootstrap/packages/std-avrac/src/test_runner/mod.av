@@ -1296,6 +1296,58 @@ const RETRY_ALLOWANCE_FLOOR_MB = 1024
 /// honest F4014 it already produced; it must never take the box with it.
 const RETRY_CEILING_CAP_MB = 7871
 
+/// Which shards AGGREGATION must walk once ceiling-stopped batches have
+/// been split into single-file shards (t-f16w).
+///
+/// `planned` is the membership of every dispatched shard; `victims` is the
+/// membership of those that tripped their ceiling even ALONE on the drained
+/// box. Each victim is replaced, IN PLACE, by one singleton per member —
+/// the shards that actually carry its results now. Everything else is
+/// passed through untouched and in order.
+///
+/// This is the half where a bug makes the SUITE LIE rather than merely go
+/// red, which is why it is a pure function over membership instead of
+/// living inside the dispatch loop. Leave a split victim in the list and
+/// aggregation re-reads the F4014 log its own splits just superseded,
+/// reporting a red that no longer stands; drop it without inserting the
+/// members and the run silently loses their specs, reporting green over
+/// tests that never got counted.
+///
+/// A single-member victim is passed through unchanged: there is nothing to
+/// split, and re-running one file as "one file" only burns a second doomed
+/// compile. Its honest F4014 stands, which is the F4014 contract — on a
+/// quiet box with a normal input that is a compiler bug, not a box problem.
+export fn post_split_membership(planned: List<List<string>>, victims: List<List<string>>) -> List<List<string>> {
+    mut out: List<List<string>> = []
+    for shard in planned {
+        if membership_in(victims, shard) && shard.length > 1 {
+            for path in shard { out.push([path]) }
+        } else {
+            out.push(shard)
+        }
+    }
+    out
+}
+
+/// Membership-set equality — same paths, same order, as `plan_shards`
+/// produced them. Identity by CONTENT, not by slug: the caller holds
+/// path lists, and hashing them to compare would just be the slug by
+/// another name.
+fn membership_in(sets: List<List<string>>, want: List<string>) -> bool {
+    for s in sets {
+        if s.length == want.length {
+            mut same = true
+            mut i = 0
+            while i < s.length {
+                if s[i] != want[i] { same = false }
+                i = i + 1
+            }
+            if same { return true }
+        }
+    }
+    false
+}
+
 /// Did the SHELL report this output's producer as killed?
 ///
 /// LINE-ANCHORED ON PURPOSE. A kill is announced by the shell as its own
