@@ -4203,10 +4203,9 @@ mode_check_feature_layout() {
   #   engine internals        P6  — features/grammar/ is the compiler-compiler, moves out
   #   feature-owned helpers   P4c — each needs a decided home, not a blind rename
   local allow_dirs="grammar"
-  #   parser.av         x4   P1 (#1293, in flight) — retired hand parsers, deleted there
   # One line: a `case` glob cannot match across newlines, so a wrapped list
   # silently allowlists nothing after the first line.
-  local allow_files="expand.av mono.av reporter.av runner.av eval.av purity.av rewrite.av synth.av macro_types.av expand_macro.av resolver_ctx.av classify.av emit.av eq.av hash.av shape.av walk.av derive.av dir_module.av graph_build.av package.av unit_filter.av resolver.av lower.av grammar.av parser.av"
+  local allow_files="expand.av mono.av reporter.av runner.av eval.av purity.av rewrite.av synth.av macro_types.av expand_macro.av resolver_ctx.av classify.av emit.av eq.av hash.av shape.av walk.av derive.av dir_module.av graph_build.av package.av unit_filter.av resolver.av lower.av grammar.av"
 
   local drift=0 out=""
   local d name f base
