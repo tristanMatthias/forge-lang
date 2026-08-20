@@ -22,7 +22,7 @@ use features.closures.lowering.{expr_contains_it, wrap_in_it_lambda}
 // engines. The parse<->features.grammar module
 // cycle is fine: the package resolves as a whole (parse<->features.closures
 // already cycles the same way).
-use features.grammar.{Language, language_for, word_excluded_as_instance_name, run_dsl_type_at_shared, Token, lex_real_full, LexDiag, run_dsl_expr_at_shared, ExprModes, run_dsl_stmt_at_shared, run_dsl_decl_at_shared}
+use features.grammar.{Language, language_for, word_excluded_as_instance_name, run_dsl_type_at_shared, Token, lex_real_full, LexDiag, run_dsl_expr_at_shared, ExprModes, run_dsl_stmt_at_shared, run_dsl_decl_at_shared, GDiag}
 use parse.static_expr_entry.{run_static_expr}
 use parse.static_decl_entry.{run_static_decl, run_static_stmt}
 use parse.static_type_entry.{run_static_type}
@@ -864,6 +864,60 @@ impl Parser {
         .Ok(StmtListIds { ids: ids })
     }
 
+    // ── The seam ceremony, in ONE place ──
+    //
+    // parse_declaration / parse_statement / parse_expression each drive a
+    // grammar engine over the shared token stream through the per-file host
+    // delegate, and each used to open and close that with its own copy of the
+    // same ~25 lines. They DRIFTED: `begin_delegate_item()` existed only on
+    // parse_declaration until review on #1221, so the other two re-merged every
+    // diagnostic the delegate had already reported for earlier items. Three
+    // copies, one of them right. These helpers are the fix — the ceremony is
+    // written once, so a future correction cannot land on one seam only.
+
+    /// Open a seam: the per-file host delegate, SYNCED to this parser's exact
+    /// cursor + line, with the previous item's scratch cleared. The sync matters
+    /// for line accounting (leaves must be parsed carrying the accumulated line);
+    /// the clear matters because `bag_merge` APPENDS.
+    fn seam_enter(self) -> Parser {
+        mut d = self.ensure_host()
+        d.copy_cursor_from(self)
+        d.begin_delegate_item()
+        d
+    }
+
+    /// Adopt a failed delegate's error STATE (not its cursor — the seams differ
+    /// on when they take that, and parse_declaration deliberately defers it to
+    /// its forward-progress arms). Snapshot-then-merge order is preserved from
+    /// the original three copies.
+    fn seam_merge_delegate(self, d: Parser) {
+        self.seam_merge_delegate(d)
+    }
+
+    /// Replay a DSL run's diagnostics, each under its own declared code. Shared
+    /// by all FOUR seams — the type seam has no delegate, but it replays
+    /// identically.
+    ///
+    /// EVERY syntax code the rule declared, not just F0040 (t-47hc.5): `if cond
+    /// expr` is F0010 `ExpectedBlock`, and a hard-coded single mapping rendered
+    /// it F0001. `syntax_diag_code` is `error_def` read backwards over the
+    /// F0001-F0999 range, so the two cannot disagree about what a code means. An
+    /// UNCODED diagnostic (`report`, the common case) and a code outside that
+    /// range both answer null and keep the previous `set_error` default.
+    fn replay_dsl_diags(self, diags: List<GDiag>) {
+        mut gi = 0
+        while gi < diags.length {
+            let gd = diags[gi]
+            let dc = syntax_diag_code(gd.code)
+            if dc != null {
+                self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
+            } else {
+                self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
+            }
+            gi = gi + 1
+        }
+    }
+
     fn parse_declaration(self) -> Result<StmtId, string> {
         // ps3t.6.7 Step G slice 4b: delegate the whole declaration to the
         // grammar-DSL — native rules for
@@ -877,16 +931,8 @@ impl Parser {
         // path below (a zero-width errored parse must be handed back as .Err so the
         // caller advances, else the list loop re-parses the same token forever).
         let item_start = self.current_start
-        mut d = self.ensure_host()
-        // The delegate's hygiene-counter snapshot for this item.
+        mut d = self.seam_enter()
         let seq0 = d.gensym_seq
-        d.copy_cursor_from(self)
-        // Fresh per-item scratch on the (single-level) host delegate: any
-        // diagnostic it reports while parsing THIS item is merged back into this
-        // parser's bag on the error path below, so a reset keeps the merge from
-        // re-copying prior items' diagnostics — and the same applies to the
-        // had_error / error_message summary that path adopts alongside the bag.
-        d.begin_delegate_item()
         // ps3t.6.7 Phase 2: the STATIC generated parser (run_static_decl) when
         // decl_static, else the Grammar-tree interpreter (run_dsl_decl_at_shared).
         // Both share the token stream, modes, host delegate, store, and the
@@ -908,34 +954,8 @@ impl Parser {
             return .Ok(dsl.stmt)
         }
         // Error path (ps3t.6.7 Slice 5.4). The delegate reported the diagnostic
-        let d_had_error = d.had_error
-        let d_error_message = d.error_message
-        self.bag = bag_merge(self.bag, d.bag)
-        if !self.had_error && d_had_error {
-            self.had_error = true
-            self.error_message = d_error_message
-        }
-        if true {
-            mut gi = 0
-            while gi < dsl.diags.length {
-                let gd = dsl.diags[gi]
-                // EVERY syntax code the rule declared, not just F0040 (t-47hc.5):
-                // `if cond expr` is
-                // F0010 `ExpectedBlock`, and a hard-coded single mapping rendered
-                // it F0001. `syntax_diag_code`
-                // is `error_def` read backwards over the F0001-F0999 range, so the
-                // two cannot disagree about what a code means. An UNCODED diagnostic
-                // (`report`, the common case) and a code outside that range both
-                // answer null and keep the previous `set_error` default.
-                let dc = syntax_diag_code(gd.code)
-                if dc != null {
-                    self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
-                } else {
-                    self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
-                }
-                gi = gi + 1
-            }
-        }
+        self.seam_merge_delegate(d)
+        self.replay_dsl_diags(dsl.diags)
         self.had_error = true
         // Distinguish a WHOLE-ITEM failure from an already-recovered BODY error.
         // A bare `Stmt.Error` means the delegate returned .Err on the item itself
@@ -1073,13 +1093,7 @@ impl Parser {
         // One reusable host delegate per file (see ensure_host),
         // SYNCED to this parser's cursor+line before the parse, its end state
         // adopted after.
-        mut d = self.ensure_host()
-        d.copy_cursor_from(self)
-        // The statement seam reached the delegate with NO reset at all until
-        // review on #1221 — it merges the bag and adopts had_error /
-        // error_message on the error path exactly like its siblings, so it
-        // needs the same per-item clear.
-        d.begin_delegate_item()
+        mut d = self.seam_enter()
         // t-47hc.8: the STATIC generated parser (run_static_stmt) when
         // stmt_static, else the Grammar-tree interpreter (run_dsl_stmt_at_shared)
         // — the same engine pair as the decl/expr/type seams, over the same
@@ -1104,24 +1118,8 @@ impl Parser {
         // then each dsl.diags entry in report order with
         // its own declared code), so the recovery oracles compare like against like.
         self.copy_cursor_from(d)
-        let d_had_error = d.had_error
-        let d_error_message = d.error_message
-        self.bag = bag_merge(self.bag, d.bag)
-        if !self.had_error && d_had_error {
-            self.had_error = true
-            self.error_message = d_error_message
-        }
-        mut gi = 0
-        while gi < dsl.diags.length {
-            let gd = dsl.diags[gi]
-            let dc = syntax_diag_code(gd.code)
-            if dc != null {
-                self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
-            } else {
-                self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
-            }
-            gi = gi + 1
-        }
+        self.seam_merge_delegate(d)
+        self.replay_dsl_diags(dsl.diags)
         self.had_error = true
         .Err("statement parse error")
     }
@@ -1142,14 +1140,7 @@ impl Parser {
         // state so this parser continues from the expression's end with the
         // same accumulated line. This keeps the
         // line accounting byte-for-byte consistent across the split parse.
-        mut d = self.ensure_host()
-        d.copy_cursor_from(self)
-        // Fresh per-parse scratch on the SHARED delegate, the same discipline
-        // parse_declaration documents: `bag_merge` APPENDS, and
-        // `ensure_host` hands out ONE delegate per file, so merging without
-        // resetting re-copies every diagnostic the delegate reported for earlier items.
-        // Raised in review on PR #1221 — parse_declaration was the only site that had it.
-        d.begin_delegate_item()
+        mut d = self.seam_enter()
         // ps3t.6.7 Step G: the Grammar-tree interpreter (run_dsl_expr_at_shared)
         // when expr_flip, else the STATIC generated parser (run_static_expr).
         // Both share the token stream, modes, host delegate, and resync below —
@@ -1181,24 +1172,8 @@ impl Parser {
         // — so first-error-wins recorded the later one. Same class as the empty
         // `error_message` this seam produced in #1201: the bag and the summary field
         // disagreeing about what happened.
-        let d_had_error = d.had_error
-        let d_error_message = d.error_message
-        self.bag = bag_merge(self.bag, d.bag)
-        if !self.had_error && d_had_error {
-            self.had_error = true
-            self.error_message = d_error_message
-        }
-        mut gi = 0
-        while gi < dsl.diags.length {
-            let gd = dsl.diags[gi]
-            let dc = syntax_diag_code(gd.code)
-            if dc != null {
-                self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
-            } else {
-                self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
-            }
-            gi = gi + 1
-        }
+        self.seam_merge_delegate(d)
+        self.replay_dsl_diags(dsl.diags)
         self.had_error = true
         .Err("expression parse error")
     }
@@ -1505,17 +1480,7 @@ impl Parser {
                 // rather than failing silently.
                 self.report(DiagCode.SyntaxError, message)
             } else {
-                mut gi = 0
-                while gi < dsl.diags.length {
-                    let gd = dsl.diags[gi]
-                    let dc = syntax_diag_code(gd.code)
-                    if dc != null {
-                        self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
-                    } else {
-                        self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
-                    }
-                    gi = gi + 1
-                }
+                self.replay_dsl_diags(dsl.diags)
             }
             .Err(message)
         }
