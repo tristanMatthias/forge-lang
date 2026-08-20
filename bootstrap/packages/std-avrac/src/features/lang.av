@@ -7,7 +7,7 @@
 // twice. t-kd4y prototype: defer + match first; the rest migrates only
 // after the user ratifies the shape.
 
-use core.{feature_new, Registry, register}
+use core.{Registry}
 use features.grammar.{grammar_literals, grammar_checked, grammar_startup_fail, compose_fragments, Grammar, GrammarParse, text_is_word}
 use features.grammar.{grammar_build_refs, central_build_kind, central_tableless_builds, str_in, BuilderBind, BuildKind}
 use list_ops.{list_dedup_str}

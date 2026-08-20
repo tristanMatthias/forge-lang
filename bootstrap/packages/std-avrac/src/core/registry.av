@@ -8,12 +8,7 @@
 //   3. Call register_feature() with a dummy Expr/Stmt value
 //   4. One line in build_registry()
 
-use codegen.{err_emit, StmtResult}
-use codegen.{err_sr}
-use features.{init_features}
 use features.grammar.{BuilderBind}
-use typeck.{tc_er}
-use features.eval.{value_null}
 
 // C-side helpers
 extern fn avra_expr_tag(expr: int) -> int
@@ -27,42 +22,6 @@ extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
 extern fn avra_map_get_cstr(map: ptr, key: string) -> int
 extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 
-/// One language feature's declarative registration. A Feature
-/// bundles every callback the compiler might invoke for a specific
-/// AST shape — parse, resolve, typecheck, eval (interpreter), and
-/// codegen — so adding a feature is a single decl change at the
-/// registry, no scattered if-chains.
-/// @field name           — for diagnostics / introspection.
-/// @field expr_tag       — sentinel Expr value whose tag this feature
-///                          handles (null when not an expr feature).
-/// @field stmt_tag       — sentinel Stmt value, mirror of expr_tag.
-/// @field expr_keyword   — leading keyword of a `kw { … }` expression
-///                          construct (e.g. "grammar"); the generic
-///                          "registered `<keyword> { }` → package parser"
-///                          seam for embedded sublanguages.
-export type Feature = {
-    name: string,
-    expr_tag: Expr?,
-    stmt_tag: Stmt?,
-    expr_keyword: string,
-    // Properly typed, like every sibling hook below. These were `int` — a
-    // function pointer stored as an untyped integer, riding the language's
-    // ambient int-as-fn-pointer coercion (rule 16, in core/ of all places).
-    // Nothing required it: `feature_new` already assigned the FUNCTIONS
-    // `noop_emit_expr`/`noop_emit_stmt` to them, `LanguageFeature` has always
-    // declared these fields with these exact signatures, and no code did
-    // arithmetic or an int comparison on either. The intmap round-trip is
-    // identical for the typed siblings (resolve/check/eval), which go through
-    // the same `avra_intmap_set` and the same fn-typed `avra_intmap_get` read.
-    emit_expr: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string>,
-    emit_stmt: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string>,
-    resolve_expr: fn(Resolver, Expr) -> Resolver,
-    resolve_stmt: fn(Resolver, Stmt) -> Resolver,
-    check_expr: fn(TC, Expr) -> ExprResult,
-    check_stmt: fn(TC, Stmt) -> TC,
-    eval_expr: fn(Runtime, Expr) -> StepResult,
-    eval_stmt: fn(Runtime, Stmt) -> StepResult,
-}
 
 // ── No-op handlers ──
 //
@@ -75,44 +34,6 @@ export type Feature = {
 // the resolver / typecheck no-ops pass through unchanged because
 // those passes have non-error fallback shapes.
 
-/// Codegen no-op for expressions — `err_emit("no expr handler")`.
-export fn noop_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
-/// Codegen no-op for statements — `err_sr("no stmt handler")`.
-export fn noop_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> { err_sr("no stmt handler") }
-/// Resolver no-op for expressions — pass-through.
-export fn noop_resolve_expr(r: Resolver, expr: Expr) -> Resolver { r }
-/// Resolver no-op for statements — pass-through.
-export fn noop_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver { r }
-/// Typecheck no-op for expressions — yields `Unknown`.
-export fn noop_check_expr(tc: TC, expr: Expr) -> ExprResult { tc_er(tc, .Unknown) }
-/// Typecheck no-op for statements — pass-through.
-export fn noop_check_stmt(tc: TC, stmt: Stmt) -> TC { tc }
-/// Eval no-op for expressions — error step ("no eval_expr handler").
-export fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    StepResult { runtime: rt, value: value_null(), had_error: true, is_return: false, error_message: "no eval_expr handler" }
-}
-/// Eval no-op for statements — error step ("no eval_stmt handler").
-export fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    StepResult { runtime: rt, value: value_null(), had_error: true, is_return: false, error_message: "no eval_stmt handler" }
-}
-/// Construct a Feature with no-op handlers. Each feature module
-/// builds on this with `with`-updates to register its own callbacks.
-export fn feature_new(name: string) -> Feature {
-    Feature {
-        name,
-        expr_tag: null,
-        stmt_tag: null,
-        expr_keyword: "",
-        emit_expr: noop_emit_expr,
-        emit_stmt: noop_emit_stmt,
-        resolve_expr: noop_resolve_expr,
-        resolve_stmt: noop_resolve_stmt,
-        check_expr: noop_check_expr,
-        check_stmt: noop_check_stmt,
-        eval_expr: noop_eval_expr,
-        eval_stmt: noop_eval_stmt,
-    }
-}
 
 // ── Registry ──
 
@@ -175,32 +96,6 @@ export fn registry_new() -> Registry {
     }
 }
 
-/// Index `f` into every relevant map. Reads the variant tags off
-/// the sentinel `expr_tag` / `stmt_tag` values when present, plus
-/// the keyword strings for parser dispatch.
-export fn register(reg: Registry, f: Feature) {
-    if f.expr_tag != null {
-        let etag = avra_expr_tag(f.expr_tag!)
-        avra_intmap_set(reg.expr_emitters, etag, f.emit_expr)
-        avra_intmap_set(reg.expr_resolvers, etag, f.resolve_expr)
-        avra_intmap_set(reg.expr_checkers, etag, f.check_expr)
-        avra_intmap_set(reg.expr_evals, etag, f.eval_expr)
-    }
-    if f.stmt_tag != null {
-        let stag = avra_stmt_tag(f.stmt_tag!)
-        avra_intmap_set(reg.stmt_emitters, stag, f.emit_stmt)
-        avra_intmap_set(reg.stmt_resolvers, stag, f.resolve_stmt)
-        avra_intmap_set(reg.stmt_checkers, stag, f.check_stmt)
-        avra_intmap_set(reg.stmt_evals, stag, f.eval_stmt)
-    }
-    // stmt_keyword/parse_stmt died measured-unread (t-kd4y slice-1 evidence:
-    // these writes keyed kw_*-style names the token-text lookup could never
-    // match; the component_names set serves component names, written by
-    // register_component_name). Batch A deleted the fields.
-    if f.expr_keyword.length > 0 {
-        avra_map_set_cstr(reg.expr_keywords, f.expr_keyword, 1)
-    }
-}
 
 // ── Dispatch ──
 //
@@ -283,28 +178,4 @@ export fn component_is_raw_body(reg: Registry, name: string) -> bool {
 
 // ── Build the registry ──
 
-/// The parse registry for a program's shared NodeStore — built on first
-/// use, then reused by every subsequent file parsed over the same store,
-/// so parse-time component registration is program-wide, not per-file.
-impl NodeStore {
-    fn parse_features(self) -> Registry {
-        if self.parse_registry == null {
-            self.parse_registry = build_registry()
-        }
-        self.parse_registry!
-    }
-}
 
-/// Construct + populate the Registry — EXPENSIVE: init_features re-runs
-/// every LanguageFeature factory, and each definition's `grammar {}` block
-/// re-parses into the program arena, which never frees. ONE registry per
-/// program store is the contract (NodeStore.parse_features, lazy): every
-/// pass shares it. Batch A measured the violation — four pass constructors
-/// each built a FRESH registry, so every converted feature multiplied
-/// arena growth across every pass construction (the #1232 regression
-/// class); a 12GB+ F4014 on the GENPASS harness compile was the tell.
-export fn build_registry() -> Registry {
-    mut reg = registry_new()
-    reg.builder_binds = init_features(reg)
-    reg
-}

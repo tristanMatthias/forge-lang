@@ -28,7 +28,8 @@
 // registry itself is cached per NodeStore (parse_features), so
 // `language_for(reg)` wraps the cached one and `assemble_language()` builds
 // fresh (regen drivers, tools).
-use core.{Registry, build_registry}
+use core.{Registry}
+use features.{build_registry}
 use features.grammar.{Grammar, BuildKindRow, grammar_with_builder_kinds, builder_kind_rows, avra_program_grammar}
 
 export type Language = {

@@ -4207,11 +4207,15 @@ mode_check_core_layering() {
   local upper="codegen typeck resolve parse desugar query features check build lang_gen test_runner"
 
   # Known inversions, each with its owner. SHRINK THIS LIST; do not grow it.
-  #   registry.av  t-y2i7.13  the compiler's WIRING, mis-filed in core/. NOTE the
-  #                dependency is CIRCULAR (typeck/codegen import core.{Registry,
-  #                dispatch_*} while registry.av imports typeck/codegen), so
-  #                moving the file RENAMES the participant rather than removing
-  #                the cycle. Breaking it needs each pass to own its dispatch.
+  #   registry.av  t-y2i7.13  DOWN TO ONE import: features.grammar.{BuilderBind},
+  #                because `Registry.builder_binds: List<BuilderBind>`. Was SEVEN
+  #                (codegen x3, typeck, features x3) until the dispatch tables
+  #                moved to their passes and the Feature record + noop_* moved to
+  #                features/wiring.av. The core<->codegen and core<->typeck CYCLES
+  #                are gone with them. BuilderBind carries
+  #                `build: fn(PState, List<CapVal>) -> CapVal`, so moving the TYPE
+  #                into core would drag PState/CapVal along — either accept this
+  #                as the one named exception or make builder_binds opaque.
   #   ast.av       t-y2i7.13  needs @derive SYNTHESIS: four @expand(derive_walker)
   #                sites. The import LOOKS unused (import + comments only) and is
   #                LOAD-BEARING. Do not "clean" it.
