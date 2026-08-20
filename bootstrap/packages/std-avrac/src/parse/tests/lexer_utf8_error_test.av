@@ -1,0 +1,99 @@
+// WHY: t-47hc.2.1 — a bare multi-byte character outside a string/comment must
+// lex to ONE Tk.Error spanning the WHOLE character, not one per byte.
+//
+// `advance_token`'s unexpected-character fallback used to slice a single byte
+// and advance a single byte, so the UTF-8 continuation bytes stayed in the
+// stream and were re-lexed as further "unexpected character" errors: a lone
+// `∑` (3 bytes) produced FOUR diagnostics. That buries the real first error
+// under debris the user cannot act on — every extra line names a byte, not
+// anything they wrote.
+//
+// This is an END-TO-END negative test on purpose. diff-test compares IR for
+// programs that COMPILE, so it is blind to the error text of an invalid one;
+// the only way to hold this property is to run the compiler on invalid input
+// and read what it says. Shelling out (rather than calling the lexer in
+// process) is what makes it a test of the shipped binary's actual output.
+
+// NOTE ON ESCAPES: the fixtures spell their bytes as `\\0nnn` OCTAL, not
+// `\\xHH`. POSIX `printf '%b'` defines the octal form and NOT the hex one, so
+// `\\xe2` survived as literal characters and the fixture lexed as several
+// separate errors — a harness bug that reads exactly like the defect under test.
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+/// Compile `src` and return the compiler's combined output. The file lives in
+/// a per-spec path under build/ so concurrent shards cannot collide.
+fn compile_out(name: string, src: string) -> string {
+    let path = "build/_utf8_${name}.av"
+    // `printf '%b'` so the caller can embed real multi-byte bytes as \x escapes
+    // — the point of the test is the BYTES, so they must survive the shell.
+    avra_shell_exec("printf '%b' '${src}' > '${path}'")
+    let out = avra_shell_exec("./build/bs2 check '${path}' 2>&1")
+    avra_shell_exec("rm -f '${path}'")
+    out
+}
+
+/// How many times `needle` occurs in `hay`.
+///
+/// COUNT THE DIAGNOSTIC HEADER, not the message text. The renderer prints
+/// "unexpected character" THREE times for a SINGLE diagnostic — the header,
+/// the caret label, and the trailing `parse error at L:C:` summary — so
+/// counting the message counts renderer repetitions and reads 3 for a
+/// correctly-reported single error. `error[F0001]:` appears exactly once per
+/// diagnostic, which is what these specs mean by "reports once".
+///
+/// Match `error[F0001]` WITHOUT the trailing colon: the renderer emits the
+/// code and the colon in different colour runs, so ANSI escapes sit between
+/// them and `error[F0001]:` never occurs contiguously in the captured bytes.
+/// This output is not stripped — it is what the compiler actually prints.
+fn count_of(hay: string, needle: string) -> int {
+    mut n = 0
+    mut i = 0
+    while i + needle.length <= hay.length {
+        if hay.substring(i, i + needle.length) == needle {
+            n = n + 1
+            i = i + needle.length
+        } else {
+            i = i + 1
+        }
+    }
+    n
+}
+
+spec "t-47hc.2.1: a multi-byte char is ONE unexpected-character error" {
+    then "a 3-byte char (U+2211) reports exactly once, not once per byte" {
+        // The reproducer from the ticket. Before the fix this was THREE.
+        let out = compile_out("u3", "fn f() -> int {\\n let x = \\0342\\0210\\0221\\n return 0\\n}\\n")
+        count_of(out, "error[F0001]") == 1
+    }
+    then "a 2-byte char (U+00A9) reports exactly once" {
+        let out = compile_out("u2", "fn f() -> int {\\n let x = \\0302\\0251\\n return 0\\n}\\n")
+        count_of(out, "error[F0001]") == 1
+    }
+    then "a 4-byte char (U+1F4A9) reports exactly once" {
+        let out = compile_out("u4", "fn f() -> int {\\n let x = \\0360\\0237\\0222\\0251\\n return 0\\n}\\n")
+        count_of(out, "error[F0001]") == 1
+    }
+    then "the whole character is quoted in the message, not its lead byte" {
+        // A lead-byte-only slice renders as a replacement char; the full
+        // sequence renders as the character the user actually typed.
+        let out = compile_out("uq", "fn f() -> int {\\n let x = \\0342\\0210\\0221\\n return 0\\n}\\n")
+        out.contains("unexpected character `∑`")
+    }
+}
+
+spec "t-47hc.2.1: a MALFORMED sequence does not swallow the next token" {
+    then "a 3-byte lead with only one continuation still reports once" {
+        // The width is an UPPER BOUND: the lexer consumes only bytes that
+        // really are continuations. A blind `skip 3` here would eat the
+        // newline and merge two lines of the program.
+        let out = compile_out("umal", "fn f() -> int {\\n let x = \\0342\\0210\\n return 0\\n}\\n")
+        count_of(out, "error[F0001]") == 1
+    }
+    then "the token AFTER a malformed sequence is still seen" {
+        // `+ 1` must survive. If the lexer over-consumed it would vanish and
+        // the only evidence would be a differently-shaped downstream error.
+        let out = compile_out("unext", "fn f() -> int {\\n let x = \\0342\\0210 + 1\\n return 0\\n}\\n")
+        count_of(out, "error[F0001]") == 1 && !out.contains("error[F0002]")
+    }
+}

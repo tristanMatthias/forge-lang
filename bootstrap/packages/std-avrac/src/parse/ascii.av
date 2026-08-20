@@ -27,6 +27,19 @@ export const LOWER_Z = 122    // 'z'
 export const UNDERSCORE = 95  // '_'
 export const MULTIBYTE_MIN = 128  // first non-ASCII (UTF-8 lead/continuation) byte
 
+// ── UTF-8 sequence shape (t-47hc.2.1) ──
+// A multi-byte character is ONE token to the lexer even when it is invalid
+// there: reporting per BYTE turns a single stray `∑` into four diagnostics.
+// These bound the lead/continuation ranges the width probe reads.
+export const UTF8_CONT_MIN = 128    // 0x80 — first continuation byte
+export const UTF8_CONT_MAX = 191    // 0xBF — last  continuation byte
+export const UTF8_LEAD2_MIN = 192   // 0xC0 — 2-byte lead
+export const UTF8_LEAD2_MAX = 223   // 0xDF
+export const UTF8_LEAD3_MIN = 224   // 0xE0 — 3-byte lead
+export const UTF8_LEAD3_MAX = 239   // 0xEF
+export const UTF8_LEAD4_MIN = 240   // 0xF0 — 4-byte lead
+export const UTF8_LEAD4_MAX = 247   // 0xF7
+
 // ── Specific letters the scanner tests: hex prefixes (0x/0b/0o), the
 //    duration suffixes (Nd/Nh/Nm/Ns/Nms), string/char escapes, raw `r"` ──
 export const LOWER_B = 98     // 'b'  (0b binary prefix)

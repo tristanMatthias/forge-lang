@@ -7,6 +7,7 @@ use diagnostics.{DiagCode}
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
 use parse.{scan_operator, classify_keyword, resolve_escape, escape_code, scan_dq_body, scan_ml_body, scan_raw_ml_body, scan_interp_region, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, scan_raw_body, scan_tmpl_body, scan_block_comment, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
+use parse.{utf8_seq_len, cc_is_utf8_cont}
 use parse.{DIGIT_0, DOT, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
@@ -123,8 +124,24 @@ impl Parser {
             return
         }
 
-        // Unexpected character: the lead byte is the token, at self.start.
-        let ch = self.slice(self.start, self.start + 1)
+        // Unexpected character: the WHOLE UTF-8 sequence is ONE token, at
+        // self.start (t-47hc.2.1). Taking only the lead byte left the
+        // continuation bytes in the stream, where each was re-lexed and
+        // re-reported — a single `\u2211` produced FOUR diagnostics (three
+        // "unexpected character" plus a downstream "expected expression"),
+        // burying the real first error under its own debris.
+        //
+        // Consume only bytes that ARE continuations, and never past the end:
+        // a MALFORMED sequence (a lead promising more bytes than follow) must
+        // not swallow the next valid token, so the width is an upper bound
+        // rather than a blind skip.
+        let want = utf8_seq_len(b)
+        mut taken = 1
+        while taken < want && !self.is_at_end() && cc_is_utf8_cont(byte_at(sb, self.current)) {
+            self.advance_byte()
+            taken = taken + 1
+        }
+        let ch = self.slice(self.start, self.current)
         self.set_error("unexpected character `${ch}`")
         self.set_current(Tk.Error, ch)
     }
