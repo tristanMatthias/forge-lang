@@ -1182,37 +1182,6 @@ impl Parser {
         .Ok(name)
     }
 
-    /// Scan tokens to the `}` balancing the already-consumed `{`,
-    /// WITHOUT consuming it, and return the verbatim source substring
-    /// in between (outer whitespace trimmed). Brace TOKENS drive the
-    /// depth count, so a `{` inside a string literal or comment never
-    /// miscounts — the only limitation is an UNBALANCED bare brace
-    /// token in the raw text. `unterminated_msg` is reported on EOF
-    /// before a balancing `}`. Shared by every raw-capture construct
-    /// (`body: TokenStream` components, `grammar { … }`, …).
-    fn capture_balanced_brace_body(self, unterminated_msg: string) -> Result<string, string> {
-        let start = self.current_start
-        mut end = self.current_start
-        mut depth = 1
-        while depth > 0 {
-            if self.check(Tk.Eof) {
-                self.set_error(unterminated_msg)
-                return .Err("parse error")
-            }
-            if self.check(Tk.LeftBrace) { depth = depth + 1 }
-            if self.check(Tk.RightBrace) {
-                depth = depth - 1
-                if depth == 0 {
-                    end = self.current_start
-                    break
-                }
-            }
-            self.advance()
-        }
-        .Ok(self.source.substring(start, end).trim())
-    }
-
-
     fn check(self, kind: Tk) -> bool {
         self.current_kind == kind
     }
