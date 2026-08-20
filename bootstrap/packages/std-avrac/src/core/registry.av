@@ -45,8 +45,17 @@ export type Feature = {
     expr_tag: Expr?,
     stmt_tag: Stmt?,
     expr_keyword: string,
-    emit_expr: int,
-    emit_stmt: int,
+    // Properly typed, like every sibling hook below. These were `int` — a
+    // function pointer stored as an untyped integer, riding the language's
+    // ambient int-as-fn-pointer coercion (rule 16, in core/ of all places).
+    // Nothing required it: `feature_new` already assigned the FUNCTIONS
+    // `noop_emit_expr`/`noop_emit_stmt` to them, `LanguageFeature` has always
+    // declared these fields with these exact signatures, and no code did
+    // arithmetic or an int comparison on either. The intmap round-trip is
+    // identical for the typed siblings (resolve/check/eval), which go through
+    // the same `avra_intmap_set` and the same fn-typed `avra_intmap_get` read.
+    emit_expr: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string>,
+    emit_stmt: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string>,
     resolve_expr: fn(Resolver, Expr) -> Resolver,
     resolve_stmt: fn(Resolver, Stmt) -> Resolver,
     check_expr: fn(TC, Expr) -> ExprResult,
