@@ -1,6 +1,6 @@
 // WHY: type checking for null-safety features (catch, null coalesce).
 
-use core.{Expr, vtype_eq, vtype_render_full, vtype_assignable, vtype_is_optional, vtype_strip_optional}
+use core.{Expr, ValueType, vtype_eq, vtype_render_full, vtype_assignable, vtype_is_optional, vtype_strip_optional}
 use core.{is_result_enum_name}
 use typeck.{check_expr, tc_er, tc_catch_ok_type, tc_result_ok_payload, tc_report_at, tc_report}
 use diagnostics.{DiagCode}

@@ -6,7 +6,7 @@
 use core.{Expr, Stmt, ParamEntry, FieldEntry, FieldInit, Variant, MatchArm, TypeArg, TypeParamEntry, ValueType, type_param_has, variant_lookup, vtype_display, vtype_render_full, vtype_from_name, vtype_struct, vtype_is_unknown, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_nominal_name, find_type_pipe, union_type_list_merge, SelectArm, Annotation, field_vtype_of}
 use core.{NodeStore, StmtId, ExprId}
 use core.{stmt_unwrap}
-use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, span_new}
+use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_has_errors, diag_error, diag_warning, span_new}
 use typeck.{TraitImplEntry, type_implements_trait}
 use core.{mangle_join, type_short_name, qualified_mangle_base, method_mangled_name, method_from_mangled}
 use core.{FORCE_UNWRAP_FN, vtype_strip_optional}

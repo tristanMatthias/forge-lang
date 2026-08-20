@@ -15,7 +15,7 @@
 // Authored as a `grammar { }` surface block (desugars to parse_grammar(<body>),
 // features/grammar/parser.av) — identical IR to the hand-written call, so no
 // seed cycle.
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `fn` declaration: name, parenthesised parameter list, optional `->` return
 /// type, and a braced statement body. References `param` and `type_expr` from the

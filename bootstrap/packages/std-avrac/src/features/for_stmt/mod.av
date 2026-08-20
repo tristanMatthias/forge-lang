@@ -16,8 +16,8 @@ use core.{vtype_list_elem}
 use resolve.{declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
 use features.eval.{Runtime, StepResult, execute_for_range, execute_for_in, error_result}
-use features.for_stmt.lowering.{for_builds}
 use features.grammar.{parse_grammar}
+use features.for_stmt.lowering.{for_builds}
 
 /// `for v in lo ( ".." hi )? body` — ONE rule, TWO statements: a present
 /// `..` picks the integer-range `Stmt.For`, an absent one the collection

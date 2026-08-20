@@ -3,8 +3,8 @@
 // `GenericCall` / `Index` / `Slice` are core codegen/typeck nodes (call
 // emission, mono, and index lowering live in core passes), so no pass
 // hooks ride this definition — syntax + the lowerings alone.
-use features.calls.lowering.{calls_builds}
 use features.grammar.{parse_grammar}
+use features.calls.lowering.{calls_builds}
 
 /// `expr(args)` / `f<T>(args)` / `expr[i]` / `expr[a..b]` — the postfix
 /// chain's APPLY forms, one family with one shared argument rule

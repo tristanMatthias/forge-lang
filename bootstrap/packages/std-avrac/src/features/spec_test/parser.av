@@ -3,7 +3,7 @@
 
 // Imports resolved by bootstrap's module-qualified name resolution.
 
-use core.{SrcPos}
+use core.{byte_span_none, SrcPos}
 use core.{Tk}
 use parse.{StmtListIds}
 impl Parser {

@@ -4,10 +4,10 @@
 // dir-as-module (g2eo.1): codegen.av + parser.av auto-load as siblings,
 // surface flat at `features.spawn_expr.{...}`.
 use core.{ExprId}
+use features.grammar.{parse_grammar}
 use features.spawn_expr.lowering.{spawn_builds}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
-use features.grammar.{parse_grammar}
 
 /// `spawn { body }` — the definition carries the feature whole
 /// (t-kd4y.3.5.1): syntax, docs, its one lowering, and the pass hooks.

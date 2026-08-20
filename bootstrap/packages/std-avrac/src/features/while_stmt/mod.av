@@ -10,8 +10,8 @@ use features.eval.{error_result}
 use features.eval.{execute_while}
 use resolve.{resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_true_branch}
-use features.while_stmt.lowering.{while_builds}
 use features.grammar.{parse_grammar}
+use features.while_stmt.lowering.{while_builds}
 
 /// `while cond { body }`. Pure shape — the SrcPos stamp at the `while`
 /// keyword rides the bind's `spanned` row (the ADAPTER stamps itself at

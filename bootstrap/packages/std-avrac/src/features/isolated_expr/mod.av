@@ -10,10 +10,10 @@
 // Phase D of forge-crafting-intepreters-nce6.
 
 use core.{ExprId}
+use features.grammar.{parse_grammar}
 use features.isolated_expr.lowering.{isolated_builds}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_er}
-use features.grammar.{parse_grammar}
 
 /// `isolated { body }` — the definition carries the feature whole
 /// (t-kd4y.3.5.1). Same double-keyed `@expect` as spawn_lang (fragment

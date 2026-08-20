@@ -4,8 +4,8 @@
 // lowering (build_return) is feature-owned via the builder manifest
 // (t-kd4y.3); Stmt.Return / Stmt.ReturnEmpty codegen — return-slot stores,
 // DeferStack unwinding, RC releases — stays with the central emitters.
-use features.return_stmt.lowering.{return_builds}
 use features.grammar.{parse_grammar}
+use features.return_stmt.lowering.{return_builds}
 
 /// `return ( value )?` — an absent same-line value is a bare
 /// `Stmt.ReturnEmpty`; a present one is `Stmt.Return(value)`. The

@@ -5,7 +5,7 @@
 // the bare `mod` declaration. They live in one fragment because one feature
 // (features/modules) owns both keywords — `use_feature()` and `mod_feature()`
 // are registered from the same directory.
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `use` and `mod` declarations.
 ///

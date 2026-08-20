@@ -12,7 +12,6 @@
 use core.{Expr, ExprId}
 use parse.{Parser}
 use core.{Tk}
-use features.grammar.{parse_grammar}
 
 impl Parser {
     /// Called from `parse_primary` (via the registry's `expr_parsers`

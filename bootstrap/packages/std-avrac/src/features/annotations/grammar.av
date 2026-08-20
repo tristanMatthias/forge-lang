@@ -6,7 +6,7 @@
 // posture and structural contracts ride annotations_lang's comments
 // (mod.av); `wrapped_inner` lives here because both `annot_decl` and
 // `doc_decl` share it.
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 export fn avra_annotations_grammar() -> Grammar {
     let gp = grammar {

@@ -3,8 +3,8 @@
 // only grammar.md — tables desugar to `Expr.ListLit` of `Expr.StructLit`
 // rows in the BUILDS, so the list/struct features carry the downstream
 // hooks and this definition is syntax + lowerings alone.
-use features.table_lit.lowering.{table_lit_builds}
 use features.grammar.{parse_grammar}
+use features.table_lit.lowering.{table_lit_builds}
 
 /// `table [<Row>] { col | col … rows }` — the definition carries the
 /// whole family (t-kd4y.3.5.5): syntax, docs, surface, and ALL THREE

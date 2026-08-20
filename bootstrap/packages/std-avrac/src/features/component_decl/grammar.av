@@ -6,7 +6,7 @@
 // references that bind by name after the merge. `@rawbrace(component)` is
 // engine machinery (rawbrace_scan) — the marker travels with the rule, the
 // scanner stays in the engine.
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The whole `component` surface: definition (modern brace form, legacy
 /// paren form, implements-then-instance reporter), the config/children/body

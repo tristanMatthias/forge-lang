@@ -49,12 +49,12 @@
 
 use core.{Expr, FieldEntry, Stmt, ParamEntry, FieldInit, MatchArm, WhenArm, Pattern, Variant, stmt_unwrap, rewrap_annotations, Annotation, ValueType, SelectArm, vtype_from_name, vtype_struct, FORCE_UNWRAP_FN}
 use core.{NodeStore, ExprId, StmtId, PatId}
-use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_at, span_dummy}
+use diagnostics.{Confidence, DiagCode, Span, MacroFnOrigin, DiagnosticBag, bag_new, bag_merge, bag_report, bag_has_errors, diag_error, diag_warning, diag_with_confidence, span_new, span_at, span_dummy}
 use resolve.{resolve_program}
 use resolve.{SymbolKind, SymbolTable, symbol_table_new, symbol_kind_is_type}
 use core.{TypeRegistry, TypeKind, type_registry_new, type_registry_register, type_registry_id_for, type_qualified_name, method_mangled_name, trait_impl_name, is_mangled_method, method_from_mangled, type_short_name}
 use core.{TypeParamEntry, type_param_has}
-use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_set_export}
+use core.{ModuleGraph, GraphItem, module_graph_is_exported, module_graph_set_export, module_graph_new, ID_NONE}
 use features.modules.{build_graph_from_stmts, graph_find_use_path}
 use list_ops.{list_any, list_map, list_push_copy}
 

@@ -4,7 +4,7 @@
 // central decl view; `type_expr`, `expression`, `statement` and the peek
 // predicates (`let_destructure`, `comma_ident`) are cross-fragment references
 // that bind by name after the merge, exactly as `variant` references `field`.
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The binding declarations — the highest-traffic rules in the language.
 /// `let_decl` covers the guard form too (`let x = init else { … }`, the

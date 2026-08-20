@@ -43,7 +43,7 @@
 
 use core.{Stmt, Expr, ExprId, ParamEntry, ValueType}
 use features.comptime.{AnnotatedDecl, ResolverCtx, ResolvedDecls, synth_expr_id}
-use features.derive.{FieldShape, EmitPlan, EmitMethod, PerVariantMethod, MethodSig, DeclCtx, Classified, derive_engine, emit_call, name_vtype, node_hop}
+use features.derive.{FieldShape, EmitPlan, EmitMethod, PerVariantMethod, MethodSig, DeclCtx, Classified, derive_engine, self_vtype, emit_call, name_vtype, node_hop}
 
 // ── Public entry ──
 

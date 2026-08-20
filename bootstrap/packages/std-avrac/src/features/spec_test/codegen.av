@@ -1,11 +1,11 @@
 // WHY: emits spec test runtime calls for spec/given/then blocks.
 
-use codegen.{ok_stmt, StmtResult}
-use codegen.{emit_block_loop_ctx}
+use codegen.{err_stmt, ok_stmt, StmtResult}
+use codegen.{emit_block_loop, emit_block_loop_ctx}
 use codegen.{ok_sr, err_sr}
 // stmt_unwrap: peel `Annotated` before dispatching on the body's tail, so a
 // `///`-documented assertion still splits. render_expr: the conjunct text.
-use core.{stmt_unwrap}
+use core.{stmt_unwrap, render_expr}
 use fmt.{fmt_expr}
 // The LLVM builders must be imported by NAME from core — they are not ambient
 // in a feature module (same list-them-explicitly shape as trait_decl/codegen.av).

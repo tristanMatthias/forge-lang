@@ -2,7 +2,7 @@
 // Hybrid design inspired by ariadne (box frame), miette (severity
 // symbols), Roc (Unicode separators), and codespan (connecting carets).
 
-use diagnostics.{Diagnostic, DiagnosticBag, Severity, severity_str, diag_code_str, confidence_str}
+use diagnostics.{Diagnostic, DiagnosticBag, DiagnosticCause, Span, Severity, severity_str, diag_code_str, confidence_str}
 use @std.json.{json_escape}
 use core.{avra_selfhost_file_exists, avra_selfhost_read_file, avra_process_env_get}
 use core.{build_line_index}

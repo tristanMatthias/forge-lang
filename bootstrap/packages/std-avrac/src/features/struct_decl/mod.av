@@ -4,12 +4,12 @@ use codegen.{err_emit}
 use core.{vtype_struct_name, ExprId}
 use features.{composed}
 use features.struct_decl.lowering.{type_decl_builds, struct_lit_builds, enum_ctor_builds, field_assign_builds, field_access_builds, named_type_builds}
+use features.grammar.{parse_grammar}
 use resolve.{resolve_expr, resolve_expr_list_ids, resolve_field_init_list, starts_with_upper}
 use features.enum_decl.{emit_enum_ctor}
 use typeck.{tc_enum_find_by_variant}
 use typeck.{check_expr, check_expr_list, tc_er, tc_report, tc_struct_lit_vtype}
 use diagnostics.{DiagCode}
-use features.grammar.{parse_grammar}
 
 /// `Foo { x: 1, y: 2 }` struct literals — the definition carries syntax
 /// and BOTH rows (t-kd4y.3.5.6): `struct_lit_expr` spells MkStructLit and

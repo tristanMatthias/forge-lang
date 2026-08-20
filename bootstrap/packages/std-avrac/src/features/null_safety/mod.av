@@ -4,11 +4,11 @@
 // without explicit self-imports.
 use codegen.{err_emit}
 use core.{vtype_wrap_optional, vtype_is_optional, vtype_is_unknown, ExprId}
+use features.grammar.{parse_grammar}
 use features.null_safety.lowering.{null_coalesce_builds, try_builds, catch_builds, optional_chain_builds, optional_method_call_builds}
 use resolve.{resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
 use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er, check_method_call}
-use features.grammar.{parse_grammar}
 
 /// `x ?? fallback` — null coalescing. The definition carries the
 /// ladder's `null_coalesce` stratum and its spanned `fold_nullish` row

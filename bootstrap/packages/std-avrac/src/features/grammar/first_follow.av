@@ -24,7 +24,7 @@
 // Terminal ids are PREFIXED so a literal terminal and a named terminal never
 // alias: `lit:<text>` for GPrim.Lit("+"), `tok:<kind>` for GPrim.Named("NUMBER").
 
-use features.grammar.{Grammar, Rule, GNode, GSeq, GPrim, rule_index_of}
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GRep, GPrim, rule_index_of}
 
 /// A materialised FIRST set: the concrete terminal ids that can begin a form,
 /// plus `opaque` = "this form also admits a leaf whose FIRST the CFG

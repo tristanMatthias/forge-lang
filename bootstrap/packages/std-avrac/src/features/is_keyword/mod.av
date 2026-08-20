@@ -1,12 +1,12 @@
 // dir-as-module (g2eo.1): codegen.av + lowering/ auto-load as siblings,
 // surface flat at `features.is_keyword.{...}`.
-use core.{ExprId}
+use core.{feature_new, Feature, ExprId}
 use resolve.{resolve_expr}
+use features.grammar.{parse_grammar}
 use features.is_keyword.codegen.{emit_is_check}
 use features.is_keyword.lowering.{is_keyword_builds}
 use features.eval.{eval_expr, ok_result, error_result, value_bool, Runtime, StepResult, step_had_error, step_runtime, step_value, value_is_enumish}
 use typeck.{check_expr, tc_er}
-use features.grammar.{parse_grammar}
 
 /// `x is .Some` — the runtime variant check (produces a Bool). The
 /// definition carries `is_tail`, one branch of the spine's `eq_tail`

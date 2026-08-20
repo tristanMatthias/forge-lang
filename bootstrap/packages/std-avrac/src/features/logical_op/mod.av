@@ -2,8 +2,8 @@
 // at `features.logical_op.{...}`. A syntax-only carrier: `Expr.Logical` is
 // a core codegen/typeck node (short-circuit lowering lives in codegen),
 // so no pass hooks ride this definition — syntax + the lowering alone.
-use features.logical_op.lowering.{logical_op_builds}
 use features.grammar.{parse_grammar}
+use features.logical_op.lowering.{logical_op_builds}
 
 /// `a && b` / `a || b` (and the keyword spellings `and` / `or`) — the
 /// short-circuit logical operators. The definition carries BOTH ladder

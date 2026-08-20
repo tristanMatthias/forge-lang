@@ -13,13 +13,13 @@
 // surface flat at `features.if_stmt.{...}`. emit_if + emit_if_expr are
 // in scope without a self-import.
 use core.{Stmt, Expr, ValueType, vtype_display, vtype_eq, vtype_is_unknown, expr_diverges}
-use codegen.{err_emit, StmtResult}
+use codegen.{err_emit, err_stmt, StmtResult}
 use codegen.{err_sr}
 use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
 use features.eval.{eval_expr, execute_stmt}
 use resolve.{resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_er, tc_report, tc_gate_unthreaded_lambda, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if, generic_args_layout_conflict}
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 use features.{composed}
 use features.if_stmt.lowering.{if_builds}
 

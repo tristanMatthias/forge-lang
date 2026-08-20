@@ -16,7 +16,7 @@
 // a central one. `parse_grammar` validates a fragment before any manifest is
 // stamped, so that check defers via `rule_kind_known` rather than reading the
 // lenient "expr" default and rejecting correct rules (see validate_onfail_drop).
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The SPEC-TEST blocks (t-47hc Phase 4). `spec_item` mirrors parse_spec_body's
 /// dispatch — given-block | then-block | any declaration — and both nesting

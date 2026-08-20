@@ -3,7 +3,7 @@
 // The `trait` feature owns its declaration rule AND its member sub-structure:
 // the associated-type member (`type Item`) and the method member, whose body is
 // OPTIONAL (`tmlb` present distinguishes a defaulted method from a signature).
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `trait` declaration and its member rules.
 export fn avra_trait_decl_grammar() -> Grammar {

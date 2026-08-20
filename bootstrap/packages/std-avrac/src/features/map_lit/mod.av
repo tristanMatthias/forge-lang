@@ -4,10 +4,10 @@
 use codegen.{err_emit}
 use core.{ValueType}
 use features.eval.{eval_expr, eval_map_key, ok_result, error_result, value_map, map_upsert, StructField, Runtime, StepResult, step_had_error, step_runtime, step_value}
+use features.grammar.{parse_grammar}
 use features.map_lit.lowering.{map_lit_builds}
 use resolve.{resolve_expr_list_ids}
 use typeck.{check_expr_list_types, tc_er}
-use features.grammar.{parse_grammar}
 
 /// `{k: v, k: v}` map literals — the definition carries syntax, docs,
 /// surface, and the MkMapLit lowering (t-kd4y.3.5.4). Wires resolver,

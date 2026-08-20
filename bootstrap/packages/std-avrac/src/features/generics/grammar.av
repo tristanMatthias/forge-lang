@@ -11,7 +11,7 @@
 // ONE trait bound only, matching the hand's `parse_type_param_entries` — an absent bound
 // is "" (unbounded), and multi-bound `T: A + B` is a where-clause, out of scope for both.
 // The builder is `MkTypeParam`, whose emit/executor lockstep landed dormant in slice 10.2.
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// One generic type parameter: `T` or `T: Bound`.
 export fn avra_generics_grammar() -> Grammar {

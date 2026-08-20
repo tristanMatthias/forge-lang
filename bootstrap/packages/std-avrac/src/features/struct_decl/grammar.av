@@ -6,7 +6,7 @@
 // declaration is its primary definition site; `enum_decl`'s `variant` also
 // references it, which composes fine — cross-fragment nonterminal references
 // bind by name against the merged rule set.
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// The `type` declaration (struct form) and its field rule.
 ///

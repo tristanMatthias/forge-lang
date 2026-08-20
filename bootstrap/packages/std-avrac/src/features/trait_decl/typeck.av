@@ -2,7 +2,7 @@
 
 use core.{StmtId, NodeStore, vtype_is_unknown, stmt_unwrap, find_annotation}
 use diagnostics.{DiagCode}
-use typeck.{TC, tc_report, TraitMethod, trait_get, tc_owns_type}
+use typeck.{TC, tc_report, TraitRegistry, TraitMethod, trait_get, tc_owns_type}
 use core.{method_mangled_name}
 
 /// Find the byte offset of the single `:` that separates a

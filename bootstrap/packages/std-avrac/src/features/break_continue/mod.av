@@ -6,8 +6,8 @@
 // span-free manifest rows). Codegen stays with the central emitters
 // (codegen/mod.av's LoopStack branch targets), like return's does; there
 // is no per-tag hook to carry.
-use features.break_continue.lowering.{break_builds, continue_builds}
 use features.grammar.{parse_grammar}
+use features.break_continue.lowering.{break_builds, continue_builds}
 
 /// Zero-arg, span-FREE lowerings (the retired central forms were bare
 /// SNode constructions — see the manifest rows). Home in the feature file

@@ -4,7 +4,7 @@
 // central §-view; `expression` and `declaration` are cross-fragment
 // references that bind by name after the merge, exactly as `variant`
 // already references `field`.
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
 /// `select { binding <- channel -> { body } }` and its arm rule. ZERO arms
 /// is valid (`select { }`), the arm list folds into the walker-opaque

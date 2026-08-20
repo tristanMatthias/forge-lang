@@ -16,7 +16,7 @@
 //     allocating a fresh result list, optional cond_br filter, push)
 // so the result list is typed end-to-end.
 
-use core.{Expr, ExprId, VarBinding, vtype_list_elem}
+use core.{Expr, ExprId, VarBinding, Stmt, feature_new, Feature, vtype_list_elem}
 use codegen.{Ctx, EmitValue, err_emit}
 use resolve.{Resolver, declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use typeck.{TC, ExprResult, tc_er, tc_bind, tc_enter, tc_exit, check_expr}
