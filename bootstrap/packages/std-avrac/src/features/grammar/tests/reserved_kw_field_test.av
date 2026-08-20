@@ -32,7 +32,7 @@
 // render tests below are the complement — they pin that widening the gate did not change
 // the tree that comes out.
 
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, new_pstate, lookahead_ok, emit_rule_fn, Grammar, avra_program_grammar, run_grammar_expr_at}
+use @std.avrac.features.grammar.{new_pstate, lookahead_ok, emit_rule_fn, Grammar, avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.core.{render_expr_id, tk_is_field_name, Tk}
 
 fn r(src: string) -> string {
@@ -47,7 +47,7 @@ fn peek(cond: string, src: string) -> bool {
 // The FIELDNAME lowering lives in `field_suffix` — feature-owned since the
 // postfix flip (t-kd4y.3.5.8) left `postfix_suffix` as pure dispatch.
 fn field_rule_src() -> string {
-    let g = avra_expr_dispatch_grammar()
+    let g = avra_program_grammar()
     for gr in g.rules {
         if gr.name == "field_suffix" { return emit_rule_fn(g, gr) }
     }

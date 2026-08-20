@@ -5,7 +5,7 @@
 // flip's guard: ONE definition in the feature file, zero spine copies.
 use @std.avrac.features.return_stmt.{return_lang}
 use @std.avrac.features.{feature_keywords, feature_gram}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar}
 
 spec "return as a LanguageFeature" {
     then "the keyword derives from the declared grammar" {
@@ -24,7 +24,7 @@ spec "return as a LanguageFeature" {
         // the marker-free form.
         let rule = "return_stmt = \"return\" ( @peek(return_value) e:expression )? -> build_return(e)"
         render_grammar(feature_gram(return_lang())).contains(rule)
-            && render_grammar(avra_stmt_flip_grammar()).contains(rule)
+            && render_grammar(avra_program_grammar()).contains(rule)
     }
     then "the whole-program view lowers through the same builder" {
         let prod = render_grammar(avra_program_grammar())

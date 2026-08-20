@@ -2,19 +2,19 @@
 // for the statement family too: `parse_statement` dispatches the keyword forms
 // and the Stmt builds (Break / Continue / Return / ExprStmt) lower to
 // `CapVal.SNode(st.store.stmts.add_leaf(Stmt.…))`. Fast in-suite structural
-// guard on the emitter over avra_stmt_flip_grammar() (the composed source-of-truth);
+// guard on the emitter over avra_program_grammar() (the composed source-of-truth);
 // the executor differential is stmt_equivalence_test and the airtight behavioural
 // gate is diagnose.sh --emit-gen-check (which now covers statements too).
 
-use @std.avrac.features.grammar.{avra_stmt_flip_grammar, emit_parser_source}
+use @std.avrac.features.grammar.{emit_parser_source, avra_program_grammar}
 
 fn emit_all() -> string {
-    emit_parser_source(avra_stmt_flip_grammar())
+    emit_parser_source(avra_program_grammar())
 }
 
 spec "grammar emitter: renders the statement family's generated static parser" {
     then "the composed grammar still emits the full expression parser" {
-        // avra_stmt_flip_grammar() COMPOSES the statement rules with the shared
+        // avra_program_grammar() COMPOSES the statement rules with the shared
         // expression rules — so the emitted module carries both.
         let src = emit_all()
         src.contains("fn parse_statement(st: PState) -> CapVal") &&

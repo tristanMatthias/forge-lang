@@ -23,10 +23,10 @@
 // must agree; that equality is the whole contract, and it holds independently of what
 // the postfix forms themselves render.
 
-use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr, dump_expr, parse_grammar, compose_grammars}
+use @std.avrac.features.grammar.{run_grammar_expr, dump_expr, parse_grammar, compose_grammars, avra_program_grammar}
 
 fn tree_for(rule_src: string, src: string) -> string {
-    let g = compose_grammars(parse_grammar(rule_src).grammar, avra_expr_grammar())
+    let g = compose_grammars(parse_grammar(rule_src).grammar, avra_program_grammar())
     let r = run_grammar_expr(g, src)
     dump_expr(r.store, r.root)
 }

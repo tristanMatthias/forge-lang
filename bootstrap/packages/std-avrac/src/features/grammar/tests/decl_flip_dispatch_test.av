@@ -18,7 +18,7 @@
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{parser_new}
 use @std.avrac.core.{render_stmt_id, avra_selfhost_write_file}
-use @std.avrac.features.grammar.{GAnnot, GNode, Grammar, avra_decl_dispatch_grammar, avra_expr_grammar, avra_program_grammar, checked_in_parser_source, parse_grammar}
+use @std.avrac.features.grammar.{GAnnot, GNode, Grammar, avra_program_grammar, checked_in_parser_source, parse_grammar}
 use @std.avrac.features.grammar.{emit_lookup_rule, rule_body_has_cut, checked_in_parser_source}
 
 fn flip_decl(src: string) -> string {
@@ -300,7 +300,7 @@ fn recovers(name: string, src: string) -> bool {
 /// `declared_expect` against the EXPRESSION view — where the second definition of
 /// `param` actually lives.
 fn declared_expect_expr(rule: string, key: string) -> string {
-    declared_expect_in(avra_expr_grammar(), rule, key)
+    declared_expect_in(avra_program_grammar(), rule, key)
 }
 
 fn declared_expect(rule: string, key: string) -> string {
@@ -392,7 +392,7 @@ spec "t-myz7: a rule-name-keyed @expect reaches the EMITTED parser" {
 /// Every `declaration` branch that is `@try` AND refers to a rule containing `@cut`.
 /// Empty is the invariant; each entry is an inert commit.
 fn inert_committed_branches() -> List<string> {
-    let g = avra_decl_dispatch_grammar()
+    let g = avra_program_grammar()
     mut out: List<string> = []
     let d = emit_lookup_rule(g, "declaration")
     match d.body {
@@ -449,7 +449,7 @@ spec "t-myz7: a `@cut`-committed rule is never dispatched under `@try`" {
         // as declaration branches, so they have no reason to ever gain a `@cut`. Keying
         // it on a decl keyword instead would make this arm flip red the day that keyword
         // is legitimately committed, i.e. it would fail for being RIGHT.
-        let g = avra_decl_dispatch_grammar()
+        let g = avra_program_grammar()
         rule_body_has_cut(emit_lookup_rule(g, "shape_decl").body) &&
             rule_body_has_cut(emit_lookup_rule(g, "trait_decl").body) &&
             !rule_body_has_cut(emit_lookup_rule(g, "field").body) &&

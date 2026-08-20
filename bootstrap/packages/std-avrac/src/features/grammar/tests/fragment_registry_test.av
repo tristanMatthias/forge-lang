@@ -8,7 +8,7 @@
 // other fragments (a clean union with a well-defined start symbol) — so this
 // spec is the gate that keeps the modular assembly honest, not a snapshot.
 use @std.avrac.features.{feature_grammar_fragments}
-use @std.avrac.features.grammar.{avra_expr_dispatch_grammar, avra_expr_spine_grammar, avra_type_spine_grammar, avra_program_grammar, compose_fragments, fragment_rule_conflicts, feature_decl_grammar_fragments, Grammar}
+use @std.avrac.features.grammar.{avra_expr_spine_grammar, avra_type_spine_grammar, avra_program_grammar, compose_fragments, fragment_rule_conflicts, feature_decl_grammar_fragments, Grammar, avra_expr_dispatch_grammar}
 
 // The shared cross-cutting base (owned by no single feature) followed by every
 // per-feature fragment the registry collects — the composer's full input.

@@ -8,7 +8,7 @@
 // pinned here too.
 use @std.avrac.features.while_stmt.{while_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_stmt_flip_grammar}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar}
 
 spec "while as a LanguageFeature" {
     then "the keyword derives from the declared grammar" {
@@ -25,7 +25,7 @@ spec "while as a LanguageFeature" {
         // head + the feature-owned lowering.
         let rule = "while_stmt = \"while\" c:expression body:block -> build_while(c, body)"
         render_grammar(feature_gram(while_lang())).contains(rule)
-            && render_grammar(avra_stmt_flip_grammar()).contains(rule)
+            && render_grammar(avra_program_grammar()).contains(rule)
     }
     then "the whole-program view lowers through the same builder" {
         let prod = render_grammar(avra_program_grammar())
