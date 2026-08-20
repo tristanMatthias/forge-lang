@@ -588,5 +588,22 @@ export fn avra_program_grammar() -> Grammar {
     let gp = grammar {
   program     = ( d:declaration )* -> Block(d)
     }
-    compose_fragments([grammar_checked(gp), avra_decl_flip_grammar()])
+    // ONE flat composition (t-y2i7 section 2). This is the nested chain
+    //   program -> decl_flip -> [decl_edge, stmt_flip]
+    //   stmt_flip -> [stmt_common, expr_core, decl_edge, type, pat] + stmt_family
+    //   expr_core -> [expr_spine] + expr_fragments
+    // written out, which is well defined because `compose_grammars(a, b)` IS
+    // `compose_fragments([a, b])` (compose.av) — one associative operator.
+    //
+    // avra_type_grammar stays a UNIT: it carries the start-symbol HOIST that
+    // promotes the `type_expr`-defining fragment to the front. Inlining its
+    // fragments would drop it (type_equivalence_test 0/8, even `int` failing).
+    mut frags: List<Grammar> = [grammar_checked(gp), avra_decl_edge_grammar(),
+                                avra_stmt_common_grammar(), avra_expr_spine_grammar()]
+    for g in feature_expr_grammar_fragments() { frags.push(g) }
+    frags.push(avra_decl_edge_grammar())
+    frags.push(avra_type_grammar())
+    frags.push(avra_pat_grammar())
+    for g in stmt_family_fragments() { frags.push(g) }
+    compose_fragments(frags)
 }
