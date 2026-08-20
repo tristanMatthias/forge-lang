@@ -1,49 +1,49 @@
-// WHY: `Feature.emit_expr` / `emit_stmt` in core/registry.av were declared
-// `int` — a FUNCTION POINTER stored as an untyped integer, inside core/, which
-// is the rule-16 defect the codebase bans ("String-based type annotations,
-// untyped registries, i64 fallbacks — these are bugs, not features").
+// WHY: the compiler's emit hooks were declared `int` — FUNCTION POINTERS stored
+// as untyped integers — which is the rule-16 defect the codebase bans ("untyped
+// registries, i64 fallbacks — these are bugs, not features"). It survived
+// because the language has an ambient int-as-fn-pointer coercion, so the wrong
+// type WORKED and nothing surfaced it.
 //
-// It survived because the language has an ambient int-as-fn-pointer coercion:
-// `feature_new` assigned the FUNCTIONS noop_emit_expr/noop_emit_stmt straight
-// into the int fields and `dispatch_expr_emit` bound the `avra_intmap_get`
-// result to a fn-typed local and called it. So the wrong type WORKED, which is
-// exactly why nothing surfaced it — and the sibling hooks (resolve/check/eval)
-// were properly typed all along, through the same intmaps, proving the int was
-// never required.
+// The declaration has moved twice since, and this guard followed it rather than
+// being deleted, because the INVARIANT never changed:
+//   core/registry.av `Feature`      -> the original defect (#1308 typed it)
+//   features/wiring.av `Feature`    -> t-y2i7.13 (core/ must not name codegen/
+//                                     typeck/eval result types)
+//   features/mod.av `LanguageFeature` -> P2d collapsed the two records; `Feature`
+//                                     and `feature_new` are gone, and `register`
+//                                     takes the LanguageFeature directly.
 //
-// This guard pins the declarations. A textual assertion is the honest
-// instrument here: the defect IS the declared type, and the type checker
-// cannot fail a program for accepting a coercion it deliberately allows
-// (see t-vt10 — it does not even reject a string in an enum-typed field).
+// A textual assertion is the honest instrument: the defect IS the declared type,
+// and the type checker cannot fail a program for accepting a coercion it
+// deliberately allows (cf. t-vt10 — it does not even reject a string in an
+// enum-typed field).
 
 use @std.avrac.core.{avra_selfhost_read_file}
 
-/// The `Feature` record moved to features/wiring.av with t-y2i7.13 (core/ is
-/// the bottom layer and must not name codegen/typeck/eval result types). The
-/// INVARIANT is unchanged — these hooks are fn-typed, never untyped ints — so
-/// this guard follows the declaration rather than being deleted with the move.
-fn registry_src() -> string {
-    avra_selfhost_read_file("packages/std-avrac/src/features/wiring.av")
+fn hooks_src() -> string {
+    avra_selfhost_read_file("packages/std-avrac/src/features/mod.av")
 }
 
-spec "core/registry.av's Feature hooks are FUNCTION-typed, never untyped ints" {
+spec "the emit hooks are FUNCTION-typed, never untyped ints" {
     then "emit_expr declares a fn type" {
-        registry_src().contains("emit_expr: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string>")
+        hooks_src().contains("emit_expr: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string>")
     }
     then "emit_stmt declares a fn type" {
-        registry_src().contains("emit_stmt: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string>")
+        hooks_src().contains("emit_stmt: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string>")
     }
     then "neither is declared `int` — the exact regression" {
-        // The DECLARATION form (indented field + trailing comma), not the bare
-        // text: the file's own commentary quotes `Feature.emit_expr: int` when
-        // explaining the history, and a substring match on that reads the
-        // documentation as the defect. Caught by this spec on its first run.
-        !registry_src().contains("\n    emit_expr: int,")
-            && !registry_src().contains("\n    emit_stmt: int,")
+        // The DECLARATION form, not a bare substring: the surrounding prose
+        // quotes `emit_expr: int` when explaining the history, and a substring
+        // match reads the documentation as the defect. (That happened on the
+        // first version of this guard.)
+        !hooks_src().contains("\n        emit_expr: int")
+            && !hooks_src().contains("\n        emit_stmt: int")
     }
-    then "the file was actually read — anti-vacuity" {
-        // Without this, a failed read returning "" makes every `!contains`
-        // above pass and the two `contains` arms are the only real checks.
-        registry_src().length > 1000 && registry_src().contains("export type Feature = {")
+    then "the declaration site still EXISTS — anti-vacuity" {
+        // Without this, deleting or moving the record leaves the two
+        // `!contains` arms passing on a file that no longer declares anything.
+        // That is not hypothetical: it is exactly what happened when P2d
+        // collapsed `Feature` away, and this arm is what caught it.
+        hooks_src().contains("export component LanguageFeature") && hooks_src().length > 1000
     }
 }
