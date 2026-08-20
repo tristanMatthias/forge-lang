@@ -3567,15 +3567,29 @@ EOF
 procs_under() {
   local roots=" $1 " exclude=" ${2:-} " snap
   snap="$(all_ps)"
-  printf '%s\n' "$snap" | awk -v snap="$snap" -v roots="$roots" -v exclude="$exclude" '
-    BEGIN { n = split(snap, lines, "\n")
-            for (i = 1; i <= n; i++) { split(lines[i], f, " "); if (f[1] != "") parent[f[1]] = f[2] } }
-    index(exclude, " " $1 " ") > 0 { next }
-    { p = $2; hops = 0
-      while (p != "" && p != "0" && p != "1" && hops < 64) {
-        if (index(roots, " " p " ") > 0) { print $1, $6; break }
-        p = parent[p]; hops++
-      } }'
+  # Same portability constraint as annotate_heavy: the snapshot may NOT be
+  # passed via `-v` (a literal newline in a -v value makes the BSD/macOS awk
+  # reject the whole program). It reaches awk on stdin only; parent[] is built
+  # during that pass and the walk runs in END.
+  #
+  # This one mattered more than the reporting path: procs_under collects the
+  # SUBTREE to kill, so on macOS it produced nothing and --reap killed only the
+  # orphan root. The spawner died and its running child was left behind — the
+  # exact "killing the compiles while leaving the thing that spawns them is not
+  # a reap" failure this function exists to prevent.
+  printf '%s\n' "$snap" | awk -v roots="$roots" -v exclude="$exclude" '
+    { rows[NR] = $0; if ($1 != "") parent[$1] = $2 }
+    END {
+      for (r = 1; r <= NR; r++) {
+        split(rows[r], F, " ")
+        if (index(exclude, " " F[1] " ") > 0) continue
+        p = F[2]; hops = 0
+        while (p != "" && p != "0" && p != "1" && hops < 64) {
+          if (index(roots, " " p " ") > 0) { print F[1], F[6]; break }
+          p = parent[p]; hops++
+        }
+      }
+    }'
 }
 
 # Usage: --stray [--reap]
