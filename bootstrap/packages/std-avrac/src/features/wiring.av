@@ -21,39 +21,6 @@ use codegen.{err_emit, err_sr, StmtResult}
 use typeck.{tc_er}
 use features.eval.{value_null, Runtime, StepResult}
 
-/// One language feature's declarative registration. A Feature
-/// bundles every callback the compiler might invoke for a specific
-/// AST shape — parse, resolve, typecheck, eval (interpreter), and
-/// codegen — so adding a feature is a single decl change at the
-/// registry, no scattered if-chains.
-/// @field name           — for diagnostics / introspection.
-/// @field expr_tag       — sentinel Expr value whose tag this feature
-///                          handles (null when not an expr feature).
-/// @field stmt_tag       — sentinel Stmt value, mirror of expr_tag.
-/// @field expr_keyword   — leading keyword of a `kw { … }` expression
-///                          construct (e.g. "grammar"); the generic
-///                          "registered `<keyword> { }` → package parser"
-///                          seam for embedded sublanguages.
-export type Feature = {
-    name: string,
-    expr_tag: Expr?,
-    stmt_tag: Stmt?,
-    expr_keyword: string,
-    // Properly typed, like every sibling hook below (#1308). These were `int` —
-    // a function pointer stored as an untyped integer, riding the language's
-    // ambient int-as-fn-pointer coercion. Nothing required it: `feature_new`
-    // already assigned the FUNCTIONS `noop_emit_expr`/`noop_emit_stmt` to them,
-    // `LanguageFeature` has always declared these fields with these exact
-    // signatures, and no code did arithmetic or an int comparison on either.
-    emit_expr: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string>,
-    emit_stmt: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string>,
-    resolve_expr: fn(Resolver, Expr) -> Resolver,
-    resolve_stmt: fn(Resolver, Stmt) -> Resolver,
-    check_expr: fn(TC, Expr) -> ExprResult,
-    check_stmt: fn(TC, Stmt) -> TC,
-    eval_expr: fn(Runtime, Expr) -> StepResult,
-    eval_stmt: fn(Runtime, Stmt) -> StepResult,
-}
 
 /// Codegen no-op for expressions — `err_emit("no expr handler")`.
 export fn noop_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
@@ -83,29 +50,11 @@ export fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     StepResult { runtime: rt, value: value_null(), had_error: true, is_return: false, error_message: "no eval_stmt handler" }
 }
 
-/// Construct a Feature with no-op handlers. Each feature module
-/// builds on this with `with`-updates to register its own callbacks.
-export fn feature_new(name: string) -> Feature {
-    Feature {
-        name,
-        expr_tag: null,
-        stmt_tag: null,
-        expr_keyword: "",
-        emit_expr: noop_emit_expr,
-        emit_stmt: noop_emit_stmt,
-        resolve_expr: noop_resolve_expr,
-        resolve_stmt: noop_resolve_stmt,
-        check_expr: noop_check_expr,
-        check_stmt: noop_check_stmt,
-        eval_expr: noop_eval_expr,
-        eval_stmt: noop_eval_stmt,
-    }
-}
 
 /// Index `f` into every relevant map. Reads the variant tags off
 /// the sentinel `expr_tag` / `stmt_tag` values when present, plus
 /// the keyword strings for parser dispatch.
-export fn register(reg: Registry, f: Feature) {
+export fn register(reg: Registry, f: LanguageFeature) {
     if f.expr_tag != null {
         let etag = avra_expr_tag(f.expr_tag!)
         avra_intmap_set(reg.expr_emitters, etag, f.emit_expr)

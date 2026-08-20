@@ -29,19 +29,7 @@ export fn register_lang(reg: Registry, f: LanguageFeature) {
         grammar_startup_fail(err)
         return
     }
-    register(reg, feature_new(f.name) with {
-        expr_tag: f.expr_tag,
-        stmt_tag: f.stmt_tag,
-        expr_keyword: f.expr_keyword,
-        emit_expr: f.emit_expr,
-        emit_stmt: f.emit_stmt,
-        resolve_expr: f.resolve_expr,
-        resolve_stmt: f.resolve_stmt,
-        check_expr: f.check_expr,
-        check_stmt: f.check_stmt,
-        eval_expr: f.eval_expr,
-        eval_stmt: f.eval_stmt,
-    })
+    register(reg, f)
 }
 
 /// The feature's grammar, validated — the ONE place a definition's
