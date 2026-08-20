@@ -92,14 +92,26 @@ diagnostics. That bug exists only because the code is written four times.
   is not there. The duplication worth removing was the CEREMONY — three copies,
   one of them right, which is how #1221 happened — and that is now written once.
 - **STILL OPEN, deferred out of P1:** the four `parse/static_*_entry.av` shims
-  survive, and the forward-progress watermark is still `parse_declaration`-only
-  (`item_start`). Both were listed here as P1 work and neither was done. They are
-  small and real; they belong to whichever slice next touches this file. Do not
-  read this section as describing the tree until they land.
-- The watermark argument stands on its own merits: "an errored parse that
-  consumed zero bytes must return `.Err` so the caller advances" is a property of
-  any loop over a repeated rule, not of declarations. `declaration` is merely
-  where the infinite loop was observed.
+  survive. They are the engine's name-to-fn dispatch table written as four
+  files; generating it from the same emit pass that writes the parser is the
+  fix, and it must preserve why they exist at all — `gen_parser.av` defines a
+  FREE `parse_type_expr` that would otherwise shadow the `Parser` METHOD of the
+  same name. Tracked as t-y2i7.10.
+- **AUDITED AND WITHDRAWN: "the forward-progress watermark should be
+  unconditional".** This section argued the watermark is "a property of any loop
+  over a repeated rule" and that `declaration` was merely where the infinite loop
+  was observed. Checking the code, there is NOTHING TO MAKE UNCONDITIONAL.
+
+  The watermark guards ONE thing: `parse_declaration` can return `.Ok` on an
+  ERRORED parse, adopting a node whose nested statement list already recovered
+  and spanned the bad region itself. `item_start` stops it doing that at zero
+  width, which would otherwise re-parse the same token forever.
+
+  `parse_statement` and `parse_expression` have no such path — verified, their
+  error tails end unconditionally in `.Err`, so the caller's own guard advances
+  and a zero-width adopt is impossible by construction. The watermark is
+  correctly scoped to the only seam that can violate the property. Implementing
+  it elsewhere would add a dead conditional and call it a fix.
 
 ## 4. 100% grammar-generated lexer
 
