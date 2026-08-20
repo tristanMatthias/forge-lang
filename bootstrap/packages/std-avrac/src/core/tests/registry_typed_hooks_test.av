@@ -18,8 +18,12 @@
 
 use @std.avrac.core.{avra_selfhost_read_file}
 
+/// The `Feature` record moved to features/wiring.av with t-y2i7.13 (core/ is
+/// the bottom layer and must not name codegen/typeck/eval result types). The
+/// INVARIANT is unchanged — these hooks are fn-typed, never untyped ints — so
+/// this guard follows the declaration rather than being deleted with the move.
 fn registry_src() -> string {
-    avra_selfhost_read_file("packages/std-avrac/src/core/registry.av")
+    avra_selfhost_read_file("packages/std-avrac/src/features/wiring.av")
 }
 
 spec "core/registry.av's Feature hooks are FUNCTION-typed, never untyped ints" {

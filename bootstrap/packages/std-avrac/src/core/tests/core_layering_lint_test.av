@@ -1,0 +1,55 @@
+// WHY: core/ is the BOTTOM layer — every other layer imports it, so nothing
+// under core/ may import UPWARD. CLAUDE.md states the rule ("Never put
+// feature-specific code in core/") and nothing enforced it, which is how
+// core/registry.av accumulated SEVEN live upward imports — into codegen/,
+// typeck/ AND features/ — without anyone noticing. A dependency spelled
+// `use features.eval.{value_null}` simply does not read as a layer claim.
+//
+// Built BEFORE the fix on purpose, the way --check-feature-layout was (P4a):
+// the ALLOWLIST is the measurement, and it must shrink. Two files are on it
+// today (registry.av, ast.av), each naming t-y2i7.13 as its owner.
+//
+// Worth knowing before "fixing" either:
+//   - registry.av's dependency is CIRCULAR — typeck/ and codegen/ import
+//     core.{Registry, dispatch_*} while registry.av imports typeck/codegen.
+//     Moving the file RENAMES the participant; it does not remove the cycle.
+//     Breaking it needs each pass to own its dispatch table.
+//   - ast.av's `use features.walker.{derive_walker}` LOOKS unused (the import
+//     plus three comments) and is LOAD-BEARING via four `@expand(derive_walker)`
+//     sites. Deleting it breaks AST walker generation.
+//
+// Mirrors features/grammar/tests/feature_layout_lint_test.av: drive the real
+// script, assert it passes as the tree stands, and assert it FAILS when the
+// invariant breaks — the anti-vacuity half, without which a lint that always
+// returned 0 would look identical to one that works.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+spec "the core-layering lint is real" {
+    then "it passes on the tree as it stands" {
+        avra_shell_exec_status("bash scripts/diagnose.sh --check-core-layering >/dev/null 2>&1") == 0
+    }
+    then "a NEW upward import makes it FAIL — the anti-vacuity half" {
+        // fingerprint.av is core and is NOT allowlisted, so an upward import
+        // there must be caught. Cleanup is unconditional and runs before the
+        // assertion, since `defer` is unavailable in this shell-out style.
+        let f = "packages/std-avrac/src/core/fingerprint.av"
+        let _ = avra_shell_exec("cp '${f}' '${f}.linttmp'")
+        let _ = avra_shell_exec("printf 'use typeck.{tc_er}\\n' | cat - '${f}.linttmp' > '${f}'")
+        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-core-layering >/dev/null 2>&1")
+        let _ = avra_shell_exec("mv '${f}.linttmp' '${f}'")
+        rc != 0
+    }
+    then "and it passes again once the planted import is gone" {
+        // A failure HERE means the planted import leaked rather than the lint
+        // being wrong — the two are worth telling apart.
+        avra_shell_exec_status("bash scripts/diagnose.sh --check-core-layering >/dev/null 2>&1") == 0
+    }
+    then "the allowlist NAMES the two known inversions and their owner" {
+        // The allowlist is the measurement. If it silently emptied, the lint
+        // would still pass and would be asserting nothing.
+        let out = avra_shell_exec("bash scripts/diagnose.sh --check-core-layering --list 2>&1")
+        out.contains("core/registry.av") && out.contains("core/ast.av") && out.contains("t-y2i7.13")
+    }
+}

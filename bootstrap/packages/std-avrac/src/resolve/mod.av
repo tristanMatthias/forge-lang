@@ -9,7 +9,7 @@
 use core.{Expr, FieldInit, ParamEntry, Stmt, TypeParamEntry, stmt_unwrap, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId}
 use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, diag_error, span_at}
-use core.{Registry, dispatch_stmt_resolve, dispatch_expr_resolve, avra_stmt_tag, avra_expr_tag}
+use core.{Registry, avra_stmt_tag, avra_expr_tag}
 
 /// Outcome of `resolve_program`. `had_error` mirrors
 /// `bag_has_errors(bag)` — kept as a flat int so callers can branch
@@ -611,4 +611,28 @@ export fn resolve_expr_list_ids(r: Resolver, ids: List<ExprId>) -> Resolver {
         i = i + 1
     }
     res with { source_line: fb_line, source_col: fb_col }
+}
+
+// ── Registry dispatch (t-y2i7.13) ────────────────────────────────────────────
+//
+// These lived in core/registry.av, which made core/ depend on THIS pass's
+// vocabulary while this pass imported core.{Registry} — a live cycle across
+// top-level dirs. Each dispatch family had exactly ONE caller, this file, so
+// the table belongs to the pass that owns the types it returns.
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+
+/// Invoke the resolver hook for `tag`, or null when none is
+/// registered (resolver falls back to its built-in walker).
+export fn dispatch_expr_resolve(reg: Registry, tag: int, r: Resolver, expr: Expr) -> Resolver? {
+    if avra_intmap_has(reg.expr_resolvers, tag) == 0 { return null }
+    let handler: fn(Resolver, Expr) -> Resolver = avra_intmap_get(reg.expr_resolvers, tag)
+    handler(r, expr)
+}
+
+/// Invoke the resolver stmt hook, or null when not registered.
+export fn dispatch_stmt_resolve(reg: Registry, tag: int, r: Resolver, stmt: Stmt) -> Resolver? {
+    if avra_intmap_has(reg.stmt_resolvers, tag) == 0 { return null }
+    let handler: fn(Resolver, Stmt) -> Resolver = avra_intmap_get(reg.stmt_resolvers, tag)
+    handler(r, stmt)
 }

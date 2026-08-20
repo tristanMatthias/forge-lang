@@ -12,7 +12,7 @@ use list_ops.{list_contains_str}
 // when codegen would fail. Limited to expressions + simple
 // statements; complex features (match, for, etc.) are codegen-only.
 
-use core.{Registry, dispatch_stmt_eval, dispatch_expr_eval, avra_stmt_tag, avra_expr_tag}
+use core.{Registry, avra_stmt_tag, avra_expr_tag}
 
 // Numeric parsing for the bootstrap evaluator. Integer literals parse
 // through an honest base-10 parser; float literals + float arithmetic
@@ -3432,3 +3432,25 @@ fn number_value_to_int(v: Value) -> int {
     avra_selfhost_string_to_int(v.number_text)
 }
 
+// ── Registry dispatch (t-y2i7.13) ────────────────────────────────────────────
+//
+// These lived in core/registry.av, which made core/ depend on THIS pass's
+// vocabulary while this pass imported core.{Registry} — a live cycle across
+// top-level dirs. Each dispatch family had exactly ONE caller, this file, so
+// the table belongs to the pass that owns the types it returns.
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+
+/// Invoke the eval expr hook (tree-walking interpreter), or null.
+export fn dispatch_expr_eval(reg: Registry, tag: int, rt: Runtime, expr: Expr) -> StepResult? {
+    if avra_intmap_has(reg.expr_evals, tag) == 0 { return null }
+    let handler: fn(Runtime, Expr) -> StepResult = avra_intmap_get(reg.expr_evals, tag)
+    handler(rt, expr)
+}
+
+/// Invoke the eval stmt hook, or null.
+export fn dispatch_stmt_eval(reg: Registry, tag: int, rt: Runtime, stmt: Stmt) -> StepResult? {
+    if avra_intmap_has(reg.stmt_evals, tag) == 0 { return null }
+    let handler: fn(Runtime, Stmt) -> StepResult = avra_intmap_get(reg.stmt_evals, tag)
+    handler(rt, stmt)
+}

@@ -11,7 +11,7 @@
 
 use @std.avrac.features.grammar.{assemble_language, language_for, Language, Grammar}
 use @std.avrac.features.{feature_builders}
-use @std.avrac.core.{build_registry}
+use @std.avrac.features.{build_registry}
 
 fn has_rule(g: Grammar, name: string) -> bool {
     for r in g.rules {

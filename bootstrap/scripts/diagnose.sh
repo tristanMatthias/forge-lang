@@ -4187,6 +4187,71 @@ mode_check_layout_boundary() {
 # the ratchet — the same discipline engine_core_builds and declared_engine_rules
 # carry. `--check-feature-layout --list` prints the current drift without failing,
 # for whoever is doing the shrinking.
+mode_check_core_layering() {
+  # WHY: core/ is the bottom layer — everything imports it, so nothing under it
+  # may import UPWARD (codegen/, typeck/, resolve/, parse/, features/, ...).
+  # The rule is stated in CLAUDE.md ("Never put feature-specific code in core/")
+  # and was unenforced, which is how core/registry.av accumulated SEVEN live
+  # upward imports without anyone noticing: a dependency spelled `features.…`
+  # does not read as a layer claim.
+  #
+  # Built BEFORE the fix on purpose, the same way --check-feature-layout was
+  # (P4a): the allowlist IS the measurement, and it must SHRINK. Each entry
+  # names the ticket that removes it.
+  local list_only=0
+  [ "${1:-}" = "--list" ] && list_only=1
+  local sd="$BOOTSTRAP_DIR/packages/std-avrac/src"
+  [ -d "$sd/core" ] || die "check-core-layering: core dir not found: $sd/core"
+
+  # Layers ABOVE core. A `use <layer>.…` from core/ is an inversion.
+  local upper="codegen typeck resolve parse desugar query features check build lang_gen test_runner"
+
+  # Known inversions, each with its owner. SHRINK THIS LIST; do not grow it.
+  #   registry.av  t-y2i7.13  DOWN TO ONE import: features.grammar.{BuilderBind},
+  #                because `Registry.builder_binds: List<BuilderBind>`. Was SEVEN
+  #                (codegen x3, typeck, features x3) until the dispatch tables
+  #                moved to their passes and the Feature record + noop_* moved to
+  #                features/wiring.av. The core<->codegen and core<->typeck CYCLES
+  #                are gone with them. BuilderBind carries
+  #                `build: fn(PState, List<CapVal>) -> CapVal`, so moving the TYPE
+  #                into core would drag PState/CapVal along — either accept this
+  #                as the one named exception or make builder_binds opaque.
+  #   ast.av       t-y2i7.13  needs @derive SYNTHESIS: four @expand(derive_walker)
+  #                sites. The import LOOKS unused (import + comments only) and is
+  #                LOAD-BEARING. Do not "clean" it.
+  local allow="registry.av ast.av"
+
+  local drift=0 out="" f base layer
+  for f in "$sd"/core/*.av; do
+    [ -e "$f" ] || continue
+    base=$(basename "$f")
+    for layer in $upper; do
+      grep -qsE "^use ${layer}\." "$f" || continue
+      case " $allow " in
+        *" $base "*) out="$out  (allowed, pending t-y2i7.13) core/$base -> $layer"$'
+' ;;
+        *) out="$out  INVERSION core/$base -> $layer"$'
+'; drift=$((drift + 1)) ;;
+      esac
+    done
+  done
+
+  if [ "$list_only" = "1" ]; then
+    printf '%s' "$out"
+    ok "check-core-layering: listed current inversions (not a verdict)"
+    return 0
+  fi
+  if [ "$drift" -gt 0 ]; then
+    err "check-core-layering: $drift upward import(s) from core/ that are not allowlisted."
+    err "core/ is the BOTTOM layer. Either the symbol belongs in core, or add the file to the"
+    err "allowlist in this function WITH the ticket that removes it — never silently."
+    printf '%s' "$out" | grep 'INVERSION' >&2
+    return 1
+  fi
+  printf '%s' "$out"
+  ok "check-core-layering: core/ imports nothing above it (allowlisted inversions are tracked, see --list)"
+}
+
 mode_check_feature_layout() {
   local list_only=0
   [ "${1:-}" = "--list" ] && list_only=1
@@ -4640,6 +4705,7 @@ main() {
     --check-layout-boundary) mode_check_layout_boundary "$@" ;;
     --check-parser-flags) mode_check_parser_flags "$@" ;;
     --check-ci-gates)     mode_check_ci_gates "$@" ;;
+    --check-core-layering) mode_check_core_layering "$@" ;;
     --check-feature-layout) mode_check_feature_layout "$@" ;;
     --check-typeck-collect-boundary) mode_check_typeck_collect_boundary "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;

@@ -8,7 +8,7 @@
 
 use core.{Expr, Stmt, ValueType, VarBinding, env_lookup, vtype_fn_ret, vtype_is_unknown, vtype_strip_optional}
 
-use core.{dispatch_expr_emit, dispatch_stmt_emit, avra_expr_tag, avra_stmt_tag, has_expr_emit, has_stmt_emit}
+use core.{avra_expr_tag, avra_stmt_tag}
 use features.closures.{emit_lambda_typed, emit_expected}
 use features.defer.{emit_defers, emit_defers_on_error}
 use features.defer.{defer_scope_enter, defer_scope_exit, emit_defers_above}
@@ -564,4 +564,38 @@ impl Ctx {
         let r = emit_expr(self, env, expr)?
         ok_emit(r.value, vtype_strip_optional(r.ty))
     }
+}
+
+// ── Registry dispatch (t-y2i7.13) ────────────────────────────────────────────
+//
+// These lived in core/registry.av, which made core/ depend on THIS pass's
+// vocabulary while this pass imported core.{Registry} — a live cycle across
+// top-level dirs. Each dispatch family had exactly ONE caller, this file, so
+// the table belongs to the pass that owns the types it returns.
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+
+/// True iff a feature has registered an expr-codegen handler for
+/// this Expr-variant tag.
+export fn has_expr_emit(reg: Registry, tag: int) -> bool {
+    avra_intmap_has(reg.expr_emitters, tag) != 0
+}
+
+/// Invoke the registered expr-codegen handler. Caller must verify
+/// `has_expr_emit` first — there's no fallback at this layer.
+export fn dispatch_expr_emit(reg: Registry, tag: int, ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
+    let handler: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string> = avra_intmap_get(reg.expr_emitters, tag)
+    handler(ctx, env, expr)
+}
+
+/// True iff a feature has registered a stmt-codegen handler.
+export fn has_stmt_emit(reg: Registry, tag: int) -> bool {
+    avra_intmap_has(reg.stmt_emitters, tag) != 0
+}
+
+/// Invoke the registered stmt-codegen handler. Caller must verify
+/// `has_stmt_emit` first.
+export fn dispatch_stmt_emit(reg: Registry, tag: int, ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
+    let handler: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string> = avra_intmap_get(reg.stmt_emitters, tag)
+    handler(ctx, env, stmt)
 }
