@@ -642,13 +642,35 @@ export fn write_fixture(path: string, source: string) {
     let _ = avra_selfhost_write_file(path, source)
 }
 
-/// Convenience: write `source` to `path`, then run it through
-/// `cached_fixture_run`. Centralises the write-then-run dance every
+/// A fixture path made unique by its SOURCE (t-ney4).
+///
+/// Specs share fixture paths freely — three specs in one file write the same
+/// /tmp name, six share another. `write_fixture` then `bs2 compile <path>` is
+/// write-then-read on a path another writer can clobber in between, and the
+/// loser compiles someone else's program and greps for a line it never prints.
+/// The stdout cache already anticipates the clobber ("if a concurrent writer is
+/// mid-clobber this hash keys a slot we simply won't find") and degrades to a
+/// miss; the RUN has no such protection.
+///
+/// The suffix is derived from the SOURCE, never the pid. `cached_fixture_capture_src`
+/// keys on `…:${fixture_h}:${fixture_path}:${verb}` — the PATH IS IN THE KEY — so a
+/// per-run suffix would make every fixture a permanent cache miss (the ~1600s-vs-500s
+/// cold-run cost). Content-derived keeps the key stable for a given spec while making
+/// two different sources structurally unable to collide.
+fn content_unique_fixture_path(path: string, source: string) -> string {
+    let h = sha256_hex(source).substring(0, 12)
+    if path.ends_with(".av") { return path.substring(0, path.length - 3) + ".${h}.av" }
+    "${path}.${h}"
+}
+
+/// Convenience: write `source` to a source-unique sibling of `path`, then run it
+/// through `cached_fixture_run`. Centralises the write-then-run dance every
 /// fixture-style spec test used to inline. The source reaches the file
 /// unmodified — see `write_fixture`.
 export fn write_fixture_and_run(path: string, source: string) -> string {
-    write_fixture(path, source)
-    cached_fixture_capture_src(path, source, fixture_run_cmd(path), "run")
+    let p = content_unique_fixture_path(path, source)
+    write_fixture(p, source)
+    cached_fixture_capture_src(p, source, fixture_run_cmd(p), "run")
 }
 
 
@@ -678,8 +700,9 @@ export fn cached_fixture_check(fixture_path: string) -> string {
 /// Centralises the run_capture pattern duplicated across walker /
 /// decoder tests (8+ inline copies before this helper).
 export fn write_fixture_and_run_no_metadata(path: string, source: string) -> string {
-    write_fixture(path, source)
-    cached_fixture_capture_src(path, source, fixture_run_no_metadata_cmd(path), "run-no-metadata")
+    let p = content_unique_fixture_path(path, source)
+    write_fixture(p, source)
+    cached_fixture_capture_src(p, source, fixture_run_no_metadata_cmd(p), "run-no-metadata")
 }
 
 /// 6w6v: content-keyed cache for fixtures that need BOTH bs2 compile
