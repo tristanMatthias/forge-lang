@@ -82,6 +82,7 @@ extern fn avra_comptime_leave()
 extern fn avra_rd_clear()
 extern fn avra_rd_set_current_module(s: string)
 extern fn avra_rd_add_alias(short_name: string, canonical: string)
+extern fn avra_rd_add_module(canonical: string)
 extern fn avra_rd_add_global(short_name: string, canonical: string)
 extern fn avra_rd_begin_type(canonical: string, kind: string) -> int
 extern fn avra_rd_add_type_field(type_id: int, field_name: string, field_type_canonical: string)
@@ -113,6 +114,12 @@ fn populate_resolver_data_into(state: ResolverState, ids: List<StmtId>) {
     }
     for g in state.graph.all_items {
         avra_rd_add_global(g.short_name, g.canonical)
+    }
+    // The module SET, so a macro can ask which modules exist rather than only
+    // whether a given name is one (ctx_modules_under). Unnamed nodes are the
+    // synthetic roots; they have nothing to answer with.
+    for m in state.graph.modules {
+        if m.canonical != "" { avra_rd_add_module(m.canonical) }
     }
     populate_type_fields(state.nodes, ids, "")
 }

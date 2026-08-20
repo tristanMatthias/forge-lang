@@ -1640,6 +1640,7 @@ fn ctx_kind_from_path(path: string) -> string {
     if last == "ctx_qualify_ident"  { return "qualify_ident" }
     if last == "ctx_fresh_ident"    { return "fresh_ident" }
     if last == "ctx_unwrap_path_to" { return "unwrap_path_to" }
+    if last == "ctx_modules_under"  { return "modules_under" }
     ""
 }
 
@@ -1662,6 +1663,8 @@ extern fn avra_resolver_fresh_id() -> int
 // invoke. See `populate_resolver_data` + the C-side block in
 // runtime.c for the lifecycle.
 extern fn avra_rd_get_current_module() -> string
+extern fn avra_rd_module_count() -> int
+extern fn avra_rd_module_at(i: int) -> string
 extern fn avra_rd_lookup_alias(name: string) -> string
 extern fn avra_rd_lookup_global(name: string) -> string
 extern fn avra_rd_find_type(name: string) -> int
@@ -1683,6 +1686,19 @@ fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<ExprId>) ->
     let rt = args_result.runtime
     if kind == "current_module" {
         return ok_result(rt, value_string(avra_rd_get_current_module()))
+    }
+    if kind == "modules_under" {
+        // args[0] = ctx, args[1] = prefix
+        if args_result.values.length < 2 { return ok_result(rt, value_list([])) }
+        let prefix = args_result.values[1].text
+        mut hits: List<Value> = []
+        mut i = 0
+        while i < avra_rd_module_count() {
+            let name = avra_rd_module_at(i)
+            if name.starts_with(prefix) { hits.push(value_string(name)) }
+            i = i + 1
+        }
+        return ok_result(rt, value_list(hits))
     }
     if kind == "lookup_type" {
         // args[0] = ctx, args[1] = name

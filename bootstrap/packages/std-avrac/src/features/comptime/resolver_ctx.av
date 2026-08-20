@@ -74,6 +74,21 @@ export fn ctx_current_module(ctx: ResolverCtx) -> string {
     ""
 }
 
+/// Every module whose canonical name starts with `prefix`, e.g.
+/// `ctx_modules_under(ctx, "@std::avrac::features")`. The answer comes from the
+/// compiler's own module graph — the resolver already walked those directories —
+/// so this is PURE with respect to the compilation and needs no filesystem access.
+/// That distinction is the whole point: `avra_readdir` in a @comptime fn is
+/// F4008 (and rightly so, since a fold is cached without the directory in its
+/// key), but asking the compiler what it already resolved is neither impure nor
+/// stale.
+///
+/// Returns [] outside a macro context (the stub below); the real answer arrives
+/// through the eval intercept.
+export fn ctx_modules_under(ctx: ResolverCtx, prefix: string) -> List<string> {
+    []
+}
+
 /// Look up a type by source-level name, qualifying through the
 /// active scope's imports. Returns the canonical resolved type or
 /// null if the name doesn't resolve to a known type.
