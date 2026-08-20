@@ -2,10 +2,10 @@
 // auto-load as siblings, surface flat at `features.closures.{...}`.
 // `emit_lambda` and parser helpers are in scope without self-imports.
 use core.{ExprId}
-use features.grammar.{parse_grammar}
 use features.closures.lowering.{closures_builds}
 use resolve.{declare_params, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use typeck.{check_expr, tc_bind_params, tc_check_signature_arity_top, tc_enter, tc_er, tc_exit, tc_first_unannotated_param, tc_param_types}
+use features.grammar.{parse_grammar}
 
 /// `(x, y) -> body` lambdas + the whole `(`-led paren family — the
 /// definition carries it all (t-kd4y.3.5.3): `paren_expr` is ONE

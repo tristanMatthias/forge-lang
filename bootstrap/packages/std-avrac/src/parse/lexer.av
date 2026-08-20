@@ -3,15 +3,14 @@
 
 use core.{Tk, tk_name}
 use diagnostics.{DiagCode}
-use parse.{p_keyword_kind, parser_new}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
 // the two source-byte constants the `/` doc-comment boundary tests.
 use parse.{scan_operator, classify_keyword, resolve_escape, escape_code, scan_dq_body, scan_ml_body, scan_raw_ml_body, scan_interp_region, scan_ident_run, scan_dec_run, scan_hex_run, scan_bin_run, scan_oct_run, scan_to_eol, scan_raw_body, scan_tmpl_body, scan_block_comment, byte_at, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, SLASH, BANG}
-use parse.{DIGIT_0, DOT, UNDERSCORE, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
+use parse.{DIGIT_0, DOT, LOWER_B, LOWER_D, LOWER_H, LOWER_M, LOWER_O, LOWER_S, LOWER_X, UPPER_B, UPPER_O, UPPER_X}
 // String-family scanning: the source bytes it stops/branches on (quote, escape,
 // interpolation, brace-depth, newline) + the escape-name bytes (\n \t \r).
-use parse.{LF, DQUOTE, DOLLAR, LBRACE, RBRACE, BACKSLASH, LOWER_N, LOWER_R, LOWER_T}
+use parse.{LF, DQUOTE, BACKSLASH, LOWER_R}
 // Trivia scanning (whitespace + line/block/doc comments) + the backtick template.
 use parse.{SPACE, CR, TAB, STAR, BACKTICK}
 // The lead-byte dispatch + char literals: the quote/char-literal delimiter.

@@ -6,9 +6,9 @@ use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
 use features.eval.{ok_result, value_null}
 use resolve.{resolve_expr}
 use typeck.{check_expr, tc_gate_unthreaded_lambda}
-use features.grammar.{parse_grammar}
 use features.defer.lowering.{defer_builds, errdefer_builds}
 use list_ops.{list_push_copy}
+use features.grammar.{parse_grammar}
 
 /// The typed LOWERINGS, home at last (t-47hc.8 dissolution): the grams'
 /// `-> build_defer(e)` / `-> build_errdefer(e)` resolve to THESE fns; the

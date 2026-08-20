@@ -5,9 +5,9 @@
 // (which consumes the element type this feature establishes).
 
 use core.{ValueType, vtype_display}
-use features.grammar.{parse_grammar}
 use features.channels.lowering.{channels_builds}
 use resolve.{resolve_expr}
+use features.grammar.{parse_grammar}
 
 /// `channel<T>(cap)` — the definition carries the feature whole
 /// (t-kd4y.3.5.1): the construction rule, its one lowering, and the pass

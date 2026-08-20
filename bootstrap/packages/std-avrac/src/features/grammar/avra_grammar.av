@@ -1,6 +1,6 @@
 // WHY: ps3t.6.5.11 — Avra's grammar, DOGFOODED into compiler `src/` as an
 
-use features.grammar.{parse_grammar, grammar_checked, Grammar, compose_grammars, compose_fragments}
+use features.grammar.{Grammar, compose_fragments, compose_grammars, grammar_checked, parse_grammar}
 use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_grammar, avra_match_table_grammar}
 // t-47hc.8 — the statement-family registry: every feature whose gram declares
 // `gram_family = "stmt"`, in registration order. The statement views fold it

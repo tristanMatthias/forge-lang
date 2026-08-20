@@ -14,7 +14,7 @@
 // that desugar.av and comptime/rewrite.av use; once the generic-AST-
 // visitor ticket lands (93k3) all three should share a single visitor.
 
-use core.{Stmt, Expr, byte_span_none, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation, binop_str, unop_str, logicop_str}
+use core.{Stmt, Expr, byte_span_none, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, LogicOp, ParamEntry, TypeParamEntry, CompConfigPair, Variant, ValueType, Annotation}
 use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map}
 use diagnostics.{DiagnosticBag, DiagCode, bag_new, bag_report, diag_error, span_at}

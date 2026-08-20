@@ -9,6 +9,7 @@
 
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.parse.{CDEF, agree, agree_all, agree_bad, agree_error, agree_pos, agree_tree, dbrace, default_path, errcodes, errmsgs, exec_oracle, mode_env, msgs_agree_bad, pin, pin_pos, pin_tree, poslist, poslist_from, rdiags, rtree, rtree_at, sig_has_parse_code, static_raw, tpl_src, tree_agrees_everywhere, mode_parse, ModeRun, rendered}
+use @std.avrac.features.grammar.{parse_grammar}
 
 spec "t-myz7: statement-position `if let` agrees with the hand on the TREE" {
     then "the plain statement form agrees" {

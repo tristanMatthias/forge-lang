@@ -20,7 +20,7 @@ use codegen.{ok_emit, err_emit, EmitValue}
 use features.channels.{channel_methods_help}
 use codegen.{emit_optional_some, emit_optional_none}
 use codegen.{vtype_is_ptr_type}
-use core.{vtype_display, ExprId}
+use core.{ExprId}
 
 /// Codegen entry for `channel<T>(cap)` — feature-registry hook.
 export fn channel_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {

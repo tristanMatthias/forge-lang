@@ -1,7 +1,7 @@
 // WHY: parses top-level `fn` declarations and the parameter list
 // they introduce.
 
-use core.{Stmt, ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype, NodeRef, byte_span_none}
+use core.{ParamEntry, TypeParamEntry, ValueType, type_expr_to_vtype}
 use parse.{Parser}
 use core.{Tk}
 

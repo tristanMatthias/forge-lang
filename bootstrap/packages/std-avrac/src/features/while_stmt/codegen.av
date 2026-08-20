@@ -2,8 +2,8 @@
 // support via the scoped loop stack in Ctx.
 
 use core.{Expr, Stmt, VarBinding}
-use codegen.{Ctx, LoopStackFrame, StmtResult,  ok_stmt, emit_value_ptr, emit_value_ty, emit_cond_truthy}
-use codegen.{emit_expr, emit_stmt, ok_sr, err_sr}
+use codegen.{Ctx, LoopStackFrame, StmtResult, emit_value_ptr, emit_value_ty, emit_cond_truthy}
+use codegen.{emit_stmt, ok_sr, err_sr}
 use list_ops.{list_push_copy}
 
 /// Codegen entry for `while cond { body }`. Pattern-matches the
