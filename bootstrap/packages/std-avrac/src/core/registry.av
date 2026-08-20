@@ -209,73 +209,15 @@ export fn register(reg: Registry, f: Feature) {
 // return on dispatch_* lets callers fall back to the legacy in-tree
 // match arms when no feature is registered.
 
-/// True iff a feature has registered an expr-codegen handler for
-/// this Expr-variant tag.
-export fn has_expr_emit(reg: Registry, tag: int) -> bool {
-    avra_intmap_has(reg.expr_emitters, tag) != 0
-}
 
-/// Invoke the registered expr-codegen handler. Caller must verify
-/// `has_expr_emit` first — there's no fallback at this layer.
-export fn dispatch_expr_emit(reg: Registry, tag: int, ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
-    let handler: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string> = avra_intmap_get(reg.expr_emitters, tag)
-    handler(ctx, env, expr)
-}
 
-/// True iff a feature has registered a stmt-codegen handler.
-export fn has_stmt_emit(reg: Registry, tag: int) -> bool {
-    avra_intmap_has(reg.stmt_emitters, tag) != 0
-}
 
-/// Invoke the registered stmt-codegen handler. Caller must verify
-/// `has_stmt_emit` first.
-export fn dispatch_stmt_emit(reg: Registry, tag: int, ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResult, string> {
-    let handler: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string> = avra_intmap_get(reg.stmt_emitters, tag)
-    handler(ctx, env, stmt)
-}
 
-/// Invoke the resolver hook for `tag`, or null when none is
-/// registered (resolver falls back to its built-in walker).
-export fn dispatch_expr_resolve(reg: Registry, tag: int, r: Resolver, expr: Expr) -> Resolver? {
-    if avra_intmap_has(reg.expr_resolvers, tag) == 0 { return null }
-    let handler: fn(Resolver, Expr) -> Resolver = avra_intmap_get(reg.expr_resolvers, tag)
-    handler(r, expr)
-}
 
-/// Invoke the typechecker expr hook, or null when not registered.
-export fn dispatch_expr_check(reg: Registry, tag: int, tc: TC, expr: Expr) -> ExprResult? {
-    if avra_intmap_has(reg.expr_checkers, tag) == 0 { return null }
-    let handler: fn(TC, Expr) -> ExprResult = avra_intmap_get(reg.expr_checkers, tag)
-    handler(tc, expr)
-}
 
-/// Invoke the resolver stmt hook, or null when not registered.
-export fn dispatch_stmt_resolve(reg: Registry, tag: int, r: Resolver, stmt: Stmt) -> Resolver? {
-    if avra_intmap_has(reg.stmt_resolvers, tag) == 0 { return null }
-    let handler: fn(Resolver, Stmt) -> Resolver = avra_intmap_get(reg.stmt_resolvers, tag)
-    handler(r, stmt)
-}
 
-/// Invoke the typechecker stmt hook, or null when not registered.
-export fn dispatch_stmt_check(reg: Registry, tag: int, tc: TC, stmt: Stmt) -> TC? {
-    if avra_intmap_has(reg.stmt_checkers, tag) == 0 { return null }
-    let handler: fn(TC, Stmt) -> TC = avra_intmap_get(reg.stmt_checkers, tag)
-    handler(tc, stmt)
-}
 
-/// Invoke the eval expr hook (tree-walking interpreter), or null.
-export fn dispatch_expr_eval(reg: Registry, tag: int, rt: Runtime, expr: Expr) -> StepResult? {
-    if avra_intmap_has(reg.expr_evals, tag) == 0 { return null }
-    let handler: fn(Runtime, Expr) -> StepResult = avra_intmap_get(reg.expr_evals, tag)
-    handler(rt, expr)
-}
 
-/// Invoke the eval stmt hook, or null.
-export fn dispatch_stmt_eval(reg: Registry, tag: int, rt: Runtime, stmt: Stmt) -> StepResult? {
-    if avra_intmap_has(reg.stmt_evals, tag) == 0 { return null }
-    let handler: fn(Runtime, Stmt) -> StepResult = avra_intmap_get(reg.stmt_evals, tag)
-    handler(rt, stmt)
-}
 
 /// Look up a decl parser by leading keyword (e.g. `"fn"`). Returns
 

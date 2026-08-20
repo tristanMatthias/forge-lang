@@ -6,7 +6,7 @@
 use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, vtype_underlying_value_scalar, vtype_newtype_underlying, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
-use core.{Registry, dispatch_stmt_check, dispatch_expr_check, avra_stmt_tag, avra_expr_tag}
+use core.{Registry, avra_stmt_tag, avra_expr_tag}
 use features.match.{tc_check_match_arm_returns, tc_check_match_tail_conflict}
 use features.trait_decl.{check_trait_conformance, collect_method_names_from_stmts, collect_assoc_types_from_stmts, find_trait_separator}
 use features.channels.{check_channel_method}
@@ -5899,3 +5899,25 @@ fn check_naming_stmt(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
+// ── Registry dispatch (t-y2i7.13) ────────────────────────────────────────────
+//
+// These lived in core/registry.av, which made core/ depend on THIS pass's
+// vocabulary while this pass imported core.{Registry} — a live cycle across
+// top-level dirs. Each dispatch family had exactly ONE caller, this file, so
+// the table belongs to the pass that owns the types it returns.
+extern fn avra_intmap_get(map: ptr, key: int) -> int
+extern fn avra_intmap_has(map: ptr, key: int) -> int
+
+/// Invoke the typechecker expr hook, or null when not registered.
+export fn dispatch_expr_check(reg: Registry, tag: int, tc: TC, expr: Expr) -> ExprResult? {
+    if avra_intmap_has(reg.expr_checkers, tag) == 0 { return null }
+    let handler: fn(TC, Expr) -> ExprResult = avra_intmap_get(reg.expr_checkers, tag)
+    handler(tc, expr)
+}
+
+/// Invoke the typechecker stmt hook, or null when not registered.
+export fn dispatch_stmt_check(reg: Registry, tag: int, tc: TC, stmt: Stmt) -> TC? {
+    if avra_intmap_has(reg.stmt_checkers, tag) == 0 { return null }
+    let handler: fn(TC, Stmt) -> TC = avra_intmap_get(reg.stmt_checkers, tag)
+    handler(tc, stmt)
+}
