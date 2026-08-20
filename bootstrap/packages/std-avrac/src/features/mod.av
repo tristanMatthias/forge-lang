@@ -11,7 +11,7 @@ use features.extern_decl.{extern_lang}
 use features.fn_decl.{fn_lang, fn_type_lang}
 use features.generics.{generics_lang}
 use features.for_stmt.{for_lang, for_in_lang}
-use features.grammar.{grammar_block_lang, Grammar, feature_decl_grammar_fragments}
+use features.grammar.{grammar_block_lang, Grammar, feature_decl_grammar_fragments, BuildKind}
 use features.if_stmt.{if_lang}
 use features.impl_decl.{impl_decl_lang}
 use features.is_keyword.{is_keyword_lang}

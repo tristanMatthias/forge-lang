@@ -19,7 +19,7 @@
 use @std.avrac.features.quote_expr.{quote_lang}
 use @std.avrac.features.quote_expr.lowering.{quote_builds}
 use @std.avrac.features.{feature_keywords, feature_gram, builder_validation_error}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_expr_grammar, central_build_kind}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, avra_expr_grammar, central_build_kind, BuildKind}
 
 fn has(xs: List<string>, s: string) -> bool {
     for x in xs { if x == s { return true } }
@@ -93,12 +93,12 @@ spec "quote as a LanguageFeature" {
         let rows = quote_builds()
         mut spanned_expr = 0
         for b in rows {
-            if b.kind == "expr" && b.spanned && b.module == "features.quote_expr.lowering" { spanned_expr = spanned_expr + 1 }
+            if b.kind == BuildKind.Expr && b.spanned && b.module == "features.quote_expr.lowering" { spanned_expr = spanned_expr + 1 }
         }
         rows.length == 3 && spanned_expr == 3 &&
-        central_build_kind("MkQuote") == "" &&
-        central_build_kind("MkQuoteType") == "" &&
-        central_build_kind("MkQuoteArm") == "" &&
+        central_build_kind("MkQuote") == null &&
+        central_build_kind("MkQuoteType") == null &&
+        central_build_kind("MkQuoteArm") == null &&
         builder_validation_error(quote_lang()) == ""
     }
 }

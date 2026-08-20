@@ -3,7 +3,7 @@
 // carry the or/and distinction. Imports ONLY features.grammar + core
 // (F4012).
 use core.{Expr, ExprId, LogicOp, byte_span}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes, BuildKind}
 
 /// Left-fold `l ( op r )*` into a left-associative `Expr.Logical` chain
 /// (the `&&`/`||` short-circuit ops). Sibling of the engine's fold_binary.
@@ -40,5 +40,5 @@ export fn fold_logical_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn logical_op_builds() -> List<BuilderBind> {
-    bind_rows("features.logical_op.lowering", [bind_row("fold_logical", "expr", 3, true, "fold_logical_abi", fold_logical_abi)])
+    bind_rows("features.logical_op.lowering", [bind_row("fold_logical", BuildKind.Expr, 3, true, "fold_logical_abi", fold_logical_abi)])
 }

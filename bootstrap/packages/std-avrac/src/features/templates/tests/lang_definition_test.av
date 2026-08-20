@@ -24,8 +24,8 @@ spec "templates as a LanguageFeature" {
         }
         owners.contains("MkTemplate=features.templates.lowering/flat")
             && owners.contains("MkTaggedTemplate=features.templates.lowering/sp")
-            && central_build_kind("MkTemplate") == ""
-            && central_build_kind("MkTaggedTemplate") == ""
+            && central_build_kind("MkTemplate") == null
+            && central_build_kind("MkTaggedTemplate") == null
     }
 }
 

@@ -4,7 +4,7 @@
 // rebind_eq (features/struct_decl) retargets and spans the finals.
 // Imports ONLY features.grammar + core (F4012).
 use core.{Expr, ExprId, BinOp, LogicOp}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_to_node_list}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_to_node_list, BuildKind}
 
 /// `in [ a, … ]` → `Expr.InCheck(MISSING, items)` (list-membership).
 export fn mk_inlist_expr(st: PState, acap: CapVal) -> ExprId {
@@ -31,6 +31,6 @@ export fn mk_inrange_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn in_operator_builds() -> List<BuilderBind> {
-    bind_rows("features.in_operator.lowering", [bind_row("mk_inlist", "expr", 1, false, "mk_inlist_abi", mk_inlist_abi),
-     bind_row("mk_inrange", "expr", 2, false, "mk_inrange_abi", mk_inrange_abi)])
+    bind_rows("features.in_operator.lowering", [bind_row("mk_inlist", BuildKind.Expr, 1, false, "mk_inlist_abi", mk_inlist_abi),
+     bind_row("mk_inrange", BuildKind.Expr, 2, false, "mk_inrange_abi", mk_inrange_abi)])
 }

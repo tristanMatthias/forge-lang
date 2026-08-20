@@ -6,7 +6,7 @@
 // job (engine-tableless, spelled by the *_decl sub-rules), so these
 // builds wrap and never re-stamp.
 use core.{Annotation, Expr, ExprId, Stmt, SrcPos}
-use features.grammar.{PState, CapVal, BuilderBind, Token, bind_row, bind_rows, capval_tok_text, capval_tok_list, capval_to_node_list, capval_to_ann_list, capval_to_stmt}
+use features.grammar.{PState, CapVal, BuilderBind, Token, bind_row, bind_rows, capval_tok_text, capval_tok_list, capval_to_node_list, capval_to_ann_list, capval_to_stmt, BuildKind}
 
 /// One `@name ( "(" args ")" )?` annotation — a name + its built argument
 /// EXPRESSIONS (arg_ids), exactly parse_annotations' entry shape. Absent
@@ -70,7 +70,7 @@ export fn mk_module_doc_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// CapVal.Anns; `MkModuleDoc` is spanned (the NoOp stamp reads the
 /// post-consume position, gated on the exec -1 sentinel).
 export fn annotations_builds() -> List<BuilderBind> {
-    bind_rows("features.annotations.lowering", [bind_row("MkAnn", "ann", 2, false, "mk_ann_abi", mk_ann_abi),
-     bind_row("MkAnnotatedArgs", "stmt", 2, false, "mk_annotated_args_abi", mk_annotated_args_abi),
-     bind_row("MkModuleDoc", "stmt", 1, true, "mk_module_doc_abi", mk_module_doc_abi)])
+    bind_rows("features.annotations.lowering", [bind_row("MkAnn", BuildKind.Ann, 2, false, "mk_ann_abi", mk_ann_abi),
+     bind_row("MkAnnotatedArgs", BuildKind.Stmt, 2, false, "mk_annotated_args_abi", mk_annotated_args_abi),
+     bind_row("MkModuleDoc", BuildKind.Stmt, 1, true, "mk_module_doc_abi", mk_module_doc_abi)])
 }

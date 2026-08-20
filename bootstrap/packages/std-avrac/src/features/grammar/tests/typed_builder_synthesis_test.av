@@ -29,7 +29,7 @@ fn probe_src() -> string {
     "    println(\"builders=\" + string(t.builders.length))\n" +
     "    if t.builders.length == 1 {\n" +
     "        let b = t.builders[0]\n" +
-    "        println(\"name=\" + b.name + \" kind=\" + b.kind + \" arity=\" + string(b.arity) + \" export=\" + b.export_name)\n" +
+    "        println(\"name=\" + b.name + \" kind=\" + b.kind.display() + \" arity=\" + string(b.arity) + \" export=\" + b.export_name)\n" +
     "    }\n" +
     "}\n"
 }
@@ -62,7 +62,7 @@ fn build_variant(name: string, binds: List<string>) -> Pattern {
 
 fn show(t: LanguageFeature) {
     for b in t.builders {
-        println("bind name=" + b.name + " kind=" + b.kind + " arity=" + string(b.arity) + " export=" + b.export_name)
+        println("bind name=" + b.name + " kind=" + b.kind.display() + " arity=" + string(b.arity) + " export=" + b.export_name)
     }
 }
 

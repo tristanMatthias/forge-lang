@@ -6,7 +6,7 @@
 // MkSpliceType stays central (quote-body vocabulary, spelled by the
 // spine's splice_type).
 use @std.avrac.features.{feature_builders}
-use @std.avrac.features.grammar.{avra_type_grammar, central_build_kind, run_dsl_type_at}
+use @std.avrac.features.grammar.{avra_type_grammar, central_build_kind, run_dsl_type_at, BuildKind}
 use @std.avrac.core.{TypeExpr}
 
 fn row_of(name: string) -> string {
@@ -35,16 +35,16 @@ spec "type families as feature-owned rows (t-kd4y.3.5.10)" {
             && row_of("TyParen") == "type/1/flat/ty_paren_abi/features.tuples.lowering"
     }
     then "each name has exactly ONE row and NO central kind — the flip is total, not shadowed" {
-        rows_named("TyUnion") == 1 && central_build_kind("TyUnion") == ""
-            && rows_named("MkNamed") == 1 && central_build_kind("MkNamed") == ""
-            && rows_named("MkQualified") == 1 && central_build_kind("MkQualified") == ""
-            && rows_named("MkFn") == 1 && central_build_kind("MkFn") == ""
-            && rows_named("TyDyn") == 1 && central_build_kind("TyDyn") == ""
-            && rows_named("TyList") == 1 && central_build_kind("TyList") == ""
-            && rows_named("TyParen") == 1 && central_build_kind("TyParen") == ""
+        rows_named("TyUnion") == 1 && central_build_kind("TyUnion") == null
+            && rows_named("MkNamed") == 1 && central_build_kind("MkNamed") == null
+            && rows_named("MkQualified") == 1 && central_build_kind("MkQualified") == null
+            && rows_named("MkFn") == 1 && central_build_kind("MkFn") == null
+            && rows_named("TyDyn") == 1 && central_build_kind("TyDyn") == null
+            && rows_named("TyList") == 1 && central_build_kind("TyList") == null
+            && rows_named("TyParen") == 1 && central_build_kind("TyParen") == null
     }
     then "the quote-body splice stays ENGINE — central kind kept, no feature row" {
-        rows_named("MkSpliceType") == 0 && central_build_kind("MkSpliceType") == "type"
+        rows_named("MkSpliceType") == 0 && central_build_kind("MkSpliceType") == BuildKind.Type
     }
     then "the composed type view DEFINES every family rule (structural, not rendered text)" {
         mut te = false

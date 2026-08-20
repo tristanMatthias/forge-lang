@@ -56,9 +56,9 @@ spec "collections as LanguageFeatures" {
         ll == "expr/1/spanned/mk_list_lit_abi/features.list_lit.lowering"
             && lc == "expr/4/spanned/mk_list_comp_abi/features.list_lit.lowering"
             && ml == "expr/2/spanned/mk_map_lit_abi/features.map_lit.lowering"
-            && central_build_kind("MkListLit") == ""
-            && central_build_kind("MkListComp") == ""
-            && central_build_kind("MkMapLit") == ""
+            && central_build_kind("MkListLit") == null
+            && central_build_kind("MkListComp") == null
+            && central_build_kind("MkMapLit") == null
     }
 }
 

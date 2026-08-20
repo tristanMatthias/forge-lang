@@ -10,7 +10,7 @@
 use @std.avrac.features.annotations.{annotations_lang}
 use @std.avrac.features.modules.{export_lang}
 use @std.avrac.features.{feature_builders}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, central_tableless_builds, engine_core_builds}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, central_tableless_builds, engine_core_builds, BuildKind}
 use @std.avrac.parse.{oracle_decl}
 
 fn str_has(xs: List<string>, s: string) -> bool {
@@ -43,16 +43,16 @@ spec "annotation + export wrappers as LanguageFeatures" {
             && owners.contains("MkAnnotatedArgs=features.annotations.lowering/stmt/flat")
             && owners.contains("MkModuleDoc=features.annotations.lowering/stmt/sp")
             && owners.contains("MkExport=features.modules.lowering/stmt/flat")
-            && central_build_kind("MkAnn") == ""
-            && central_build_kind("MkAnnotatedArgs") == ""
-            && central_build_kind("MkModuleDoc") == ""
-            && central_build_kind("MkExport") == ""
+            && central_build_kind("MkAnn") == null
+            && central_build_kind("MkAnnotatedArgs") == null
+            && central_build_kind("MkModuleDoc") == null
+            && central_build_kind("MkExport") == null
     }
     then "the two stay-centrals classify exactly as the doctrine says" {
         // MkDocAnnotated: engine-central WITH a kind row (two features'
         // rules spell it). MkAnnotated: engine-core AND tableless (toy
         // vocabulary; no production rule).
-        central_build_kind("MkDocAnnotated") == "stmt"
+        central_build_kind("MkDocAnnotated") == BuildKind.Stmt
             && str_has(engine_core_builds(), "MkDocAnnotated")
             && str_has(engine_core_builds(), "MkAnnotated")
             && str_has(central_tableless_builds(), "MkAnnotated")

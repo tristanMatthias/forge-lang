@@ -2,7 +2,7 @@
 // (`fold_pipe`) — the `|>` desugar into plain calls. Imports ONLY
 // features.grammar + core (F4012).
 use core.{Expr, ExprId, byte_span}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_nodes}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_nodes, BuildKind}
 
 /// Left-fold `l ( "|>" r )*` into the pipe desugar — the retired hand
 /// parse_pipe: `a |> f` → `f(a)`; `a |> f(b)` → `f(a, b)` (prepend);
@@ -64,5 +64,5 @@ export fn fold_pipe_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn pipe_op_builds() -> List<BuilderBind> {
-    bind_rows("features.pipe_op.lowering", [bind_row("fold_pipe", "expr", 2, true, "fold_pipe_abi", fold_pipe_abi)])
+    bind_rows("features.pipe_op.lowering", [bind_row("fold_pipe", BuildKind.Expr, 2, true, "fold_pipe_abi", fold_pipe_abi)])
 }

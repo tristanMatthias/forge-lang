@@ -35,7 +35,7 @@
 /// arena-accumulation source (Batch A). A narrow row (not BuilderBind)
 /// because that type carries executor values (PState/CapVal) this AST hub
 /// must not depend on.
-export type BuildKindRow = { name: string, kind: string, spanned: bool, arity: int, module: string, export_name: string }
+export type BuildKindRow = { name: string, kind: BuildKind, spanned: bool, arity: int, module: string, export_name: string }
 
 export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr, builder_kinds: List<BuildKindRow> }
 
@@ -804,12 +804,12 @@ export fn dispatch_has_tail(g: Grammar, branches: List<GSeq>) -> bool {
 // executor.av (production). One copy here keeps the engines in lockstep instead of a
 // name-matching heuristic in the interpreter.
 
-export fn rule_result_kind(g: Grammar, name: string) -> string {
+export fn rule_result_kind(g: Grammar, name: string) -> BuildKind {
     rule_kind_v(g, name, [])
 }
 
-export fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string {
-    if str_in(visited, name) { return "expr" }
+export fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> BuildKind {
+    if str_in(visited, name) { return BuildKind.Expr }
     let r = emit_lookup_rule(g, name)
     // Dispatch-only family grammars intentionally leave cross-family refs
     // external so generated files call one another instead of re-emitting
@@ -817,27 +817,27 @@ export fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string
     // repeated (expression block -> statement*) rather than defaulting its
     // accumulator to ExprId.
     if r.name == "" {
-        if name == "statement" || name == "declaration" { return "stmt" }
+        if name == "statement" || name == "declaration" { return BuildKind.Stmt }
         // The shared match-ARM fragment, external in the expression view (t-47hc.25).
         // Without these the accumulator defaults to ExprId and the generated parser
         // coerces arms with capval_to_expr — which does not even compile
         // (`CapVal.WArms` wants List<WhenArm>), but a kind mismatch that DID compile
         // would be a silent tree corruption, so declare them beside their FIRSTs.
-        if name == "match_arm" { return "arm" }
-        if name == "match_when_arm" { return "warm" }
+        if name == "match_arm" { return BuildKind.Arm }
+        if name == "match_when_arm" { return BuildKind.Warm }
         // The PATTERN family, external in every dispatch view (t-47hc.29). The match-table
         // flip is the first rule to REPEAT a pattern capture (`( p:pattern … )*`), and
         // without this its accumulator declares `List<ExprId>` and coerces each row's
         // pattern through `capval_to_expr` — the exact failure this block was written for.
         // A scalar `p:pattern_or` (match_arm) never noticed because the builder coerces at
         // the use-site; both are declared here so the next repeat cannot re-open the trap.
-        if name == "pattern" || name == "pattern_or" { return "pat" }
+        if name == "pattern" || name == "pattern_or" { return BuildKind.Pat }
         // The GENERIC type parameter, external in the declaration view (t-47hc slice
         // 10.9). Without this a repeated `tparams:tparam` capture declares
         // `List<ExprId>` and coerces each entry through `capval_to_expr` — caught the
         // moment `declaration` first named a native decl rule, and the same trap the
         // `pattern` and `match_arm` entries above were written for.
-        if name == "tparam" { return "tparam" }
+        if name == "tparam" { return BuildKind.Tparam }
         // The TYPE family, external in the expression view. `f<T, U>(args)` (t-47hc.33
         // form 8) is the first rule to REPEAT a type capture (`( ta:type_expr … )*`), and
         // without this its accumulator declares `List<ExprId>` and coerces each type
@@ -845,7 +845,7 @@ export fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string
         // and `match_arm` entries above were written for. The scalar `elem:type_expr`
         // (channel_expr) never noticed, for the same reason the scalar `p:pattern_or`
         // did not: its builder coerces at the use-site, via capval_to_texpr.
-        if name == "type_expr" { return "type" }
+        if name == "type_expr" { return BuildKind.Type }
         // The PARAMETER, external in the declaration view (t-47hc slice 10.13 — routing
         // `fn` / `extern` / `trait` / `impl`). `param` is defined in the EXPRESSION view
         // (paren_expr's typed lambda) and shared rather than duplicated, so the four
@@ -854,8 +854,8 @@ export fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string
         // builders reject as a layout conflict — the same trap as `tparam` above, one
         // rule over. Declared BESIDE its FIRST in rule_first_guard; a cross-view
         // reference always needs both.
-        if name == "param" { return "pentry" }
-        return "expr"
+        if name == "param" { return BuildKind.Pentry }
+        return BuildKind.Expr
     }
     mut v2: List<string> = []
     for x in visited { v2.push(x) }
@@ -863,19 +863,19 @@ export fn rule_kind_v(g: Grammar, name: string, visited: List<string>) -> string
     node_kind(g, r.body, v2)
 }
 
-export fn node_kind(g: Grammar, node: GNode, visited: List<string>) -> string {
+export fn node_kind(g: Grammar, node: GNode, visited: List<string>) -> BuildKind {
     match node {
         .Alt(branches) -> {
             for b in branches {
                 let k = seq_kind(g, b, visited)
-                if k != "" { return k }
+                if k != null { return k! }
             }
-            "expr"
+            BuildKind.Expr
         }
     }
 }
 
-export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
+export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> BuildKind? {
     match seq.build {
         .Call(bn, bargs) -> build_kind_with(g.builder_kinds, bn, bargs.length)
         // A PASSTHROUGH build (`-> n`) has the kind of whatever `n` captured. Left
@@ -885,11 +885,11 @@ export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
         // `labeled bare-ref over a non-statement rule is unsupported`. Resolving only
         // the case that is decidable here — the label names a rule REF or a @hand leaf
         // — leaves every existing Var build (whose captures are terminal alternations,
-        // e.g. `null_cell`) returning "" exactly as before, so no emitted output moves.
+        // e.g. `null_cell`) returning null exactly as before, so no emitted output moves.
         .Var(vn) -> {
-            mut k = ""
+            mut k: BuildKind? = null
             for it in seq.items {
-                if it.label == vn && k == "" {
+                if it.label == vn && k == null {
                     match it.prim {
                         .Ref(rn) -> k = rule_kind_v(g, rn, visited)
                         _ -> {}
@@ -915,24 +915,86 @@ export fn seq_kind(g: Grammar, seq: GSeq, visited: List<string>) -> string {
             if sig.length == 1 && rep_is_one(sig[0].rep) {
                 match sig[0].prim {
                     .Ref(rn) -> rule_kind_v(g, rn, visited)
-                    _ -> "expr"
+                    _ -> BuildKind.Expr
                 }
-            } else { "" }
+            } else { null }
         }
     }
 }
 
-/// The engine's central build-name → result-kind rows, EXACT: "" means the
+/// The engine's central build-name → result-kind rows, EXACT: null means the
 /// engine does not know this name. The builder-manifest validation
 /// (features/lang.av) needs the exact answer; `build_kind` below keeps the
 /// historical lenient "expr" default for the grammar-analysis callers.
-/// The engine's result-kind vocabulary — the RANGE of `central_build_kind`
-/// below (kept adjacent so a new kind lands in both). Builder-manifest
-/// validation rejects a declared kind outside this set.
-export fn engine_build_kinds() -> List<string> {
-    ["expr", "stmt", "arm", "warm", "sarm", "pat", "type", "tok", "toks",
-     "pentry", "tparam", "field", "variant", "finit", "ccfg", "cpair",
-     "cslot", "ccfgs", "cslots", "ann"]
+/// The engine's result-kind vocabulary. This was a STRING with a companion
+/// `engine_build_kinds()` membership list, and a declared kind outside that
+/// set was a runtime `ManifestDefect.UnknownKind`. As an enum the illegal
+/// state is unrepresentable: the type IS the vocabulary, `kind_row` matches
+/// it exhaustively, and both the validation and its defect variant are gone.
+export enum BuildKind {
+    Expr, Stmt, Arm, Warm, Sarm, Pat, Type, Tok, Toks, Pentry,
+    Tparam, Field, Variant, Finit, Ccfg, Cpair, Cslot, Ccfgs, Cslots, Ann
+}
+
+/// The diagnostic/wire spelling of a kind — the one place the old strings
+/// survive, for rendering and metadata round-trips. As `display` it also
+/// backs `${kind}` interpolation, so diagnostics need no helper call.
+impl BuildKind {
+    /// The SOURCE spelling of the variant. `typed_builders` SYNTHESIZES
+    /// a bare `.<variant>` shorthand into generated manifests (typed from the
+    /// `BuilderBind.kind` field, so no import is needed), so this must match the
+    /// declaration above exactly — kept adjacent to `display` so a new variant
+    /// lands in both. Pinned by typed_builder_synthesis_test, which compiles
+    /// the synthesized module.
+    fn variant_name(self) -> string {
+        match self {
+            .Expr -> "Expr"
+            .Stmt -> "Stmt"
+            .Arm -> "Arm"
+            .Warm -> "Warm"
+            .Sarm -> "Sarm"
+            .Pat -> "Pat"
+            .Type -> "Type"
+            .Tok -> "Tok"
+            .Toks -> "Toks"
+            .Pentry -> "Pentry"
+            .Tparam -> "Tparam"
+            .Field -> "Field"
+            .Variant -> "Variant"
+            .Finit -> "Finit"
+            .Ccfg -> "Ccfg"
+            .Cpair -> "Cpair"
+            .Cslot -> "Cslot"
+            .Ccfgs -> "Ccfgs"
+            .Cslots -> "Cslots"
+            .Ann -> "Ann"
+        }
+    }
+
+    fn display(self) -> string {
+        match self {
+            .Expr -> "expr"
+            .Stmt -> "stmt"
+            .Arm -> "arm"
+            .Warm -> "warm"
+            .Sarm -> "sarm"
+            .Pat -> "pat"
+            .Type -> "type"
+            .Tok -> "tok"
+            .Toks -> "toks"
+            .Pentry -> "pentry"
+            .Tparam -> "tparam"
+            .Field -> "field"
+            .Variant -> "variant"
+            .Finit -> "finit"
+            .Ccfg -> "ccfg"
+            .Cpair -> "cpair"
+            .Cslot -> "cslot"
+            .Ccfgs -> "ccfgs"
+            .Cslots -> "cslots"
+            .Ann -> "ann"
+        }
+    }
 }
 
 /// t-kd4y.3.1 — the PURITY LEDGER. Every name the central tables know is
@@ -1027,35 +1089,35 @@ export fn central_tableless_builds() -> List<string> {
     ["MkAnnotated", "MkNone", "MkStampAt"]
 }
 
-export fn central_build_kind(bn: string) -> string {
+export fn central_build_kind(bn: string) -> BuildKind? {
     match bn {
         "fold_binary" or "fold_postfix_with" or "fold_postfix"
             or "MkExprBlock"
             or "field_suffix" or "index_suffix" or "call_suffix"
             or "MkSplice" or "MkSpliceStruct"
-            or "MkPrimaryFail" -> "expr"
-        "ExprStmt" or "Block" -> "stmt"
+            or "MkPrimaryFail" -> BuildKind.Expr
+        "ExprStmt" or "Block" -> BuildKind.Stmt
         // `MkSpliceArm` yields an arm too (t-47hc.4.3). Without this the alternation's kind
         // is inferred from the OTHER branch alone in some orders and from this one in others,
         // and a `( arms:match_arm )*` accumulator silently declares `List<ExprId>` — the
         // capval_to_expr default. That is the same silent tree-corruption trap the annotation
         // accumulator was written for; here it surfaces as a hard F1000 layout conflict.
-        "MkSpliceArm" -> "arm"
+        "MkSpliceArm" -> BuildKind.Arm
         // Declaration builds (whole-program grammar, ps3t.6.5.11) — all Stmt-target.
         // `MkDocAnnotated` is ENGINE by the shared-vocabulary rule: annotations'
         // doc_decl AND impl_decl's impl_member both spell it (t-kd4y.3.5.9).
         // `MkAssocTypeDef` is feature-owned (features/impl_decl, t-kd4y.3.7).
-        "MkDocAnnotated" -> "stmt"
+        "MkDocAnnotated" -> BuildKind.Stmt
         // `MkSpliceName` yields a TOKEN — the hand encodes a name-slot splice as the ordinary
         // name string with a `~` prefix, so it must classify as `tok` and flow through
         // `capval_tok_text` exactly as a bare IDENT does.
         // A splice in TYPE position yields a TypeExpr, not a token — it is `named_type`'s
         // sibling atom, not a name-slot splice (t-47hc.4.3).
-        "MkSpliceType" -> "type"
-        "MkSpliceName" or "MkPlainName" -> "tok"
+        "MkSpliceType" -> BuildKind.Type
+        "MkSpliceName" or "MkPlainName" -> BuildKind.Tok
         // The owned type builds left with t-kd4y.3.5.10; only the splice
         // atom classifies centrally now.
-        _ -> ""
+        _ -> null
     }
 }
 
@@ -1069,7 +1131,7 @@ export fn central_build_kind(bn: string) -> string {
 /// for a name it cannot place, which is indistinguishable from a genuine expr
 /// build; kind-dependent VALIDATION needs the exact question (t-kd4y.3.2.5).
 export fn build_kind_resolves(rows: List<BuildKindRow>, bn: string, arity: int) -> bool {
-    if central_build_kind(bn) != "" { return true }
+    if central_build_kind(bn) != null { return true }
     manifest_row(rows, bn, arity) != null
 }
 
@@ -1109,7 +1171,7 @@ export fn node_kind_known(g: Grammar, node: GNode, visited: List<string>) -> boo
     match node {
         .Alt(branches) -> {
             for b in branches {
-                if seq_kind(g, b, visited) != "" { return seq_kind_known(g, b, visited) }
+                if seq_kind(g, b, visited) != null { return seq_kind_known(g, b, visited) }
             }
             true
         }
@@ -1146,12 +1208,12 @@ export fn seq_kind_known(g: Grammar, seq: GSeq, visited: List<string>) -> bool {
     }
 }
 
-export fn build_kind_with(rows: List<BuildKindRow>, bn: string, arity: int) -> string {
+export fn build_kind_with(rows: List<BuildKindRow>, bn: string, arity: int) -> BuildKind {
     let k = central_build_kind(bn)
-    if k != "" { return k }
+    if k != null { return k! }
     let r = manifest_row(rows, bn, arity)
     if r != null { return r!.kind }
-    "expr"
+    BuildKind.Expr
 }
 
 /// THE manifest lookup. (name, arity) is the dispatch key everywhere — the
@@ -1167,7 +1229,7 @@ export fn manifest_row(rows: List<BuildKindRow>, name: string, arity: int) -> Bu
 
 /// The manifest-free view — callers with no composed grammar in hand
 /// (validation preambles, specs pinning the central table alone).
-export fn build_kind(bn: string) -> string {
+export fn build_kind(bn: string) -> BuildKind {
     let empty: List<BuildKindRow> = []
     build_kind_with(empty, bn, 0)
 }

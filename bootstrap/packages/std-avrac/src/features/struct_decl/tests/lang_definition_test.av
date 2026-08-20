@@ -57,9 +57,9 @@ spec "type/shape family as LanguageFeatures" {
         td == "stmt/6/flat/mk_type_decl_any_abi/features.struct_decl.lowering"
             && sd == "stmt/2/flat/mk_shape_decl_abi/features.struct_decl.lowering"
             && fd == "field/2/flat/mk_field_abi/features.struct_decl.lowering"
-            && central_build_kind("MkTypeDeclAny") == ""
-            && central_build_kind("MkShapeDecl") == ""
-            && central_build_kind("MkField") == ""
+            && central_build_kind("MkTypeDeclAny") == null
+            && central_build_kind("MkShapeDecl") == null
+            && central_build_kind("MkField") == null
     }
     then "the retired convenience builds are GONE — no row, no central kind" {
         mut retired_rows = 0
@@ -67,8 +67,8 @@ spec "type/shape family as LanguageFeatures" {
             if b.name == "MkTypeDecl" || b.name == "MkTypeAlias" || b.name == "MkTypeRHS" { retired_rows = retired_rows + 1 }
         }
         retired_rows == 0
-            && central_build_kind("MkTypeDecl") == ""
-            && central_build_kind("MkTypeAlias") == ""
-            && central_build_kind("MkTypeRHS") == ""
+            && central_build_kind("MkTypeDecl") == null
+            && central_build_kind("MkTypeAlias") == null
+            && central_build_kind("MkTypeRHS") == null
     }
 }

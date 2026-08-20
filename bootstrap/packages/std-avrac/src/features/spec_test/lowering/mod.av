@@ -10,7 +10,7 @@
 // by construction (the flip-parity contract, PR #1259).
 
 use core.{Expr, Stmt, StmtId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_stmt_list, capval_tok_text}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_stmt_list, capval_tok_text, BuildKind}
 
 /// `spec "name" { items }` (`MkSpecBlock`) — a LEAF SpecBlock row over the
 /// natively-parsed item ids, exactly the hand's
@@ -37,7 +37,7 @@ export fn then_block_build(st: PState, vals: List<CapVal>) -> CapVal {
 /// The spec-test feature's rows — bound under the EXISTING Mk names, so the
 /// gram fragment moves verbatim and no rule text changes.
 export fn spec_builds() -> List<BuilderBind> {
-    bind_rows("features.spec_test.lowering", [bind_row("MkSpecBlock", "stmt", 2, false, "spec_block_build", spec_block_build),
-     bind_row("MkGivenBlock", "stmt", 2, false, "given_block_build", given_block_build),
-     bind_row("MkThenBlock", "stmt", 2, false, "then_block_build", then_block_build)])
+    bind_rows("features.spec_test.lowering", [bind_row("MkSpecBlock", BuildKind.Stmt, 2, false, "spec_block_build", spec_block_build),
+     bind_row("MkGivenBlock", BuildKind.Stmt, 2, false, "given_block_build", given_block_build),
+     bind_row("MkThenBlock", BuildKind.Stmt, 2, false, "then_block_build", then_block_build)])
 }

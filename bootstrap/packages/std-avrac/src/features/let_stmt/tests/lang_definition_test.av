@@ -70,10 +70,10 @@ spec "let family as LanguageFeatures" {
             && mb == "stmt/5/flat/mk_mut_binding_abi/features.let_stmt.lowering"
             && cb == "stmt/3/flat/mk_const_binding_abi/features.let_stmt.lowering"
             && db == "stmt/2/flat/mk_let_destructure_abi/features.let_stmt.lowering"
-            && central_build_kind("MkLetBinding") == ""
-            && central_build_kind("MkMutBinding") == ""
-            && central_build_kind("MkConstBinding") == ""
-            && central_build_kind("MkDestructure") == ""
+            && central_build_kind("MkLetBinding") == null
+            && central_build_kind("MkMutBinding") == null
+            && central_build_kind("MkConstBinding") == null
+            && central_build_kind("MkDestructure") == null
     }
     then "the convenience trio is GONE — no manifest row, no central kind" {
         mut trio_rows = 0
@@ -81,9 +81,9 @@ spec "let family as LanguageFeatures" {
             if b.name == "MkLet" || b.name == "MkMut" || b.name == "MkConst" { trio_rows = trio_rows + 1 }
         }
         trio_rows == 0
-            && central_build_kind("MkLet") == ""
-            && central_build_kind("MkMut") == ""
-            && central_build_kind("MkConst") == ""
+            && central_build_kind("MkLet") == null
+            && central_build_kind("MkMut") == null
+            && central_build_kind("MkConst") == null
     }
 }
 

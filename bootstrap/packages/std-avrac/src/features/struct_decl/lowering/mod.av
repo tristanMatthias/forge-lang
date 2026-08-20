@@ -14,7 +14,7 @@
 // empty-list/absent-flag defaults — and give the alias toys the
 // production TypeRef edge the leaf-building MkTypeAlias arm dropped.
 use core.{byte_span, byte_span_none, Expr, ExprId, FieldEntry, FieldInit, NodeEdges, NodeRef, Stmt, Token, type_expr_to_vtype, TypeExpr, TypeParamEntry, ValueType}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_field_list, capval_to_finit_list, capval_to_node_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text, postfix_step_node, capval_to_texpr_list, capval_toks}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_field_list, capval_to_finit_list, capval_to_node_list, capval_to_texpr, capval_to_tparam_list, capval_tok_list, capval_tok_text, postfix_step_node, capval_to_texpr_list, capval_toks, BuildKind}
 
 /// The WHOLE `type Name < tp > = …` declaration — every form the retired
 /// hand's `parse_type_declaration` produces, in one core, because the hand
@@ -86,9 +86,9 @@ export fn mk_field_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// ALL of the type/shape feature's rows — span-free (leaf or
 /// byte_span_none rows; the statement-list loop stamps the outermost node).
 export fn type_decl_builds() -> List<BuilderBind> {
-    bind_rows("features.struct_decl.lowering", [bind_row("MkTypeDeclAny", "stmt", 6, false, "mk_type_decl_any_abi", mk_type_decl_any_abi),
-     bind_row("MkShapeDecl", "stmt", 2, false, "mk_shape_decl_abi", mk_shape_decl_abi),
-     bind_row("MkField", "field", 2, false, "mk_field_abi", mk_field_abi)])
+    bind_rows("features.struct_decl.lowering", [bind_row("MkTypeDeclAny", BuildKind.Stmt, 6, false, "mk_type_decl_any_abi", mk_type_decl_any_abi),
+     bind_row("MkShapeDecl", BuildKind.Stmt, 2, false, "mk_shape_decl_abi", mk_shape_decl_abi),
+     bind_row("MkField", BuildKind.Field, 2, false, "mk_field_abi", mk_field_abi)])
 }
 
 /// Build ONE struct field-init (the `MkFieldInit` build's core — the
@@ -146,8 +146,8 @@ export fn mk_enum_ctor_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// spanned at its rule entry (the name IDENT); the field-init is a
 /// span-free FInit value.
 export fn struct_lit_builds() -> List<BuilderBind> {
-    bind_rows("features.struct_decl.lowering", [bind_row("MkStructLit", "expr", 2, true, "mk_struct_lit_abi", mk_struct_lit_abi),
-     bind_row("MkFieldInit", "finit", 2, false, "mk_field_init_abi", mk_field_init_abi)])
+    bind_rows("features.struct_decl.lowering", [bind_row("MkStructLit", BuildKind.Expr, 2, true, "mk_struct_lit_abi", mk_struct_lit_abi),
+     bind_row("MkFieldInit", BuildKind.Finit, 2, false, "mk_field_init_abi", mk_field_init_abi)])
 }
 
 /// `expr.field` — plain field access (t-47hc.33 form 4). A POSTFIX-chain
@@ -203,14 +203,14 @@ export fn mk_enum_ctor_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// spanned at the `.` byte) + the postfix `Type.Variant(args)` SUFFIX
 /// reading (t-kd4y.3.5.8, flat — chain-threaded like every postfix step).
 export fn enum_ctor_builds() -> List<BuilderBind> {
-    bind_rows("features.struct_decl.lowering", [bind_row("mk_enum_ctor", "expr", 2, true, "mk_enum_ctor_abi", mk_enum_ctor_abi),
-     bind_row("MkEnumCtorSuffix", "expr", 2, false, "mk_enum_ctor_suffix_abi", mk_enum_ctor_suffix_abi)])
+    bind_rows("features.struct_decl.lowering", [bind_row("mk_enum_ctor", BuildKind.Expr, 2, true, "mk_enum_ctor_abi", mk_enum_ctor_abi),
+     bind_row("MkEnumCtorSuffix", BuildKind.Expr, 2, false, "mk_enum_ctor_suffix_abi", mk_enum_ctor_suffix_abi)])
 }
 
 /// field_access_lang's row (its `field_suffix` rule spells it — both the
 /// peek-gated `.field` branch and the unguarded `.` fallback).
 export fn field_access_builds() -> List<BuilderBind> {
-    bind_rows("features.struct_decl.lowering", [bind_row("MkFieldAccess", "expr", 1, false, "mk_field_access_abi", mk_field_access_abi)])
+    bind_rows("features.struct_decl.lowering", [bind_row("MkFieldAccess", BuildKind.Expr, 1, false, "mk_field_access_abi", mk_field_access_abi)])
 }
 
 /// `l ( "=" r )?` → an assignment, RETARGETING by the LHS shape (the
@@ -302,8 +302,8 @@ export fn rebind_eq_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// at their rule entry, both owned by field_assign_lang (its gram spells
 /// `assignment` and `equality`; ownership follows the referencing rule).
 export fn field_assign_builds() -> List<BuilderBind> {
-    bind_rows("features.struct_decl.lowering", [bind_row("mk_assign", "expr", 2, true, "mk_assign_abi", mk_assign_abi),
-     bind_row("rebind_eq", "expr", 2, true, "rebind_eq_abi", rebind_eq_abi)])
+    bind_rows("features.struct_decl.lowering", [bind_row("mk_assign", BuildKind.Expr, 2, true, "mk_assign_abi", mk_assign_abi),
+     bind_row("rebind_eq", BuildKind.Expr, 2, true, "rebind_eq_abi", rebind_eq_abi)])
 }
 
 /// A named type (optionally generic, optionally nullable) — the `MkNamed`
@@ -350,6 +350,6 @@ export fn mk_qualified_type_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// The named/qualified type-atom rows (t-kd4y.3.5.10).
 export fn named_type_builds() -> List<BuilderBind> {
-    bind_rows("features.struct_decl.lowering", [bind_row("MkNamed", "type", 3, false, "mk_named_type_abi", mk_named_type_abi),
-     bind_row("MkQualified", "type", 3, false, "mk_qualified_type_abi", mk_qualified_type_abi)])
+    bind_rows("features.struct_decl.lowering", [bind_row("MkNamed", BuildKind.Type, 3, false, "mk_named_type_abi", mk_named_type_abi),
+     bind_row("MkQualified", BuildKind.Type, 3, false, "mk_qualified_type_abi", mk_qualified_type_abi)])
 }

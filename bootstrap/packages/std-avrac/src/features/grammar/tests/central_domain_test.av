@@ -48,10 +48,10 @@ spec "t-kd4y.3.1: the purity ledger classifies the central surface exactly" {
         // here (and in the lint) — no stale countdown entries.
         mut ok = true
         for n in engine_core_builds() {
-            if central_build_kind(n) == "" && !str_in(central_tableless_builds(), n) { ok = false }
+            if central_build_kind(n) == null && !str_in(central_tableless_builds(), n) { ok = false }
         }
         for n in unflipped_builds() {
-            if central_build_kind(n) == "" && !str_in(central_tableless_builds(), n) { ok = false }
+            if central_build_kind(n) == null && !str_in(central_tableless_builds(), n) { ok = false }
         }
         ok
     }
@@ -60,7 +60,7 @@ spec "t-kd4y.3.1: the purity ledger classifies the central surface exactly" {
         // ghost-set equation enforces the same from the textual side.
         mut ok = true
         for n in central_tableless_builds() {
-            if central_build_kind(n) != "" { ok = false }
+            if central_build_kind(n) != null { ok = false }
         }
         ok
     }

@@ -48,11 +48,11 @@ spec "paren family as LanguageFeatures" {
             && tf == "expr/2/spanned/mk_tuple_fr_abi/features.closures.lowering"
             && ge == "expr/1/spanned/mk_group_or_empty_abi/features.closures.lowering"
             && pa == "pentry/2/flat/mk_param_abi/features.closures.lowering"
-            && central_build_kind("MkLambdaTyped") == ""
-            && central_build_kind("MkLambda") == ""
-            && central_build_kind("MkTupleFR") == ""
-            && central_build_kind("MkGroupOrEmpty") == ""
-            && central_build_kind("MkParam") == ""
+            && central_build_kind("MkLambdaTyped") == null
+            && central_build_kind("MkLambda") == null
+            && central_build_kind("MkTupleFR") == null
+            && central_build_kind("MkGroupOrEmpty") == null
+            && central_build_kind("MkParam") == null
     }
     then "the retired engine builds are GONE — no manifest row, no central kind" {
         mut dead_rows = 0
@@ -60,8 +60,8 @@ spec "paren family as LanguageFeatures" {
             if b.name == "Grouping" || b.name == "MkTuple" { dead_rows = dead_rows + 1 }
         }
         dead_rows == 0
-            && central_build_kind("Grouping") == ""
-            && central_build_kind("MkTuple") == ""
+            && central_build_kind("Grouping") == null
+            && central_build_kind("MkTuple") == null
     }
 }
 

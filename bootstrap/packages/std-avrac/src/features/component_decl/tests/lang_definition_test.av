@@ -83,18 +83,18 @@ spec "component as a LanguageFeature" {
         // was eleven for a while (MkComponentParenDef + MkRawComponentBlock
         // missing), which left a stale central arm for either invisible to
         // the guard its title promises. Raised in review of #1275.
-        central_build_kind("MkComponentDef") == ""
-            && central_build_kind("MkComponentParenDef") == ""
-            && central_build_kind("MkComponentBlock") == ""
-            && central_build_kind("MkRawComponentBlock") == ""
-            && central_build_kind("MkCompConfig") == ""
-            && central_build_kind("MkCompConfigPair") == ""
-            && central_build_kind("MkChildrenSlot") == ""
-            && central_build_kind("MkCompConfigList") == ""
-            && central_build_kind("MkChildrenSlotList") == ""
-            && central_build_kind("MkTraitList") == ""
-            && central_build_kind("MkCompBodyMarker") == ""
-            && central_build_kind("MkMethodShorthand") == ""
-            && central_build_kind("MkCompField") == ""
+        central_build_kind("MkComponentDef") == null
+            && central_build_kind("MkComponentParenDef") == null
+            && central_build_kind("MkComponentBlock") == null
+            && central_build_kind("MkRawComponentBlock") == null
+            && central_build_kind("MkCompConfig") == null
+            && central_build_kind("MkCompConfigPair") == null
+            && central_build_kind("MkChildrenSlot") == null
+            && central_build_kind("MkCompConfigList") == null
+            && central_build_kind("MkChildrenSlotList") == null
+            && central_build_kind("MkTraitList") == null
+            && central_build_kind("MkCompBodyMarker") == null
+            && central_build_kind("MkMethodShorthand") == null
+            && central_build_kind("MkCompField") == null
     }
 }
