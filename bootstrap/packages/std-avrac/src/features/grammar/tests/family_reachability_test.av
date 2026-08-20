@@ -17,6 +17,7 @@
 // the real whole-program grammar, the label stays.
 
 use @std.avrac.features.grammar.{rules_reachable_from, avra_program_grammar, str_in, Grammar, parse_grammar, grammar_checked}
+use @std.avrac.features.{fragments_reaching, fragment_rule_names, feature_expr_grammar_fragments, feature_stmt_grammar_fragments, feature_type_grammar_fragments}
 
 fn toy(src: string) -> Grammar { grammar_checked(parse_grammar(src)) }
 
@@ -78,5 +79,59 @@ spec "on the REAL grammar, reachability reproduces the families" {
         let stmt = rules_reachable_from(avra_program_grammar(), "statement").length
         let expr = rules_reachable_from(avra_program_grammar(), "expression").length
         prog >= stmt && stmt >= expr && expr > 0
+    }
+}
+
+/// Names in `a` that `b` does not carry — the direction-explicit half of set
+/// equality. Reported as a LIST so a failure names the offending rules instead
+/// of just disagreeing about a count.
+fn missing_from(a: List<string>, b: List<string>) -> List<string> {
+    mut out: List<string> = []
+    for x in a { if !str_in(b, x) && !str_in(out, x) { out.push(x) } }
+    out
+}
+
+// THE GATE for deleting `gram_family` (t-y2i7.2 / P2b) — and it says DO NOT.
+//
+// The design record's section 1 claims family membership is "reachability from
+// a start rule", so the label is redundant. MEASURED, that is TRUE for the type
+// family and FALSE for the other two: `statement` and `expression` are MUTUALLY
+// REACHABLE — a statement contains expressions, and an expression contains
+// blocks, lambda bodies and `if`/`match` arms that contain statements. They are
+// one strongly-connected component, so reachability from either start reaches
+// the SAME 167 rules and cannot tell the two families apart.
+//
+// So `gram_family` STAYS for stmt/expr: it carries information the rule graph
+// does not. These specs pin that reasoning in place of the deletion, and they
+// are written to go RED if the SCC is ever broken — at which point the
+// replacement becomes possible and this file says so.
+spec "measured vs declared family — what reachability can and cannot replace" {
+    then "the TYPE family IS reproduced exactly: a genuine subgraph" {
+        let declared = fragment_rule_names(feature_type_grammar_fragments())
+        let measured = fragment_rule_names(fragments_reaching("type_expr"))
+        missing_from(declared, measured).length == 0
+            && missing_from(measured, declared).length == 0
+    }
+    then "statement and expression are MUTUALLY reachable — the blocking fact" {
+        let e = rules_reachable_from(avra_program_grammar(), "expression")
+        let s = rules_reachable_from(avra_program_grammar(), "statement")
+        str_in(e, "statement") && str_in(s, "expression")
+    }
+    then "so both starts measure the SAME rule set — reachability cannot separate them" {
+        let e = rules_reachable_from(avra_program_grammar(), "expression")
+        let s = rules_reachable_from(avra_program_grammar(), "statement")
+        missing_from(e, s).length == 0 && missing_from(s, e).length == 0
+    }
+    then "concretely: `expression` reaches `defer_stmt`, a statement-family rule" {
+        // The single clearest counter-example to "expression rules are what
+        // `expression` reaches". If this ever goes false the SCC has been
+        // broken and the gram_family deletion is back on the table.
+        str_in(rules_reachable_from(avra_program_grammar(), "expression"), "defer_stmt")
+    }
+    then "the DECLARED expr and stmt families are genuinely different sets" {
+        // What the label buys that measurement does not: an actual partition.
+        let e = fragment_rule_names(feature_expr_grammar_fragments())
+        let s = fragment_rule_names(feature_stmt_grammar_fragments())
+        missing_from(s, e).length > 0
     }
 }
