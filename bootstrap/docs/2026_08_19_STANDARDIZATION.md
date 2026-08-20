@@ -82,15 +82,24 @@ Their drift is documented in the source: `begin_delegate_item()` existed only on
 `parse_declaration` until PR #1221 review — the other three re-merged stale
 diagnostics. That bug exists only because the code is written four times.
 
-- Collapse to `parse_at(self, start: RuleName)`. The parameter is a START RULE,
-  not a family — adding pattern-parsing costs a string, not an enum variant +
-  a `static_pat_entry.av` + a table row + a fifth copy.
-- The four `parse/static_*_entry.av` shims are that table written as four files.
-  Generate the name->fn dispatch from the same emit pass that writes the parser.
-- **The forward-progress watermark is unconditional.** "An errored parse that
-  consumed zero bytes must return `.Err` so the caller advances" is a property
-  of any loop over a repeated rule; `declaration` is just where the infinite
-  loop was observed. Always on — it is a no-op where it is not needed.
+- **DELIVERED (P1), and NOT as originally specified.** The ceremony is extracted
+  into three helpers — `seam_enter()`, `seam_merge_delegate()`,
+  `replay_dsl_diags()` — and the seams call them. A single
+  `parse_at(self, start: RuleName)` was ATTEMPTED and DECLINED: the four entries
+  return different types (`StmtId` / `ExprId` / `TypeExpr`), and the type seam
+  has no host delegate at all and resyncs token-by-token with `>>` splitting
+  rather than by stop byte. One entry would have had to fake a uniformity that
+  is not there. The duplication worth removing was the CEREMONY — three copies,
+  one of them right, which is how #1221 happened — and that is now written once.
+- **STILL OPEN, deferred out of P1:** the four `parse/static_*_entry.av` shims
+  survive, and the forward-progress watermark is still `parse_declaration`-only
+  (`item_start`). Both were listed here as P1 work and neither was done. They are
+  small and real; they belong to whichever slice next touches this file. Do not
+  read this section as describing the tree until they land.
+- The watermark argument stands on its own merits: "an errored parse that
+  consumed zero bytes must return `.Err` so the caller advances" is a property of
+  any loop over a repeated rule, not of declarations. `declaration` is merely
+  where the infinite loop was observed.
 
 ## 4. 100% grammar-generated lexer
 
@@ -369,7 +378,7 @@ sits at line 1282, BETWEEN `parse_expression` at 1150 and `parse_type_expr` at
 
 | # | slice | sections | IR |
 |---|---|---|---|
-| P1 | `parse/mod.av`: delete dead hand parser; collapse 4 seams -> `parse_at(start)`; delete the 4 `static_*_entry.av`; watermark unconditional | 9, 3 | neutral |
+| P1 | `parse/mod.av`: delete dead hand parser; extract the shared seam ceremony (`parse_at` declined — see section 3) | 9, 3 | neutral |
 | P2 | Delete the 8 rule-less views; merge the 5 rule-bearing into one spine; delete `gram_family`, the two decl lists, the 3 identical fragment fns; kill legacy `Feature` + `noop_*` + `emit_expr: int` | 1, 2, 7 | neutral* |
 | P3 | `BuildKind` enum; newtypes for module paths / build names / rule names; front-end error enum + aggregation | 13, 14, 12 | neutral |
 | P4 | Feature layout sweep — WHY.md contract across 60 dirs + `--check-feature-layout` | layout, 11 | neutral |

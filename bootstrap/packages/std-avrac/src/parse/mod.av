@@ -16,7 +16,6 @@ use core.{Registry, registry_new}
 use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name, tk_is_field_name}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index, store_with_lines}
 use core.{NodeRef, ExprId, StmtId, TypeId, ByteSpan, byte_span, byte_span_none, SrcPos}
-use features.closures.lowering.{expr_contains_it, wrap_in_it_lambda}
 // ps3t.6.5.12 (parser swap-in): the parser delegates whole families
 // (types, expressions, statements, declarations) to the grammar-DSL
 // engines. The parse<->features.grammar module
@@ -335,61 +334,6 @@ export fn table_zip_entries(headers: List<ExprId>, values: List<ExprId>) -> List
         i = i + 1
     }
     out
-}
-
-/// True iff the LAST `::`-separated segment of a qualified name starts
-/// uppercase — i.e. names a type (PascalCase), not a value. Used to decide
-/// whether `@pkg::mod::X.Variant(args)` is an enum constructor (X is a type)
-/// or a method call on a qualified value (X is lowercase).
-fn p_qualified_last_upper(n: string) -> bool {
-    mut start = 0
-    mut i = 0
-    while i + 1 < n.length {
-        if n.substring(i, i + 2) == "::" { start = i + 2 }
-        i = i + 1
-    }
-    start < n.length && p_starts_with_upper(n.substring(start, start + 1))
-}
-
-
-/// True iff `e` is an identifier whose first letter is uppercase —
-/// the syntactic marker the resolver uses to distinguish a type ref
-/// from a value ref.
-fn expr_is_upper_ident(e: Expr) -> bool {
-    match e {
-        .Ident(n) -> p_starts_with_upper(n)
-        // Test the LAST path segment: a qualified type reference
-        // (`@std::…::Result`) begins with `@`, so the full-string test read
-        // every qualified name as lowercase — `dot_is_postfix` then refused
-        // the `.Variant` continuation, the chain stopped at the type, and
-        // `.Err(c)` leaked into the NEXT match arm as a pattern ("expected
-        // `->` after pattern"). Bit hardest in metadata round-trips, whose
-        // fmt-rendered bodies qualify every enum-ctor reference.
-        .QualifiedIdent(n) -> p_starts_with_upper(type_short_name(n))
-        _ -> false
-    }
-}
-
-/// True iff `expr` is something that could syntactically be the
-/// callee of `expr(args)` — bare ident, qualified ident, or a field
-/// access (method call). Used by the postfix-call gate.
-fn is_callable(expr: Expr) -> bool {
-    match expr {
-        .Ident(_) -> true
-        .QualifiedIdent(_) -> true
-        .FieldAccess(_, _) -> true
-        _ -> false
-    }
-}
-
-/// True iff `name` starts with an uppercase ASCII letter — Avra's
-/// type / variant naming convention.
-fn p_starts_with_upper(name: string) -> bool {
-    if name.length < 1 {
-        return false
-    }
-    let head = name.substring(0, 1)
-    head in "A".."Z"
 }
 
 /// True iff `s` is a simple identifier (alpha first, then alnum or

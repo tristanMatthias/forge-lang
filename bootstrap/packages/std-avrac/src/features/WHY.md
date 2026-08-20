@@ -27,8 +27,10 @@ features/<name>/
 named for its pass, even when it is eight lines. Uniform beats short: you can
 answer "does this feature type-check anything?" by looking at the directory.
 
-Enforced by `diagnose.sh --check-feature-layout` — a file not on this list is an
-error, not a convention.
+**Not enforced yet.** `diagnose.sh --check-feature-layout` is P4 of the
+standardization program; until it lands this list is a contract on paper, and
+the Status section below records exactly how far the tree is from it. Do not
+read "exhaustive" as "already true".
 
 ## Not on the list, and why
 
@@ -57,26 +59,44 @@ error, not a convention.
 
 ## Status
 
-The contract above is the TARGET. `parser.av` is GONE from every feature —
-five were dead islands, and the one live file (the `it`-pronoun desugar) moved
-to `closures/lowering/it_pronoun.av`, where it belongs: it is parse-time
-lowering, not parsing.
+Counts below are measured, not estimated (`ls */codegen.av | wc -l` and friends).
+
+`parser.av` is gone from every FEATURE. Five were dead islands; the one live
+file (the `it`-pronoun desugar) moved to `closures/lowering/it_pronoun.av`,
+where it belongs — it is parse-time lowering, not parsing. The grammar ENGINE
+still has `grammar/parser.av` and `grammar/seed_parser.av`; those move out with
+the engine in P6 (design record section 10), so the tree is correct, but the
+contract above is not yet true of `features/grammar/`.
 
 Still not true of the tree:
 
-- 13 features keep a separate `grammar.av` reached via `gram = composed([...])`
-  instead of declaring `gram = grammar { ... }` inline.
-- Pass hooks are split inconsistently — `codegen.av` (26 features) and
-  `typeck.av` (8) get their own files, while resolve and eval hooks still hide
-  inside `mod.av`.
-- 12 features still carry a per-feature `WHY.md`.
+- **13** features declare `gram` in a separate `grammar.av` reached via
+  `gram = composed([...])` instead of inline in `mod.av`.
+- Pass hooks are split inconsistently: **25** features have `codegen.av` and
+  **7** have `typeck.av`, while resolve and eval hooks still live inside
+  `mod.av`.
+- **15** features still carry a per-feature `WHY.md`.
+- **26** further top-level `.av` files in feature dirs are on none of the
+  canonical names — `component_decl/expand.av`, `generics/mono.av`,
+  `spec_test/{reporter,runner}.av`, the six `comptime/*.av`, the six
+  `derive/*.av`, `modules/{dir_module,graph_build,package,unit_filter}.av`,
+  two `resolver.av`, two `derive.av`, `quote_expr/lower.av` — plus 16 more
+  inside `features/grammar/` (the engine, which P6 moves out entirely).
+  Deciding each one's home is part of P4, not a rename to do blind.
 - `lowering/` is a directory holding one `mod.av` rather than a file, pending
-  file-modules in the resolver (see the design record, section 11 — a bare
-  `lowering.av` would flatten into `features.X.*` and widen the generated
-  parser's import closure past grammar+core).
+  file-modules in the resolver (design record section 11 — a bare `lowering.av`
+  would flatten into `features.X.*` and widen the generated parser's import
+  closure past grammar+core).
+- `error_messages/` is now an EMPTY directory: its four `expect-error` examples
+  became real compile-error specs under `bootstrap/tests/err_*`, and nothing
+  replaced the `mod.av` / `tests/` the contract requires. It should be removed
+  outright once nothing references the path.
 
 A note on what is NOT drift: two directories that looked like test-only orphans
-(`desugar/`, `float_lit/`) held REAL tracked tests, and those moved to the
-module that owns the behaviour rather than being deleted. Two others
-(`defer_stmt/`, `match_expr/`) were genuinely empty — renamed away in
-`33293cfee`, leaving only untracked cache sidecars that made them look alive.
+(`desugar/`, `float_lit/`) held REAL tracked tests. `desugar/`'s moved to the
+module that owns the behaviour (`src/desugar/tests/`); `float_lit`'s moved to
+`bootstrap/tests/`, the top-level end-to-end fixture directory, because no
+`features/float_lit` implementation exists — float literals are grammar- and
+lexer-owned. Two others (`defer_stmt/`, `match_expr/`) were genuinely empty,
+renamed away in `33293cfee`, leaving only untracked cache sidecars that made
+them look alive.

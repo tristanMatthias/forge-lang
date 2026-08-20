@@ -529,7 +529,7 @@ When any command fails with ENOSPC / "no space left on device" / similar disk-fu
 - [ ] AST (`src/core/ast.av`) — new Expr/Stmt/Pattern variant
 - [ ] Lexer (`src/parse/lexer.av`) — new token kind if needed
 - [ ] Scanner (`src/parse/mod.av` `p_keyword_kind`) — new keyword mapping
-- [ ] Parser (`src/parse/mod.av` or `src/features/<name>/parser.av`)
+- [ ] Grammar rules (the feature's `gram` in `src/features/<name>/mod.av`) + their builders in `src/features/<name>/lowering/` — features do NOT parse, and `parser.av` is not a legal feature file
 - [ ] Codegen (`src/codegen/mod.av` or `src/features/<name>/codegen.av`)
 - [ ] Resolver (`src/resolve/mod.av`)
 - [ ] Type checker (`src/typeck/mod.av`)

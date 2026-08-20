@@ -284,9 +284,10 @@ export fn dispatch_stmt_eval(reg: Registry, tag: int, rt: Runtime, stmt: Stmt) -
 
 /// Look up a decl parser by leading keyword (e.g. `"fn"`). Returns
 
-/// True when `name` was declared as a component. This is the whole
-/// contract: the `@peek(is_known_component)` gate in the grammar executor
-/// asks nothing else of it.
+/// True when `name` was declared as a component. This is the whole contract:
+/// the executor's `comp_name_is_registered` predicate asks nothing else of it,
+/// and the `bare_comp_inst` / `bare_comp_inst_raw` conds are its only
+/// consumers.
 ///
 /// It used to be `lookup_stmt_parser(...) -> int?`, storing a
 /// `fn(Parser) -> Result<StmtId, string>` per name — but NOTHING ever

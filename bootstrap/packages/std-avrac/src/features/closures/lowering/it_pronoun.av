@@ -1,7 +1,9 @@
 // The `it` PRONOUN desugar (t-y2i7.1): `list.map(it * 2)` becomes
-// `list.map((it) -> it * 2)`. Both engines reach it — parse/mod.av's
-// postfix arg path and the grammar executor's — so it is parse-time
-// lowering, not a hand parser, and lives here rather than in a parser.av.
+// `list.map((it) -> it * 2)`. The grammar executor reaches it while building
+// a call's arguments (executor.av) — it is parse-time lowering, not a hand
+// parser, so it lives here rather than in a parser.av. parse/mod.av's postfix
+// arg path used to reach it too; that path (`parse_arg_list_ids_inner`) was
+// deleted with the rest of the hand postfix chain in this same slice.
 //
 // Imports ONLY core: every lowering module in the tree imports exactly
 // `core` + `features.grammar` and nothing else, because the GENERATED

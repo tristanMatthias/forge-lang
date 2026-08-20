@@ -1,0 +1,75 @@
+// WHY: the three seam helpers in parse/mod.av — seam_enter, seam_merge_delegate,
+// replay_dsl_diags — are the ceremony every grammar-driven parse entry shares.
+// TWO of them once called THEMSELVES: they were extracted by a regex that also
+// matched the new helper's own body, so `seam_enter` became
+// `mut d = self.seam_enter()` and `seam_merge_delegate` became
+// `self.seam_merge_delegate(d)`.
+//
+// THE REGRESSION THIS GUARDS, and why nothing else caught it:
+//
+//   seam_merge_delegate is reached ONLY on the parse ERROR path. Valid programs
+//   never enter it. So diff-test — whose corpus is 24 programs that COMPILE —
+//   reported OLD and NEW byte-identical across the entire selfhost IR and every
+//   corpus file, CORRECTLY, while the compiler stack-overflowed the instant any
+//   input had a syntax error. The full suite read 5581/5642 with 27 shards
+//   failing to compile and a wall of `false: out.contains("error[F0001]")`.
+//
+//   A green diff-test says NOTHING about error-path behaviour. The only oracle
+//   for a diagnostic is running the compiler on invalid input and reading what
+//   it says, which is what this spec does.
+//
+// It is deliberately END-TO-END and deliberately CHEAP: three malformed inputs,
+// one shell-out each. An in-process call would not exercise the shipped binary,
+// and infinite recursion in the seam is exactly the failure that kills a process
+// rather than returning a value.
+
+extern fn avra_shell_exec(cmd: string) -> string
+use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{avra_getpid}
+
+/// Compile a deliberately malformed source and capture the diagnostics.
+/// `|| true` so a nonzero exit (which is CORRECT here) does not abort capture.
+fn diag_of(tag: string, source: string) -> string {
+    let path = "/tmp/avra_seam_errpath_${tag}_${string(avra_getpid())}.av"
+    write_fixture(path, source)
+    avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
+}
+
+/// A diagnostic actually came back — not a crash, not silence. Infinite
+/// recursion in the seam produces neither an F-code nor a caret line.
+fn reported(out: string) -> bool {
+    out.contains("error[") && !out.contains("stack overflow")
+}
+
+spec "the parse seam survives its own error path" {
+    given "a malformed DECLARATION — the decl seam's error branch" {
+        then "it reports a coded diagnostic instead of recursing to death" {
+            // parse_declaration is the seam with the richest error path: it
+            // merges the delegate, replays diagnostics, then decides between a
+            // whole-item failure and an already-recovered body.
+            let out = diag_of("decl", "fn (\n")
+            reported(out)
+        }
+    }
+    given "a malformed STATEMENT inside a function body" {
+        then "it reports a coded diagnostic instead of recursing to death" {
+            let out = diag_of("stmt", "fn main() {\n    let = 5\n}\n")
+            reported(out)
+        }
+    }
+    given "a malformed EXPRESSION" {
+        then "it reports a coded diagnostic instead of recursing to death" {
+            let out = diag_of("expr", "fn main() {\n    let x = (1 +\n}\n")
+            reported(out)
+        }
+    }
+    given "the anti-vacuity half" {
+        then "a WELL-FORMED program still checks clean, so `reported` is discriminating" {
+            // Without this, a `reported` that always answered false — or a
+            // harness that never ran the compiler — would satisfy nothing above
+            // and the spec would pass while testing nothing.
+            let out = diag_of("ok", "fn main() -> int {\n    0\n}\n")
+            !out.contains("error[")
+        }
+    }
+}
