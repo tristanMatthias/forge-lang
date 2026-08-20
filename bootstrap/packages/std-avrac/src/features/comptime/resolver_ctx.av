@@ -89,6 +89,30 @@ export fn ctx_items_with_suffix(ctx: ResolverCtx, suffix: string) -> List<string
     []
 }
 
+/// Every top-level fn whose RETURN TYPE is `type_name`, as canonical names —
+/// e.g. `ctx_items_returning(ctx, "LanguageFeature")`.
+///
+/// The query the feature registry actually needs, and the reason the suffix
+/// query is not enough for it. There are 71 `*_lang` fns under features/ and
+/// only 70 features: the odd one out is `register_lang`, the registration
+/// HELPER. No naming rule separates them — 49 of the 71 do not match their own
+/// module's name, because one module routinely defines several features
+/// (struct_decl declares 7, null_safety 5, modules 4). Selecting on the name
+/// would mean special-casing `register_lang`, i.e. exactly the string-matching
+/// heuristic the repo forbids, in the file whose purpose is to stop
+/// hand-maintained lists.
+///
+/// The SIGNATURE separates them exactly: the 70 are `fn <name>() ->
+/// LanguageFeature`; the helper takes a Registry and returns nothing. Measured
+/// on the tree: 70 fns return LanguageFeature, all nil-ary, matching the
+/// hand-written array precisely.
+///
+/// Stub body like its siblings — the real answer comes from the eval intercept
+/// over the resolver-data layer; see the header note above.
+export fn ctx_items_returning(ctx: ResolverCtx, type_name: string) -> List<string> {
+    []
+}
+
 /// Every module whose canonical name starts with `prefix`, e.g.
 /// `ctx_modules_under(ctx, "@std::avrac::features")`. The answer comes from the
 /// compiler's own module graph — the resolver already walked those directories —

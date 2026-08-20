@@ -1,0 +1,68 @@
+// WHY: t-y2i7.5. `ctx_items_with_suffix` selects on how an item is SPELLED.
+// The feature registry cannot be derived that way, and the reason is concrete
+// rather than stylistic:
+//
+//   71 `*_lang` fns exist under features/, and there are 70 features. The odd
+//   one out is `register_lang`, the registration HELPER — it would be
+//   discovered and then CALLED as though it were a feature.
+//
+// The obvious rescue is "a feature's fn is `<module>_lang` in module
+// `features::<module>`". That convention does not exist: 49 of the 71 do not
+// match their own module's name, because one module routinely declares several
+// features (struct_decl declares 7, null_safety 5, modules 4, let_stmt 4).
+// Selecting on the name therefore means special-casing `register_lang` — the
+// string-matching heuristic the repo forbids, in the very file whose purpose is
+// to stop hand-maintained lists.
+//
+// The SIGNATURE separates them exactly: the 70 are `fn <name>() ->
+// LanguageFeature`; the helper takes a Registry and returns nothing. This spec
+// pins that discrimination.
+//
+// Same shape as its ctx_* siblings: a real macro emits a println of what it
+// found, so RUNTIME OUTPUT is the evidence and the `[]` stub cannot fake it.
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "ResolverCtx: ctx_items_returning selects by RETURN TYPE, not by name" {
+    then "it finds the producers and excludes a same-suffixed non-producer" {
+        let out = write_fixture_and_run("/tmp/avra_ctx_items_returning_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_items_returning, ctx_items_with_suffix}\n" +
+            "\n" +
+            "type Marker = { tag: int }\n" +
+            // Two PRODUCERS and one decoy. The decoy shares the `_marker`
+            // suffix and even mentions the type — it just does not RETURN it,
+            // which is precisely the `register_lang` shape.
+            "fn a_marker() -> Marker { Marker { tag: 1 } }\n" +
+            "fn b_marker() -> Marker { Marker { tag: 2 } }\n" +
+            "fn helper_marker(m: Marker) -> int { m.tag }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let by_ret = ctx_items_returning(ctx, \"Marker\")\n" +
+            "    let by_suffix = ctx_items_with_suffix(ctx, \"_marker\")\n" +
+            // Delimiter-anchored: `contains(\"ret=2\")` would also be satisfied
+            // by a real value of 20 or 22 — a contains() on a number is a
+            // PREFIX match. That false pass has already happened once on a
+            // sibling spec in this directory.
+            "    let msg = \"ret=\" + string(by_ret.length) + \";\" +\n" +
+            "              \" suffix_gt_ret=\" + string(by_suffix.length > by_ret.length) + \";\"\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // EXACTLY the two producers — not three. The decoy returning `int` is
+        // what a stub that ignored the type, or one that fell back to suffix
+        // matching, would wrongly include.
+        out.contains("ret=2;") &&
+            // And the contrast is real: the suffix query genuinely does
+            // over-collect here (measured 22 against 2), so `ret=2` is
+            // discrimination rather than an empty tree flattering the query.
+            out.contains("suffix_gt_ret=true;") &&
+            !out.contains("error[")
+    }
+}
