@@ -135,7 +135,11 @@ the same `use` the string API already needs. Mechanism: the generic
 `Feature.expr_keyword` / `Registry.expr_parsers` dispatch in
 `core/registry.av` (the "registered `<keyword> { }` → package parser" seam
 that future `sql { }` / `regex { }` sublanguages share), routed from
-`parse_primary`; the block parser + desugar live in `parser.av`. No new AST
+the GRAMMAR (`grammar_expr`, `grammar/mod.av`), whose generated
+`parse_grammar_expr` uses `rawbrace_scan`. The hand block parser that used to
+live in `parser.av` is gone — it was reached only through a `parse_expr`
+registry slot nothing could invoke, and `parse_primary` itself was deleted in
+t-47hc. No new AST
 node and no seed cycle — the emitted tree flows through the existing passes.
 
 ## Validating a leaf migration (the gate order)

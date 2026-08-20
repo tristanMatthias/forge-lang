@@ -48,7 +48,7 @@ use features.component_decl.{component_lang}
 use features.defer.{defer_lang, errdefer_lang}
 use features.break_continue.{break_lang, continue_lang}
 use features.match.{match_lang, when_lang}
-use core.{noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt, noop_parse_expr}
+use core.{noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt}
 use features.grammar.{Rule, build_rule_index, GrammarParse, BuilderBind, BuildKindRow, grammar_startup_fail}
 
 // ── What a feature IS ──
@@ -93,7 +93,6 @@ export component LanguageFeature {
         expr_tag: Expr? = null,
         stmt_tag: Stmt? = null,
         expr_keyword: string = "",
-        parse_expr: fn(Parser, int) -> Result<ExprId, string> = noop_parse_expr,
         emit_expr: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string> = noop_emit_expr,
         emit_stmt: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string> = noop_emit_stmt,
         resolve_expr: fn(Resolver, Expr) -> Resolver = noop_resolve_expr,

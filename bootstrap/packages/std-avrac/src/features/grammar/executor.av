@@ -1,6 +1,6 @@
 // WHY: ps3t.6.4 — the grammar-DSL *generator*, in its executable form.
 
-use core.{lookup_expr_parser, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list}
+use core.{is_expr_keyword, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GPrim, GAnnot}
 use features.grammar.{Token, lex_real, LexDiag, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
@@ -1583,7 +1583,7 @@ fn ident_lbrace_is_feature_form(st: PState) -> bool {
     if name == "table" { return true }
     let d = st.delegate()
     if d == null { return true }
-    lookup_expr_parser(d!.features, name) != null
+    is_expr_keyword(d!.features, name)
 }
 
 /// Does some OTHER `IDENT {`-led branch own the form at the cursor? The shared half of

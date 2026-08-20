@@ -33,7 +33,6 @@ export fn register_lang(reg: Registry, f: LanguageFeature) {
         expr_tag: f.expr_tag,
         stmt_tag: f.stmt_tag,
         expr_keyword: f.expr_keyword,
-        parse_expr: f.parse_expr,
         emit_expr: f.emit_expr,
         emit_stmt: f.emit_stmt,
         resolve_expr: f.resolve_expr,

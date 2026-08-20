@@ -40,25 +40,11 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 ///                          construct (e.g. "grammar"); the generic
 ///                          "registered `<keyword> { }` → package parser"
 ///                          seam for embedded sublanguages.
-/// @field parse_expr     — parser hook for `expr_keyword`-led expressions.
-///                          The `int` arg is the keyword's start offset
-///                          (parse_primary's `sp_start`) so the generated
-///                          node's byte span begins at the keyword, not
-///                          the `{` (the identifier is already consumed at
-///                          dispatch time).
-/// @field emit_expr/stmt — codegen hooks (untyped int slot — fn ptrs
-///                          go through the Result<EmitValue, string>
-///                          shape).
-/// @field resolve_*      — name-resolution pass hooks.
-/// @field check_*        — typecheck pass hooks.
-/// @field eval_*         — tree-walking interpreter hooks (used by
-///                          `bs2 eval`).
 export type Feature = {
     name: string,
     expr_tag: Expr?,
     stmt_tag: Stmt?,
     expr_keyword: string,
-    parse_expr: fn(Parser, int) -> Result<ExprId, string>,
     emit_expr: int,
     emit_stmt: int,
     resolve_expr: fn(Resolver, Expr) -> Resolver,
@@ -100,11 +86,6 @@ export fn noop_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
 export fn noop_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
     StepResult { runtime: rt, value: value_null(), had_error: true, is_return: false, error_message: "no eval_stmt handler" }
 }
-/// Expression-parser no-op for the `parse_expr` default — errors when a
-/// claimed keyword has no parser. (An entirely unclaimed keyword never
-/// reaches this: lookup_expr_parser answers null and the parser moves on.)
-export fn noop_parse_expr(p: Parser, start: int) -> Result<ExprId, string> { .Err("no expr parser registered") }
-
 /// Construct a Feature with no-op handlers. Each feature module
 /// builds on this with `with`-updates to register its own callbacks.
 export fn feature_new(name: string) -> Feature {
@@ -113,7 +94,6 @@ export fn feature_new(name: string) -> Feature {
         expr_tag: null,
         stmt_tag: null,
         expr_keyword: "",
-        parse_expr: noop_parse_expr,
         emit_expr: noop_emit_expr,
         emit_stmt: noop_emit_stmt,
         resolve_expr: noop_resolve_expr,
@@ -146,9 +126,15 @@ export type Registry = {
     // map used to store, and the one consumer (`is_registered_component`)
     // only ever asked whether the key was present.
     component_names: ptr,
-    // Keyword → `parse_expr` handler for `kw { … }` expression
-    // constructs (grammar/sql/regex …). Consulted by parse_primary.
-    expr_parsers: ptr,
+    // The keywords that lead a `kw { … }` expression construct — a SET, like
+    // component_names above, and for the same reason: the value slot is a
+    // constant 1 because nothing ever invoked the handler this map used to
+    // store, and its one consumer only ever asks whether the key is PRESENT.
+    // That presence test is genuinely load-bearing: it drives the
+    // `ident_lbrace_plain` / `ident_lbrace_feature` peek conditions that
+    // disambiguate `IDENT {` between a struct literal, `grammar { … }` and
+    // `table { … }`.
+    expr_keywords: ptr,
     // Component names declared with `body: TokenStream` (vez6.9) —
     // parse-time routing state alongside the name's component_names
     // entry, so every instance-block production (keyword-free,
@@ -174,7 +160,7 @@ export fn registry_new() -> Registry {
         expr_evals: avra_intmap_new(),
         stmt_evals: avra_intmap_new(),
         component_names: avra_map_new_cstr(),
-        expr_parsers: avra_map_new_cstr(),
+        expr_keywords: avra_map_new_cstr(),
         raw_body_comps: avra_map_new_cstr(),
         builder_binds: [],
     }
@@ -203,7 +189,7 @@ export fn register(reg: Registry, f: Feature) {
     // match; the component_names set serves component names, written by
     // register_component_name). Batch A deleted the fields.
     if f.expr_keyword.length > 0 {
-        avra_map_set_cstr(reg.expr_parsers, f.expr_keyword, f.parse_expr)
+        avra_map_set_cstr(reg.expr_keywords, f.expr_keyword, 1)
     }
 }
 
@@ -302,12 +288,27 @@ export fn is_registered_component(reg: Registry, name: string) -> bool {
     avra_map_has_cstr(reg.component_names, name) != 0
 }
 
-/// Look up an expression parser by leading keyword (e.g. `"grammar"`).
-/// Returns the `parse_expr` handler-fn-as-int, or null when no feature
-/// claims it. Consulted by `parse_primary` for `kw { … }` constructs.
-export fn lookup_expr_parser(reg: Registry, keyword: string) -> int? {
-    if avra_map_has_cstr(reg.expr_parsers, keyword) == 0 { return null }
-    avra_map_get_cstr(reg.expr_parsers, keyword)
+/// True when `keyword` leads a registered `kw { … }` expression construct
+/// (e.g. `grammar`). This is the whole contract — the executor's
+/// `ident_lbrace_plain` / `ident_lbrace_feature` peek conditions ask nothing
+/// else of it, and through them the generated parser decides whether `IDENT {`
+/// opens a struct literal, a `grammar { … }` block or a `table { … }`.
+///
+/// It used to be `lookup_expr_parser(...) -> int?`, returning "the parse_expr
+/// handler-fn-as-int" — and nothing ever retrieved it. The map's only read was
+/// `avra_map_has_cstr` (presence); no consumer ever called `avra_map_get_cstr`
+/// on it, so the stored handler could not run.
+///
+/// Note the value COULD have been called, contrary to what an earlier version
+/// of this comment claimed: `dispatch_expr_emit` (below) does exactly that for
+/// the emitter maps — `avra_intmap_get` returns an `int` which is bound to a
+/// fn-typed local and invoked. That coercion is the language's ambient
+/// int-as-fn-pointer convention, and it is why `Feature.emit_expr: int` still
+/// works. So this was dead by DISUSE, not by impossibility.
+///
+/// The old doc also cited `parse_primary`, which t-47hc deleted.
+export fn is_expr_keyword(reg: Registry, keyword: string) -> bool {
+    avra_map_has_cstr(reg.expr_keywords, keyword) != 0
 }
 
 /// Register a component name for keyword-free instantiation. After

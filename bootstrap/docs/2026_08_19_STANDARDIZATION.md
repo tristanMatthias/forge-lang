@@ -249,13 +249,29 @@ Retired hand parsers whose live namesakes are the GENERATED functions in
   `features/generics/parser.av` (76) and `parse_arg_list_ids` /
   `parse_arg_list_ids_inner` are reachable ONLY through it.
 
-Live and NOT parsers, so they move rather than die: `closures/parser.av`
-(`expr_contains_it` / `wrap_in_it_lambda` — AST helpers, DONE: now
-`closures/lowering/it_pronoun.av`) and `grammar/parser.av` (raw-brace capture
-for `grammar { }`). CONTRADICTION RESOLVED (audit): section 10 is authoritative
-— `grammar/parser.av` leaves as part of `features/grammar_block/`, NOT with the
-engine. Section 10's ~120-line figure for the surface feature only works if it
-does (`grammar/mod.av` 73 + `grammar/parser.av` 45 = 118).
+`closures/parser.av` was live and NOT a parser — AST helpers — and moved to
+`closures/lowering/it_pronoun.av` (done in P1).
+
+**AUDITED CORRECTION, and this one was MINE.** This section previously said
+`grammar/parser.av` was likewise "live and NOT a parser … raw-brace capture for
+`grammar { }`", and section 10 budgeted `features/grammar_block/` at ~120 lines
+on that basis (`grammar/mod.av` 73 + `grammar/parser.av` 45). **Both were
+wrong, and I wrote them** — in the audit commit, while "resolving a
+contradiction" between sections 9 and 10 I picked the section that read more
+confidently INSTEAD OF CHECKING THE CALLERS, which is the exact failure the
+audit existed to prevent.
+
+`grammar/parser.av` was DEAD. The live raw-brace capture is `rawbrace_scan`
+(executor.av), which the generated `parse_grammar_expr` calls; the executor
+MIRRORS that code rather than calling the hand parser. `parse_grammar_block`'s
+only reference was a `parse_expr` lambda whose value flowed into a registry slot
+NOTHING COULD INVOKE — the value's only path in and out is
+`avra_map_set_cstr(..., value: int)` / `avra_map_get_cstr(...) -> int`, and no
+int-to-fn-pointer facility exists in the tree or the C runtime. Its own doc said
+"Called from parse_primary", a function t-47hc deleted. Deleted, with
+`capture_balanced_brace_body` (its only caller was that file).
+
+Section 10's budget re-derives to **~73 lines** for the surface feature.
 
 Before deleting on the strength of any scan, re-read CLAUDE.md's dead-code-sweep
 section: `bootstrap/tests/` is ~457 fixtures OUTSIDE `packages/`, `find -path
