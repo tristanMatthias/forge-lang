@@ -17,42 +17,7 @@
 // Threshold for surfacing a suggestion: 200 (silence beats a
 // misleading suggestion).
 
-use core.{avra_selfhost_levenshtein}
 
-
-/// Score a single `(query, candidate)` pair with the same composed
-/// scorer as `@std/lsp`. Pure: same inputs always produce the same
-/// int. Scoring tiers (highest first): 1000 exact, 800 case-
-/// insensitive, 600 prefix (penalised by length-diff), 400
-/// subsequence, 300 substring, 200 Levenshtein ≤ 2, 0 otherwise.
-fn suggest_score(query: string, candidate: string) -> int {
-    if query == candidate {
-        return 1000
-    }
-    let ql = query.to_lower()
-    let cl = candidate.to_lower()
-    if ql == cl {
-        return 800
-    }
-    if cl.starts_with(ql) {
-        let len_diff = candidate.length - query.length
-        let pen = if len_diff > 0 { len_diff } else { 0 - len_diff }
-        return 600 - pen
-    }
-    if suggest_is_subsequence(ql, cl) {
-        let pen = candidate.length - query.length
-        return 400 - if pen > 0 { pen } else { 0 - pen }
-    }
-    if cl.contains(ql) {
-        let pos_pen = cl.index_of(ql)
-        return 300 - pos_pen
-    }
-    let dist = avra_selfhost_levenshtein(ql, cl, ql.length, cl.length)
-    if dist <= 2 {
-        return 200 - dist * 50
-    }
-    0
-}
 
 /// True when every character of `needle` appears in order somewhere
 /// in `haystack` (e.g. "iu" is a subsequence of "init_user"). The

@@ -209,7 +209,7 @@ Final codes are the implementer's call; keep them contiguous, stable, and docume
 - **Stale-bs2 gotcha:** if behavior doesn't change after a rebuild, the cache may have relinked the old `bs2`. Force-rebuild: `rm -rf packages/cli/src/build/cache && rm -f build/bs2 && rm -rf packages/std-*/build/cache build/cache/fixture_stdout && make build-quick`.
 - **Iterate narrow:** `make test FILTER=<substr>`; reproduce a single failure with `./build/bs2 test <file>`. Don't rerun the full suite to "see if it flaked" — isolate (CLAUDE.md "Test cycle hygiene").
 - **Out of space:** `make clean` then retry (safe; rebuilds from seed).
-- **Debugging crashes:** LLDB first, check `git diff seed/seed.ll`, `-O0` vs `-O2`, `AVRA_TRACK_STORES=1`, C-side `avra_trace_*` — never `eprintln` traces that need a rebuild (CLAUDE.md "Debugging Protocol").
+- **Debugging crashes:** LLDB first, check `git diff seed/seed.ll`, `-O0` vs `-O2`, `AVRA_VERIFY_RC=1` / `AVRA_RC_STRICT=1`, C-side `avra_trace_*` — never `eprintln` traces that need a rebuild (CLAUDE.md "Debugging Protocol").
 
 ---
 

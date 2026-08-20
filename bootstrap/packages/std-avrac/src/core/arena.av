@@ -58,7 +58,7 @@
 use core.{Expr, Stmt, Pattern, ValueType, AnyNode, SpannedChild}
 use core.{ExprId, StmtId, PatId, TypeId}
 use core.{render_expr, render_stmt, render_pattern, vtype_eq_deep}
-use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, build_line_index, SrcPos, src_pos_none}
+use core.{ByteSpan, byte_span, byte_span_none, byte_span_is_none, LineIndex, LineCol, SrcPos, src_pos_none}
 use core.{DenseTable, new_dense_table, SparseTable, new_sparse_table}
 use core.{content_id_for}
 use core.{FORCE_UNWRAP_FN, BinOp}
@@ -458,10 +458,6 @@ impl NodeStore {
     /// Transform-alloc: append a `Pattern` row with its children's edge refs.
     fn add_pat(self, node: Pattern, sp: ByteSpan, edges: List<NodeRef>) -> PatId {
         self.pats.add(node, NodeEdges { refs: edges }, sp)
-    }
-    /// Transform-alloc: append a `Pattern` LEAF row (no node children).
-    fn add_pat_leaf(self, node: Pattern) -> PatId {
-        self.pats.add_leaf(node)
     }
     /// Parser-side leaf allocation with pure-leaf INTERNING (hash-consing,
     /// §14.4 / ps3t.3.5): structurally-identical pure leaves share ONE row,

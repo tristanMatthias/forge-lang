@@ -11,25 +11,25 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, ParamEntry, Pattern, MatchArm, WhenArm, BinOp, UnOp, LogicOp, stmt_unwrap, Annotation, Tk, tk_keyword_str, TypeExpr, FieldInit, type_expr_to_vtype}
-use core.{Registry, build_registry, registry_new, lookup_expr_parser}
+use core.{Expr, Stmt, BinOp, stmt_unwrap, Tk, TypeExpr, FieldInit}
+use core.{Registry, registry_new}
 use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name, tk_is_field_name}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index, store_with_lines}
-use core.{NodeRef, NodeEdges, ExprId, StmtId, PatId, TypeId, ByteSpan, byte_span, byte_span_none, expr_ref_id, SrcPos}
+use core.{NodeRef, ExprId, StmtId, TypeId, ByteSpan, byte_span, byte_span_none, SrcPos}
 use features.closures.{expr_contains_it, wrap_in_it_lambda}
 // ps3t.6.5.12 (parser swap-in): the parser delegates whole families
 // (types, expressions, statements, declarations) to the grammar-DSL
 // engines. The parse<->features.grammar module
 // cycle is fine: the package resolves as a whole (parse<->features.closures
 // already cycles the same way).
-use features.grammar.{Language, language_for, word_excluded_as_instance_name, run_dsl_type_at_shared, DslTypeResult, Token, lex_real, lex_real_full, LexDiag, Grammar, run_dsl_expr_at_shared, DslExprResult, ExprModes, run_dsl_stmt_at_shared, DslStmtResult, run_dsl_decl_at_shared}
-use parse.static_expr_entry.{run_static_expr, run_static_expr_cell}
+use features.grammar.{Language, language_for, word_excluded_as_instance_name, run_dsl_type_at_shared, Token, lex_real_full, LexDiag, run_dsl_expr_at_shared, ExprModes, run_dsl_stmt_at_shared, run_dsl_decl_at_shared}
+use parse.static_expr_entry.{run_static_expr}
 use parse.static_decl_entry.{run_static_decl, run_static_stmt}
 use parse.static_type_entry.{run_static_type}
 // The GENERATED exact-match keyword recogniser (compiled from keyword_rules());
 // p_keyword_kind is now a thin string wrapper over it.
 use parse.{classify_keyword, scan_interp_region}
-use diagnostics.{Span, DiagCode, Diagnostic, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, diag_with_help, span_new, span_at, syntax_diag_code}
+use diagnostics.{DiagCode, DiagnosticBag, bag_new, bag_report, bag_merge, diag_error, span_at, syntax_diag_code}
 
 // The parser-swap-in env toggle. Declared extern here (resolves to the single C
 // symbol; sibling modules declare it identically — extern decls are per-file).
@@ -94,13 +94,6 @@ export type ArgListIds = {
 export type PostfixStep = {
     rid: ExprId,
     progressed: bool,
-}
-
-/// One parse of a struct-literal field-init list. `inits` are the parsed
-/// field initializers with shorthand expanded; each carries its value's
-/// arena id in `value_id`.
-export type FieldInitIds = {
-    inits: List<FieldInit>,
 }
 
 /// Running state of the template-desugar fold — the boxed concatenation
@@ -1164,8 +1157,7 @@ impl Parser {
         let modes = self.current_modes()
         // One reusable host delegate per file (see ensure_host).
         // SYNC it to THIS parser's exact cursor + line state so it parses the
-        // expression's leaves carrying the accumulated line (incl. the
-        // is_map_literal nudges) — then ADOPT its end
+        // expression's leaves carrying the accumulated line — then ADOPT its end
         // state so this parser continues from the expression's end with the
         // same accumulated line. This keeps the
         // line accounting byte-for-byte consistent across the split parse.
@@ -1190,8 +1182,8 @@ impl Parser {
             // The delegate can lag stop_byte — the DSL itself
             // consumed trailing STRUCTURAL tokens (the `]` of `in
             // [...]`, a `)`, etc.). Forward-
-            // advance it to stop_byte (lexing those tokens — they are not blocks,
-            // so they add their newlines but NO is_map_literal nudge), so its
+            // advance it to stop_byte (lexing those tokens adds their newlines and
+            // nothing else — they are not blocks), so its
             // position AND line match the expression's true end, then adopt.
             d.resync_to_stop_byte(dsl.stop_byte)
             self.copy_cursor_from(d)
@@ -1237,55 +1229,6 @@ impl Parser {
     fn parse_expression_boxed(self) -> Result<Expr, string> {
         let id = self.parse_expression()?
         .Ok(self.store.exprs.get(id))
-    }
-
-    fn binary_lbp(self, k: Tk) -> int {
-        match k {
-            .Pipe         -> 10
-            .Caret        -> 12
-            .Amp          -> 14
-            .Less         -> 16
-            .LessEqual    -> 16
-            .Greater      -> 16
-            .GreaterEqual -> 16
-            .Shl          -> 18
-            .Shr          -> 18
-            .Plus         -> 20
-            .Minus        -> 20
-            .Star         -> 22
-            .Slash        -> 22
-            .Percent      -> 22
-            _             -> 0
-        }
-    }
-
-    // The BinOp a uniform-ladder operator token builds — the exact mapping the
-    // RD levels used (parse_bitwise_* / parse_comparison / parse_shift /
-    // parse_term / parse_factor). Only ever called on a token whose binary_lbp
-    // is non-zero; the `_` tail is Mod (`%`), the last factor operator.
-    fn binary_op(self, k: Tk) -> BinOp {
-        match k {
-            .Pipe         -> BinOp.BitOr
-            .Caret        -> BinOp.BitXor
-            .Amp          -> BinOp.BitAnd
-            .Less         -> BinOp.Lt
-            .LessEqual    -> BinOp.Le
-            .Greater      -> BinOp.Gt
-            .GreaterEqual -> BinOp.Ge
-            .Shl          -> BinOp.Shl
-            .Shr          -> BinOp.Shr
-            .Plus         -> BinOp.Add
-            .Minus        -> BinOp.Sub
-            .Star         -> BinOp.Mul
-            .Slash        -> BinOp.Div
-            _             -> BinOp.Mod
-        }
-    }
-
-    fn parse_postfix_suffix(self) -> Result<ExprId, string> {
-        let s = self.postfix_step(self.postfix_base, self.postfix_sp_start)?
-        self.postfix_base = s.rid
-        .Ok(s.rid)
     }
 
     // Peek at the source character immediately after the current
@@ -1676,96 +1619,9 @@ impl Parser {
         .Ok(self.source.substring(start, end).trim())
     }
 
-    // The `@pkg::mod::name` qualified-ident / qualified struct-literal primary
-    // (Phase 3a-11). parse_qualified_at_name is the `::`-adjacency
-    // char-scan. Fully-qualified names appear when a shipped @comptime
-    // body is re-parsed (pqc9/znl0) — a QualifiedIdent the comptime evaluator looks
-    // up by full path.
-    fn parse_qualified_expr(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        let qname = self.parse_qualified_at_name()?
-        if self.allow_struct_lit && self.check(Tk.LeftBrace) {
-            self.advance()
-            let parsed = self.parse_field_init_list()?
-            if !self.consume(Tk.RightBrace, "expected `}` after struct fields") {
-                return .Err("parse error")
-            }
-            return .Ok(self.alloc_at(Expr.StructLit(qname, parsed.inits), sp_start))
-        }
-        .Ok(self.alloc_leaf(Expr.QualifiedIdent(qname)))
-    }
-
-    // The `[expr, …]` list-literal / list-comprehension primary (Phase 3a-10).
-    // A single-element `[body for v in coll if f]` unwraps its
-    // ListComp so it flows into the list_comp feature without a spurious ListLit.
-    fn parse_list_expr(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        self.advance()
-        if self.check(Tk.RightBracket) {
-            self.advance()
-            let empty: List<ExprId> = []
-            return .Ok(self.alloc_at(Expr.ListLit(empty), sp_start))
-        }
-        let elements = self.parse_list_elements()?
-        if !self.consume(Tk.RightBracket, "expected `]` after list") {
-            return .Err("parse error")
-        }
-        if elements.ids.length == 1 {
-            match self.store.exprs.get(elements.ids[0]) {
-                .ListComp(_, _, _, _) -> return .Ok(elements.ids[0])
-                _ -> {}
-            }
-        }
-        .Ok(self.alloc_at(Expr.ListLit(elements.ids), sp_start))
-    }
-
-    fn desugar_template(self, raw: string) -> Result<ExprId, string> {
-        match desugar_template_store(self.store, raw) {
-            .Ok(id) -> .Ok(id)
-            .Err(m) -> {
-                self.set_error(m)
-                .Err("parse error")
-            }
-        }
-    }
-
-
-    fn parse_block_expression(self) -> Result<ExprId, string> {
-        let sp_start = self.current_start
-        self.advance()
-        // A block expression's body is parsed as a regular statement
-        // list. Re-enable `.field` postfix consumption inside —
-        // we're back in normal expression-statement context.
-        let saved_dot = self.allow_dot_postfix
-        self.allow_dot_postfix = true
-        let body = self.parse_statement_list_ids(true)
-        self.allow_dot_postfix = saved_dot
-        let body_val = body?
-        if !self.consume(Tk.RightBrace, "expected `}` after block expression") {
-            return .Err("parse error")
-        }
-        // Flipped Expr.Block holds List<StmtId> (walker-opaque, like Stmt.Block) —
-        // the stmt ids ARE the structure, so the block-expr is a leaf row.
-        .Ok(self.alloc_at(Expr.Block(body_val.ids), sp_start))
-    }
 
     fn check(self, kind: Tk) -> bool {
         self.current_kind == kind
-    }
-
-    // Peek ahead: after the current identifier, skip whitespace,
-    // return true if the next char is ':'. For typed lambda detection.
-    /// At a `@` token: does a `::` follow the identifier — i.e. is this a
-    /// qualified-name EXPRESSION (`@pkg::mod::name`), not an annotation
-    /// (`@comptime`, `@expand(…)`)? Lets a statement whose tail expression
-    /// is a rendered qualified name (a re-parsed `@comptime` body's implicit
-    /// return) route to expression parsing instead of annotation parsing.
-    fn peek_after_at_is_qualified(self) -> bool {
-        mut i = self.current_start + 1  // skip `@`
-        while i < self.source_len && (self.char_at(i) == " " || self.char_at(i) == "\t") { i = i + 1 }
-        while i < self.source_len && p_is_alpha_numeric(self.char_at(i)) { i = i + 1 }
-        while i < self.source_len && (self.char_at(i) == " " || self.char_at(i) == "\t") { i = i + 1 }
-        i < self.source_len && self.char_at(i) == ":"
     }
 
     fn peek_after_ident_is_colon(self) -> bool {
@@ -1775,73 +1631,6 @@ impl Parser {
             let ch = self.char_at(i)
             if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
                 return ch == ":"
-            }
-            i = i + 1
-        }
-        false
-    }
-
-    // Does the next non-whitespace char after the current identifier open
-    // a `{` block? Distinguishes a struct literal `~Name { ... }` from a
-    // bare spliced identifier `~Name` in the quote splice path.
-    fn peek_after_ident_is_lbrace(self) -> bool {
-        let end = self.current_start + self.current_lexeme.length
-        mut i = end
-        while i < self.source_len {
-            let ch = self.char_at(i)
-            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-                return ch == "{"
-            }
-            i = i + 1
-        }
-        false
-    }
-
-    // At the `<` token (just after `table`): does the raw source spell
-    // `< Ident > {` — i.e. a typed table literal `table<Row> { … }` — as
-    // opposed to a comparison like `table < 10`? Scans source without
-    // consuming. The `> {` suffix is what disambiguates the two.
-    fn peek_is_table_row_type(self) -> bool {
-        let n = self.source_len
-        mut i = self.current_start + 1   // skip the `<`
-        // skip whitespace
-        while i < n {
-            let c = self.char_at(i)
-            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
-        }
-        if i >= n { return false }
-        // identifier start
-        let c0 = self.char_at(i)
-        let is_alpha = (c0 >= "a" && c0 <= "z") || (c0 >= "A" && c0 <= "Z") || c0 == "_"
-        if !is_alpha { return false }
-        // consume identifier characters
-        while i < n {
-            let c = self.char_at(i)
-            let ok = (c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || (c >= "0" && c <= "9") || c == "_"
-            if ok { i = i + 1 } else { break }
-        }
-        // skip whitespace, expect `>`
-        while i < n {
-            let c = self.char_at(i)
-            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
-        }
-        if i >= n || self.char_at(i) != ">" { return false }
-        i = i + 1
-        // skip whitespace, expect `{`
-        while i < n {
-            let c = self.char_at(i)
-            if c == " " || c == "\t" || c == "\n" || c == "\r" { i = i + 1 } else { break }
-        }
-        i < n && self.char_at(i) == "{"
-    }
-
-    fn peek_after_ident_is_paren(self) -> bool {
-        let end = self.current_start + self.current_lexeme.length
-        mut i = end
-        while i < self.source_len {
-            let ch = self.char_at(i)
-            if ch != " " && ch != "\t" && ch != "\n" && ch != "\r" {
-                return ch == "("
             }
             i = i + 1
         }
@@ -1977,23 +1766,6 @@ impl Parser {
         .Err("parse error")
     }
 
-    /// Consume an identifier in a declaration-name slot, honoring
-    /// `~ident` splice syntax inside a `quote { ... }` body.
-    /// Outside a quote it is a plain identifier. Inside one,
-    /// `~ident` defers the name to expansion time: the leading `~` is
-    /// preserved as the sentinel the quote-lowering pass (`name_or_splice`
-    /// in features/quote_expr/lower.av) decodes back into a live splice.
-    /// Used by every name slot that can carry a splice — type names,
-    /// impl targets, and struct-literal constructors.
-    fn consume_name_or_splice(self, message: string) -> Result<string, string> {
-        if self.quote_depth > 0 && self.check(Tk.Tilde) {
-            self.advance()
-            let var_name = self.consume_identifier("expected identifier after `~` in name position")?
-            return .Ok("~" + var_name)
-        }
-        self.consume_identifier(message)
-    }
-
     /// Lenient variant for field / method access positions
     /// (`task.await`, `expr?.field`): accepts reserved keywords
     /// because the dot disambiguates. Use only for `expr.<name>` /
@@ -2079,142 +1851,6 @@ impl Parser {
         }
     }
 
-    // Parse a single type atom (everything except union |).
-    fn parse_type_atom(self, message: string) -> Result<TypeExpr, string> {
-        // Fully-qualified type name `@pkg::mod::Type` — the renderer emits
-        // resolved type names this way, so re-parsing a shipped `@comptime`
-        // body's type annotations (e.g. `List<@std::avrac::core::ExprId>`)
-        // must accept them here as well as at the top level (pqc9/znl0).
-        if self.check(Tk.At) {
-            let qname = self.parse_qualified_at_name()?
-            // Qualified GENERIC (`@pkg::mod::Result<T, E>`) and OPTIONAL
-            // (`@pkg::mod::Type?`) forms — mirror the bare-identifier
-            // type-atom path below, which handles both suffixes.
-            if self.check(Tk.Less) {
-                let qargs = self.parse_generic_type_args()?
-                let qte = TypeExpr.Generic(qname, qargs)
-                if self.check(Tk.Question) {
-                    self.advance()
-                    return .Ok(TypeExpr.Optional(qte))
-                }
-                return .Ok(qte)
-            }
-            let qte = TypeExpr.Named(qname)
-            if self.check(Tk.Question) {
-                self.advance()
-                return .Ok(TypeExpr.Optional(qte))
-            }
-            return .Ok(qte)
-        }
-        // qa6i probe 3: `~name` in type position splices a string-
-        // valued local into a TypeExpr.Named at construction time.
-        // The lowerer detects the leading `~` in the name field and
-        // emits a runtime ctor that resolves it against the macro's
-        // scope. Only fires inside a quote — outside, `~` in type
-        // position is a parse error.
-        if self.check(Tk.Tilde) && self.quote_depth > 0 {
-            self.advance()
-            if !self.check(Tk.Identifier) {
-                self.set_error("expected identifier after `~` in type position")
-                return .Err("parse error")
-            }
-            let splice_name = self.current_lexeme
-            self.advance()
-            return .Ok(TypeExpr.Named("~" + splice_name))
-        }
-        // dyn Trait — dynamic trait object
-        if self.check(Tk.KwDyn) {
-            self.advance()
-            if !self.check(Tk.Identifier) {
-                self.set_error("expected trait name after `dyn`")
-                return .Err("parse error")
-            }
-            let trait_name = self.current_lexeme
-            self.advance()
-            let te = TypeExpr.Named(trait_name)
-            if self.check(Tk.Question) {
-                self.advance()
-                return .Ok(TypeExpr.Optional(te))
-            }
-            return .Ok(te)
-        }
-        // fn(T, T) -> T
-        if self.check(Tk.KwFn) {
-            self.advance()
-            // A completely BARE `fn` (no parens, no arrow) is the
-            // under-determined function type `Fn(Unknown)` — "some function,
-            // signature unspecified". Mapping it to `FnType([], Infer)` would
-            // claim EXACTLY zero parameters (`fn()`), so any real closure
-            // value fails the param-arity compare against it.
-            if !self.check(Tk.LeftParen) && !self.check(Tk.Arrow) {
-                return .Ok(TypeExpr.Named("fn"))
-            }
-            mut params: List<TypeExpr> = []
-            if self.check(Tk.LeftParen) {
-                self.advance()
-                params = self.parse_type_expr_list()?
-                if self.check(Tk.RightParen) { self.advance() }
-            }
-            mut ret = TypeExpr.Infer
-            if self.check(Tk.Arrow) {
-                self.advance()
-                ret = self.parse_type_expr("expected return type after `->`")?
-            }
-            return .Ok(TypeExpr.FnType(params, ret))
-        }
-        // (T, U) → Tuple type
-        if self.check(Tk.LeftParen) {
-            self.advance()
-            let types = self.parse_type_expr_list()?
-            if !self.consume(Tk.RightParen, "expected `)` after tuple type") { return .Err("parse error") }
-            // Build a Generic("__tuple", [T, U, ...]) that type_expr_to_vtype converts to Tuple
-            if types.length == 1 {
-                // Single-element parens: treat as grouping, not a 1-tuple
-                return .Ok(types[0])
-            }
-            return .Ok(TypeExpr.Generic("__tuple", types))
-        }
-        // [T] → List type
-        if self.check(Tk.LeftBracket) {
-            self.advance()
-            let inner = self.parse_type_expr("expected element type in `[T]`")?
-            if !self.consume(Tk.RightBracket, "expected `]` after list type") { return .Err("parse error") }
-            return .Ok(TypeExpr.ListType(inner))
-        }
-        if !self.check(Tk.Identifier) {
-            self.set_error(message)
-            return .Err("parse error")
-        }
-        mut name = self.current_lexeme
-        self.advance()
-        // Dotted path: core.ast.BinOp
-        while self.check(Tk.Dot) {
-            self.advance()
-            if !self.check(Tk.Identifier) {
-                self.set_error("expected identifier after '.' in type path")
-                return .Err("parse error")
-            }
-            name = name + "." + self.current_lexeme
-            self.advance()
-        }
-        // Generic arguments: Result<T, E>
-        if self.check(Tk.Less) {
-            let args = self.parse_generic_type_args()?
-            let te = TypeExpr.Generic(name, args)
-            if self.check(Tk.Question) {
-                self.advance()
-                return .Ok(TypeExpr.Optional(te))
-            }
-            return .Ok(te)
-        }
-        let te = TypeExpr.Named(name)
-        if self.check(Tk.Question) {
-            self.advance()
-            return .Ok(TypeExpr.Optional(te))
-        }
-        .Ok(te)
-    }
-
     fn parse_type_expr_list(self) -> Result<List<TypeExpr>, string> {
         mut out: List<TypeExpr> = []
         while !self.check(Tk.RightParen) && !self.check(Tk.Eof) {
@@ -2256,59 +1892,10 @@ impl Parser {
     // and three rare-path element sites (match-table synthesized arm bodies,
     // trait/impl signature elements).
 
-    /// Allocate a parser-built `Expr` with its children's edge refs.
-    fn alloc_expr(self, node: Expr, sp: ByteSpan, edges: List<NodeRef>) -> ExprId {
-        self.store.add_expr(node, sp, edges)
-    }
-
-    /// Bridge a BOXED expr subtree from a still-boxed element producer into
-    /// the store, returning its root id. Walker-driven, so the subtree's
-    /// edges match what a native alloc records (used by the match-table
-    /// synthesized arm-body site).
-    fn glue_ingest_expr(self, node: Expr) -> ExprId {
-        self.store.ingest_expr(node, byte_span_none())
-    }
-
-    /// Bridge a BOXED pattern subtree into the store, returning its root id
-    /// (used by the match-table synthesized arm-pattern site).
-    fn glue_ingest_pat(self, node: Pattern) -> PatId {
-        self.store.ingest_pat(node, byte_span_none())
-    }
-
     /// Bridge a BOXED type subtree (type expressions are still boxed
     /// producers) into the store, returning its root id.
     fn glue_ingest_type(self, node: ValueType) -> TypeId {
         self.store.ingest_type(node, byte_span_none())
-    }
-
-    /// Boxed readback of an allocated pattern — an O(1) row read.
-    fn pat_of(self, id: PatId) -> Pattern {
-        self.store.pats.get(id)
-    }
-
-    /// Alloc a pattern LEAF (no node children) — the arena's one-push path,
-    /// interning pure literal/wildcard patterns (§14.4; see `pat_intern_key`).
-    fn alloc_pat_leaf(self, node: Pattern) -> PatId {
-        self.store.intern_pat_leaf(node)
-    }
-
-    /// Row twin of `expr_force_unwrap(Ident(name))`: subject leaf + fresh
-    /// callee leaf, both carried in the flipped Call's id fields (a leaf row
-    /// post-F3b) — the ONE place this ordering convention lives (the if-let
-    /// and let-else desugars both mint it).
-    fn alloc_force_unwrap_row(self, name: string) -> ExprId {
-        let subject_id = self.alloc_leaf(Expr.Ident(name))
-        let callee_id = self.alloc_leaf(Expr.Ident(FORCE_UNWRAP_FN))
-        self.alloc_leaf(Expr.Call(callee_id, [subject_id]))
-    }
-
-    /// Row twin of an `<ident> == none` / `!= none` test: an `<ident>` leaf
-    /// and a `none` leaf under a Binary row holding their ids. `op` picks the
-    /// present (`Ne`) or absent (`Eq`) comparison the optional desugars branch on.
-    fn alloc_none_check_row(self, name: string, op: BinOp) -> ExprId {
-        let left_id = self.alloc_leaf(Expr.Ident(name))
-        let right_id = self.alloc_leaf(Expr.None)
-        self.alloc_leaf(Expr.Binary(left_id, op, right_id))
     }
 
     /// Boxed readback of an allocated expr — an O(1) row read. The chain uses
@@ -2337,21 +1924,6 @@ impl Parser {
         byte_span(start, self.current_start)
     }
 
-    /// Edge refs for a plain id list (arg-only nodes like EnumCtor).
-    fn edges_of_ids(self, ids: List<ExprId>) -> List<NodeRef> {
-        mut refs: List<NodeRef> = []
-        for id in ids { refs.push(NodeRef.ExprRef(id)) }
-        refs
-    }
-
-    /// Edge refs `[subject, arg0, arg1, …]` — the walker order shared by
-    /// Call-shaped nodes (Call, OptionalMethodCall, GenericCall).
-    fn edges_subject_args(self, subject: ExprId, arg_ids: List<ExprId>) -> List<NodeRef> {
-        mut refs: List<NodeRef> = [NodeRef.ExprRef(subject)]
-        for id in arg_ids { refs.push(NodeRef.ExprRef(id)) }
-        refs
-    }
-
 
     // ── B1 stmt-side allocation ──
     // The statement mirror of the expr helpers above: stmt productions push
@@ -2360,13 +1932,6 @@ impl Parser {
     /// Allocate a parser-built `Stmt` with its children's edge refs.
     fn alloc_stmt(self, node: Stmt, sp: ByteSpan, edges: List<NodeRef>) -> StmtId {
         self.store.add_stmt(node, sp, edges)
-    }
-
-    /// Bridge a BOXED stmt subtree from a still-boxed element producer into
-    /// the store, returning its root id (see `glue_ingest_expr`; used by the
-    /// trait/impl signature-element sites).
-    fn glue_ingest_stmt(self, node: Stmt) -> StmtId {
-        self.store.ingest_stmt(node, byte_span_none())
     }
 
     /// Boxed readback of an allocated stmt — an O(1) row read.
@@ -2384,13 +1949,6 @@ impl Parser {
 
     fn alloc_stmt_leaf(self, node: Stmt) -> StmtId {
         self.store.stmts.add_leaf(node)
-    }
-
-    /// Edge refs for a stmt-id list (block bodies, decl bodies).
-    fn edges_of_stmt_ids(self, ids: List<StmtId>) -> List<NodeRef> {
-        mut refs: List<NodeRef> = []
-        for id in ids { refs.push(NodeRef.StmtRef(id)) }
-        refs
     }
 
     // ── Speculative parsing (backtracking) ──
@@ -2435,68 +1993,13 @@ impl Parser {
         self.store.truncate_to_mark(state.store_mark)
     }
 
-    // Skip a balanced `< ... >` bracket group, handling nesting.
-    // Used in impl blocks where we don't yet parse type params.
-    fn skip_angle_brackets(self) {
-        self.advance()  // consume `<`
-        mut depth = 1
-        while depth > 0 && !self.check(Tk.Eof) {
-            self.maybe_split_shr()   // a nested `>>` close counts as one `>` here
-            if self.check(Tk.Less) {
-                depth = depth + 1
-            } else if self.check(Tk.Greater) {
-                depth = depth - 1
-            }
-            self.advance()
-        }
-    }
-
-    // Collect angle-bracket content as a string: <EmitValue, string> -> "<EmitValue, string>"
-    fn collect_angle_brackets(self) -> string {
-        self.advance()  // consume `<`
-        mut result = "<"
-        mut depth = 1
-        while depth > 0 && !self.check(Tk.Eof) {
-            if self.check(Tk.Less) {
-                depth = depth + 1
-                result = "${result}<"
-            } else if self.check(Tk.Greater) {
-                depth = depth - 1
-                result = "${result}>"
-            } else if self.check(Tk.Comma) {
-                result = "${result}, "
-            } else {
-                result = "${result}${self.current_lexeme}"
-            }
-            self.advance()
-        }
-        result
-    }
-
     fn set_error(self, message: string) {
         self.report(DiagCode.SyntaxError, message)
     }
 
-    /// Report at an explicit SOURCE BYTE rather than at the cursor — for a diagnostic
-    /// raised somewhere this parser never went.
-    ///
-    /// The flip seam is the caller: a grammar-native rule reports through its own PState,
-    /// and by the time the seam re-reports into the real bag this parser's cursor is
-    /// still sitting at the ITEM START. So every native diagnostic rendered against the
-    /// declaration's first token — `broken.av:1:1` for an error on line 2, which on a
-    /// merged module parse is the same class of wrong location `span_at` was added to fix
-    /// (right file, wrong place, and a snippet quoting the wrong line). `GDiag.byte`
-    /// carries where the rule actually was; this turns it back into a span.
-    ///
-    /// Line/column come from the store's line index — the same one the executor's
-    /// same-line predicates read, so the two cannot disagree about where a byte is.
-    fn report_at_byte(self, code: DiagCode, message: string, byte: int) {
-        self.report_at_span(code, message, byte, byte)
-    }
-
-    /// The span-carrying form. `report_at_byte` is the point-span shorthand; a caller with
-    /// the offending token's extent should use this, so the rendered caret UNDERLINES the
-    /// token the way `span_at(current_start, current, …)` always has.
+    /// The coded-report form every grammar-native seam uses. A caller with the offending
+    /// token's extent passes both bytes so the rendered caret UNDERLINES the token the way
+    /// `span_at(current_start, current, …)` always has; a point span passes byte twice.
     /// Four ratchet entries (t-bw9s) were message-identical and still diverged
     /// purely on caret width — `┬` against `─┬─` — which the one-line summary cannot show.
     fn report_at_span(self, code: DiagCode, message: string, byte: int, end_byte: int) {

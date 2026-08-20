@@ -6,11 +6,11 @@
 use diagnostics.{DiagnosticBag, bag_new}
 use core.{Stmt, Annotation, NodeStore, SrcPos, ParamEntry, ValueType, find_annotation, stmt_unwrap}
 use features.derive_registry.{derive_capability_import, derive_capability_module}
-use parse.{parse_program_source, parse_program_source_at, parse_program_source_shared}
+use parse.{parse_program_source_shared}
 use core.{avra_process_env_get, avra_selfhost_append_file, avra_selfhost_read_file, avra_is_dir, avra_selfhost_file_exists}
 use build.{metadata_read, metadata_file_exists, metadata_slot_matches, synthesize_unit_body, stamp_stub_spans}
 use build.{cache_for, entry_source_meta_path, cache_touch_source_meta, Fingerprint, package_full_fingerprint, package_full_fingerprint_with_toolchain, compiler_hash_for}
-use @std.crypto.{sha256_hex, sha256_file}
+use @std.crypto.{sha256_file}
 use features.modules.{list_avra_module_files, list_avra_module_subdirs}
 use list_ops.{list_concat, list_push_copy, list_any, list_map, list_contains_str}
 
@@ -640,7 +640,11 @@ fn stmts_have_module_named(store: NodeStore, stmts: List<StmtId>, target_name: s
 // Trailing-segment of a path (after the last '/'). Returns the input
 // when there's no slash, "" when the input is empty. Used to derive
 // the bare directory name from a path like `packages/std-cli/src/ui`.
-fn path_basename(p: string) -> string {
+/// The last path segment, tolerating one trailing `/`. EXPORTED because the
+/// CLI needs the identical rule for its unit slugs and subdir names — it
+/// carried two byte-identical private copies (`subdir_basename`,
+/// `slug_of_path`) until they were folded back here.
+export fn path_basename(p: string) -> string {
     if p.length == 0 { return "" }
     let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
     let len = trimmed.length

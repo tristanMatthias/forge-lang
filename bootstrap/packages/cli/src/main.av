@@ -29,7 +29,7 @@
 // Pull every compiler-pipeline symbol from the @std.avrac library.
 // This file owns no compiler logic — it only orchestrates argv
 // parsing and dispatches to the lib's pure entry points.
-use @std.avrac.core.{avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_read_file_bytes, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, avra_process_env_set, exit, avra_char_from_hex}
+use @std.avrac.core.{avra_selfhost_get_arg_cstr, avra_selfhost_file_exists, avra_selfhost_read_file, avra_selfhost_read_file_bytes, avra_selfhost_write_file, avra_selfhost_append_file, avra_shell_exec, avra_shell_exec_status, avra_process_exit, avra_process_forward, avra_process_env_get, avra_process_env_set, exit}
 use @std.avrac.core.{avra_file_mtime, avra_file_size, avra_is_dir, avra_readdir, avra_remove_file, avra_remove_tree, avra_dir_size, avra_datetime_now, avra_str_ends_with, avra_getpid}
 
 // Convenience aliases so handler bodies stay readable.
@@ -46,20 +46,19 @@ fn empty_loaded_list() -> List<string> {
     empty
 }
 
-use @std.cli.{Runnable, CliResult, App, result_has_flag, result_get_option, result_get_arg, result_get_args}
+use @std.cli.{Runnable, CliResult, result_has_flag, result_get_option, result_get_arg, result_get_args}
 use @std.cli.cmdgen.{expand_cli, expand_command}
 // nce6.1.F: @marshal on TestResults synthesises `impl Marshal:TestResults`
 // + `from_bytes_TestResults` calling bytes_reader. Both depend on
 // @std/process's trait + byte primitives. (Marshal itself is reached
 // via the synthesised impl, not a direct call here.)
-use @std.process.{bytes_reader, bytes_builder}
 // dir-as-module (g2eo.1): ui is a flat directory module, exports
 // surface at `@std.cli.ui.{...}` directly (not `.ui.spinner.{...}`).
 use @std.cli.ui.{run_with_progress}
-use @std.json.{json_str, json_object, json_pairs, json_pair_add}
+use @std.json.{json_str}
 use @std.lsp.{Sym}
 use @std.avrac.fmt.{fmt_stmt_ids}
-use @std.avrac.test_runner.{prepend_test_externs, split_package_modules, assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure, output_has_ceiling_marker, retry_bounded_cmd}
+use @std.avrac.test_runner.{assemble_test_program, shard_mod_names, test_reporter_path, fixture_stdout_cache_dir, capture_has_probe_failure, classify_shard_failure, output_has_ceiling_marker, retry_bounded_cmd}
 use @std.avrac.test_runner.{discover_tests, discover_one_file, DiscoveredFile, DiscoveredEntry, filter_discovered, filter_by_path, filter_by_paths}
 use @std.avrac.test_runner.{
     scan_gate_diagnostics, render_gate_scan,
@@ -75,21 +74,21 @@ use @std.avrac.docs.{extract_project_docs_ast, extract_project_corpus,
           render_json, render_markdown}
 use @std.avrac.docs.{extract_lang_corpus, extract_errors_corpus,
                  find_sym_for_gen}
-use @std.avrac.docs.{gen_stub_for_sym, gen_apply, GenStubResult}
+use @std.avrac.docs.{gen_stub_for_sym, gen_apply}
 use @std.avrac.lang_gen.{render_lang_av, write_lang_av}
 use @std.avrac.indexer.{run_lsp_server, extract_project_syms_cached}
 use @std.avrac.pathutil.{basename_no_ext}
 use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source}
-use @std.avrac.core.{render_expr, render_stmt_ids, binop_str, unop_str, logicop_str, vtype_display, vtype_render_full, vtype_is_unknown, vtype_eq, ValueType, Stmt, Expr}
+use @std.avrac.core.{render_expr, render_stmt_ids, Stmt}
 use @std.avrac.core.{NodeStore, new_node_store, build_line_index, StmtId, l1_sidetable_summary}
 use @std.avrac.features.eval.{render_value, eval_parsed_expression}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.{NameResolveResult}
-use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, dedup_modules, resolve_dir_module_body, synthesize_subdir_module_decls, ModListResult}
+use @std.avrac.features.modules.{resolve_module_files, modules_dirname, find_packages_dir, package_root_for_file, resolve_dir_module_body, ModListResult}
 use @std.avrac.features.modules.{load_package_config, load_manifest, Dep}
-use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs}
+use @std.avrac.features.modules.{filter_to_target_unit, list_avra_module_subdirs, path_basename}
 use @std.avrac.build.{
     BuildInputs, BuildOutcome,
     decide_build, record_build_result, source_has_mod_decls,
@@ -146,7 +145,7 @@ use @std.avrac.core.{content_id_for}
 use @std.avrac.features.quote_expr.{lower_quotes_via_store, report_runtime_quotes}
 use @std.avrac.diagnostics.{bag_has_errors, bag_has_warnings, bag_new, bag_report, diag_error, diag_ice, span_dummy, DiagCode, DiagnosticBag}
 use @std.avrac.diagnostics.{render_bag, render_bag_json}
-use @std.avrac.codegen.{compile_program, codegen_and_emit_object, codegen_and_emit_ir_cov}
+use @std.avrac.codegen.{compile_program}
 use @std.avrac.features.error_propagation.{Result}
 use @std.avrac.features.generics.{monomorphize}
 
@@ -820,7 +819,7 @@ fn build_pre_dep_cmds(deps: List<Dep>, compiler_path: string, log_dir: string, c
             let env_prefix = "AVRA_LIB_PKG_ROOT='${lib_root}' "
             // --explain so the log carries the hit/miss line + miss
             // attribution the parent's tally reads back (pdme.5).
-            let log_path = "${log_dir}/${slug_of_path(dep.path)}.log"
+            let log_path = "${log_dir}/${path_basename(dep.path)}.log"
             cmds.push("cd \"${dep.path}\" && ${env_prefix}\"${compiler_path}\" build --lib${cov_flag} --emit_metadata --explain > \"${log_path}\" 2>&1")
         }
         i = i + 1
@@ -1011,7 +1010,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     mut i = 0
     while i < subdirs.length {
         let sub = subdirs[i]
-        let sub_name = subdir_basename(sub)
+        let sub_name = path_basename(sub)
         if sub_name == "" {
             i = i + 1
             continue
@@ -1097,7 +1096,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     mut llc_cmds = []
     mut k = 0
     while k < subdirs.length {
-        let sl = subdir_basename(subdirs[k])
+        let sl = path_basename(subdirs[k])
         if sl == "" {
             k = k + 1
             continue
@@ -1146,7 +1145,7 @@ fn pre_build_subdir_units(project_dir: string, manifest_name: string, compiler_p
     // build/per_mod/*.o by hand. The archive name follows the package's
     // [lib].name when the manifest declares one — same shape every
     // cargo-style tooling expects (`lib<name>.a`).
-    let archive_name = subdir_basename(manifest_name).replace("@", "").replace("/", "_")
+    let archive_name = path_basename(manifest_name).replace("@", "").replace("/", "_")
     let archive_path = "${out_dir}/lib${archive_name}.a"
     let ar_cmd = "ar rcs '${archive_path}' ${out_dir}/*.o > '${out_dir}/ar.log' 2>&1"
     let ar_rc = avra_shell_exec_status(ar_cmd)
@@ -1199,25 +1198,6 @@ fn sub_dir_mtime_le(dir: string, cap: int) -> bool {
         i = i + 1
     }
     true
-}
-
-// Return the trailing path segment of `p`, stripping any trailing
-// slash. `/foo/bar/` → `bar`. Mirrors `slug_of_path` but kept local
-// to the per-mod dispatcher so the caller doesn't have to navigate
-// through the TTY-progress code path's helpers.
-fn subdir_basename(p: string) -> string {
-    if p.length == 0 { return "" }
-    let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
-    let len = trimmed.length
-    mut i = len
-    while i > 0 {
-        let prev = i - 1
-        if trimmed.byte(prev) == 0x2F {
-            return trimmed.substring(i, len)
-        }
-        i = prev
-    }
-    trimmed
 }
 
 // g2eo Phase C: TTY progress bar for the per-module dispatcher.
@@ -1291,17 +1271,6 @@ fn progress_should_render() -> bool {
 
 fn progress_marker_dir() -> string {
     "/tmp/avra_progress_${string(avra_uptime_ms())}"
-}
-
-// Last path component with `/` stripped — keeps display short (e.g.
-// `../packages/std-json` → `std-json`). Used both as user-visible name
-// and as the per-job marker filename.
-fn dep_unit_slug(path: string) -> string {
-    mut end = path.length
-    while end > 0 && path.byte(end - 1) == 0x2F { end = end - 1 }
-    mut start = end
-    while start > 0 && path.byte(start - 1) != 0x2F { start = start - 1 }
-    path.substring(start, end)
 }
 
 fn count_done_markers(marker_dir: string) -> int {
@@ -1456,25 +1425,10 @@ fn slugs_from_paths(paths: List<string>) -> List<string> {
     mut out: List<string> = []
     mut i = 0
     while i < paths.length {
-        out.push(slug_of_path(paths[i]))
+        out.push(path_basename(paths[i]))
         i = i + 1
     }
     out
-}
-
-fn slug_of_path(p: string) -> string {
-    if p.length == 0 { return "" }
-    let trimmed = if p.byte(p.length - 1) == 0x2F { p.substring(0, p.length - 1) } else { p }
-    let len = trimmed.length
-    mut i = len
-    while i > 0 {
-        let prev = i - 1
-        if trimmed.byte(prev) == 0x2F {
-            return trimmed.substring(i, len)
-        }
-        i = prev
-    }
-    trimmed
 }
 
 // Write one string per line. Build queue commands and their marker slugs are

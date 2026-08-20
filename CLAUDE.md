@@ -420,7 +420,7 @@ manifest. Text→AST is one grammar run by two ENGINES:
   all decide by asking whether `diags` GREW, so a mid-parse release reads as
   "this rule reported".
 - **Whoever COMMITS owns the diagnostics** — a `@cut` branch must carry its
-  coded reports itself (`Parser.report_at_byte` + `GDiag.byte` position them);
+  coded reports itself (`Parser.report_at_span` + `GDiag.byte` position them);
   there is no rollback left to re-parse and re-own them.
 - **Grammar marker order is insignificant** (`@bump(x) @require y` ==
   `@require @bump(x) y`), and `@require` + a mode-SET marker on one item is
@@ -465,6 +465,42 @@ Anti-patterns:
 
 Per-file test runs are 15s each (uzs9.1 — cache miss bug). When debugging,
 isolate-and-iterate on ONE file. Don't bundle.
+
+## Dead-code sweeps: the corpus is the whole repo, and `find` will lie to you
+
+Three scope bugs in one 2026-08-19 sweep, each producing confident "this has no
+callers" claims that were false. Before deleting anything on the strength of a
+reference scan, prove the scan SEES the callers:
+
+- **`bootstrap/tests/` holds ~457 `.av` files and is NOT under `packages/`.** It
+  is where the END-TO-END fixture tests live — they drive features by shelling
+  `bs2 compile+run` on a fixture, so a function reachable only that way has zero
+  textual callers in `packages/`. A scan rooted at `packages/` deleted the
+  `avra.lock` subsystem as "unwired, no tests" while `tests/build_lock_test.av`
+  was exercising all four of its entry points through seven probes; 14 tests
+  went red. `std-avrac/src/build/` (72 files) was hidden the same way by the
+  previous iteration of the same scan.
+- **`find -path '*/build/*'` matches ACROSS SLASHES.** It is meant to skip the
+  package output dir and also silently eats `src/build/`. Anchor to one segment:
+  `find . -regextype posix-extended -not -regex '\./[^/]+/build/.*'`.
+- **A name can be reached without appearing as `name(`.** A function used as a
+  VALUE has no parentheses at all — `84 |> gec_inc` (pipe operand), a callback
+  passed by name, any higher-order use. `@derive` targets are
+  emitted from STRING literals in the synthesis code (`derive/walk.av`,
+  `derive/eq.av`); generic calls carry type args (`render_answer<V>(...)`);
+  `parse_grammar` is DESUGAR-INJECTED into any file containing a `grammar { }`
+  block without being named; `from_bytes_*` do not exist until expansion; and in
+  C, `__attribute__((constructor))` functions are called by the loader — deleting
+  one also orphans its attribute line onto the NEXT function, which is valid C
+  with different semantics.
+
+And the process rule the same session broke: **build + lint + diff-test + lib
+probe can ALL be green while the suite is red.** None of them run the tests. A
+deletion sweep is not verified until a COLD full `bs2 test` has finished — not
+started, finished, and cold because the fixture-stdout cache will otherwise
+replay the previous compiler's captures (`rm -rf bootstrap/build/cache/fixture_stdout`
+first). Do not commit, push, or merge on the strength of the fast gates alone,
+and record the run's result where the reviewer can see it.
 
 ## CRITICAL RULE: Build What You Need
 
@@ -585,8 +621,8 @@ When hitting a segfault/crash, follow this order. Do NOT guess.
 1. **LLDB first:** `lldb -b -o 'target create ./build/bs2' -o 'settings set -- target.run-args check /tmp/test.av' -o run -o bt -o 'register read x0 x1 x8 x9'`
 2. **Check seed integrity:** `git diff seed/seed.ll` — if dirty and you didn't update, restore it
 3. **Check -O0 vs -O2:** if only -O2 crashes, it's an alignment bug
-4. **Store tracking:** `AVRA_TRACK_STORES=1` finds return-type mismatches
-5. **Redzones:** `AVRA_REDZONES=1` / `AVRA_PAGE_ALLOC=1` catches cross-allocation writes
+4. **RC invariant check:** `AVRA_VERIFY_RC=1` machine-checks the alloca zero-init invariant (emits verification calls — changes IR, so never inside a diff-test comparison)
+5. **RC forensics:** `AVRA_RC_STRICT=1` (poison-on-free + reuse quarantine + foreign-release abort), `AVRA_RC_TRACE=1` (retain/release tracing), `AVRA_CRASH_DETAIL=1` (full signal dump); `AVRA_RC_NO_REGION=1` swaps in the all-malloc allocator as a layout perturbation
 6. Only then read IR
 
 LLDB notes: the runtime's `avra_match_unreachable` reporter calls `exit(99)` (no

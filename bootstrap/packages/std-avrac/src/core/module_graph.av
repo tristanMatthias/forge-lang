@@ -296,9 +296,6 @@ export fn module_graph_get(g: ModuleGraph, id: int) -> ModuleGraphNode? {
     null
 }
 
-/// Allocate a fresh PackageId and remember which module is its root.
-export type AddPackageResult = { graph: ModuleGraph, pkg_id: int }
-
 
 /// Allocate both a fresh package and a root module for it in one
 /// step. Used by the graph builder when it encounters either the

@@ -42,13 +42,6 @@ export fn list_any<T>(xs: List<T>, pred: fn(T) -> bool) -> bool {
     false
 }
 
-/// True if `pred` holds for every element (vacuously true on `[]`).
-/// Short-circuits on the first miss.
-export fn list_all<T>(xs: List<T>, pred: fn(T) -> bool) -> bool {
-    for x in xs { if !pred(x) { return false } }
-    true
-}
-
 /// True when `xs` and `ys` have the same length and every aligned pair
 /// satisfies `eq`. Short-circuits on the first mismatch. The pairwise
 /// backbone of derived structural equality (features/derive eq emitter).
@@ -109,13 +102,6 @@ export fn opt_hash_by<T>(a: T?, hash: fn(T) -> int) -> int {
 export fn list_contains_str(xs: List<string>, target: string) -> bool {
     for x in xs { if x == target { return true } }
     false
-}
-
-/// Run `step` for its side effects on each element. Useful when the
-/// loop body is a single call and a `for ... { f(x) }` block is
-/// noisier than expressing the intent inline.
-export fn list_each<T>(xs: List<T>, step: fn(T) -> void) {
-    for x in xs { step(x) }
 }
 
 /// Concatenate `a ++ b` into a fresh `List<T>`. Both inputs are
