@@ -11,7 +11,7 @@ use features.extern_decl.{extern_lang}
 use features.fn_decl.{fn_lang, fn_type_lang}
 use features.generics.{generics_lang}
 use features.for_stmt.{for_lang, for_in_lang}
-use features.grammar.{grammar_block_lang, Grammar, feature_decl_grammar_fragments, BuildKind}
+use features.grammar.{grammar_block_lang, Grammar, feature_decl_grammar_fragments, BuildKind, avra_program_grammar, rules_reachable_from, str_in}
 use features.if_stmt.{if_lang}
 use features.impl_decl.{impl_decl_lang}
 use features.is_keyword.{is_keyword_lang}
@@ -192,6 +192,45 @@ export fn feature_grammar_fragments() -> List<Grammar> {
         all.push(g)
     }
     all
+}
+
+/// Family membership MEASURED, not declared (t-y2i7 section 1, P2b).
+///
+/// `gram_family` is a feature ASSERTING which seam its rules serve, kept in
+/// sync by hand across 31 files. The grammar already states it: a rule serves
+/// the statement seam iff it is REACHABLE from `statement` in the composed
+/// rule graph. This computes that — for each feature, does its fragment define
+/// any rule the start symbol can reach?
+///
+/// `avra_program_grammar()` is the whole language (program -> declaration ->
+/// every seam), so reachability over it is the total picture. The apparent
+/// circularity — needing the composed grammar to decide what composes into it
+/// — is not one: composition is unconditional and `compose_fragments` dedupes
+/// by `rule_identity` (#1239), so nothing depends on the answer.
+///
+/// Pinned against the three declared family sets by
+/// `features/grammar/tests/family_reachability_test.av`: the label is only
+/// safe to delete once measurement reproduces it exactly.
+export fn fragments_reaching(start: string) -> List<Grammar> {
+    let reach = rules_reachable_from(avra_program_grammar(), start)
+    mut out: List<Grammar> = []
+    for f in language_features() {
+        let g = feature_gram(f)
+        if g.rules.length == 0 { continue }
+        mut hit = false
+        for r in g.rules { if str_in(reach, r.name) { hit = true } }
+        if hit { out.push(g) }
+    }
+    out
+}
+
+/// The rule names a fragment list defines, flattened — the comparable
+/// projection for the equivalence proof (Grammar values are not comparable,
+/// and the QUESTION is which rules a set carries, not which objects).
+export fn fragment_rule_names(gs: List<Grammar>) -> List<string> {
+    mut out: List<string> = []
+    for g in gs { for r in g.rules { out.push(r.name) } }
+    out
 }
 
 /// The TYPE-family fragments (t-kd4y.3.5.10): every feature whose gram

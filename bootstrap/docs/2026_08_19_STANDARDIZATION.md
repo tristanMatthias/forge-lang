@@ -24,6 +24,21 @@ plumbing or debris from an earlier architecture. Most of it is debris.
 only in which START RULE they name ("declaration", "statement", "expression",
 "type_expr") — exactly like which function a hand parser calls first.
 
+> **MEASURED FALSE for two of the three families (2026-08-20, P2b) — AUDITED.**
+> The claim below is that family == reachability from a start rule. On the real
+> grammar that holds for `type_expr` (a genuine subgraph, reproduced exactly)
+> and FAILS for the other two: `statement` and `expression` are MUTUALLY
+> REACHABLE — a statement contains expressions, and an expression contains
+> blocks, lambda bodies and `if`/`match` arms containing statements. They are
+> one SCC, so both starts reach **the same 167 rules**, and `expression` reaches
+> `defer_stmt`. Reachability cannot separate the two families, so **`gram_family`
+> stays for stmt/expr**: the label carries information the rule graph does not.
+> Evidence + the instrument (`fragments_reaching`) are pinned in
+> `features/grammar/tests/family_reachability_test.av`, written to go RED if the
+> SCC is ever broken — at which point this deletion is back on the table.
+> This is the SIXTH time this record has called something redundant that a
+> measurement disproved. The bullet below is kept as the original claim.
+
 - **Delete `gram_family`.** A feature declares rules; the grammar is their union.
   Which rules serve statements is reachability from `statement` in the rule
   graph — follow the names. The engine spine's `statement = break_stmt |
