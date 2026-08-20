@@ -9,27 +9,27 @@ use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_gr
 // `gram_family = "expr"`, folded in by `avra_expr_core`, so an expression
 // keyword's rules live ONLY in its feature file while the ladder that
 // DISPATCHES to them stays here.
-use features.{feature_stmt_grammar_fragments, feature_expr_grammar_fragments, feature_type_grammar_fragments}
+use features.{feature_gram, feature_stmt_grammar_fragments, feature_expr_grammar_fragments, feature_type_grammar_fragments}
 // t-47hc slice 9 — the DECL-keyword grammar fragments, each owned by the feature
 // that owns the keyword (the same colocation `match` already has for
 // patterns). Imported here rather than assembled in features/mod.av because this
 // file is where the whole-program grammar is composed; features/mod.av's
 // `feature_grammar_fragments` re-exports the same list, so there is ONE
 // definition of "which features contribute decl fragments".
-use features.fn_decl.{avra_fn_decl_grammar}
-use features.struct_decl.{avra_struct_decl_grammar}
-use features.enum_decl.{avra_enum_decl_grammar}
-use features.trait_decl.{avra_trait_decl_grammar}
-use features.impl_decl.{avra_impl_decl_grammar}
-use features.annotations.{avra_annotations_grammar}
-use features.modules.{avra_modules_grammar, avra_export_grammar}
-use features.select_stmt.{avra_select_grammar}
-use features.parallel_stmt.{avra_parallel_grammar}
-use features.spec_test.{avra_spec_grammar}
-use features.let_stmt.{avra_let_grammar}
-use features.component_decl.{avra_component_grammar}
+use features.fn_decl.{fn_lang}
+use features.struct_decl.{type_decl_lang}
+use features.enum_decl.{enum_lang}
+use features.trait_decl.{trait_lang}
+use features.impl_decl.{impl_decl_lang}
+use features.annotations.{annotations_lang}
+use features.modules.{use_lang, export_lang}
+use features.select_stmt.{select_lang}
+use features.parallel_stmt.{parallel_lang}
+use features.spec_test.{spec_lang}
+use features.let_stmt.{let_lang}
+use features.component_decl.{component_lang}
 // t-47hc slice 10.3 — `tparam`, shared by every generic decl keyword.
-use features.generics.{avra_generics_grammar}
+use features.generics.{generics_lang}
 
 /// The canonical §2 Avra expression grammar as a `grammar { }` block. The DSL
 ///
@@ -555,20 +555,20 @@ export fn avra_type_grammar() -> Grammar {
 /// the shared base beside the expression ladder and the type spine.
 export fn feature_decl_grammar_fragments() -> List<Grammar> {
     [
-        avra_modules_grammar(),      // use_decl, mod_decl
-        avra_export_grammar(),       // export_decl + the MkStampAt split (t-kd4y.3.5.9)
-        avra_annotations_grammar(),  // doc/mdoc/annot wrappers + wrapped_inner (t-kd4y.3.5.9)
-        avra_struct_decl_grammar(),  // type_decl, field
-        avra_generics_grammar(),     // tparam — shared by every generic decl keyword
-        avra_enum_decl_grammar(),    // enum_decl, variant
-        avra_fn_decl_grammar(),      // fn_decl
-        avra_trait_decl_grammar(),   // trait_decl, trait_member, assoc_member, method_member
-        avra_impl_decl_grammar(),    // impl_decl, impl_method
-        avra_select_grammar(),       // select_decl, select_arm
-        avra_parallel_grammar(),     // parallel_decl
-        avra_spec_grammar(),         // spec_decl, spec_item, given_blk, then_blk
-        avra_let_grammar(),          // let_decl, mut_decl, const_decl, letdes_decl
-        avra_component_grammar(),    // comp_header + the whole component family
+        feature_gram(use_lang()),      // use_decl, mod_decl
+        feature_gram(export_lang()),       // export_decl + the MkStampAt split (t-kd4y.3.5.9)
+        feature_gram(annotations_lang()),  // doc/mdoc/annot wrappers + wrapped_inner (t-kd4y.3.5.9)
+        feature_gram(type_decl_lang()),  // type_decl, field
+        feature_gram(generics_lang()),     // tparam — shared by every generic decl keyword
+        feature_gram(enum_lang()),    // enum_decl, variant
+        feature_gram(fn_lang()),      // fn_decl
+        feature_gram(trait_lang()),   // trait_decl, trait_member, assoc_member, method_member
+        feature_gram(impl_decl_lang()),    // impl_decl, impl_method
+        feature_gram(select_lang()),       // select_decl, select_arm
+        feature_gram(parallel_lang()),     // parallel_decl
+        feature_gram(spec_lang()),         // spec_decl, spec_item, given_blk, then_blk
+        feature_gram(let_lang()),          // let_decl, mut_decl, const_decl, letdes_decl
+        feature_gram(component_lang()),    // comp_header + the whole component family
     ]
 }
 

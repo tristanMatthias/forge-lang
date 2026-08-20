@@ -39,7 +39,21 @@ export fn use_lang() -> LanguageFeature {
 segment addresses a package. Path segments may be keywords (a directory
 may be named `defer`); the imported names themselves stay identifiers.
 """,
-        gram = composed([avra_modules_grammar()]),
+        gram = grammar {
+  use_decl    = @try "use" @cut ut:use_tail -> ut
+  use_tail    = "@" @require upkg:IDENT @require "." @require useg:WORD ( "." ( useg:WORD )? )* @require "{" ( unames:IDENT ","? )* @require "}"
+                @expect("IDENT", "expected package name")
+                @expect("WORD", "expected module path segment")
+                @expect(".", "expected `.` after package scope")
+                @expect("{", "expected `{` in use declaration")
+                @expect("}", "expected `}` in use declaration") -> MkUsePkg(upkg, useg, unames)
+              | @fallback @require useg:WORD ( "." ( useg:WORD )? )* @require "{" ( unames:IDENT ","? )* @require "}"
+                @expect("WORD", "expected module path after `use`")
+                @expect("{", "expected `{` in use declaration")
+                @expect("}", "expected `}` in use declaration") -> MkUseBare(useg, unames)
+  mod_decl    = @try "mod" @cut @require mdname:WORD
+                @expect("WORD", "expected module name after `mod`") -> MkModule(mdname)
+            },
         builders = modules_builds(),
         snippet = r"use ${1:path}.{${2:names}}",
         stmt_tag = Stmt.Use("", []),
@@ -89,7 +103,12 @@ form (`export let` compiles to module-local allocas).
         //   wrapped declaration is stamped at the position captured right
         //   after consuming `export`, so the stamping rule begins exactly
         //   where the inner declaration does.
-        gram = composed([avra_export_grammar()]),
+        gram = grammar {
+  export_decl      = @try "export" @cut @require ed:exportable_decl
+                     @expect("exportable_decl", "expected declaration after `export`") -> MkExport(ed)
+  exportable_decl  = ei:exportable_inner -> MkStampAt(ei)
+  exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header
+            },
         builders = export_builds(),
         snippet = r"export ${1:declaration}",
     }

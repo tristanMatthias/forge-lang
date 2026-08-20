@@ -6,6 +6,7 @@
 // syntax + lowerings alone; every consumer reads Stmt.Annotated.
 use features.{composed}
 use features.annotations.lowering.{annotations_builds}
+use features.grammar.{parse_grammar}
 
 /// `@name(args?)`, the annotation-wrapper declaration, and the two
 /// doc-comment forms — the definition carries the whole family
@@ -79,7 +80,19 @@ parses as nested `Stmt.Annotated` layers.
         //   with nothing else here, and `wrapped_inner` is shared by both
         //   `annot_decl` and `doc_decl`, so this covers the doc-comment
         //   form too.
-        gram = composed([avra_annotations_grammar()]),
+        gram = grammar {
+  doc_decl       = d:DOC ( d:DOC )* @require dd:docable_decl
+                   @expect("docable_decl", "expected expression", F0040) -> MkDocAnnotated(d, dd)
+  docable_decl   = di:wrapped_inner -> MkStampAt(di)
+  mdoc_decl      = m:MODDOC ( m:MODDOC )* -> MkModuleDoc(m)
+  annot_decl     = @peek(annot_lead) an:annot ( an:annot )* @require ad:annotable_decl
+                   @expect("annotable_decl", "expected expression", F0040) -> MkAnnotatedArgs(an, ad)
+  annotable_decl = ai:wrapped_inner -> MkStampAt(ai)
+  annot          = "@" @require n:IDENT ( "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" )?
+                   @expect("IDENT", "expected expression", F0040)
+                   @expect(")", "expected expression", F0040) -> MkAnn(n, a)
+  wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | comp_header | @try use_decl | @try mod_decl | export_decl | doc_decl | annot_decl | letdes_decl | let_decl | mut_decl | const_decl | spec_decl | select_decl | parallel_decl | mdoc_decl | @try bare_comp_inst_raw | @try bare_comp_inst | statement
+            },
         builders = annotations_builds(),
         snippet = r"@${1:name}(${2:args})",
     }
