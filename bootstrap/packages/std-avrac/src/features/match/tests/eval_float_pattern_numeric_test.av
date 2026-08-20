@@ -1,0 +1,48 @@
+// WHY: the comptime EVALUATOR compared `LitFloat` patterns as TEXT
+// (`value.number_text == f`) while CODEGEN compares them NUMERICALLY
+// (`avra_float_parse` + `fcmp`, match/mod.av). A number Value carries its
+// decimal TEXT, so `1.0` and `1.00` are different strings and the same
+// value — which made an `@comptime` match take a DIFFERENT arm than the
+// identical compiled match on the identical source. Evaluator and codegen
+// disagreeing about the same program is the bug; the arm taken is only how
+// it shows. Caught in review on PR #1299.
+//
+// The third case is the ANTI-VACUITY half: `1.5` must still NOT match `1.0`,
+// so a numeric comparison that always answered "equal" fails this spec.
+
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "eval: float patterns compare numerically, not textually" {
+    then "1.00 matches 1.0, 2.50 matches 2.5, and 1.5 still misses 1.0" {
+        let out = write_fixture_and_run("/tmp/avra_eval_float_pattern.av",
+            "use @std.avrac.core.{StmtId}\n" +
+            "use @std.avrac.features.comptime.{synth_stmt_id}\n" +
+            "@comptime\n" +
+            "fn build() -> List<StmtId> {\n" +
+            "    mut score = 0\n" +
+            "    let a = 1.00\n" +
+            "    match a {\n" +
+            "        1.0 -> score = score + 1\n" +
+            "        _ -> {}\n" +
+            "    }\n" +
+            "    let b = 2.50\n" +
+            "    match b {\n" +
+            "        2.5 -> score = score + 1\n" +
+            "        _ -> {}\n" +
+            "    }\n" +
+            "    let c = 1.5\n" +
+            "    match c {\n" +
+            "        1.0 -> {}\n" +
+            "        _ -> score = score + 1\n" +
+            "    }\n" +
+            "    match score {\n" +
+            "        3 -> return [synth_stmt_id(quote stmt { println(\"FLOAT_PATTERN_OK\") })]\n" +
+            "        _ -> return [synth_stmt_id(quote stmt { println(\"FLOAT_PATTERN_BAD\") })]\n" +
+            "    }\n" +
+            "}\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "fn main() {}\n")
+        out.contains("FLOAT_PATTERN_OK") && !out.contains("error[")
+    }
+}
