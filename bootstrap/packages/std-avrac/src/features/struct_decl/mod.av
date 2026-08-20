@@ -1,4 +1,11 @@
-// dir-as-module (g2eo.1): parser.av + codegen.av + typeck.av auto-load
+// WHY: `type Foo = { x: int }` — nominal record declarations, plus the
+// struct-literal / field-access expression surface. The feature owns the
+// `field` rule (grammar.av — its primary definition site; enum's `variant`
+// references it cross-fragment) and `field_init` (struct_lit_lang's gram,
+// referenced by `with` and the splice-struct branch). `type` vs `shape` is
+// the spec's nominal/structural split (Axis 3), not a missing keyword.
+//
+// dir-as-module (g2eo.1): codegen.av + typeck.av + grammar.av auto-load
 // as siblings, surface flat at `features.struct_decl.{...}`.
 use codegen.{err_emit}
 use core.{vtype_struct_name, ExprId}

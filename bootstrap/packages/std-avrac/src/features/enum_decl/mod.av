@@ -1,4 +1,9 @@
-// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
+// WHY: `enum` — tagged unions with named variants and optional payloads
+// (spec Axis 4). The feature owns its `enum_decl` and `variant` rules in
+// grammar.av; a variant's payload fields reference the `type` feature's
+// `field` rule cross-fragment, and the lowerings ride lowering/.
+//
+// dir-as-module (g2eo.1): codegen.av + grammar.av auto-load as siblings,
 // surface flat at `features.enum_decl.{...}`.
 use features.{composed}
 use features.enum_decl.lowering.{enum_builds}
