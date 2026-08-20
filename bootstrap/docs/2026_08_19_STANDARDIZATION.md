@@ -218,7 +218,31 @@ identity/syntax/passes split (considered, declined).
 `core/registry.av`'s `Feature` duplicates `LanguageFeature`'s 13 hook fields, and
 `register_lang` copies them one at a time. It types `emit_expr: int` /
 `emit_stmt: int` — **function pointers stored as untyped ints**, a rule-16
-violation sitting in `core/`. Collapse to one record. AUDITED CORRECTION: the nine `noop_*` do **NOT** die
+violation sitting in `core/`. ~~Collapse to one record.~~
+
+> **RULE-16 HALF LANDED (2026-08-20).** `emit_expr`/`emit_stmt` are now declared
+> with their real fn types. Nothing had required the `int`: `feature_new` already
+> assigned the FUNCTIONS into those fields, `LanguageFeature` always declared the
+> real signatures, and the sibling hooks were typed all along through the SAME
+> intmaps. It survived only on the language's ambient int-as-fn-pointer coercion,
+> i.e. the wrong type WORKED. Guard: `core/tests/registry_typed_hooks_test.av`,
+> verified to fail with the `int` form restored.
+>
+> **"COLLAPSE TO ONE RECORD" IS WITHDRAWN — it would INVERT a layer.** `Feature`
+> is core's DISPATCH record (declared and consumed only in `core/registry.av`:
+> the type, `feature_new`, `register`). `LanguageFeature` is a features/
+> AUTHORING component carrying 7 further fields — title, docs, gram, gram_family,
+> diags, snippet, builders — that dispatch has no use for. `features/lang.av` is
+> `Feature`'s sole external caller, so today the arrow points features -> core,
+> which is correct. Deleting `Feature` so `register` takes a `LanguageFeature`
+> would make `core/` import a features type — the very inversion t-y2i7.13 exists
+> to remove. The alternative, nesting a `Feature` inside the component's config,
+> would rewrite the authoring syntax of ~70 feature files to delete one copy loop.
+> `register_lang`'s field-by-field copy IS the layer boundary being paid for, not
+> debt. What remained after the rule-16 fix is a naming/ergonomics question, not
+> an architectural one.
+
+AUDITED CORRECTION: the nine `noop_*` do **NOT** die
 with it — they ARE the `LanguageFeature` component's `config` defaults
 (`features/mod.av:96-104`), so killing `Feature` / `feature_new` leaves every one
 of them live and referenced. Also unmentioned here and worth folding in:
