@@ -1,0 +1,56 @@
+// WHY: `avra lang` emits a KW_* const per keyword for editor/tooling
+// generation. The keyword list used to be TWO HAND-MAINTAINED CSV LITERALS
+// carrying this comment:
+//
+//     // Mirrored from p_keyword_kind in src/parse/mod.av. CI verifies the
+//     // generator stays in sync with that table.
+//
+// All three claims were false. There was no CI check anywhere. `p_keyword_kind`
+// stopped holding a keyword table when it became a wrapper over the generated
+// byte-trie. And the lists had ALREADY DRIFTED — 43 entries against 60 rows,
+// missing `channel`, `isolated`, `none` and `quote`, so four real keywords were
+// absent from every generated tooling artifact.
+//
+// A comment asserting a gate that does not exist is worse than no comment: it
+// reads as a reason not to check. The lists are DERIVED from `keyword_rules()`
+// now — the same table the production scanner is compiled from — so they cannot
+// drift. This spec is the check that comment always claimed.
+
+use @std.avrac.lang_gen.{active_keywords, reserved_keywords}
+use @std.avrac.parse.{keyword_rules}
+use @std.avrac.core.{Tk}
+
+fn has(xs: List<string>, s: string) -> bool {
+    for x in xs { if x == s { return true } }
+    false
+}
+
+spec "the keyword lists are derived, so they cannot drift from keyword_rules" {
+    then "every active row appears, and every reserved row does not" {
+        mut ok = true
+        for r in keyword_rules() {
+            if r.tk == Tk.KwReserved {
+                if has(active_keywords(), r.spelling) { ok = false }
+                if !has(reserved_keywords(), r.spelling) { ok = false }
+            } else {
+                if !has(active_keywords(), r.spelling) { ok = false }
+                if has(reserved_keywords(), r.spelling) { ok = false }
+            }
+        }
+        ok
+    }
+    then "the two lists together account for every row — nothing is dropped" {
+        active_keywords().length + reserved_keywords().length == keyword_rules().length
+    }
+    then "the four keywords the hand-written CSV had lost are present" {
+        // The concrete regression: `channel`, `isolated`, `none` and `quote`
+        // were in keyword_rules() and missing from the CSV. Naming them keeps
+        // the spec honest about what actually broke, rather than only asserting
+        // an abstract invariant that would also hold on an empty list.
+        let a = active_keywords()
+        has(a, "channel") && has(a, "isolated") && has(a, "none") && has(a, "quote")
+    }
+    then "neither list is empty — the invariants above are not vacuous" {
+        active_keywords().length > 40 && reserved_keywords().length > 5
+    }
+}
