@@ -4168,6 +4168,87 @@ mode_check_layout_boundary() {
   ok "check-layout-boundary: no silent .Unknown→layout fallback in $cg (resolve_layout is the sole under-determined-type gate)"
 }
 
+# ── t-y2i7 P4 feature-layout lint ──
+# The canonical per-feature file set is features/WHY.md, and that list is
+# EXHAUSTIVE. Until this check existed the contract was a doc claim — WHY.md
+# and CLAUDE.md both said the layout was "enforced" while nothing enforced it,
+# which is the worst shape a rule can take: it reads as a gate and cannot fail.
+#
+# What a feature directory may contain:
+#   mod.av        REQUIRED  the <name>_lang() definition(s)
+#   lowering/     if it lowers      builders (grammar+core imports only)
+#   resolve.av typeck.av codegen.av eval.av   one per pass it implements
+#   tests/        REQUIRED
+#   grammar.md    if it owns syntax
+#
+# ALLOWLIST, not a silent pass: every file that is NOT yet on the canonical set
+# is listed explicitly below with the slice that will resolve it. The list must
+# SHRINK. A new off-list file that nobody allowlisted fails the check, which is
+# the ratchet — the same discipline engine_core_builds and declared_engine_rules
+# carry. `--check-feature-layout --list` prints the current drift without failing,
+# for whoever is doing the shrinking.
+mode_check_feature_layout() {
+  local list_only=0
+  [ "${1:-}" = "--list" ] && list_only=1
+  local fd="$BOOTSTRAP_DIR/packages/std-avrac/src/features"
+  [ -d "$fd" ] || die "check-feature-layout: features dir not found: $fd"
+
+  # Canonical top-level filenames. `grammar.av` is NOT here: a feature declares
+  # its gram inline in mod.av (13 features still use a separate file — P4b).
+  local canon="mod.av codegen.av typeck.av resolve.av eval.av grammar.md WHY.md"
+
+  # Known drift, each with its owner. SHRINK THIS LIST; do not grow it.
+  #   grammar.av        x13  P4b — inline the gram into mod.av
+  #   WHY.md            x15  P4b — the definition's title/docs fields are the docs
+  #   engine internals        P6  — features/grammar/ is the compiler-compiler, moves out
+  #   feature-owned helpers   P4c — each needs a decided home, not a blind rename
+  local allow_dirs="grammar"
+  #   parser.av         x4   P1 (#1293, in flight) — retired hand parsers, deleted there
+  # One line: a `case` glob cannot match across newlines, so a wrapped list
+  # silently allowlists nothing after the first line.
+  local allow_files="expand.av mono.av reporter.av runner.av eval.av purity.av rewrite.av synth.av macro_types.av expand_macro.av resolver_ctx.av classify.av emit.av eq.av hash.av shape.av walk.av derive.av dir_module.av graph_build.av package.av unit_filter.av resolver.av lower.av grammar.av parser.av"
+
+  local drift=0 out=""
+  local d name f base
+  for d in "$fd"/*/; do
+    name=$(basename "$d")
+    case " $allow_dirs " in *" $name "*) continue ;; esac
+    for f in "$d"*.av "$d"*.md; do
+      [ -e "$f" ] || continue
+      base=$(basename "$f")
+      case " $canon " in *" $base "*) continue ;; esac
+      case " $allow_files " in *" $base "*) out="$out  (allowed, pending) $name/$base"$'\n'; continue ;; esac
+      out="$out  OFF-LIST $name/$base"$'\n'
+      drift=$((drift + 1))
+    done
+    # A directory under features/ is a FEATURE iff it exports a `<name>_lang()`
+    # definition. Three do not — derive/, marshal/, walker/ — and they are not
+    # registered in features/mod.av either: they are @derive MACHINERY living
+    # here by historical accident, not language features. Requiring mod.av of
+    # them would report a missing file when the real finding is a misplaced
+    # directory, so they are named as their own category (P4c decides the home).
+    if grep -rqs 'fn [a-z_]*_lang()' "$d"*.av; then
+      [ -f "$d/mod.av" ] || { out="$out  MISSING mod.av in $name"$'\n'; drift=$((drift + 1)); }
+    else
+      out="$out  (not a feature — no <name>_lang(), P4c) $name"$'\n'
+    fi
+  done
+
+  if [ "$list_only" = "1" ]; then
+    printf '%s' "$out"
+    ok "check-feature-layout: listed current drift (not a verdict)"
+    return 0
+  fi
+  if [ "$drift" -gt 0 ]; then
+    err "check-feature-layout: $drift file(s) outside the canonical set in features/WHY.md and not allowlisted."
+    err "The canonical set is EXHAUSTIVE. Either the file belongs in a canonical name, or add it to the"
+    err "allowlist in this function WITH the slice that will remove it — never silently."
+    printf '%s' "$out" | grep 'OFF-LIST' >&2
+    exit 1
+  fi
+  ok "check-feature-layout: every feature directory matches the canonical set (allowlisted drift is tracked, see --list)"
+}
+
 # ── t-xkcw checkless-PR lint ──
 # Every gate (bootstrap-window, diff-test, rc-strict, seed-train-verify) is
 # filtered to PRs based on the integration branch, so a STACKED PR — which the
@@ -4560,6 +4641,7 @@ main() {
     --check-layout-boundary) mode_check_layout_boundary "$@" ;;
     --check-parser-flags) mode_check_parser_flags "$@" ;;
     --check-ci-gates)     mode_check_ci_gates "$@" ;;
+    --check-feature-layout) mode_check_feature_layout "$@" ;;
     --check-typeck-collect-boundary) mode_check_typeck_collect_boundary "$@" ;;
     --seed-merge)         mode_seed_merge "$@" ;;
     --seed-merge-classify) seed_merge_classify "$@" ;;
