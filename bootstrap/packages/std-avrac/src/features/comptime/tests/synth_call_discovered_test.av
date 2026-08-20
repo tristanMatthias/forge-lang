@@ -1,0 +1,46 @@
+// WHY: the last link in P5's chain (t-y2i7.5). ctx_items_with_suffix returns
+// CANONICAL names ("@std::avrac::features::defer::defer_lang"). Knowing them is
+// only useful if a macro can then CALL them — and a synthesized call carries a
+// canonical path, not a source-level name the file ever imported.
+//
+// That is the question this pins: does `Expr.Call(Expr.Ident(<canonical>), [])`
+// RESOLVE? If it does, feature registration can be derived entirely at
+// @comptime — discover the `_lang` fns, synthesize the calls, emit the list —
+// with no generated file and no regen guard. If it did not, discovery would be
+// a dead end no matter how good the query was.
+//
+// Evidence is the RUNTIME VALUE: the discovered fn returns 42, and the macro
+// emits a println of the result of CALLING it. A macro that failed to resolve
+// the call could not print 42.
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "a macro can CALL what ctx_items_with_suffix discovered" {
+    then "a synthesized call to a discovered canonical name resolves and runs" {
+        let out = write_fixture_and_run("/tmp/avra_synth_call_discovered_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_items_with_suffix}\n" +
+            "\n" +
+            "fn alpha_wid() -> int { 42 }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let found = ctx_items_with_suffix(ctx, \"_wid\")\n" +
+            "    if found.length == 0 {\n" +
+            // Distinguishes "discovery found nothing" from "the call did not
+            // resolve" — without it both failures look identical downstream.
+            "        let miss = [synth_expr_id(Expr.String(\"\\\"DISCOVERY-EMPTY\\\"\"))]\n" +
+            "        return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), miss)))\n" +
+            "    }\n" +
+            "    let call = synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(found[0])), []))\n" +
+            "    let args = [synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"string\")), [call]))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("42") && !out.contains("DISCOVERY-EMPTY") && !out.contains("error[")
+    }
+}
