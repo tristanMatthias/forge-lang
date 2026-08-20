@@ -6200,6 +6200,24 @@ int64_t avra_slot_gate_threshold_kb(void) {
 }
 
 // Pure: does this availability reading demand a slot before heavy work?
+// Usable memory in KB for the slot gate, via the PORTABLE resource layer.
+//
+// The gate used avra_mem_available_kb() directly, which is Linux-only
+// (avra_meminfo_kb reads /proc/meminfo and returns 0 elsewhere). Combined with
+// the `avail_kb > 0` guard in avra_slot_gate_should_wait, that made the gate
+// return 0 unconditionally on macOS — i.e. the compile slot gate, one of the
+// three mechanisms CLAUDE.md credits for "bs2 test is memory-safe by
+// construction on any box", did not exist there.
+//
+// avra_resource_memory_available_mb() is the same source the admission
+// governor already uses (host_statistics64 on Apple, meminfo + cgroup on
+// Linux) and returns -1 when genuinely unknown, which the caller's guard
+// treats as "do not gate" exactly as before.
+static int64_t avra_slot_gate_avail_kb(void) {
+    int64_t mb = avra_resource_memory_available_mb();
+    return mb > 0 ? mb * 1024 : 0;
+}
+
 int64_t avra_slot_gate_should_wait(int64_t avail_kb, int64_t threshold_kb) {
     return (threshold_kb > 0 && avail_kb > 0 && avail_kb < threshold_kb) ? 1 : 0;
 }
@@ -6263,7 +6281,7 @@ static int avra_slot_gate_dir_ok(const char* dir) {
 void avra_compile_slot_gate(void) {
     int64_t threshold_kb = avra_slot_gate_threshold_kb();
     if (threshold_kb <= 0) return;
-    int64_t avail_kb = avra_mem_available_kb();
+    int64_t avail_kb = avra_slot_gate_avail_kb();
     if (!avra_slot_gate_should_wait(avail_kb, threshold_kb)) return;
     const char* dir = getenv("AVRA_COMPILE_SLOT_DIR");
     if (!dir || !*dir) dir = "/tmp/.avra-slots";   // dot-named: outside the
@@ -6284,7 +6302,7 @@ void avra_compile_slot_gate(void) {
     for (;;) {
         struct timespec ts = { 0, 200 * 1000 * 1000 };
         nanosleep(&ts, NULL);
-        avail_kb = avra_mem_available_kb();
+        avail_kb = avra_slot_gate_avail_kb();
         if (!avra_slot_gate_should_wait(avail_kb, threshold_kb)) {
             // Pressure passed while we queued — the gate is a pressure gate,
             // not a semaphore; proceed slotless rather than serialise a box
