@@ -13,8 +13,12 @@ names {version, sha256, url} on GitHub Releases; the build fetches + hash-verifi
 `bootstrap/seed/seed.ll` (gitignored — a locally cycled seed.ll is normal during dev and is
 NEVER committed). Publish a new pin with `make seed-publish` (integration branch only).
 
-Features are self-contained modules in `bootstrap/packages/avrac/src/features/`.
-Each feature has: parser, codegen, and `tests/*_test.av` spec/given/then files.
+Features are self-contained modules in `bootstrap/packages/std-avrac/src/features/`.
+The CANONICAL per-feature file set is `features/WHY.md` — that list is exhaustive
+and enforced; `parser.av` is NOT on it (features do not parse — text->AST is the
+grammar plus a `lowering/`). The front-end standardization design record (one
+grammar, no `gram_family`, one parse seam, grammar-generated lexer,
+`Tk.Keyword(KwId)`) is `bootstrap/docs/2026_08_19_STANDARDIZATION.md`.
 
 ### Key directories
 - `bootstrap/src/core/ast.av` — AST definitions, token kinds (`Tk` enum), value types, all list types
