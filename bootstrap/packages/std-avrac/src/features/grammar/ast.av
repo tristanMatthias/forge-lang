@@ -184,6 +184,79 @@ export type BuildRef = { rule: string, name: string, argc: int }
 /// duplicates kept (one per referencing sequence). The sibling of
 /// `grammar_literals`: builds sit on sequences (`GSeq.build`), including
 /// sequences nested inside `Group`s, so the walk covers both.
+/// Every rule name REACHABLE from `start` by following nonterminal references,
+/// including `start` itself. Rules the grammar defines but nothing reaches from
+/// `start` are absent.
+///
+/// WHY THIS EXISTS (t-y2i7 section 1). A feature currently DECLARES which family
+/// its rules join, via `gram_family = "expr" | "stmt" | "type"`, and three
+/// near-identical functions filter on that label to build the composed views.
+/// The label is an assertion about something the grammar already STATES: the
+/// engine spine's `statement = break_stmt | … | defer_stmt | …` alternation
+/// names each feature rule outright, so membership is just "is this rule
+/// mentioned, directly or transitively, from `statement`?".
+///
+/// That is this function. It is the replacement for the label, and it cannot
+/// drift from the grammar the way a hand-maintained field can — which is the
+/// same failure that lost `parse_export_decl` when two fragment lists were
+/// "extended in lockstep" by hand.
+///
+/// Cycles are fine: `expression -> … -> expression` is normal in an operator
+/// ladder, and the seen-set terminates it.
+export fn rules_reachable_from(g: Grammar, start: string) -> List<string> {
+    mut seen: List<string> = []
+    mut queue: List<string> = [start]
+    while queue.length > 0 {
+        mut next: List<string> = []
+        for name in queue {
+            if str_in(seen, name) { continue }
+            seen.push(name)
+            let r = grammar_rule(g, name)
+            if r == null { continue }
+            for ref_name in node_rule_refs([], r!.body) {
+                if !str_in(seen, ref_name) { next.push(ref_name) }
+            }
+        }
+        queue = next
+    }
+    seen
+}
+
+/// The nonterminal names one rule body mentions, in source order, with
+/// duplicates. Recurses into `( … )` groups, which are themselves alternations.
+fn node_rule_refs(acc: List<string>, node: GNode) -> List<string> {
+    mut out = acc
+    match node {
+        .Alt(branches) -> {
+            for b in branches {
+                for it in b.items {
+                    out = prim_rule_refs(out, it.prim)
+                }
+            }
+        }
+    }
+    out
+}
+
+fn prim_rule_refs(acc: List<string>, prim: GPrim) -> List<string> {
+    mut out = acc
+    match prim {
+        .Ref(name) -> out.push(name)
+        .Group(inner) -> out = node_rule_refs(out, inner)
+        _ -> {}
+    }
+    out
+}
+
+/// The rule of that name, or null. Linear over `g.rules` deliberately: the
+/// callers here run at composition time, not per parse, and `rule_idx` is keyed
+/// by `rule_identity` (which distinguishes same-name rules differing by marker),
+/// so it answers a different question than "the rule called X".
+fn grammar_rule(g: Grammar, name: string) -> Rule? {
+    for r in g.rules { if r.name == name { return r } }
+    null
+}
+
 export fn grammar_build_refs(g: Grammar) -> List<BuildRef> {
     mut out: List<BuildRef> = []
     for r in g.rules { out = node_build_refs(out, r.name, r.body) }
