@@ -119,6 +119,14 @@ export component LanguageFeature {
 /// regression this signature exists to prevent).
 export fn init_features(reg: Registry) -> List<BuilderBind> {
     let feats = language_features()
+    // Validate EVERY manifest before registering any of them, so one startup
+    // names every broken feature instead of dying on the first. register_lang
+    // still refuses a defective feature individually; this is the report.
+    let defects = all_manifest_defects(feats)
+    if defects.length > 0 {
+        grammar_startup_fail(render_manifest_defects(defects))
+        return []
+    }
     for f in feats { register_lang(reg, f) }
     fold_builders(feats)
 }

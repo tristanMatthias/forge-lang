@@ -21,6 +21,9 @@ use list_ops.{list_dedup_str}
 /// builder manifest is validated at the same gate (t-kd4y.3).
 export fn register_lang(reg: Registry, f: LanguageFeature) {
     let _validated = feature_gram(f)
+    // Registration itself still refuses a defective manifest. The AGGREGATED
+    // report — every broken feature named in one run — is `init_features`'s
+    // job, because only it sees all of them; see `manifest_defects_for`.
     let err = builder_validation_error(f)
     if err != "" {
         grammar_startup_fail(err)
@@ -61,6 +64,54 @@ export fn feature_keywords(f: LanguageFeature) -> List<string> {
     [t for t in grammar_literals(feature_gram(f)) if text_is_word(t)] |> list_dedup_str
 }
 
+/// One manifest defect, as DATA (t-y2i7 section 12).
+///
+/// This used to be prose in a `""`-sentinel string, which cost two things.
+/// Nothing downstream could GROUP or COUNT — the feature name, the rule and
+/// the build were interpolated away the moment the defect was found. And
+/// `register_lang` reported the FIRST one and called `grammar_startup_fail`,
+/// which `exit(99)`s: with 70 features you fixed one, re-ran, and found the
+/// next. Fields + a list mean one run names every broken feature.
+export enum ManifestDefect {
+    /// A rule calls a supplied build at an arity no row of that name declares.
+    ArityMismatch(rule: string, build: string, argc: int),
+    /// A supplied row no rule references — a lowering nothing can reach.
+    OrphanBuilder(build: string, arity: int),
+    /// A row declares a kind the engine cannot classify.
+    UnknownKind(build: string, kind: string),
+    /// `spanned` on a kind with nowhere to put a span (stmt/expr only).
+    SpannedKindUnsupported(build: string, kind: string),
+    /// A supplied row shadows an engine central build.
+    CentralShadow(build: string),
+    /// A rule references a build that resolves to no builder at all.
+    UnresolvedBuild(rule: string, build: string, argc: int),
+}
+
+/// A defect plus the feature that owns it. Kept separate from the defect so
+/// the same defect type can be reported for any feature without re-threading
+/// the name through every constructor.
+export type FeatureDefect = { feature: string, defect: ManifestDefect }
+
+/// Render one defect. The ONLY place manifest-defect prose lives, so wording
+/// changes cannot drift between the six cases.
+export fn render_manifest_defect(fd: FeatureDefect) -> string {
+    let f = fd.feature
+    match fd.defect {
+        .ArityMismatch(rule, build, argc) ->
+            "feature `${f}`: rule `${rule}` calls `${build}` with ${string(argc)} arg(s) but no supplied builder of that name declares that arity"
+        .OrphanBuilder(build, arity) ->
+            "feature `${f}`: builder `${build}`/${string(arity)} is supplied but no rule in its gram references it"
+        .UnknownKind(build, kind) ->
+            "feature `${f}`: builder `${build}` declares unknown kind `${kind}`"
+        .SpannedKindUnsupported(build, kind) ->
+            "feature `${f}`: builder `${build}` declares `spanned` with kind `${kind}` — the span protocol (st.build_sp) exists for `stmt` and `expr` builders only"
+        .CentralShadow(build) ->
+            "feature `${f}`: builder `${build}` shadows an engine central build — migrate the lowering by deleting its central arms (the flip playbook), never by shadowing"
+        .UnresolvedBuild(rule, build, argc) ->
+            "feature `${f}`: rule `${rule}` references build `${build}` (${string(argc)} arg(s)) which resolves to no builder — supply it in `builders` or use an engine build"
+    }
+}
+
 /// t-kd4y.3 compose-time builder validation, as a pure predicate ("" = ok)
 /// so the specs can exercise every rejection without a child process;
 /// `register_lang` hard-fails on the first nonempty answer. Three contracts:
@@ -84,16 +135,66 @@ export fn builder_validation_error(f: LanguageFeature) -> string {
     builder_validation_error_for(f.name, feature_gram(f), f.builders)
 }
 
+/// Every manifest defect across EVERY feature, in registration order.
+///
+/// The point of collecting rather than failing fast: `register_lang` refuses
+/// one feature and `grammar_startup_fail` exits the process, so a tree with
+/// three broken manifests took three full startup cycles to diagnose — fix,
+/// rebuild, discover the next. With 70 features that is the difference
+/// between one report and an afternoon.
+export fn all_manifest_defects(feats: List<LanguageFeature>) -> List<FeatureDefect> {
+    mut out: List<FeatureDefect> = []
+    for f in feats {
+        for d in manifest_defects_for(f.name, feature_gram(f), f.builders) { out.push(d) }
+    }
+    out
+}
+
+/// The aggregated report, rendered — empty when every manifest is coherent.
+export fn render_manifest_defects(ds: List<FeatureDefect>) -> string {
+    if ds.length == 0 { return "" }
+    mut msg = "${string(ds.length)} manifest defect(s) across ${string(distinct_feature_count(ds))} feature(s):"
+    for d in ds { msg = msg + "\n  - " + render_manifest_defect(d) }
+    msg
+}
+
+/// How many DISTINCT features the defects span — the number that tells you
+/// whether this is one bad feature or a systemic break.
+fn distinct_feature_count(ds: List<FeatureDefect>) -> int {
+    mut seen: List<string> = []
+    for d in ds {
+        mut have = false
+        for s in seen { if s == d.feature { have = true } }
+        if !have { seen.push(d.feature) }
+    }
+    seen.length
+}
+
 /// The value-level core of the validation, so the specs can feed toy grams
 /// and manifests directly — a test shard cannot instantiate the component
 /// cross-package, but it can build these values.
 export fn builder_validation_error_for(fname: string, gram: Grammar, builders: List<BuilderBind>) -> string {
+    let ds = manifest_defects_for(fname, gram, builders)
+    if ds.length == 0 { return "" }
+    render_manifest_defect(ds[0])
+}
+
+/// EVERY defect in one feature's manifest, in a stable order. The string
+/// form above is kept for callers that only want a yes/no, and is now just
+/// "the first of these, rendered".
+///
+/// Collecting instead of early-returning is the point: `register_lang` used
+/// to hard-fail on the first bad feature, so a tree with three broken
+/// manifests took three full startup cycles to diagnose.
+export fn manifest_defects_for(fname: string, gram: Grammar, builders: List<BuilderBind>) -> List<FeatureDefect> {
     let refs = grammar_build_refs(gram)
+    mut out: List<FeatureDefect> = []
+
     // A name may carry SEVERAL rows at distinct arities (MkEnumDecl's
-    // generic/plain pair — the dispatch key is (name, arity) everywhere:
-    // the executor consult, emit, and the fold's dedup). So: a ROW is
-    // referenced when some ref matches its (name, arity); a REF whose name
-    // has rows but no arity match is the real arity error.
+    // generic/plain pair — the dispatch key is (name, arity) everywhere: the
+    // executor consult, emit, and the fold's dedup). So: a ROW is referenced
+    // when some ref matches its (name, arity); a REF whose name has rows but
+    // no arity match is the real arity error.
     for r in refs {
         mut name_known = false
         mut arity_ok = false
@@ -104,7 +205,7 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
             }
         }
         if name_known && !arity_ok {
-            return "feature `${fname}`: rule `${r.rule}` calls `${r.name}` with ${string(r.argc)} arg(s) but no supplied builder of that name declares that arity"
+            out.push(FeatureDefect { feature: fname, defect: ManifestDefect.ArityMismatch(r.rule, r.name, r.argc) })
         }
     }
     for b in builders {
@@ -113,40 +214,34 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
             if r.name == b.name && r.argc == b.arity { referenced = true }
         }
         if !referenced {
-            return "feature `${fname}`: builder `${b.name}`/${string(b.arity)} is supplied but no rule in its gram references it"
+            out.push(FeatureDefect { feature: fname, defect: ManifestDefect.OrphanBuilder(b.name, b.arity) })
         }
         // central_build_kind, not build_kind: the analysis wrapper defaults
         // unknown names to "expr", which would both hide unresolved
         // references and false-conflict every non-expr feature builder.
         if !builder_kind_supported(b.kind) {
-            return "feature `${fname}`: builder `${b.name}` declares unknown kind `${b.kind}`"
+            out.push(FeatureDefect { feature: fname, defect: ManifestDefect.UnknownKind(b.name, b.kind) })
         }
-        // `spanned` has ONE protocol: the generated parser threads the
-        // owning rule's entry byte into the adapter as st.build_sp
-        // (call_with_build_sp), and the ADAPTER decides where the span
-        // lands — a stmt row stamps itself via mk_stamp_stmt_at, an expr
-        // row places a ByteSpan on the node it builds. The fence stays at
-        // stmt+expr: no other kind's CapVal carries a span slot, so a
-        // spanned "variant"/"arm"/… bind would read st.build_sp into a
-        // value with nowhere to put it; reject it here.
+        // `spanned` has ONE protocol: the generated parser threads the owning
+        // rule's entry byte into the adapter as st.build_sp, and the ADAPTER
+        // decides where the span lands. The fence stays at stmt+expr: no other
+        // kind's CapVal carries a span slot.
         if b.spanned && b.kind != "stmt" && b.kind != "expr" {
-            return "feature `${fname}`: builder `${b.name}` declares `spanned` with kind `${b.kind}` — the span protocol (st.build_sp) exists for `stmt` and `expr` builders only"
+            out.push(FeatureDefect { feature: fname, defect: ManifestDefect.SpannedKindUnsupported(b.name, b.kind) })
         }
-        // ANY central-name shadow is rejected — same-kind included (contract
-        // 3 above). The historical check rejected only a KIND mismatch,
-        // which left a same-kind shadow validating clean while the two
-        // engines' opposite consult orders picked different implementations
-        // for it (CodeRabbit find on #1242).
+        // ANY central-name shadow is rejected — same-kind included. The two
+        // dispatchers consult in OPPOSITE orders, which is only coherent while
+        // the name sets are DISJOINT.
         if is_central_build(b.name) {
-            return "feature `${fname}`: builder `${b.name}` shadows an engine central build — migrate the lowering by deleting its central arms (the flip playbook), never by shadowing"
+            out.push(FeatureDefect { feature: fname, defect: ManifestDefect.CentralShadow(b.name) })
         }
     }
     for r in refs {
         if !is_central_build(r.name) && !supplies(builders, r.name) {
-            return "feature `${fname}`: rule `${r.rule}` references build `${r.name}` (${r.argc} arg(s)) which resolves to no builder — supply it in `builders` or use an engine build"
+            out.push(FeatureDefect { feature: fname, defect: ManifestDefect.UnresolvedBuild(r.rule, r.name, r.argc) })
         }
     }
-    ""
+    out
 }
 
 /// A declared kind the engine can classify — `central_build_kind`'s range.
