@@ -19,9 +19,9 @@ spec "break / continue as LanguageFeatures" {
         b.title.length > 0 && b.docs.contains("innermost") && b.snippet == "break"
             && c.title.length > 0 && c.docs.contains("next iteration") && c.snippet == "continue"
     }
-    then "both rules are DEFINED in every view's table with their zero-arg builds" {
+    then "both rules are DEFINED in the production grammar with their zero-arg builds" {
         mut ok = true
-        for g in [avra_program_grammar(), avra_program_grammar()] {
+        for g in [avra_program_grammar()] {
             mut has_break = false
             mut has_continue = false
             for r in g.rules {
