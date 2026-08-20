@@ -307,10 +307,16 @@ export fn link_objects(objs: List<string>, runtime_o: string, llvm_wrapper_o: st
 /// ld64 too, which has no such flag; one portable path beats a
 /// platform split whose macOS half would be the incorrect (eager) one.
 /// `D` forces deterministic mode (zeroed mtime/uid/gid) so a rebuild from
-/// identical inputs produces an identical archive.
+/// identical inputs produces an identical archive — but `D` is a GNU
+/// binutils flag that Apple's `ar` REJECTS outright (`illegal option -- D`,
+/// then a usage dump), failing the link for every `bs2 run`/`build` whose
+/// entry has a dependency closure. ld64's `ar` is already deterministic by
+/// default, so macOS gets plain `rcs` and loses nothing: the property the
+/// flag buys is what that platform does anyway.
 export fn archive_objects(objs: List<string>, out_a: string) -> int {
     if objs.length == 0 { return 0 }
-    mut items: List<string> = [json_str("rcsD"), json_str(out_a)]
+    let ar_flags = if host_is_macos() { "rcs" } else { "rcsD" }
+    mut items: List<string> = [json_str(ar_flags), json_str(out_a)]
     mut i = 0
     while i < objs.length {
         items.push(json_str(objs[i]))

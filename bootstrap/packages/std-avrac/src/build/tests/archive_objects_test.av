@@ -1,0 +1,87 @@
+// WHY: `archive_objects` bundles a build's dependency closure into a `.a`
+// that the link line consumes, so members join only when the entry leaves
+// their symbols undefined (build/facade.av link_unit_executable). Every
+// `bs2 run` / `bs2 build` whose entry has dependencies goes through it.
+//
+// THE REGRESSION THIS GUARDS: the flag string was `rcsD` unconditionally.
+// `D` (deterministic mode — zeroed mtime/uid/gid) is a GNU binutils flag.
+// Apple's `ar` REJECTS it outright:
+//
+//     ar: illegal option -- D
+//     usage:  ar -d [-TLsv] archive file ...
+//
+// so `archive_objects` returned nonzero and the build died with "ar failed
+// bundling the dependency closure for …". Every macOS `bs2 run`/`build`
+// with a dependency closure was broken, which took a large share of the
+// local suite with it — and it is INVISIBLE on Linux CI, so nothing caught
+// it. ld64's `ar` is already deterministic by default, so macOS uses plain
+// `rcs` and loses nothing.
+//
+// The assertion is BEHAVIOURAL, not a string comparison against the flags:
+// a flag-string test would have to encode the same host split it is meant
+// to police, and would pass on Linux while the macOS half stayed wrong.
+// This drives the REAL `archive_objects` on real object files and requires
+// it to succeed on whatever host runs it.
+
+use @std.avrac.build.{archive_objects, llvm_prefix_dir, atomic_obj_llc_cmd}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_write_file, avra_selfhost_file_exists, avra_getpid, avra_remove_file}
+
+fn llc_bin() -> string { "${llvm_prefix_dir()}/bin/llc" }
+
+/// Compile a trivial `.av` to a `.o`. Empty string on any failure, so a
+/// toolchain problem reads as a skip rather than a false accusation.
+fn build_one_object(slot: string, sym: string, pid: int) -> string {
+    let av = "${slot}.av"
+    let _ = avra_selfhost_write_file(av, "export fn ${sym}() -> int {\n    7\n}\n")
+    if avra_shell_exec_status("./build/bs2 compile '${av}' >/dev/null 2>&1") != 0 { return "" }
+    let obj = "${slot}.o"
+    if avra_shell_exec_status(atomic_obj_llc_cmd(llc_bin(), "-O0", "${av}.ll", obj, "${slot}_llc.log", pid)) != 0 { return "" }
+    obj
+}
+
+spec "archive_objects bundles a dependency closure on this host" {
+    given "two real object files" {
+        then "the real archive_objects succeeds and writes a readable archive" {
+            let pid = avra_getpid()
+            let base = "build/archive_objects_test_${string(pid)}"
+            let o1 = build_one_object("${base}_a", "arch_probe_a", pid)
+            let o2 = build_one_object("${base}_b", "arch_probe_b", pid)
+            // A toolchain that cannot produce objects at all is not what this
+            // spec is about; assert the precondition explicitly so a failure
+            // here names itself instead of masquerading as an `ar` bug.
+            let objs_built = o1 != "" && o2 != ""
+            let out_a = "${base}.a"
+            // rc == 0 is the whole point: `rcsD` returns nonzero on Apple ar.
+            let rc = if objs_built { archive_objects([o1, o2], out_a) } else { -1 }
+            // `ar` can fail having already created a partial file, so existence
+            // alone is not the check — the archive must also list its members.
+            // `ar t` prints member FILENAMES (basenames), not symbols.
+            let listed = if rc == 0 { avra_shell_exec("ar t '${out_a}' 2>&1 || true") } else { "" }
+            let _ = avra_remove_file(out_a)
+            objs_built && rc == 0
+                && avra_selfhost_file_exists(out_a) >= 0
+                && listed.contains("_a.o")
+                && listed.contains("_b.o")
+        }
+    }
+}
+
+spec "an empty closure is a no-op, not an ar invocation" {
+    then "zero objects returns 0 without creating an archive" {
+        // facade.av only calls archive_objects when dep_objs is non-empty, but
+        // the early return is the contract that keeps a dependency-free entry
+        // from shelling out to `ar` with no inputs (which errors on both hosts).
+        //
+        // PID-scoped and cleaned on BOTH sides: a fixed path is a false-failure
+        // waiting to happen, because a killed earlier run can leave the file
+        // behind and then "the archive does not exist" reports a bug that is not
+        // there. The sibling spec above already scopes its scratch this way; this
+        // one did not (CodeRabbit, #1292).
+        let path = "build/archive_objects_test_empty_${string(avra_getpid())}.a"
+        let _ = avra_remove_file(path)
+        let rc = archive_objects([], path)
+        let missing = avra_selfhost_file_exists(path) == 0
+        let _ = avra_remove_file(path)
+        rc == 0 && missing
+    }
+}

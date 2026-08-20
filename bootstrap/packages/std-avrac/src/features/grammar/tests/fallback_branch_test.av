@@ -76,14 +76,19 @@ spec "t-47hc.33: `@fallback` placement is validated, not assumed" {
     then "a lone fallback branch is fine — last of one is still last" {
         !rejects("r = @fallback a:NUMBER -> MkGroupOrEmpty(a)")
     }
-    then "`@try` on a SIBLING branch is rejected too — not just the same branch" {
-        // emit_dispatch gates its fallback tail on `!has_spec`, so a speculative sibling
-        // silently turns the fallback back into an ordinary FIRST-guarded branch — while
-        // the executor's fallback loop still runs unconditionally. On input matching no
-        // branch the interpreter would report the fallback's `@expect` and the generated
-        // parser the alternation's generic message. Reject rather than diverge.
-        let e = err_of("r = @try \"a\" \"b\" -> MkGroupOrEmpty(a) | @fallback c:STRING -> MkGroupOrEmpty(c)")
-        e.contains("@try") && e.contains("@fallback")
+    then "`@try` on a SIBLING branch is ACCEPTED — the engines agree since t-47hc.35" {
+        // This asserted REJECTION until t-47hc.35 and was left stale when that
+        // ticket legalised the pair, which is why it sat red on the integration
+        // branch. The rejection existed for one reason — the engines disagreed:
+        // emit_dispatch dropped the fallback tail whenever any sibling was
+        // speculative, while the executor's fallback loop ran it unconditionally.
+        // emit now gates on `has_spec && !dispatch_has_tail(...)`, so a fallback
+        // tail is honoured WITH a speculative sibling and the two agree.
+        //
+        // fallback_validation_test.av owns the positive statement of this
+        // ("@try + a LAST fallback is now LEGAL"); this spec is its twin here, so
+        // the two files cannot drift back into asserting opposite things.
+        !rejects("r = @try \"a\" \"b\" -> MkGroupOrEmpty(a) | @fallback c:STRING -> MkGroupOrEmpty(c)")
     }
     then "and the rejection is specific to that pair, not to @try alone" {
         !rejects("r = @try a:NUMBER b:NUMBER -> MkGroupOrEmpty(a) | c:STRING -> MkGroupOrEmpty(c)")
