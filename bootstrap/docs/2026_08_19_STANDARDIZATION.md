@@ -49,10 +49,17 @@ families' rules EXCLUDED (so the expression parser CALLED `parse_type_expr`
 rather than re-emitting the type rules). One `gen_parser.av` from one grammar
 means there is nothing left to exclude.
 
-- **8 contain zero rules — pure plumbing, ~67 lines, delete outright:**
+- **8 contain zero rules. Seven are pure plumbing; ONE is not — read before deleting.**
+  `avra_type_grammar` has no rules but carries a real invariant: it hoists
+  whichever fragment defines `type_expr` to the FRONT, because
+  `compose_fragments` takes the FIRST fragment's start rule as the grammar's
+  START SYMBOL, and `run_grammar_type` execs `rules[0]` as its entry. Spine-first
+  led with the `@when(in_quote_body)`-gated `splice_type` and gated the whole
+  view — `type_equivalence_test` went 0/8, with even `int` failing at the entry.
+  Whatever replaces the views must preserve that hoist. The other seven:
   `avra_expr_grammar`, `avra_expr_dispatch_grammar`, `avra_expr_core`,
   `avra_stmt_flip_grammar`, `avra_stmt_dispatch_grammar`,
-  `avra_decl_flip_grammar`, `avra_decl_dispatch_grammar`, `avra_type_grammar`.
+  `avra_decl_flip_grammar`, `avra_decl_dispatch_grammar`.
   `avra_expr_dispatch_grammar()` is the clearest fossil: its purpose was to
   DIFFER from `avra_expr_core()`, and its body is now `avra_expr_core()`.
 - **5 contain real rules (~365 lines) — keep the RULES, drop the layering:**
