@@ -39,9 +39,17 @@ read "exhaustive" as "already true".
 - **`grammar.av`** — the gram is part of what a feature IS: declare it inline as
   `gram = grammar { ... }` in `mod.av`. `composed([...])` survives only where
   several `*_lang()` in one feature share a fragment.
-- **`WHY.md` per feature** — the definition's `title` / `docs` fields are the
-  feature's documentation, and they are the ones `avra explain` renders. A
-  second prose copy on disk drifts.
+- **`WHY.md` per feature** — but NOT for the reason first given here. This said
+  the definition's `title`/`docs` fields make it redundant. They do not: `docs`
+  is USER-facing prose that `avra explain` renders, while a per-feature
+  `WHY.md` carries ARCHITECTURE notes (which rules the feature owns, where its
+  lowerings live, how spans thread, where codegen sits). Folding one into the
+  other would put compiler internals into user documentation.
+
+  It is redundant against `mod.av`'s own `// WHY:` FILE HEADER, which already
+  carries exactly that content — often the same sentences. That is the copy to
+  keep, because it sits next to the code it describes and moves with it. Merge
+  anything the header lacks into the header, then delete the file.
 - **A test-only directory.** Tests live with the feature they exercise.
 
 ## Rules

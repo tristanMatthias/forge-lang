@@ -1,4 +1,4 @@
-// dir-as-module (g2eo.1): parser.av + codegen.av + grammar.av auto-load as
+// dir-as-module (g2eo.1): codegen.av + grammar.av auto-load as
 // siblings, surface flat at `features.fn_decl.{...}` (avra_fn_decl_grammar
 // is in scope without a self-import); the manifest rows live in lowering/
 // (t-kd4y.3.3.1).

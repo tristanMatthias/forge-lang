@@ -1,5 +1,6 @@
-// dir-as-module (g2eo.1): sibling .av files surface flat at
-// `features.extern_decl.{...}`.
+// dir-as-module (g2eo.1): mod.av is the WHOLE feature — no siblings, no
+// lowering/ dir. Its consumers are the libc helpers (strlen, malloc) and
+// the bootstrap's own runtime helpers in runtime.c.
 
 /// `extern fn` — FFI signature declarations. The SYNTAX lives in the fn
 /// feature's fragment (`extern_decl` in features/fn_decl/grammar.av — same

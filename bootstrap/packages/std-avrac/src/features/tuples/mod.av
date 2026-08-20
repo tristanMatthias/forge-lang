@@ -1,3 +1,13 @@
+// WHY: tuple literals `(a, b, c)`, tuple indexing `t.0`, and `let (x, y) =
+// expr` destructuring — fixed, compile-time-known arity.
+//
+// A tuple is an arena buffer of `count * 8` bytes: every element is CAST to
+// i64 on store (`store_slot(…, .Int)`) and reloaded as i64, so the slots are
+// uniformly 8 bytes wide regardless of element type. Element ValueTypes ride
+// the EmitValue's `.Tuple(List<ValueType>)` instead — that is what lets
+// `t.0` and destructuring hand back the right element type (load-bearing for
+// match over enum tuple elements).
+//
 // dir-as-module (g2eo.1): codegen.av + lowering/ auto-load as siblings,
 // surface flat at `features.tuples.{...}`.
 use core.{vtype_tuple_at, vtype_eq}

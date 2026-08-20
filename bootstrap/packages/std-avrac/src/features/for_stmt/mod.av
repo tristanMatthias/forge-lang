@@ -9,7 +9,7 @@
 // (`for (a, b) in …`) joined them in t-kd4y.3.2.2 — its gensym-threaded
 // desugar is mid-build arena choreography, which the ABI expresses fine
 // once the row carries it: the adapter IS the marshalling layer.
-// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
+// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling,
 // surface flat at `features.for_stmt.{...}`. Sibling exports (emit_for,
 // emit_for_in) are in scope without explicit self-imports.
 use core.{vtype_list_elem}

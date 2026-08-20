@@ -19,7 +19,7 @@ export fn return_lang() -> LanguageFeature {
         docs = """
 `return expr` exits the enclosing function with `expr` as its value;
 bare `return` exits with the function's default value (unit fns, or a
-`null` for a nullable return type wrapped by `maybe_wrap_nullable`).
+`null` for a nullable return type, through the `optional_repr` primitives).
 
 The operand must start on the SAME LINE as the `return` keyword — the
 language is newline-sensitive, so a value on the next line is a separate

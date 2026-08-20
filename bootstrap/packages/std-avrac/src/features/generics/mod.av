@@ -1,12 +1,14 @@
-// WHY: generic type parameters (`<T>`) on functions, types, and enums.
-// Parsing lives in parser.av (extends Parser with parse_type_params).
-// Declaration parsers (fn_decl, struct_decl, enum_decl) call
-// parse_type_params when they see `<` after the declaration name.
-// The monomorphization pass (mono.av) consumes List<TypeParamEntry> to generate
-// concrete specializations before codegen.
+// WHY: generic type parameters (`<T, U: Bound>`) on functions, types,
+// enums, traits and impls. The shared `tparam` rule lives in grammar.av —
+// no single keyword owns it, so every generic decl fragment references it
+// by name across the merged rule set — and its one lowering rides lowering/.
+// Generics MONOMORPHIZE, they are not erased: the 4-pass mono.av consumes
+// List<TypeParamEntry> to generate concrete specializations before codegen,
+// so codegen sees no generic declarations. An unbound `T` lays out as the
+// erased wide i64 ONLY inside an `@mono_erased` generic base body.
 //
 // dir-as-module (g2eo.1): no `mod` decls — sibling .av files
-// (parser.av + mono.av + grammar.av) auto-load and surface flat at
+// (mono.av + grammar.av) auto-load and surface flat at
 // `features.generics.{...}`; the manifest row lives in lowering/.
 use features.{composed}
 use features.generics.lowering.{generics_builds}

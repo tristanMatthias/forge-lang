@@ -9,7 +9,7 @@
 // remains a spine rule — it is woven into the expression precedence
 // ladder — and it reaches the if-let form the way `statement` does, by
 // referencing this feature's rule behind `@peek(if_let)`.
-// dir-as-module (g2eo.1): parser.av + codegen.av auto-load as siblings,
+// dir-as-module (g2eo.1): codegen.av auto-loads as a sibling,
 // surface flat at `features.if_stmt.{...}`. emit_if + emit_if_expr are
 // in scope without a self-import.
 use core.{Stmt, Expr, ValueType, vtype_display, vtype_eq, vtype_is_unknown, expr_diverges}
