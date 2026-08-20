@@ -1,0 +1,19 @@
+// The channels feature's RESOLVER hook. One file per pass
+// (features/WHY.md): a feature's mod.av is the CONTAINER — identity, gram,
+// and which fn implements each pass — and the pass logic lives in the file
+// named for that pass. Module-PRIVATE and staying so: dir-as-module
+// flattens every sibling .av into one flat namespace, so mod.av reaches it
+// exactly as before the move.
+use core.{Expr}
+use resolve.{Resolver, resolve_expr}
+
+/// Resolver hook: the capacity expression resolves in the enclosing
+/// scope (it can reference locals, e.g. `channel<int>(jobs)`).
+fn channel_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .ChannelNew(_, capacity) -> {
+            if capacity == null { r } else { resolve_expr(r, r.nodes.exprs.get(capacity!)) }
+        }
+        _ -> r
+    }
+}

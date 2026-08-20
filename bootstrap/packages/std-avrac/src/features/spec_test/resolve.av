@@ -1,0 +1,33 @@
+// The spec/given/then family's RESOLVER hooks. One file per pass
+// (features/WHY.md): a feature's mod.av is the CONTAINER — identity, gram, and
+// which fn implements each pass — and the pass logic lives in the file named
+// for that pass. These are module-PRIVATE and stay so: dir-as-module flattens
+// every sibling .av into one flat namespace, so mod.av reaches them exactly as
+// before the move.
+use core.{Stmt}
+use resolve.{Resolver, resolve_expr, resolve_stmt_ids}
+
+/// Resolver hook for `SpecBlock`. Walks the body's statements.
+fn spec_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .SpecBlock(_, body) -> resolve_stmt_ids(r, body)
+        _ -> r
+    }
+}
+
+/// Resolver hook for `GivenBlock`. Walks the body's statements.
+fn given_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .GivenBlock(_, body) -> resolve_stmt_ids(r, body)
+        _ -> r
+    }
+}
+
+/// Resolver hook for `ThenBlock`. Walks the condition expression
+/// only — there's no body, just an expression.
+fn then_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .ThenBlock(_, cond) -> resolve_expr(r, r.nodes.exprs.get(cond))
+        _ -> r
+    }
+}

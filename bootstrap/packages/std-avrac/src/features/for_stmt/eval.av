@@ -1,0 +1,29 @@
+// The `for` family's EVALUATOR hooks — the @comptime tree-walk path.
+// One file per pass (features/WHY.md); module-private, reached from mod.av
+// through the dir-as-module flat namespace.
+use core.{Stmt}
+use features.eval.{Runtime, StepResult, execute_for_range, execute_for_in, error_result}
+
+/// Tree-walk eval hook for the range form. Delegates the iteration
+/// itself to `execute_for_range` so the loop mechanics + scope
+/// discipline live alongside `execute_while` rather than spreading
+/// across feature modules. Without this hook eval would fall back to
+/// `noop_eval_stmt`, breaking any `@comptime` macro that iterates
+/// with `for i in 0..n`.
+fn for_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .For(variable, start, end, body) -> execute_for_range(rt, variable, rt.nodes.exprs.get(start), rt.nodes.exprs.get(end), rt.nodes.stmts.get(body))
+        _ -> error_result(rt, "expected For")
+    }
+}
+
+/// Tree-walk eval hook for `for x in collection { body }`.
+/// Companion to `for_eval` for the iterator form. Required for
+/// `@comptime` macros that iterate over lists — derive_walker
+/// uses this to walk variant lists, field lists, etc.
+fn for_in_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .ForIn(variable, collection, body) -> execute_for_in(rt, variable, rt.nodes.exprs.get(collection), rt.nodes.stmts.get(body))
+        _ -> error_result(rt, "expected ForIn")
+    }
+}

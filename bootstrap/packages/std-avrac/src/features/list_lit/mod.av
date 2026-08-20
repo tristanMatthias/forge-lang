@@ -2,7 +2,6 @@
 // as siblings, surface flat at `features.list_lit.{...}`. emit_list_lit
 // + check_list_lit are in scope without self-imports.
 use codegen.{err_emit}
-use resolve.{resolve_expr_list_ids}
 use typeck.{tc_er}
 use features.list_lit.lowering.{list_lit_builds, list_type_builds}
 use features.grammar.{parse_grammar}
@@ -54,14 +53,6 @@ a common element type.
         gram_family = "expr",
     }
     list_lit_def
-}
-
-/// Resolver hook for `ListLit`. Walks every element expression.
-fn list_lit_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .ListLit(elements) -> resolve_expr_list_ids(r, elements)
-        _ -> r
-    }
 }
 
 /// Type-check hook for `ListLit`. Forwards to `check_list_lit`,

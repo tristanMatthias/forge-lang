@@ -1,7 +1,6 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling, surfaces
 // flat at `features.with_expr.{...}`; the manifest row lives in lowering/.
 use core.{vtype_struct_name, ExprId}
-use resolve.{resolve_expr, resolve_field_init_list}
 use features.struct_decl.{check_field_inits, check_struct_lit_fields}
 use features.with_expr.lowering.{with_expr_builds}
 use typeck.{check_expr, tc_er}
@@ -34,18 +33,6 @@ completeness gate — that is the literal's job).
         gram_family = "expr",
     }
     with_expr_def
-}
-
-/// Resolver hook for `With`. Walks the source object, then the
-/// override field-init list so any names in either side resolve.
-fn with_resolve(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .With(obj, overrides) -> {
-            let after_obj = resolve_expr(r, r.nodes.exprs.get(obj))
-            resolve_field_init_list(after_obj, overrides)
-        }
-        _ -> r
-    }
 }
 
 /// Type-check hook for `With`. Checks the source object, then validates each

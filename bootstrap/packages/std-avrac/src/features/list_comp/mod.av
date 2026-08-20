@@ -18,7 +18,6 @@
 
 use core.{Expr, ExprId, VarBinding, vtype_list_elem}
 use codegen.{Ctx, EmitValue, err_emit}
-use resolve.{Resolver, declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr}
 use typeck.{TC, ExprResult, tc_er, tc_bind, tc_enter, tc_exit, check_expr}
 
 /// `[body for v in coll if filter]` — the SYNTAX lives in list_lit's
@@ -36,24 +35,6 @@ export fn list_comp_lang() -> LanguageFeature {
         check_expr = list_comp_check_expr,
     }
     list_comp_def
-}
-
-/// Resolver hook: bind `var` in body+filter scope so its identifiers
-/// resolve to the loop binding (and so capture analysis treats them
-/// as local). Collection is resolved in the *outer* scope — `var`
-/// can't reference itself in its own initializer.
-fn list_comp_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .ListComp(body, variable, collection, filter) -> {
-            let after_coll = resolve_expr(r, r.nodes.exprs.get(collection))
-            let entered = enter_resolve_scope(after_coll)
-            let bound = define_name(declare_name(entered, variable), variable)
-            let after_filter = if filter != null { resolve_expr(bound, bound.nodes.exprs.get(filter!)) } else { bound }
-            let after_body = resolve_expr(after_filter, after_filter.nodes.exprs.get(body))
-            exit_resolve_scope(after_body)
-        }
-        _ -> r
-    }
 }
 
 /// Type-check hook: infer result as `List<typeof(body)>` with

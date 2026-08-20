@@ -1,0 +1,26 @@
+// The list-comprehension feature's RESOLVER hook. One file per pass
+// (features/WHY.md): a feature's mod.av is the CONTAINER — identity, gram,
+// and which fn implements each pass — and the pass logic lives in the file
+// named for that pass. Module-PRIVATE and staying so: dir-as-module
+// flattens every sibling .av into one flat namespace, so mod.av reaches it
+// exactly as before the move.
+use core.{Expr}
+use resolve.{Resolver, declare_name, define_name, enter_resolve_scope, exit_resolve_scope, resolve_expr}
+
+/// Resolver hook: bind `var` in body+filter scope so its identifiers
+/// resolve to the loop binding (and so capture analysis treats them
+/// as local). Collection is resolved in the *outer* scope — `var`
+/// can't reference itself in its own initializer.
+fn list_comp_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .ListComp(body, variable, collection, filter) -> {
+            let after_coll = resolve_expr(r, r.nodes.exprs.get(collection))
+            let entered = enter_resolve_scope(after_coll)
+            let bound = define_name(declare_name(entered, variable), variable)
+            let after_filter = if filter != null { resolve_expr(bound, bound.nodes.exprs.get(filter!)) } else { bound }
+            let after_body = resolve_expr(after_filter, after_filter.nodes.exprs.get(body))
+            exit_resolve_scope(after_body)
+        }
+        _ -> r
+    }
+}

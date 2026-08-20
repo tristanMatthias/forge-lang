@@ -1,0 +1,15 @@
+// The `while` feature's EVALUATOR hook — the @comptime tree-walk path.
+// One file per pass (features/WHY.md); module-private, reached from mod.av
+// through the dir-as-module flat namespace.
+use core.{Stmt}
+use features.eval.{Runtime, StepResult, execute_while, error_result}
+
+/// Tree-walking evaluator hook for `while`. Forwards to the eval
+/// loop's `execute_while` worker. Used by the `avra check` /
+/// repl-style tooling that doesn't go through codegen.
+fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .While(condition, body) -> execute_while(rt, rt.nodes.exprs.get(condition), rt.nodes.stmts.get(body))
+        _ -> error_result(rt, "expected While")
+    }
+}

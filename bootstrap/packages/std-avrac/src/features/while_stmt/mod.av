@@ -6,30 +6,9 @@
 // keyword (st.build_sp); the typed fn never sees the span.
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling (emit_while).
 use core.{vtype_render_full, vtype_eq, vtype_is_unknown}
-use features.eval.{error_result}
-use features.eval.{execute_while}
-use resolve.{resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_true_branch}
 use features.while_stmt.lowering.{while_builds}
 use features.grammar.{parse_grammar}
-
-/// `while cond { body }`. Pure shape — the SrcPos stamp at the `while`
-/// keyword rides the bind's `spanned` row (the ADAPTER stamps itself at
-/// st.build_sp via mk_stamp_stmt_at), never this fn. Home in the feature file
-/// (t-47hc.8 dissolution) — the engine's checked-in `_gb_` adapter imports
-/// it back.
-/// Resolver hook for `while`. Resolves the condition first, then
-/// the body in the post-condition scope so any names bound in the
-/// condition (rare but legal) flow into the body.
-fn while_resolve(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .While(condition, body) -> {
-            let after_cond = resolve_expr(r, r.nodes.exprs.get(condition))
-            resolve_stmt(after_cond, r.nodes.stmts.get(body))
-        }
-        _ -> r
-    }
-}
 
 /// Type-check hook for `while`. The condition must be Bool (Int
 /// accepted for legacy compatibility); anything else surfaces as
@@ -61,16 +40,11 @@ fn while_check(tc: TC, stmt: Stmt) -> TC {
     }
 }
 
-/// Tree-walking evaluator hook for `while`. Forwards to the eval
-/// loop's `execute_while` worker. Used by the `avra check` /
-/// repl-style tooling that doesn't go through codegen.
-fn while_eval(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .While(condition, body) -> execute_while(rt, rt.nodes.exprs.get(condition), rt.nodes.stmts.get(body))
-        _ -> error_result(rt, "expected While")
-    }
-}
-
+/// `while cond { body }`. Pure shape — the SrcPos stamp at the `while`
+/// keyword rides the bind's `spanned` row (the ADAPTER stamps itself at
+/// st.build_sp via mk_stamp_stmt_at), never this fn. Home in the feature file
+/// (t-47hc.8 dissolution) — the engine's checked-in `_gb_` adapter imports
+/// it back.
 export fn while_lang() -> LanguageFeature {
     LanguageFeature while_def {
         name = "while",

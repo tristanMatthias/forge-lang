@@ -1,0 +1,253 @@
+// The match/when family's EVALUATOR hooks — the @comptime tree-walk path.
+// One file per pass (features/WHY.md); module-private, reached from mod.av
+// through the dir-as-module flat namespace.
+use core.{Expr, Stmt, Pattern, PatId, ParamEntry, MatchArm, ExprId, avra_selfhost_string_to_float}
+use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy, value_is_enumish, step_runtime, step_value, step_had_error, step_is_return, step_error_message}
+
+/// Tree-walk evaluator hook for `Match`. ty5v: Implements pattern
+/// matching for the @comptime tree-walk evaluator. Evaluates the
+/// subject, walks each arm trying patterns, runs the first matching
+/// arm's body in an extended scope.
+fn match_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
+    match stmt {
+        .Match(subject, arms) -> {
+            let subject_result = eval_expr(rt, rt.nodes.exprs.get(subject))
+            if step_had_error(subject_result) { return subject_result }
+            eval_match_arms(step_runtime(subject_result), step_value(subject_result), arms)
+        }
+        _ -> error_result(rt, "expected Match")
+    }
+}
+
+/// Tree-walk evaluator hook for `MatchExpr`. Same logic as
+/// `match_eval_stmt` — both produce a value via the body of the
+/// first matching arm.
+fn match_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .MatchExpr(subject, arms) -> {
+            let subject_result = eval_expr(rt, rt.nodes.exprs.get(subject))
+            if step_had_error(subject_result) { return subject_result }
+            eval_match_arms(step_runtime(subject_result), step_value(subject_result), arms)
+        }
+        _ -> error_result(rt, "expected MatchExpr")
+    }
+}
+
+/// Result of attempting to match a pattern against a value:
+/// `matched` flags success, `runtime` carries any pattern-bound
+/// values that should be visible inside the arm body.
+type MatchAttempt = {
+    matched: int,
+    runtime: Runtime,
+}
+
+/// Walk the arm list, attempting each pattern in turn. On the
+/// first match, evaluates the arm body in the extended scope.
+/// Errors when no arm matches — match must be exhaustive (codegen
+/// emits a trap; eval surfaces a real error).
+fn eval_match_arms(rt: Runtime, subject: Value, arms: List<MatchArm>) -> StepResult {
+    // Indexed walk: try each arm in source order (first match wins).
+    // The prior cons-list recursion threaded the "skip to next arm"
+    // through a tail-call; we re-encode that via `mut current_rt`
+    // + an explicit early-return on the first matching arm.
+    mut current_rt = rt
+    mut i = 0
+    while i < arms.length {
+        let arm = arms[i]
+        let scoped = enter_scope(current_rt)
+        let attempt = try_match_pattern(scoped, arm.pattern, subject)
+        if attempt.matched {
+            if arm.guard_id != null {
+                let guard_result = eval_expr(attempt.runtime, attempt.runtime.nodes.exprs.get(arm.guard_id!))
+                if step_had_error(guard_result) {
+                    // The arm scope must be POPPED on the error path too, and the
+                    // popped runtime is what we return — `exit_scope`'s result was
+                    // computed and discarded here, so a failing guard leaked the
+                    // arm's pattern bindings into the returned error state.
+                    // `finalize_arm_result` is the same pop-then-rebuild the
+                    // success and body paths use.
+                    return finalize_arm_result(guard_result)
+                }
+                if !is_truthy(step_value(guard_result)) {
+                    current_rt = exit_scope(step_runtime(guard_result))
+                    i = i + 1
+                    continue
+                }
+                let body_result = eval_match_body(step_runtime(guard_result), arm.body_id)
+                return finalize_arm_result(body_result)
+            }
+            let body_result = eval_match_body(attempt.runtime, arm.body_id)
+            return finalize_arm_result(body_result)
+        }
+        current_rt = exit_scope(attempt.runtime)
+        i = i + 1
+    }
+    error_result(current_rt, "no match arm matched")
+}
+
+/// Pop the arm's scope before returning. Preserves error / return
+/// flags so a `return` inside the arm body keeps propagating up
+/// through the enclosing fn body.
+fn finalize_arm_result(body_result: StepResult) -> StepResult {
+    let exited = exit_scope(step_runtime(body_result))
+    if step_had_error(body_result) {
+        return StepResult {
+            runtime: exited,
+            value: value_null(),
+            had_error: true,
+            is_return: false,
+            error_message: step_error_message(body_result),
+        }
+    }
+    if step_is_return(body_result) {
+        return StepResult {
+            runtime: exited,
+            value: step_value(body_result),
+            had_error: false,
+            is_return: true,
+            error_message: "",
+        }
+    }
+    ok_result(exited, step_value(body_result))
+}
+
+/// Evaluate an arm body. The body is an expression id; when it is an
+/// `Expr.Block` (multi-stmt body, e.g. `{ return Stmt.Foo() }`),
+/// route through `execute_stmt` so `return` statements flip
+/// `is_return` and propagate up.
+fn eval_match_body(rt: Runtime, body_id: ExprId) -> StepResult {
+    let body = rt.nodes.exprs.get(body_id)
+    match body {
+        .Block(stmts) -> execute_stmt(rt, Stmt.Block(stmts))
+        _ -> eval_expr(rt, body)
+    }
+}
+
+/// Try to match `pattern` against `value`. On success, returns the
+/// runtime extended with any pattern-introduced bindings. On
+/// failure, returns the input runtime unchanged with `matched=0`.
+fn try_match_pattern(rt: Runtime, pattern: Pattern, value: Value) -> MatchAttempt {
+    match pattern {
+        .Wildcard -> MatchAttempt { matched: true, runtime: rt }
+        .Rest -> MatchAttempt { matched: true, runtime: rt }
+        .LitString(s) -> {
+            if value.kind == "string" && value.text == s {
+                MatchAttempt { matched: true, runtime: rt }
+            } else {
+                MatchAttempt { matched: false, runtime: rt }
+            }
+        }
+        .LitInt(n) -> {
+            if value.kind == "number" {
+                let parsed = parse_int_text(value.number_text)
+                if parsed == n {
+                    return MatchAttempt { matched: true, runtime: rt }
+                }
+            }
+            MatchAttempt { matched: false, runtime: rt }
+        }
+        .LitBool(b) -> {
+            if value.kind == "bool" && value.bool_value == b {
+                MatchAttempt { matched: true, runtime: rt }
+            } else {
+                MatchAttempt { matched: false, runtime: rt }
+            }
+        }
+        .LitFloat(f) -> {
+            // NUMERIC comparison, not textual: a number Value carries its decimal
+            // TEXT, so `1.0` and `1.00` are different strings but the same value.
+            // Codegen already compares numerically (`avra_float_parse` + `fcmp`,
+            // match/mod.av), so string equality made the evaluator disagree with
+            // the compiled program on the same source.
+            if value.kind == "number"
+                && avra_selfhost_string_to_float(value.number_text) == avra_selfhost_string_to_float(f) {
+                MatchAttempt { matched: true, runtime: rt }
+            } else {
+                MatchAttempt { matched: false, runtime: rt }
+            }
+        }
+        .Variant(name, bindings) -> {
+            if !value_is_enumish(value) {
+                return MatchAttempt { matched: false, runtime: rt }
+            }
+            if value.enum_variant != name {
+                return MatchAttempt { matched: false, runtime: rt }
+            }
+            let bound_rt = bind_param_list_payload(rt, bindings, value.enum_payload, 0)
+            MatchAttempt { matched: true, runtime: bound_rt }
+        }
+        .NestedVariant(name, sub_patterns) -> {
+            if !value_is_enumish(value) {
+                return MatchAttempt { matched: false, runtime: rt }
+            }
+            if value.enum_variant != name {
+                return MatchAttempt { matched: false, runtime: rt }
+            }
+            try_match_pattern_list(rt, sub_patterns, value.enum_payload, 0)
+        }
+        .Or(left, right) -> {
+            let left_attempt = try_match_pattern(rt, rt.nodes.pats.get(left), value)
+            if left_attempt.matched { return left_attempt }
+            try_match_pattern(rt, rt.nodes.pats.get(right), value)
+        }
+        .TypePattern(_type_name, binding) -> {
+            // Eval values are dynamically typed — we don't reify
+            // union member tags. Bind the subject under the named
+            // binding and let the body run; the arm order in source
+            // determines dispatch.
+            let bound = define_binding(rt, binding, false, value)
+            MatchAttempt { matched: true, runtime: bound }
+        }
+    }
+}
+
+/// Bind every name in a `List<ParamEntry>` to the corresponding payload
+/// slot. Used by `.Variant(name, bindings)` patterns. `_` names
+/// are skipped — they're explicit "ignore this slot" markers.
+fn bind_param_list_payload(rt: Runtime, bindings: List<ParamEntry>, payload: List<Value>, idx: int) -> Runtime {
+    mut cur = rt
+    for (i, binding) in bindings.enumerate() {
+        let slot = idx + i
+        if slot >= payload.length { return cur }
+        let name = binding.name
+        if name != "_" {
+            cur = define_binding(cur, name, false, payload[slot])
+        }
+    }
+    cur
+}
+
+/// Pairwise-match a nested pattern's id list (F2) against a payload list,
+/// resolving each row through the runtime's store. Used by
+/// nested constructor patterns. If any sub-pattern fails, the
+/// whole nested match fails.
+fn try_match_pattern_list(rt: Runtime, patterns: List<PatId>, payload: List<Value>, idx: int) -> MatchAttempt {
+    mut current_rt = rt
+    for (i, pid) in patterns.enumerate() {
+        let pat = rt.nodes.pats.get(pid)
+        if idx + i >= payload.length {
+            return MatchAttempt { matched: false, runtime: current_rt }
+        }
+        let attempt = try_match_pattern(current_rt, pat, payload[idx + i])
+        if !attempt.matched { return attempt }
+        current_rt = attempt.runtime
+    }
+    MatchAttempt { matched: true, runtime: current_rt }
+}
+
+extern fn avra_selfhost_string_to_int(s: string) -> int
+
+/// Parse decimal-int text via the runtime helper that backs the
+/// numeric-literal evaluator. Mirrors features.eval's `parse_num`
+/// but inlined here to avoid exporting another helper just for
+/// this one call site.
+fn parse_int_text(s: string) -> int { avra_selfhost_string_to_int(s) }
+
+/// Tree-walk evaluator hook for `When`. Currently unsupported
+/// — subjectless matching is codegen-only.
+fn when_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
+    match expr {
+        .When(_) -> error_result(rt, "subjectless match is not supported by the tree-walk evaluator")
+        _ -> error_result(rt, "expected When")
+    }
+}

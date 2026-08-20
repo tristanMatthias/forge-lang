@@ -1,0 +1,24 @@
+// The tuple family's RESOLVER hooks. One file per pass (features/WHY.md): a
+// feature's mod.av is the CONTAINER — identity, gram, and which fn implements
+// each pass — and the pass logic lives in the file named for that pass. These
+// are module-PRIVATE and stay so: dir-as-module flattens every sibling .av into
+// one flat namespace, so mod.av reaches them exactly as before the move.
+use core.{Expr}
+use resolve.{Resolver, resolve_expr, resolve_expr_list_ids}
+
+/// Resolver hook for `Tuple` literals. Walks every element.
+fn tuple_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Tuple(elements) -> resolve_expr_list_ids(r, elements)
+        _ -> r
+    }
+}
+
+/// Resolver hook for `TupleIndex`. Only the receiver expression
+/// needs name resolution — the index is a literal.
+fn tuple_index_resolve(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .TupleIndex(obj, _) -> resolve_expr(r, r.nodes.exprs.get(obj))
+        _ -> r
+    }
+}

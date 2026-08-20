@@ -1,0 +1,70 @@
+// The null-safety family's RESOLVER hooks — `??`, `?.`, `?.m(…)`, `?`/`!`,
+// and `catch`. One file per pass (features/WHY.md): a feature's mod.av is the
+// CONTAINER — identity, gram, and which fn implements each pass — and the pass
+// logic lives in the file named for that pass. These are module-PRIVATE and
+// stay so: dir-as-module flattens every sibling .av into one flat namespace,
+// so mod.av reaches them exactly as before the move.
+use core.{Expr}
+use resolve.{Resolver, resolve_expr, enter_resolve_scope, exit_resolve_scope, declare_name, define_name}
+
+/// Resolver hook for `NullCoalesce`. Walks both sides.
+fn null_coalesce_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .NullCoalesce(left, right) -> {
+            let after_left = resolve_expr(r, r.nodes.exprs.get(left))
+            resolve_expr(after_left, r.nodes.exprs.get(right))
+        }
+        _ -> r
+    }
+}
+
+/// Resolver hook for `OptionalChain`. Only the receiver needs
+/// name resolution.
+fn optional_chain_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .OptionalChain(obj, _) -> resolve_expr(r, r.nodes.exprs.get(obj))
+        _ -> r
+    }
+}
+
+/// Resolver hook for `Try`. Walks the inner expression.
+fn try_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Try(inner) -> resolve_expr(r, r.nodes.exprs.get(inner))
+        _ -> r
+    }
+}
+
+/// Resolver hook for `Catch`. Walks the inner expression, then
+/// (when an error binding name is given) opens a new scope with
+/// the binding visible inside the catch body.
+fn catch_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .Catch(inner, binding, body, _, _) -> {
+            let ri = resolve_expr(r, r.nodes.exprs.get(inner))
+            let scoped = if binding.length > 0 {
+                let entered = enter_resolve_scope(ri)
+                define_name(declare_name(entered, binding), binding)
+            } else { ri }
+            let rb = resolve_expr(scoped, scoped.nodes.exprs.get(body))
+            if binding.length > 0 { exit_resolve_scope(rb) } else { rb }
+        }
+        _ -> r
+    }
+}
+
+/// Resolver hook for `OptionalMethodCall`. Walks the receiver and each arg.
+fn optional_method_call_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .OptionalMethodCall(obj, _, args) -> {
+            mut acc = resolve_expr(r, r.nodes.exprs.get(obj))
+            mut i = 0
+            while i < args.length {
+                acc = resolve_expr(acc, r.nodes.exprs.get(args[i]))
+                i = i + 1
+            }
+            acc
+        }
+        _ -> r
+    }
+}

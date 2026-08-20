@@ -4,7 +4,6 @@
 // fall-through emitters) stays in defer/codegen.av.
 use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
 use features.eval.{ok_result, value_null}
-use resolve.{resolve_expr}
 use typeck.{check_expr, tc_gate_unthreaded_lambda}
 use features.defer.lowering.{defer_builds, errdefer_builds}
 use list_ops.{list_push_copy}
@@ -18,11 +17,6 @@ use features.grammar.{parse_grammar}
 /// Push one DeferStack entry — the body emits later, at each scope exit.
 fn stack_entry(ctx: Ctx, env: List<VarBinding>, entry: DeferEntry) -> Result<StmtResult, string> {
     ok_sr(ctx with { defers: list_push_copy(ctx.defers, entry) }, env)
-}
-
-/// Resolve a defer/errdefer body in the current scope.
-fn resolve_body(r: Resolver, body: ExprId) -> Resolver {
-    resolve_expr(r, r.nodes.exprs.get(body))
 }
 
 /// Type-check a body run only for its side effects: any type goes, but an

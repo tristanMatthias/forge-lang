@@ -1,0 +1,36 @@
+// The `if` family's RESOLVER hooks. One file per pass
+// (features/WHY.md): a feature's mod.av is the CONTAINER — identity, gram, and
+// which fn implements each pass — and the pass logic lives in the file named
+// for that pass. These are module-PRIVATE and stay so: dir-as-module flattens
+// every sibling .av into one flat namespace, so mod.av reaches them exactly as
+// before the move.
+use core.{Expr, Stmt}
+use resolve.{Resolver, resolve_expr, resolve_stmt}
+
+/// Resolver hook for `IfExpr`. Walks condition + both branches.
+fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
+    match expr {
+        .IfExpr(c, t, e) -> {
+            let after_c = resolve_expr(r, r.nodes.exprs.get(c))
+            let after_t = resolve_expr(after_c, r.nodes.exprs.get(t))
+            resolve_expr(after_t, r.nodes.exprs.get(e))
+        }
+        _ -> r
+    }
+}
+
+/// Resolver hook for `If` statements. Walks condition, then-branch,
+/// then else-branch (if present).
+fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
+    match stmt {
+        .If(condition, then_branch, else_branch) -> {
+            let after_cond = resolve_expr(r, r.nodes.exprs.get(condition))
+            let after_then = resolve_stmt(after_cond, r.nodes.stmts.get(then_branch))
+            if else_branch != null {
+                return resolve_stmt(after_then, r.nodes.stmts.get(else_branch!))
+            }
+            after_then
+        }
+        _ -> r
+    }
+}

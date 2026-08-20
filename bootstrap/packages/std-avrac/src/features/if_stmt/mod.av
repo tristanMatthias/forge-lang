@@ -15,9 +15,6 @@
 use core.{Stmt, Expr, ValueType, vtype_display, vtype_eq, vtype_is_unknown, expr_diverges}
 use codegen.{err_emit, StmtResult}
 use codegen.{err_sr}
-use features.eval.{error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
-use features.eval.{eval_expr, execute_stmt}
-use resolve.{resolve_expr, resolve_stmt}
 use typeck.{check_expr, check_stmt, tc_er, tc_report, tc_gate_unthreaded_lambda, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if, generic_args_layout_conflict}
 use features.grammar.{Grammar, grammar_checked, parse_grammar}
 use features.{composed}
@@ -174,40 +171,6 @@ form lives in the expression grammar, not this rule.
     if_def
 }
 
-/// Resolver hook for `IfExpr`. Walks condition + both branches.
-fn if_resolve_expr(r: Resolver, expr: Expr) -> Resolver {
-    match expr {
-        .IfExpr(c, t, e) -> {
-            let after_c = resolve_expr(r, r.nodes.exprs.get(c))
-            let after_t = resolve_expr(after_c, r.nodes.exprs.get(t))
-            resolve_expr(after_t, r.nodes.exprs.get(e))
-        }
-        _ -> r
-    }
-}
-
-/// Tree-walk evaluator hook for `IfExpr`. Evaluates the condition
-/// and returns the value of whichever branch the truthiness picks.
-/// Branches are Exprs (not Stmts), so the recursion stays in
-/// `eval_expr` — important for `@comptime` macros that use
-/// `if cond { a } else { b }` to choose between AST fragments.
-fn if_eval_expr(rt: Runtime, expr: Expr) -> StepResult {
-    match expr {
-        .IfExpr(condition, then_branch, else_branch) -> {
-            let cond_result = eval_expr(rt, rt.nodes.exprs.get(condition))
-            if step_had_error(cond_result) {
-                return cond_result
-            }
-            if is_truthy(step_value(cond_result)) {
-                eval_expr(step_runtime(cond_result), rt.nodes.exprs.get(then_branch))
-            } else {
-                eval_expr(step_runtime(cond_result), rt.nodes.exprs.get(else_branch))
-            }
-        }
-        _ -> error_result(rt, "expected IfExpr")
-    }
-}
-
 /// Codegen hook for `IfExpr`. Forwards to `emit_if_expr` which
 /// emits both branches into a result-slot phi.
 fn if_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> {
@@ -226,22 +189,6 @@ fn if_emit_stmt(ctx: Ctx, env: List<VarBinding>, stmt: Stmt) -> Result<StmtResul
             emit_if(ctx, env, ctx.nodes.exprs.get(condition), ctx.nodes.stmts.get(then_branch), else_s)
         }
         _ -> err_sr("expected If")
-    }
-}
-
-/// Resolver hook for `If` statements. Walks condition, then-branch,
-/// then else-branch (if present).
-fn if_resolve_stmt(r: Resolver, stmt: Stmt) -> Resolver {
-    match stmt {
-        .If(condition, then_branch, else_branch) -> {
-            let after_cond = resolve_expr(r, r.nodes.exprs.get(condition))
-            let after_then = resolve_stmt(after_cond, r.nodes.stmts.get(then_branch))
-            if else_branch != null {
-                return resolve_stmt(after_then, r.nodes.stmts.get(else_branch!))
-            }
-            after_then
-        }
-        _ -> r
     }
 }
 
@@ -388,27 +335,5 @@ fn if_check_expr(tc: TC, expr: Expr) -> ExprResult {
             unify_if_branches_diverge_aware(e.tc with { types: baseline }, then_e, else_e, t.ty, e.ty)
         }
         _ -> tc_er(tc, .Unknown)
-    }
-}
-
-/// Tree-walk evaluator hook for `If` statements. Evaluates the
-/// condition, then dispatches to the matching branch (or returns
-/// null when no else-branch exists).
-fn if_eval_stmt(rt: Runtime, stmt: Stmt) -> StepResult {
-    match stmt {
-        .If(condition, then_branch, else_branch) -> {
-            let cond_result = eval_expr(rt, rt.nodes.exprs.get(condition))
-            if step_had_error(cond_result) {
-                return cond_result
-            }
-            if is_truthy(step_value(cond_result)) {
-                return execute_stmt(step_runtime(cond_result), rt.nodes.stmts.get(then_branch))
-            }
-            if else_branch != null {
-                return execute_stmt(step_runtime(cond_result), rt.nodes.stmts.get(else_branch!))
-            }
-            ok_result(step_runtime(cond_result), value_null())
-        }
-        _ -> error_result(rt, "expected If")
     }
 }
