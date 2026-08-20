@@ -3,7 +3,8 @@
 // `p.match(...)` / `collect x +=` / `p.node(...)`). These specs pin, per rule
 // family, that the emitted text is the CapVal/PState static form.
 //
-// ps3t.6.7 Step C: avra_expr_grammar now owns only the DECLARATIVE operator
+// ps3t.6.7 Step C (historical — the views are gone as of P2c(c); the whole
+// grammar carries this now): the expression family owns the DECLARATIVE operator
 // ladder (logic_or → factor); the PROCEDURAL leaf (unary/postfix/primary) is a
 // single `@hand(hand_unary)` delegation — the hand postfix chain is newline-
 // sensitive + mode-stateful, so it is NOT expressible byte-identically in the
