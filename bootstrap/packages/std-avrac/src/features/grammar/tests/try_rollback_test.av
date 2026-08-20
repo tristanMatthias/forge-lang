@@ -65,6 +65,9 @@ spec "t-3keo: the INTERPRETER agrees — the two engines stay in lockstep" {
         // exec_node's speculative arm and emit's generated block are twins; arming the
         // snapshot in only one would silently split the oracle from the production
         // parser, which is the failure mode the whole grammar-flip program guards.
+        // Scope note: `run_grammar_expr_at` starts with NO threaded host delegate, and
+        // these inputs do not trigger its lazy creation — so "no desync" is a claim
+        // about THESE inputs, not about the seam in general.
         !run_grammar_expr_at(avra_program_grammar(), "expression", block_with("(v)")).had_error
     }
     then "and the native-primary control, on the same engine" {
