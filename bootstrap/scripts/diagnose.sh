@@ -4193,19 +4193,19 @@ mode_check_feature_layout() {
   local fd="$BOOTSTRAP_DIR/packages/std-avrac/src/features"
   [ -d "$fd" ] || die "check-feature-layout: features dir not found: $fd"
 
-  # Canonical top-level filenames. `grammar.av` is NOT here: a feature declares
-  # its gram inline in mod.av (13 features still use a separate file — P4b).
+  # Canonical top-level filenames. `grammar.av` is NOT here and is no longer
+  # allowlisted either: P4b inlined the last 13 into their mod.av, so a
+  # `grammar.av` reappearing now FAILS this check rather than being tolerated.
   local canon="mod.av codegen.av typeck.av resolve.av eval.av grammar.md WHY.md"
 
   # Known drift, each with its owner. SHRINK THIS LIST; do not grow it.
-  #   grammar.av        x13  P4b — inline the gram into mod.av
-  #   WHY.md            x15  P4b — the definition's title/docs fields are the docs
+  #   WHY.md            x15  P4d — the definition's title/docs fields are the docs
   #   engine internals        P6  — features/grammar/ is the compiler-compiler, moves out
   #   feature-owned helpers   P4c — each needs a decided home, not a blind rename
   local allow_dirs="grammar"
   # One line: a `case` glob cannot match across newlines, so a wrapped list
   # silently allowlists nothing after the first line.
-  local allow_files="expand.av mono.av reporter.av runner.av eval.av purity.av rewrite.av synth.av macro_types.av expand_macro.av resolver_ctx.av classify.av emit.av eq.av hash.av shape.av walk.av derive.av dir_module.av graph_build.av package.av unit_filter.av resolver.av lower.av grammar.av"
+  local allow_files="expand.av mono.av reporter.av runner.av eval.av purity.av rewrite.av synth.av macro_types.av expand_macro.av resolver_ctx.av classify.av emit.av eq.av hash.av shape.av walk.av derive.av dir_module.av graph_build.av package.av unit_filter.av resolver.av lower.av"
 
   local drift=0 out=""
   local d name f base

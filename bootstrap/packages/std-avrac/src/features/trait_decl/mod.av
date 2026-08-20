@@ -7,7 +7,7 @@ use features.trait_decl.lowering.{trait_builds, dyn_type_builds}
 use features.grammar.{parse_grammar}
 
 /// The `trait` declaration feature. Its rules compose through the decl
-/// fragment registry (avra_trait_decl_grammar, family "" — the gram here is
+/// fragment registry (the decl fragment, now inline on trait_lang; family "" — the gram here is
 /// the validation + docs surface for rules composed there); its lowerings
 /// travel with it (t-kd4y.3.3.3). Type-checking for `impl Trait for Type`
 /// and dyn dispatch live in `typeck.av` and `codegen.av`.
@@ -20,7 +20,39 @@ export fn trait_lang() -> LanguageFeature {
 and methods. A method with a body is a DEFAULT (implementors may override);
 one without is a signature an `impl Name for T` block must supply.
 """,
-        gram = composed([avra_trait_decl_grammar()]),
+        gram = grammar {
+  // The type-parameter list is OPTIONAL INSIDE the brackets as well as outside
+  // (t-myz7). The hand does not parse it at all — `parse_trait_declaration` calls
+  // `skip_angle_brackets`, which counts depth and discards, and `Stmt.TraitDecl`
+  // carries no type parameters — so `trait T<> { }` is ACCEPTED there and the native
+  // rule's mandatory first `tparam` rejected it with `expected \`IDENT\``. A routed
+  // keyword must leave the acceptance frontier exactly where the hand had it, and this
+  // one had moved. `( tparam ( "," tparam )* )?` is the same language for every valid
+  // list and adds back only the empty one.
+  trait_decl  = @try "trait" @cut @require trname:IDENT ( "<" ( tparam ( "," tparam )* )? ">" )? @require "{" ( @peek(not_rbrace) @gate tmembers:trait_member )* @require "}"
+                @expect("IDENT", "expected trait name")
+                @expect("{", "expected `{` after trait name")
+                @expect("}", "expected `}` after trait body") -> MkTraitDecl(trname, tmembers)
+  // The message is keyed on the RULE'S OWN NAME because this rule is
+  // ALTERNATION-led and so has no single leading token to key on. Without it the
+  // gated call in `trait_decl` fell back to `expected trait_member` — a grammar
+  // rule name, printed at a user.
+  trait_member  = assoc_member | method_member
+                  @expect("trait_member", "expected `type` or `fn` in trait body")
+  // Both members COMMIT after their keyword, and both had to: without a `@require`
+  // on the name each one consumed whatever token was present, on the promise that
+  // its caller proved FIRST. `trait T { type }` bound the `}` AS THE ASSOCIATED TYPE
+  // NAME and built `(assoc-type })`; `trait T { fn m( }` built a whole member,
+  // `(extern m () -> void)`, out of a header that never closed. The hand aborts both
+  // and builds nothing, so these were silent ACCEPTS of invalid input — the same
+  // class as the gated `enum E { 5 }`, reached through a different door.
+  assoc_member  = @try "type" @cut @require atname:IDENT
+                  @expect("IDENT", "expected associated type name") -> MkAssocType(atname)
+  method_member = @try "fn" @cut @require tmname:IDENT @require "(" ( tmparams:param ( @peek(comma_not_rparen) "," tmparams:param )* ( "," )? )? @require ")" ( "->" tmret:type_expr )? ( tmlb:"{" tmbody:body_item* "}" )?
+                  @expect("IDENT", "expected method name")
+                  @expect("(", "expected `(` after method name")
+                  @expect(")", "expected `)` after method parameters") -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
+            },
         builders = trait_builds(),
         snippet = r"trait ${1:Name} { fn ${2:method}(self) }",
     }

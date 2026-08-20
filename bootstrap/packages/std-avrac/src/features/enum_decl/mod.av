@@ -7,6 +7,7 @@
 // surface flat at `features.enum_decl.{...}`.
 use features.{composed}
 use features.enum_decl.lowering.{enum_builds}
+use features.grammar.{parse_grammar}
 
 export fn enum_lang() -> LanguageFeature {
     LanguageFeature enum_def {
@@ -17,7 +18,39 @@ export fn enum_lang() -> LanguageFeature {
 may carry named fields. Generic enums take `<T, U: Bound>` parameters.
 Matching over an enum is exhaustive (spec Axis 4).
 """,
-        gram = composed([avra_enum_decl_grammar()]),
+        gram = grammar {
+  // COMMITTED: `@try "enum" @cut`, dispatched bare (`return parse_enum_decl(st)`), with
+  // `enum_grammar_parity_test` asserting both halves.
+  //
+  // It got here on the failure modes that did not exist when it was first attempted and
+  // un-routed. `enum E< { A }` was the blocker: a non-leading rule reference was called
+  // without its FIRST being proven, so `parse_tparam` bound the `{` as a type-parameter
+  // name, then failed at `>` and ABORTED — where the hand reports twice and still builds
+  // `(enum E (A()))`. That needed a non-aborting failure for a rule reference, which
+  // `@require`/`@gate` could not express. `@onfail(halt)` (report, then abandon the rest
+  // of the group, cursor untouched so the caller's own closer still reports) and
+  // `@onfail(skip)` are exactly that, and the type-parameter list uses both, with
+  // `@onfail(discard, tparams)` so a malformed list leaves NO partial parameters.
+  //
+  // The `@gate`s stay: they are what make `enum E { 5 }` REPORT instead of binding `5`
+  // as a variant name, and they are correct independently of the commit.
+  // The inner list is OPTIONAL, gated on `@peek(not_gt)` — the acceptance frontier has to
+  // stay exactly where the hand's is. `parse_type_param_entries` opens with
+  // `if check(Greater) { return out }` and only then demands an IDENT, so the hand
+  // accepts `E<>` AND reports "expected type parameter name" for `E< {`. A bare `( … )?`
+  // inner reproduces the first and silently loses the second; the peek splits them where
+  // the hand does.
+  enum_decl   = @try "enum" @cut @require ename:IDENT ( "<" ( @peek(not_gt) @gate @onfail(halt) tparams:tparam ( "," @onfail(skip) tparams:tparam )* )? @onfail(discard, tparams) ">" )? @require "{" ( DOC )*
+                ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* ( @peek(not_rbrace) @gate vars:variant ","? ( DOC )* )* )? @require "}"
+                @expect("IDENT", "expected enum name")
+                @expect("{", "expected `{` after enum name")
+                @expect("}", "expected `}` after variants")
+                @expect(">", "expected `>` after type parameters")
+                @expect("tparam", "expected type parameter name") -> MkEnumDecl(ename, tparams, vars)
+  variant     = vname:IDENT ( "(" ( @peek(not_rparen) @gate vfields:field ","? )* @require ")" )?
+                @expect("IDENT", "expected variant name")
+                @expect(")", "expected `)` after variant fields") -> MkEVariant(vname, vfields)
+            },
         builders = enum_builds(),
         snippet = r"enum ${1:Name} { ${2:Variant} }",
     }

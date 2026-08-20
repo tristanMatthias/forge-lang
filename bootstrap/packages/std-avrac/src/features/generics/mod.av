@@ -12,6 +12,7 @@
 // `features.generics.{...}`; the manifest row lives in lowering/.
 use features.{composed}
 use features.generics.lowering.{generics_builds}
+use features.grammar.{parse_grammar}
 
 /// Generic type parameters — the definition carries the shared `tparam`
 /// rule (every generic decl keyword references it by name across the
@@ -27,7 +28,15 @@ traits, and impls. Generic code monomorphizes: each concrete
 instantiation compiles to its own specialization. A single bound rides
 the parameter (`T: Ord`); extra bounds go in a `where` clause.
 """,
-        gram = composed([avra_generics_grammar()]),
+        gram = grammar {
+  // `@expect("IDENT", …)` here reaches the BOUND, not the name: the rule is
+  // `tpn:IDENT ( ":" tpb:IDENT )?` — two IDENTs — and the leading one is never
+  // reported by this rule, because every caller checks its FIRST and reports with
+  // its own `@expect("tparam", …)`. So the token-keyed message is free to be the
+  // bound's, which is what `parse_type_param_entries` says there.
+  tparam      = tpn:IDENT ( ":" tpb:IDENT )?
+                @expect("IDENT", "expected trait bound after `:`") -> MkTypeParam(tpn, tpb)
+            },
         builders = generics_builds(),
         snippet = r"<${1:T}>",
     }

@@ -10,6 +10,7 @@ use core.{SelectArm}
 use typeck.{check_expr, check_stmt_ids, tc_enter, tc_exit, tc_bind}
 use features.{composed}
 use features.select_stmt.lowering.{select_builds}
+use features.grammar.{parse_grammar}
 
 /// Type-check hook for `select`. Each arm's channel expression is
 /// checked in the enclosing scope; a typed channel (Channel<elem>)
@@ -59,7 +60,22 @@ arm's binding takes the channel's element type — a `Channel<T>` gives
 `T`, a legacy raw-extern channel leaves it unknown — and is visible only
 inside that arm's body. Zero arms is legal: `select { }` blocks forever.
 """,
-        gram = composed([avra_select_grammar()]),
+        gram = grammar {
+  // NOT committed, for the reason recorded on `enum_decl`: `select { x }` must report
+  // the missing `<-` and still build `(select ())`, while a committed rule ABORTS to
+  // `(error)` and additionally leaves the `}` unconsumed so the caller adds a spurious
+  // F0013. A gated element's failure needs to SKIP the element and let the rule close,
+  // which is a non-aborting mode the DSL does not have.
+  select_decl   = @try "select" @cut @require "{" ( @peek(not_rbrace) @gate @onfail(close) arms:select_arm )* @require "}"
+                  @expect("{", "expected `{` after select")
+                  @expect("}", "expected `}` to close select") -> MkSelect(arms)
+  select_arm    = b:IDENT @require "<-" @onfail(bail) ch:expression @require "->" @require "{" body:declaration* @require "}"
+                  @expect("IDENT", "expected select arm binding name")
+                  @expect("<-", "expected `<-` after select arm binding")
+                  @expect("->", "expected `->` after channel in select arm")
+                  @expect("{", "expected `{` for select arm body")
+                  @expect("}", "expected `}` to close select arm") -> MkSelectArm(b, ch, body)
+            },
         builders = select_builds(),
         snippet = r"select {\n    ${1:v} <- ${2:ch} -> {\n        ${3:body}\n    }\n}",
         stmt_tag = Stmt.Select(empty_arms),

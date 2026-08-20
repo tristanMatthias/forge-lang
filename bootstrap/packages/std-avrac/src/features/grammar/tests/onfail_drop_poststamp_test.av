@@ -14,7 +14,8 @@
 // kind becomes decidable, so it re-runs the kind validations and rejects there.
 // These specs pin both halves — the deferral must not swallow a real violation,
 // and a correct fragment must survive stamping.
-use @std.avrac.features.spec_test.{avra_spec_grammar}
+use @std.avrac.features.spec_test.{spec_lang}
+use @std.avrac.features.{feature_gram}
 use @std.avrac.features.grammar.{parse_grammar, grammar_checked, grammar_with_builder_kinds, builder_kind_rows, validate_grammar_kinds, rule_result_kind, rule_result_kind_known, Grammar, BuilderBind, PState, CapVal, BuildKind}
 
 fn nil_build(st: PState, vals: List<CapVal>) -> CapVal { CapVal.Nil }
@@ -76,7 +77,7 @@ spec "the production spec-test fragment survives stamping" {
         // resolves to "stmt" only after stamping. The compiler builds at all
         // only because this passes, but pin it explicitly.
         let rows = builder_kind_rows([bind("MkSpecBlock", BuildKind.Stmt, 2), bind("MkGivenBlock", BuildKind.Stmt, 2), bind("MkThenBlock", BuildKind.Stmt, 2)])
-        let g = grammar_with_builder_kinds(avra_spec_grammar(), rows)
+        let g = grammar_with_builder_kinds(feature_gram(spec_lang()), rows)
         validate_grammar_kinds(g) == "" && rule_result_kind(g, "spec_item") == BuildKind.Stmt
     }
 }

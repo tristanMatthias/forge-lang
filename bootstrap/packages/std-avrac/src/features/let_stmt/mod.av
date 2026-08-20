@@ -1,5 +1,5 @@
 // dir-as-module (g2eo.1): codegen.av + typeck.av + grammar.av auto-load
-// as siblings, surface flat at `features.let_stmt.{...}` (avra_let_grammar
+// as siblings, surface flat at `features.let_stmt.{...}` (the decl fragment, now inline on let_lang
 // and bind_destructure are in scope without a self-import); the manifest
 // rows live in lowering/ (t-kd4y.3.2.3).
 use codegen.{StmtResult}
@@ -10,6 +10,7 @@ use features.{composed}
 use features.let_stmt.lowering.{let_builds}
 use features.tuples.{emit_let_destructure}
 use typeck.{check_expr, tc_report}
+use features.grammar.{parse_grammar}
 
 /// `let` — the binding family's definition carries the feature whole
 /// (t-kd4y.3.2.3): syntax, docs, editor surface, and ALL FOUR lowerings
@@ -30,7 +31,33 @@ an annotation. `let mut` (or bare `mut`) makes the binding mutable, and
 `let x = init else { … }` runs the diverging guard block when a nullable
 initializer is null. `let (a, b) = pair` destructures a tuple by position.
 """,
-        gram = composed([avra_let_grammar()]),
+        gram = grammar {
+  let_decl   = @try "let" @cut ( m:"mut" )? @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
+               @expect("IDENT", "expected variable name")
+               @expect("type_expr", "expected type after `:`")
+               @expect("=", "expected `=` after variable name") -> MkLetBinding(m, n, ty, init, e, tmp)
+  mut_decl   = @try "mut" @cut @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression ( "else" e:statement tmp:@gensym(letelse) )?
+               @expect("IDENT", "expected variable name")
+               @expect("type_expr", "expected type after `:`")
+               @expect("=", "expected `=` after variable name") -> MkMutBinding(n, ty, init, e, tmp)
+  const_decl = @try "const" @cut @require n:IDENT ( ":" @require ty:type_expr )? @require "=" @onfail(bail) init:expression
+               @expect("IDENT", "expected constant name")
+               @expect("type_expr", "expected type after `:`")
+               @expect("=", "expected `=` after constant name") -> MkConstBinding(n, ty, init)
+  // `let (a, b, …) = init` — the destructure binding. The list shape is
+  // `for_binding`'s, verbatim: `@peek(comma_ident)` gates each repeat
+  // iteration so a trailing comma survives to the `","?` (`(a, b,)` is
+  // tolerated), and the whole names group is optional because an EMPTY list
+  // is accepted (`let () = t` parses — entries are typed at check time).
+  // `( m:"mut" )?`: an optional `mut` is consumed BEFORE testing for `(`,
+  // and the destructure build never reads is_mut — so `let mut (a, b) = t`
+  // is a plain destructure on both engines. A BARE `mut (` stays an error
+  // (mut_decl demands an identifier), which is why mut_decl has no
+  // destructure sibling.
+  letdes_decl = @peek(let_destructure) "let" ( m:"mut" )? "(" ( n:IDENT ( @peek(comma_ident) "," n:IDENT )* ","? )? @require ")" @require "=" @onfail(bail) init:expression
+                @expect(")", "expected `)` after destructure names")
+                @expect("=", "expected `=` after destructure pattern") -> MkDestructure(n, init)
+            },
         builders = let_builds(),
         snippet = r"let ${1:name} = ${2:value}",
     }

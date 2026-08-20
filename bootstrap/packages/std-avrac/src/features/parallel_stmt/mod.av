@@ -10,6 +10,7 @@ use core.{stmt_unwrap, StmtId}
 use features.{composed}
 use features.parallel_stmt.lowering.{parallel_builds}
 use typeck.{TC, check_stmt_ids, tc_enter, tc_exit, tc_gate_unthreaded_lambda}
+use features.grammar.{parse_grammar}
 
 /// Type-check hook for `parallel { ... }`. The body statements were
 /// previously never type-checked at all — every gate (including the
@@ -52,7 +53,11 @@ task and waits for all of them before continuing (spec Axis 18). The body
 is a plain statement list — its rows are held directly, with no block
 scope of their own — and it is type-checked in its own scope like a block.
 """,
-        gram = composed([avra_parallel_grammar()]),
+        gram = grammar {
+  parallel_decl = @try "parallel" @cut @require "{" body:declaration* @require "}"
+                  @expect("{", "expected `{` after parallel")
+                  @expect("}", "expected `}` to close parallel block") -> MkParallel(body)
+            },
         builders = parallel_builds(),
         snippet = r"parallel {\n    ${1:body}\n}",
         stmt_tag = Stmt.Parallel(empty_body),
