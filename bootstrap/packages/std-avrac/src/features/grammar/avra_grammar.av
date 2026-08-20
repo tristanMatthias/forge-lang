@@ -353,31 +353,17 @@ fn avra_decl_edge_grammar() -> Grammar {
     // IS `compose_fragments([head, tail])`, and compose_fragments concatenates rules in
     // list order, so the two spellings are provably identical — this one just doesn't
     // grow a paren layer per decl fragment.
-    // NOTE this list and `feature_decl_grammar_fragments` (below) carry the
-    // SAME fragment set in DIFFERENT orders — this one is what the
-    // production decl views compose, that one is what features/mod.av's
-    // registry folds; the orders differ historically and the emitted fn
-    // order is observable, so they are extended in lockstep rather than
-    // unified (a new decl fragment goes in BOTH — t-kd4y.3.5.9 was caught
-    // by exactly this: the export/annotations fragments landed in one list
-    // and the regenerated parser silently lost parse_export_decl).
-    compose_fragments([
-        grammar_checked(gp),
-        avra_modules_grammar(),
-        avra_export_grammar(),
-        avra_annotations_grammar(),
-        avra_struct_decl_grammar(),
-        avra_generics_grammar(),
-        avra_enum_decl_grammar(),
-        avra_fn_decl_grammar(),
-        avra_trait_decl_grammar(),
-        avra_impl_decl_grammar(),
-        avra_select_grammar(),
-        avra_parallel_grammar(),
-        avra_spec_grammar(),
-        avra_let_grammar(),
-        avra_component_grammar(),
-    ])
+    // ONE list, called here (t-y2i7.2). This site and features/mod.av's
+    // registry used to spell the SAME fragment set in DIFFERENT orders and
+    // were "extended in lockstep" by hand — which failed exactly once the
+    // way it always does: t-kd4y.3.5.9 put the export/annotations fragments
+    // in one list and not the other, and the regenerated parser silently
+    // lost parse_export_decl. The unified list carries THIS site's order,
+    // because the emitted fn order is observable and this is the production
+    // path; the registry's order was consumed only by tests.
+    mut frags: List<Grammar> = [grammar_checked(gp)]
+    for g in feature_decl_grammar_fragments() { frags.push(g) }
+    compose_fragments(frags)
 }
 
 export fn avra_expr_grammar() -> Grammar {
@@ -569,18 +555,18 @@ export fn avra_type_grammar() -> Grammar {
 /// the shared base beside the expression ladder and the type spine.
 export fn feature_decl_grammar_fragments() -> List<Grammar> {
     [
-        avra_fn_decl_grammar(),      // fn_decl
-        avra_struct_decl_grammar(),  // type_decl, field
-        avra_enum_decl_grammar(),    // enum_decl, variant
-        avra_trait_decl_grammar(),   // trait_decl, trait_member, assoc_member, method_member
-        avra_impl_decl_grammar(),    // impl_decl, impl_method
         avra_modules_grammar(),      // use_decl, mod_decl
         avra_export_grammar(),       // export_decl + the MkStampAt split (t-kd4y.3.5.9)
         avra_annotations_grammar(),  // doc/mdoc/annot wrappers + wrapped_inner (t-kd4y.3.5.9)
-        avra_spec_grammar(),         // spec_decl, spec_item, given_blk, then_blk
+        avra_struct_decl_grammar(),  // type_decl, field
         avra_generics_grammar(),     // tparam — shared by every generic decl keyword
+        avra_enum_decl_grammar(),    // enum_decl, variant
+        avra_fn_decl_grammar(),      // fn_decl
+        avra_trait_decl_grammar(),   // trait_decl, trait_member, assoc_member, method_member
+        avra_impl_decl_grammar(),    // impl_decl, impl_method
         avra_select_grammar(),       // select_decl, select_arm
         avra_parallel_grammar(),     // parallel_decl
+        avra_spec_grammar(),         // spec_decl, spec_item, given_blk, then_blk
         avra_let_grammar(),          // let_decl, mut_decl, const_decl, letdes_decl
         avra_component_grammar(),    // comp_header + the whole component family
     ]
