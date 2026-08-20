@@ -9,7 +9,7 @@
 // of static_expr_entry / static_decl_entry / static_type_entry.
 
 use parse.gen_parser.{parse_pattern_or}
-use features.grammar.{run_static_pat_at_shared, Token, PState, CapVal, DslPatResult}
+use features.grammar.{run_static_pat_at_shared, Token, DslPatResult}
 use core.{NodeStore}
 
 /// Drive the generated static pattern parser (the `pattern_or` root — atoms, `or`, and

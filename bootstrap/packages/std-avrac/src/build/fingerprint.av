@@ -27,7 +27,7 @@ use core.{
     avra_pkg_fp_cache_set,
     avra_selfhost_get_arg_cstr,
 }
-use build.graph.{build_graph, Unit}
+use build.graph.{build_graph}
 
 /// A computed fingerprint. Wraps the raw 64-char hex string so the
 /// type signature surfaces "this is a fingerprint, not just any hash"

@@ -1,8 +1,7 @@
 // WHY: codegen for println/eprintln builtins.
 
-use core.{Expr, VarBinding, ValueType, vtype_is_str, vtype_eq}
+use core.{VarBinding, vtype_is_str, vtype_eq}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
-use codegen.{emit_concat}
 use codegen.{strip_quotes}
 
 /// Codegen for `eprintln(value)`. Strings pass through; floats route

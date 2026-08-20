@@ -32,7 +32,7 @@ use core.{NodeStore, StmtId, content_id_for, stmt_content_hash, vtype_render_ful
 use diagnostics.{DiagnosticBag, diag_ice, diag_canonical}
 use resolve.{NameResolveResult}
 use features.comptime.{run_comptime, resolve_and_expand_program, ComptimeResult}
-use typeck.{typecheck_program, TypeCheckResult, TC, TypeEntry, TypeckItemOut, typecheck_env, typecheck_item, typecheck_assemble}
+use typeck.{TypeCheckResult, TC, TypeEntry, TypeckItemOut, typecheck_env, typecheck_item, typecheck_assemble}
 
 // Coarse pass families (Step A): one whole-program cell per family, arg 0.
 export const PASS_SRC = 0

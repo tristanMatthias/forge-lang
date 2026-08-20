@@ -18,7 +18,7 @@
 //   other: /// summary
 
 use core.{avra_selfhost_read_file, avra_selfhost_write_file}
-use @std.lsp.{Sym, SymKind}
+use @std.lsp.{Sym}
 
 /// Outcome of a `gen_apply` run.
 ///
