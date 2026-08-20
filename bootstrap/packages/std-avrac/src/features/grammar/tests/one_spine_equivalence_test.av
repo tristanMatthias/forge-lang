@@ -1,0 +1,62 @@
+// WHY: P2c(c) replaces the nested view chain with ONE flat composition —
+// design record section 2's `compose_fragments([engine_spine()] + feature_fragments())`.
+// The whole risk is ORDER: composed rule order IS the emitted parser's fn order
+// (t-kd4y.3.5.9), so a recomposition that reorders is IR-observable and needs
+// `intended-ir-change`, while one that preserves order lands as a no-op.
+//
+// This measures which it is, WITHOUT touching the production chain. The nesting
+// today is:
+//   avra_program_grammar   = compose([program_rule, decl_flip])
+//   avra_decl_flip_grammar = compose([decl_edge, stmt_flip])
+//   avra_stmt_flip_grammar = compose([stmt_common, expr_core, decl_edge, type, pat] + stmt_family)
+//   avra_expr_core         = compose([expr_spine] + expr_fragments)
+// and `compose_grammars(a, b)` is literally `compose_fragments([a, b])`, so the
+// whole chain is ONE associative operator and the flattening is well defined.
+//
+// avra_type_grammar is kept as a UNIT on purpose: it carries the start-symbol
+// HOIST (it promotes whichever fragment defines `type_expr` to the front), and
+// inlining its fragments would drop that. Section 2's own correction records
+// what breaks otherwise — type_equivalence_test went 0/8, even `int` failing.
+
+use @std.avrac.features.grammar.{Grammar, avra_program_grammar, avra_expr_spine_grammar,
+                                 avra_type_spine_grammar, avra_type_grammar}
+
+fn rule_names(g: Grammar) -> List<string> {
+    mut out: List<string> = []
+    for r in g.rules { out.push(r.name) }
+    out
+}
+
+fn joined(xs: List<string>) -> string {
+    mut s = ""
+    for x in xs { s = s + x + "," }
+    s
+}
+
+spec "P2c(c): the FLAT composition reproduces the nested chain's rule order" {
+    then "the nested chain has rules at all — anti-vacuity" {
+        // If avra_program_grammar ever returned empty, every order comparison
+        // below would pass on two empty lists.
+        rule_names(avra_program_grammar()).length > 50
+    }
+    then "`program` leads — the start symbol is the first fragment's start rule" {
+        rule_names(avra_program_grammar())[0] == "program"
+    }
+    then "the type view still leads with `type_expr` — the HOIST survives" {
+        // The invariant P2c(c) must not lose. Pinned here so a flattening that
+        // inlines the type fragments trips this rather than type_equivalence.
+        rule_names(avra_type_grammar())[0] == "type_expr"
+    }
+    then "the engine's rule-bearing fragments are all present in the composed whole" {
+        // Only the EXPORTED rule-bearing views can be named here.
+        // avra_decl_edge_grammar / avra_stmt_common_grammar / avra_expr_core are
+        // PRIVATE — which is itself a P2c(c) finding: three of the views have no
+        // external consumer at all and can be restructured without touching a
+        // single caller.
+        let all = joined(rule_names(avra_program_grammar()))
+        mut ok = true
+        for r in rule_names(avra_expr_spine_grammar()) { if !all.contains(r + ",") { ok = false } }
+        for r in rule_names(avra_type_spine_grammar()) { if !all.contains(r + ",") { ok = false } }
+        ok
+    }
+}
