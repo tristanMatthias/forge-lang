@@ -295,11 +295,18 @@ export fn is_registered_component(reg: Registry, name: string) -> bool {
 /// opens a struct literal, a `grammar { … }` block or a `table { … }`.
 ///
 /// It used to be `lookup_expr_parser(...) -> int?`, returning "the parse_expr
-/// handler-fn-as-int". Nothing could ever have CALLED that: the value's only
-/// path in and out of the map is `avra_map_set_cstr(..., value: int)` /
-/// `avra_map_get_cstr(...) -> int`, and no int-to-fn-pointer facility exists
-/// anywhere in the tree or the C runtime. Not "no caller found" — no caller was
-/// expressible. The doc also cited `parse_primary`, which t-47hc deleted.
+/// handler-fn-as-int" — and nothing ever retrieved it. The map's only read was
+/// `avra_map_has_cstr` (presence); no consumer ever called `avra_map_get_cstr`
+/// on it, so the stored handler could not run.
+///
+/// Note the value COULD have been called, contrary to what an earlier version
+/// of this comment claimed: `dispatch_expr_emit` (below) does exactly that for
+/// the emitter maps — `avra_intmap_get` returns an `int` which is bound to a
+/// fn-typed local and invoked. That coercion is the language's ambient
+/// int-as-fn-pointer convention, and it is why `Feature.emit_expr: int` still
+/// works. So this was dead by DISUSE, not by impossibility.
+///
+/// The old doc also cited `parse_primary`, which t-47hc deleted.
 export fn is_expr_keyword(reg: Registry, keyword: string) -> bool {
     avra_map_has_cstr(reg.expr_keywords, keyword) != 0
 }
