@@ -14,8 +14,9 @@ names {version, sha256, url} on GitHub Releases; the build fetches + hash-verifi
 NEVER committed). Publish a new pin with `make seed-publish` (integration branch only).
 
 Features are self-contained modules in `bootstrap/packages/std-avrac/src/features/`.
-The CANONICAL per-feature file set is `features/WHY.md` — that list is exhaustive
-and enforced; `parser.av` is NOT on it (features do not parse — text->AST is the
+The CANONICAL per-feature file set is `features/WHY.md` — that list is
+exhaustive but NOT yet enforced (`diagnose.sh --check-feature-layout` is P4 of
+the standardization program); `parser.av` is NOT on it (features do not parse — text->AST is the
 grammar plus a `lowering/`). The front-end standardization design record (one
 grammar, no `gram_family`, one parse seam, grammar-generated lexer,
 `Tk.Keyword(KwId)`) is `bootstrap/docs/2026_08_19_STANDARDIZATION.md`.

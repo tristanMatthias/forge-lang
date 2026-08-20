@@ -35,10 +35,15 @@ fn diag_of(tag: string, source: string) -> string {
     avra_shell_exec("./build/bs2 check '${path}' 2>&1 || true")
 }
 
-/// A diagnostic actually came back — not a crash, not silence. Infinite
-/// recursion in the seam produces neither an F-code nor a caret line.
-fn reported(out: string) -> bool {
-    out.contains("error[") && !out.contains("stack overflow")
+/// A diagnostic actually came back — not a crash, not silence — and it is the
+/// SYNTAX code the seam is supposed to raise, not merely "some error".
+///
+/// Matching a bare `error[` would let a wrong-cause failure pass: any later
+/// pass reporting anything at all would satisfy it. Every fixture below is
+/// malformed at PARSE time, so F0001 is the code each seam must produce
+/// (verified by running each through `bs2 check`).
+fn reported_syntax(out: string) -> bool {
+    out.contains("error[F0001]") && !out.contains("stack overflow")
 }
 
 spec "the parse seam survives its own error path" {
@@ -48,19 +53,21 @@ spec "the parse seam survives its own error path" {
             // merges the delegate, replays diagnostics, then decides between a
             // whole-item failure and an already-recovered body.
             let out = diag_of("decl", "fn (\n")
-            reported(out)
+            reported_syntax(out)
         }
     }
     given "a malformed STATEMENT inside a function body" {
         then "it reports a coded diagnostic instead of recursing to death" {
             let out = diag_of("stmt", "fn main() {\n    let = 5\n}\n")
-            reported(out)
+            reported_syntax(out)
         }
     }
     given "a malformed EXPRESSION" {
         then "it reports a coded diagnostic instead of recursing to death" {
             let out = diag_of("expr", "fn main() {\n    let x = (1 +\n}\n")
-            reported(out)
+            // This one also raises F0040 (unclosed group); F0001 must still be
+            // among them, so the assertion stays discriminating either way.
+            reported_syntax(out)
         }
     }
     given "the anti-vacuity half" {

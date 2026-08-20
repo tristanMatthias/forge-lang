@@ -25,29 +25,43 @@ fn compile_out(dir: string) -> string {
 }
 
 spec "typeck negative examples still produce their diagnostics" {
-    then "a `catch` body whose type mismatches the fallible expression is F1000" {
-        compile_out("err_catch_type_mismatch").contains("F1000")
-    }
-    then "a `const` initialised by a fn call is F1000" {
-        // `const` requires a compile-time constant expression; a call is not one.
-        compile_out("err_const_non_constant").contains("F1000")
-    }
-    then "a mutating method on a `let` binding is F3001" {
-        compile_out("err_mutating_method_let").contains("F3001")
-    }
-    then "assigning a string literal to an `int` binding is F1000" {
-        compile_out("err_type_mismatch").contains("F1000")
+    // Each fixture is compiled ONCE and its output reused. The F-code alone is
+    // not discriminating — three of the four are F1000 — so each case also pins
+    // a phrase unique to ITS diagnostic. Without that, a fixture that started
+    // failing for an unrelated reason would still satisfy "contains F1000".
+    given "each fixture compiled once" {
+        then "a `catch` body whose type mismatches the fallible expression" {
+            let out = compile_out("err_catch_type_mismatch")
+            out.contains("F1000") && out.contains("catch")
+        }
+        then "a `const` initialised by a fn call is not a constant expression" {
+            let out = compile_out("err_const_non_constant")
+            out.contains("F1000") && out.contains("const")
+        }
+        then "a mutating method on a `let` binding is F3001" {
+            let out = compile_out("err_mutating_method_let")
+            // The only one with its own code, so the code IS the discriminator.
+            out.contains("F3001")
+        }
+        then "a string literal assigned to an `int` binding names both types" {
+            let out = compile_out("err_type_mismatch")
+            out.contains("F1000") && out.contains("int") && out.contains("string")
+        }
     }
 }
-
 spec "the negative examples are genuinely negative" {
     then "every one of them FAILS to compile — the anti-vacuity half" {
         // Without this, a fixture that silently started COMPILING would still
         // satisfy the F-code assertions above if the code appeared anywhere in
         // the output, and the specs would pass while testing nothing.
-        compile_out("err_catch_type_mismatch").contains("error[")
-            && compile_out("err_const_non_constant").contains("error[")
-            && compile_out("err_mutating_method_let").contains("error[")
-            && compile_out("err_type_mismatch").contains("error[")
+        //
+        // Bound before the conjunction so ALL FOUR are evaluated: `&&` on the
+        // calls themselves short-circuits, and an early regression would then
+        // mask every later one.
+        let a = compile_out("err_catch_type_mismatch").contains("error[")
+        let b = compile_out("err_const_non_constant").contains("error[")
+        let c = compile_out("err_mutating_method_let").contains("error[")
+        let d = compile_out("err_type_mismatch").contains("error[")
+        a && b && c && d
     }
 }

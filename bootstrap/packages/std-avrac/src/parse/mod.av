@@ -858,12 +858,10 @@ impl Parser {
         mut gi = 0
         while gi < diags.length {
             let gd = diags[gi]
+            // Resolve the code first, then report ONCE: the two arms differed
+            // only in which code they passed.
             let dc = syntax_diag_code(gd.code)
-            if dc != null {
-                self.report_at_span(dc!, gd.msg, gd.byte, gd.end_byte)
-            } else {
-                self.report_at_span(DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
-            }
+            self.report_at_span(dc ?? DiagCode.SyntaxError, gd.msg, gd.byte, gd.end_byte)
             gi = gi + 1
         }
     }
