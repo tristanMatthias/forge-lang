@@ -64,6 +64,24 @@ export fn list_avra_module_files(dir: string) -> List<string> {
         }
         i = i + 1
     }
+    // SORTED, because module member order is PARSE order and parse order is
+    // semantic: a component instantiation (`LanguageFeature foo_def { … }`)
+    // only parses once the `component` declaration that names it has been
+    // seen, so which file is read first can decide whether a sibling parses
+    // at all.
+    //
+    // `avra_readdir` returns raw filesystem order, which differs between
+    // APFS and ext4. That made the order — and therefore the parse — depend
+    // on the machine. It stayed invisible while feature directories held a
+    // fixed set of files, and surfaced the moment t-y2i7's P4e added
+    // `resolve.av` / `eval.av` siblings: identical source, green on macOS,
+    // `parse error at 18:14: expected }` in `module modules` on Linux CI.
+    //
+    // Sorting makes the order reproducible everywhere. It does not make the
+    // ORDER-DEPENDENCE itself go away — that is a property of single-pass
+    // component registration — but it removes the machine from the equation,
+    // which is what turns a heisenbug into a fact.
+    out.sort((a: string, b: string) -> if a < b { -1 } else if a > b { 1 } else { 0 })
     out
 }
 
