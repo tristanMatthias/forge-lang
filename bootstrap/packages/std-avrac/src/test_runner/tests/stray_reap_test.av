@@ -19,6 +19,8 @@
 // every kill path is exercised for real, against processes that can only be
 // this test's own.
 
+extern fn avra_host_os() -> string
+
 use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_selfhost_read_file, avra_mkdir_p, avra_getpid}
 
 // A sandbox holding a fake heavy binary (a copy of `src`, named for this run),
@@ -39,6 +41,18 @@ fn harness_of(tag: string, src: string, body: string) -> string {
         "export kid=\"$name\"k\n" +
         "cp \"$(command -v " + src + ")\" \"$root/$name\"\n" +
         "cp \"$(command -v sleep)\" \"$root/$kid\"\n" +
+        // macOS: a COPY of a platform binary inherits the original's signing
+        // identifier (com.apple.sleep) but no longer validates at its new path,
+        // so the kernel SIGKILLs it at exec. Measured: exit 137, dead before ps
+        // ever saw it — which made all five specs here fail for a reason with
+        // nothing to do with --stray. Ad-hoc re-signing gives the copy a valid
+        // signature for its own path. No-op on Linux, which has no codesign.
+        "if command -v codesign >/dev/null 2>&1; then\n" +
+        "  for b in \"$root/$name\" \"$root/$kid\"; do\n" +
+        "    codesign --remove-signature \"$b\" >/dev/null 2>&1 || true\n" +
+        "    codesign -s - \"$b\" >/dev/null 2>&1 || true\n" +
+        "  done\n" +
+        "fi\n" +
         "export AVRA_HEAVY_PROCS=\"$name $kid\"\n" +
         // macOS ps prints `comm` as an absolute path where Linux prints the
         // basename — the same normalisation all_ps does, for the same reason:
@@ -113,7 +127,17 @@ spec "t-ce5t: --stray reports strays with RSS, and cannot report ITSELF" {
             "printf '%s\\n' \"$safe\"  | awk -v p=\"$sp\" '$1 == p { print \"STRAY_SELF_MATCHED\" }'\n" +
             "printf '%s\\n' \"$safe\"  | awk '$7 == \"" + n + "\" { print \"STRAY_FOUND_THE_REAL_ONE\" }'\n" +
             "kill %1 2>/dev/null\n")
-        out.contains("PGREP_SELF_MATCHED")
+        // The `pgrep` half is HOST-SPECIFIC. On Linux the invoking shell's
+        // command line contains the pattern and pgrep reports it — the hazard
+        // this spec exists to demonstrate. BSD/macOS pgrep does not match that
+        // shell (measured on this host: the probe's own PID never appears in
+        // its output), so asserting it there would fail on a difference in
+        // pgrep, not on anything --stray does.
+        //
+        // The two halves that ARE the contract hold on BOTH hosts and stay
+        // unconditional: --stray must not report itself, and must still find
+        // the real process.
+        (out.contains("PGREP_SELF_MATCHED") == (avra_host_os() != "macos"))
             && !out.contains("STRAY_SELF_MATCHED")
             && out.contains("STRAY_FOUND_THE_REAL_ONE")
     }

@@ -101,7 +101,15 @@ spec "t-kdyj.7: a same-second tie is not genuine staleness" {
             // the sandbox binary was created — so the control silently became
             // a second tie and reported the strict predicate broken when it was
             // working. Caught while writing this spec.
-            "touch -d \"@$(( $($STAT_MTIME \"$sandbox/bs2x\") + 10 ))\" \"$sandbox/cli/a.av\"\n" +
+            // `touch -d @<epoch>` is a GNU extension — BSD/macOS touch has no
+            // -d at all and rejects it ("out of range or illegal time
+            // specification"), so on macOS this control never moved the mtime
+            // and the strict predicate was reported broken when it was working.
+            // Same GNU-only-assumption class as `ar -D` (t-y2i7.9). perl's
+            // utime sets the timestamp directly and behaves identically on
+            // both hosts.
+            "perl -e 'utime $ARGV[1], $ARGV[1], $ARGV[0]' \"$sandbox/cli/a.av\" " +
+            "\"$(( $($STAT_MTIME \"$sandbox/bs2x\") + 10 ))\"\n" +
             // BOTH predicates must fire on a genuinely-newer source. Asserting
             // only the strict one leaves the build predicate's primary case
             // unchecked here — the tie arm proves it says "rebuild" on a tie,

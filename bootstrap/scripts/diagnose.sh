@@ -3421,22 +3421,34 @@ annotate_heavy() {
   local snap chain
   snap="$(all_ps)"
   chain=" $(pid_ancestry $$) "
-  printf '%s\n' "$snap" | awk -v snap="$snap" -v chain="$chain" -v want="$HEAVY_PROCS" '
-    BEGIN {
-      n = split(snap, lines, "\n")
-      for (i = 1; i <= n; i++) { split(lines[i], f, " "); if (f[1] != "") parent[f[1]] = f[2] }
-      m = split(want, w, " "); for (i = 1; i <= m; i++) heavy[w[i]] = 1
-    }
-    !($6 in heavy) { next }
-    { root = ""; p = $1; hops = 0
-      while (p != "" && p != "0" && p != "1" && hops < 64) {
-        if (parent[p] == "1") { root = p; break }
-        p = parent[p]; hops++
+  # The snapshot reaches awk ONLY through stdin. It used to ALSO be passed as
+  # `-v snap="$snap"` so BEGIN could build the parent map, but a `-v` value may
+  # not contain a literal newline: GNU awk tolerates it, the BSD/macOS awk
+  # rejects the whole program with `awk: newline in string`, so --stray emitted
+  # three parse errors per invocation on macOS and every process came back
+  # unannotated. Same class as the GNU-only `ar -D` (t-y2i7.9).
+  #
+  # The map is built during the single pass instead and the annotation runs in
+  # END, which is what makes one pass sufficient: parent[] is complete before
+  # the first ancestry walk. `chain` and `want` stay on -v — both are one line.
+  printf '%s\n' "$snap" | awk -v chain="$chain" -v want="$HEAVY_PROCS" '
+    BEGIN { m = split(want, w, " "); for (i = 1; i <= m; i++) heavy[w[i]] = 1 }
+    { rows[NR] = $0; if ($1 != "") parent[$1] = $2 }
+    END {
+      for (r = 1; r <= NR; r++) {
+        split(rows[r], F, " ")
+        if (!(F[6] in heavy)) continue
+        root = ""; p = F[1]; hops = 0
+        while (p != "" && p != "0" && p != "1" && hops < 64) {
+          if (parent[p] == "1") { root = p; break }
+          p = parent[p]; hops++
+        }
+        state = "live"
+        if (root != "" && index(chain, " " root " ") == 0) state = (root == F[1]) ? "orphan" : "orphan-tree"
+        else root = "-"
+        print F[1], F[2], F[3], F[4], F[5], F[6], state, root
       }
-      state = "live"
-      if (root != "" && index(chain, " " root " ") == 0) state = (root == $1) ? "orphan" : "orphan-tree"
-      else root = "-"
-      print $1, $2, $3, $4, $5, $6, state, root }'
+    }'
 }
 
 # The pid chain from PID (default: this shell) up to init, space separated.
@@ -3555,15 +3567,29 @@ EOF
 procs_under() {
   local roots=" $1 " exclude=" ${2:-} " snap
   snap="$(all_ps)"
-  printf '%s\n' "$snap" | awk -v snap="$snap" -v roots="$roots" -v exclude="$exclude" '
-    BEGIN { n = split(snap, lines, "\n")
-            for (i = 1; i <= n; i++) { split(lines[i], f, " "); if (f[1] != "") parent[f[1]] = f[2] } }
-    index(exclude, " " $1 " ") > 0 { next }
-    { p = $2; hops = 0
-      while (p != "" && p != "0" && p != "1" && hops < 64) {
-        if (index(roots, " " p " ") > 0) { print $1, $6; break }
-        p = parent[p]; hops++
-      } }'
+  # Same portability constraint as annotate_heavy: the snapshot may NOT be
+  # passed via `-v` (a literal newline in a -v value makes the BSD/macOS awk
+  # reject the whole program). It reaches awk on stdin only; parent[] is built
+  # during that pass and the walk runs in END.
+  #
+  # This one mattered more than the reporting path: procs_under collects the
+  # SUBTREE to kill, so on macOS it produced nothing and --reap killed only the
+  # orphan root. The spawner died and its running child was left behind — the
+  # exact "killing the compiles while leaving the thing that spawns them is not
+  # a reap" failure this function exists to prevent.
+  printf '%s\n' "$snap" | awk -v roots="$roots" -v exclude="$exclude" '
+    { rows[NR] = $0; if ($1 != "") parent[$1] = $2 }
+    END {
+      for (r = 1; r <= NR; r++) {
+        split(rows[r], F, " ")
+        if (index(exclude, " " F[1] " ") > 0) continue
+        p = F[2]; hops = 0
+        while (p != "" && p != "0" && p != "1" && hops < 64) {
+          if (index(roots, " " p " ") > 0) { print F[1], F[6]; break }
+          p = parent[p]; hops++
+        }
+      }
+    }'
 }
 
 # Usage: --stray [--reap]

@@ -38,6 +38,37 @@ fn check_with_mem_limit(mb: string, file: string) -> string {
     avra_shell_exec("AVRA_MEM_LIMIT_MB=${mb} timeout 300 ./build/bs2 check '${file}' 2>&1 || true")
 }
 
+/// The start-up baseline THIS HOST reports, in MiB, read out of the F4014
+/// report's own "N MiB already resident when this phase began".
+///
+/// The accumulation spec below needs a ceiling that sits just above start-up,
+/// so the trip lands early in the parse and the phase contributes a small
+/// fraction of the total. That distance was written as a literal 60 against a
+/// "~52 MiB" Linux baseline. macOS starts at ~18 MiB, where a ceiling of 60
+/// leaves room for the parse to add the MAJORITY (+39 of 57 measured) — so the
+/// note correctly stayed silent and the spec read that as the note being
+/// broken. Deriving the ceiling keeps the spec's intent on any host.
+fn startup_baseline_mb() -> int {
+    let out = check_with_mem_limit("1", BIG_FILE)
+    // The ceiling-1 run trips during `startup (before parse)`, so it has NO
+    // "already resident" line — only the headline "N MiB resident". Keying on
+    // the former returned 0 and produced a 4 MiB ceiling that tripped at
+    // start-up with no phase to attribute.
+    let key = " MiB resident"
+    mut i = 0
+    while i + key.length <= out.length {
+        if out.substring(i, i + key.length) == key {
+            // Walk back over the digits that precede the key.
+            mut j = i
+            while j > 0 && out.substring(j - 1, j) >= "0" && out.substring(j - 1, j) <= "9" { j = j - 1 }
+            if j < i { return avra_parse_int(out.substring(j, i)) }
+        }
+        i = i + 1
+    }
+    0
+}
+
+
 spec "t-drl0: the compiler bounds its own memory instead of being OOM-killed" {
     then "a compile past the ceiling reports F4014, not a signal death" {
         let out = check_with_mem_limit("1", BIG_FILE)
@@ -100,7 +131,9 @@ spec "the F4014 report separates in-phase growth from what preceded it" {
         // mostly start-up. That is the accumulation shape in miniature — the
         // same reading as a shard that grew across 200 files and blamed the
         // 201st.
-        let out = check_with_mem_limit("60", BIG_FILE)
+        // Derived, not a literal: "a few MiB above whatever this host's
+        // start-up costs". See startup_baseline_mb.
+        let out = check_with_mem_limit(string(startup_baseline_mb() + 4), BIG_FILE)
         out.contains("memory ACCUMULATED") && out.contains("not what consumed it")
     }
     then "the help no longer asserts the phase is where the memory went" {

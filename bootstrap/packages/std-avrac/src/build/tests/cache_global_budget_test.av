@@ -51,7 +51,14 @@ fn seed_roots(sb: string) -> int {
         for i in 1..5 {
             avra_shell_exec("mkdir -p '${d}/build/cache/s${string(i)}'")
             avra_shell_exec("head -c 1048576 /dev/zero > '${d}/build/cache/s${string(i)}/unit.ll'")
-            avra_shell_exec("touch -d '${string(i)} hours ago' '${d}/build/cache/s${string(i)}'")
+            // `touch -d '<n> hours ago'` is GNU-only: BSD/macOS touch has no
+            // -d and cannot parse relative time, so on macOS the slots were
+            // never aged and oldest-first eviction had no ordering to work
+            // with. perl's utime takes an absolute epoch and behaves the same
+            // on both hosts. (Same GNU-only class as `ar -D`, `touch -d @sec`
+            // and the multi-line `awk -v` — t-y2i7.9.)
+            avra_shell_exec("perl -e 'my $t = time - $ARGV[1] * 3600; utime $t, $t, $ARGV[0]' " +
+                "'${d}/build/cache/s${string(i)}' ${string(i)}")
         }
     }
     0
@@ -127,7 +134,13 @@ spec "t-tit7: a budget smaller than the root count still evicts, and reports the
         // cannot fit a 1MB budget the run says so rather than claiming success.
         let ok = out.contains("exceeds the 1MB budget")
             && out.contains("still over the 1MB budget")
-            && before > 12
+            // `>= 12`, not `> 12`: the seed writes exactly 12 x 1MB, and how
+            // much `du -sm` adds for directory overhead is filesystem-
+            // dependent — ext4 rounds this to 13, APFS reports exactly 12
+            // (measured on both). The clause is here to say "the tree really
+            // is far above a 1MB budget", which 12 satisfies; `> 12` was
+            // asserting an ext4 accounting detail.
+            && before >= 12
             && after < before
             && after <= 6
         avra_shell_exec("rm -rf '${sb}' '${sb}.gc.log'")
@@ -156,7 +169,10 @@ spec "t-tit7: a malformed AVRA_CACHE_MAX_MB fails loudly instead of disabling th
         // silently pruned under a cap that was never understood.
         let ok = rc != 0
             && out.contains("AVRA_CACHE_MAX_MB")
-            && after > 12
+            // `>= 12` for the same filesystem-accounting reason as the spec
+            // above: nothing was pruned, so the tree is still the full 12 x
+            // 1MB the seed wrote. ext4 rounds that to 13, APFS to 12.
+            && after >= 12
         avra_shell_exec("rm -rf '${sb}' '${log}'")
         ok
     }
