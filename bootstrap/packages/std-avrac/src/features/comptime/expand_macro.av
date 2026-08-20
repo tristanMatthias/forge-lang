@@ -43,6 +43,7 @@
 
 use core.{Stmt, Expr, ValueType, find_annotation, stmt_unwrap, rewrap_annotations, type_qualified_name}
 use core.{NodeStore, StmtId, ExprId}
+use core.{module_graph_canonicals}
 use features.grammar.{synthesize_typed_builders}
 use resolve.{ResolverState, NameResolveResult, register_macro_decls, reresolve_use_aliases, resolve_names_pre_expand, rewrite_uses, rewrite_uses_macro_only, validate_scopes_after_expand, dots_to_colons}
 use features.comptime.{CompTimeRegistry, comptime_has, comptime_lookup_lazy, comptime_drain_lazy, collect_comptime_fns_ids, stmt_to_value}
@@ -82,6 +83,7 @@ extern fn avra_comptime_leave()
 extern fn avra_rd_clear()
 extern fn avra_rd_set_current_module(s: string)
 extern fn avra_rd_add_alias(short_name: string, canonical: string)
+extern fn avra_rd_add_module(canonical: string)
 extern fn avra_rd_add_global(short_name: string, canonical: string)
 extern fn avra_rd_begin_type(canonical: string, kind: string) -> int
 extern fn avra_rd_add_type_field(type_id: int, field_name: string, field_type_canonical: string)
@@ -113,6 +115,14 @@ fn populate_resolver_data_into(state: ResolverState, ids: List<StmtId>) {
     }
     for g in state.graph.all_items {
         avra_rd_add_global(g.short_name, g.canonical)
+    }
+    // The module SET, so a macro can ask which modules exist rather than only
+    // whether a given name is one (ctx_modules_under). Unnamed nodes are the
+    // synthetic roots; they have nothing to answer with.
+    // EVERY canonical path, straight from the map that owns them — a module
+    // reached through two parents holds two, and both are registered.
+    for c in module_graph_canonicals(state.graph) {
+        if c != "" { avra_rd_add_module(c) }
     }
     populate_type_fields(state.nodes, ids, "")
 }

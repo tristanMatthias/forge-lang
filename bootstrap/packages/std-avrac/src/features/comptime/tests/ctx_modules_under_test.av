@@ -1,0 +1,53 @@
+// WHY: t-y2i7.5. A @comptime macro cannot read the filesystem — `avra_readdir`
+// is an impure extern and the purity gate raises F4008 through any depth of
+// helper chain. That gate is RIGHT: a comptime fold is CACHED, and a directory's
+// contents are not in the cache key, so discovery-driven folding would go stale
+// invisibly.
+//
+// But the compiler has ALREADY walked those directories during resolution.
+// `ctx_modules_under` asks it what it found — pure with respect to the
+// compilation, correctly cached, and the same contract ctx_lookup_type and
+// ctx_qualify_ident already have.
+//
+// This pins the property P5 depends on: the module set is ENUMERABLE from a
+// macro, not merely queryable one name at a time. Before this, module identity
+// lived only in a C-side canonical->id map with lookup-only accessors, so a
+// macro could ask "is X a module?" but never "which modules are there?".
+//
+// Same shape as its sibling ctx_* specs: the macro emits a println of what it
+// found, and the RUNTIME OUTPUT is the evidence — a stub returning [] cannot
+// fake it.
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "ResolverCtx: ctx_modules_under enumerates the module graph" {
+    then "a prefix selects a non-empty subset, and a bogus prefix selects none" {
+        let out = write_fixture_and_run("/tmp/avra_ctx_modules_under_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_modules_under}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            // Three prefixes, because two are not enough to pin the filter.
+            // An empty prefix matches every module (the set is populated at
+            // all) and a bogus one must match none (the filter is real) — but
+            // an implementation that answered `every` for "" and [] for
+            // everything else would satisfy both. The REAL prefix is what
+            // separates them: it must select a subset that is neither empty
+            // nor the whole graph. It is also the query P5 actually issues.
+            "    let every = ctx_modules_under(ctx, \"\")\n" +
+            "    let feats = ctx_modules_under(ctx, \"@std::avrac::features\")\n" +
+            "    let bogus = ctx_modules_under(ctx, \"@no::such::prefix\")\n" +
+            "    let proper = feats.length > 10 && feats.length < every.length\n" +
+            "    let msg = \"all=\" + string(every.length > 1) + \"; subset=\" + string(proper) + \"; none=\" + string(bogus.length)\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("all=true") && out.contains("subset=true") && out.contains("none=0") && !out.contains("error[")
+    }
+}

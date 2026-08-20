@@ -8142,6 +8142,14 @@ static const char* avra_rd_current_module_v = "";
 // doubles to fit any real program).
 #define AVRA_RD_INIT_TYPES    128
 
+// t-y2i7.5: the canonical names of every module in the compilation, so a
+// @comptime macro can ask WHICH MODULES EXIST (ctx_modules_under) rather than
+// only "is this name a module?". A plain list, not a map: the query is a prefix
+// scan, and the set is small (~120) and written once per macro invocation.
+static const char** avra_rd_module_names = NULL;
+static int64_t avra_rd_module_n = 0;
+static int64_t avra_rd_module_cap = 0;
+
 static const char** avra_rd_alias_keys = NULL;
 static const char** avra_rd_alias_vals = NULL;
 static int64_t avra_rd_alias_n = 0;
@@ -8167,6 +8175,21 @@ static int64_t avra_rd_field_cap = 0;
 // Grow a pair of const char* buckets (keys + vals) to at least
 // `needed` capacity. Doubles cap until it's enough. Aborts on alloc
 // failure (rare; production process would just be killed by OOM).
+// One-array sibling of avra_rd_grow_strs2, same 256 start / 2x growth / abort
+// contract. Split out rather than passing a NULL second array so neither call
+// site has to test for it.
+static void avra_rd_grow_strs1(const char*** a, int64_t* cap, int64_t needed) {
+    int64_t new_cap = (*cap == 0) ? 256 : *cap;
+    while (new_cap < needed) new_cap *= 2;
+    if (new_cap == *cap) return;
+    *a = (const char**)realloc(*a, new_cap * sizeof(const char*));
+    if (!*a) {
+        fprintf(stderr, "avra_rd: out of memory growing string bucket to %lld entries\n", (long long)new_cap);
+        abort();
+    }
+    *cap = new_cap;
+}
+
 static void avra_rd_grow_strs2(const char*** a, const char*** b, int64_t* cap, int64_t needed) {
     int64_t new_cap = (*cap == 0) ? 256 : *cap;
     while (new_cap < needed) new_cap *= 2;
@@ -8201,6 +8224,7 @@ static void avra_rd_grow_types(int64_t needed) {
 void avra_rd_clear(void) {
     avra_rd_current_module_v = "";
     avra_rd_alias_n = 0;
+    avra_rd_module_n = 0;
     avra_rd_global_n = 0;
     avra_rd_type_n = 0;
     avra_rd_field_n = 0;
@@ -8243,6 +8267,23 @@ static const char* rd_strmap_lookup(const char** keys, const char** vals,
     return "";
 }
 
+// Record one module's canonical name. Strings are borrowed, not copied — the
+// same contract every other rd bucket uses (see the header above: they stay
+// alive for the whole compile).
+void avra_rd_add_module(const char* canonical) {
+    if (!canonical || !*canonical) return;
+    if (avra_rd_module_n >= avra_rd_module_cap) {
+        avra_rd_grow_strs1(&avra_rd_module_names, &avra_rd_module_cap, avra_rd_module_n + 1);
+    }
+    avra_rd_module_names[avra_rd_module_n++] = canonical;
+}
+
+int64_t avra_rd_module_count(void) { return avra_rd_module_n; }
+
+const char* avra_rd_module_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_module_n) ? avra_rd_module_names[i] : "";
+}
+
 void avra_rd_add_alias(const char* short_name, const char* canonical) {
     rd_strmap_add(&avra_rd_alias_keys, &avra_rd_alias_vals,
                   &avra_rd_alias_n, &avra_rd_alias_cap,
@@ -8258,6 +8299,20 @@ void avra_rd_add_global(const char* short_name, const char* canonical) {
     rd_strmap_add(&avra_rd_global_keys, &avra_rd_global_vals,
                   &avra_rd_global_n, &avra_rd_global_cap,
                   short_name, canonical);
+}
+
+// Enumeration over the globals bucket. No new storage — the keys/vals arrays
+// already exist for lookup; these just expose them in order, so a macro can ask
+// "which items end in _lang?" instead of only "what is X?". Same reason
+// avra_rd_module_at exists: a lookup-only map cannot answer a set question.
+int64_t avra_rd_global_count(void) { return avra_rd_global_n; }
+
+const char* avra_rd_global_name_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_global_n) ? avra_rd_global_keys[i] : "";
+}
+
+const char* avra_rd_global_canonical_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_global_n) ? avra_rd_global_vals[i] : "";
 }
 
 const char* avra_rd_lookup_global(const char* name) {

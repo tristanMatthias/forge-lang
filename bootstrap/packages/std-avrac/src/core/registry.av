@@ -21,6 +21,7 @@ extern fn avra_map_new_cstr() -> ptr
 extern fn avra_map_set_cstr(map: ptr, key: string, value: int)
 extern fn avra_map_get_cstr(map: ptr, key: string) -> int
 extern fn avra_map_has_cstr(map: ptr, key: string) -> int
+extern fn avra_map_keys_cstr(map: ptr) -> List<string>
 
 
 // ── No-op handlers ──

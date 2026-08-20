@@ -25,7 +25,7 @@
 //   cannot change the path's meaning — the anchor is fixed.
 
 use core.{avra_map_new_cstr, avra_map_set_cstr, avra_map_get_cstr,
-                  avra_map_has_cstr, avra_intmap_new, avra_intmap_set,
+                  avra_map_has_cstr, avra_map_keys_cstr, avra_intmap_new, avra_intmap_set,
                   avra_intmap_get, avra_intmap_has}
 
 // ── Logical newtypes (carried as int for bootstrap simplicity) ───────
@@ -235,6 +235,18 @@ export fn module_graph_is_exported(g: ModuleGraph, canonical: string) -> bool {
 export fn module_graph_set_canonical(g: ModuleGraph, canonical: string, mod_id: int) -> ModuleGraph {
     avra_map_set_cstr(g.by_canonical, canonical, mod_id)
     g
+}
+
+/// EVERY canonical path registered in this graph, in map order.
+///
+/// The map is the one source of truth and it is many-to-one: the same file
+/// reached from a second parent is deduplicated to the existing node and
+/// registered again under the new path (graph_build's `walk_mod_decl`), so a
+/// module can hold several canonical names. Enumerating the map keeps all of
+/// them. Mirroring the name onto the node instead — the shape this replaced —
+/// kept only whichever path was registered last.
+export fn module_graph_canonicals(g: ModuleGraph) -> List<string> {
+    avra_map_keys_cstr(g.by_canonical)
 }
 
 /// Look up a ModuleId by its canonical path (the same string format
