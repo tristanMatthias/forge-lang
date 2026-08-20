@@ -333,7 +333,6 @@ export fn is_truthy(value: Value) -> bool {
 // WHY: tree-walk evaluator for eval/run debug commands.
 // Not part of the compiler pipeline — used for interactive expression evaluation.
 
-use eval.{Value, EvalResult, Runtime, StepResult, ok_result, error_result, value_null, is_truthy, render_value}
 
 
 /// Same as eval_expression_source but takes a pre-parsed Expr. Lets
