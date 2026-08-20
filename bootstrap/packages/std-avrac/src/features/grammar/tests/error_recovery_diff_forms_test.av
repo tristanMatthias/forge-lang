@@ -79,6 +79,50 @@ spec "t-47hc.4.5: grammar-native list_expr recovers == exec oracle" {
     }
 }
 
+spec "t-47hc.36: grammar-native paren/tuple recovers == exec oracle" {
+    then "a stray comma REPORTS — it is not absorbed into a smaller tuple" {
+        // `(1,,2)` built `(tuple (1, 2))` on BOTH engines with NO diagnostic —
+        // indistinguishable from the valid `(1,2)`. The tuple branch spelled its
+        // separator `( "," ( rest:expression )? )+`, and that optional element
+        // swallows an empty slot ANYWHERE, not just a trailing one. Every sibling
+        // construct (list_expr, call_suffix, fn_decl params) already used
+        // `( @peek(comma_not_r*) "," @onfail(bail) elem )* ( "," )?`, which routes
+        // a TRAILING comma to its own slot and makes a MISSING element a hard
+        // failure; the tuple was the one rule that diverged from it.
+        //
+        // agree_bad is the assertion that catches this class: agree_tree alone
+        // passes a silent drop, because both engines agree on the wrong tree.
+        agree_error("fn f() -> int {\n let z = (1,,2)\n return 0\n}") &&
+        agree_bad("fn f() -> int {\n let z = (1,,2)\n return 0\n}") &&
+        agree_bad("fn f() -> int {\n let z = (1,,)\n return 0\n}")
+    }
+    then "each stray-comma form reports EXACTLY ONE diagnostic, coded F0040" {
+        // agree_error/agree_bad prove "reports" and "the engines agree"; neither
+        // pins WHICH code or HOW MANY. Both matter here: the pre-fix tree came
+        // with ZERO diagnostics, and an over-eager fix that reported twice (once
+        // from the tuple branch, once from the group branch it falls back to)
+        // would satisfy every assertion above.
+        //
+        // F0040 "expected expression" — the SAME code the `[1,,2]` and
+        // `f(1,,2)` siblings give, because the `@cut` makes the branch commit
+        // and `@onfail(bail)` fire at the stray comma. Without the cut the
+        // branch stayed speculative, rolled back into the group alternative,
+        // and reported F0001 "expected `)`" — a real diagnostic, but pointing
+        // at the paren rather than at the comma that is actually wrong.
+        let a = "fn f() -> int {\n let z = (1,,2)\n return 0\n}"
+        let b = "fn f() -> int {\n let z = (1,,)\n return 0\n}"
+        pin(a, "F0040 ") && rdiags(true, a) == 1 && rdiags(false, a) == 1 &&
+        pin(b, "F0040 ") && rdiags(true, b) == 1 && rdiags(false, b) == 1
+    }
+    then "trailing comma, 1-tuple and group still parse — the fix does not over-reject" {
+        // The optional element existed to permit `(1,)` and `(1, 2,)`; the
+        // replacement must keep both, keep `(1)` a GROUP rather than a 1-tuple,
+        // and keep the arity of a well-formed tuple unchanged.
+        let ok = "fn f() -> int {\n let a = (1,)\n let b = (1, 2,)\n let c = (1, 2)\n let d = (1)\n return 0\n}"
+        agree(ok) && static_raw(ok) == ""
+    }
+}
+
 spec "t-47hc.19: grammar-native template_lit recovers == exec oracle" {
     then "malformed interpolations REPORT and agree" {
         // unterminated `${x` and an invalid sub-expression `${(}`

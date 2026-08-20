@@ -16,6 +16,7 @@
 // Extern decls are re-declared here (the established pattern — see core/ast.av:
 // "an extern decl is just a reference to the C symbol, not a definition").
 use parse.{LF, SPACE, TAB, CR, DIGIT_0, DIGIT_1, DIGIT_7, DIGIT_9, LOWER_A, LOWER_F, LOWER_Z, UPPER_A, UPPER_F, UPPER_Z, UNDERSCORE}
+use parse.{UTF8_CONT_MIN, UTF8_CONT_MAX, UTF8_LEAD2_MIN, UTF8_LEAD2_MAX, UTF8_LEAD3_MIN, UTF8_LEAD3_MAX, UTF8_LEAD4_MIN, UTF8_LEAD4_MAX}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
 extern fn avra_bytes_byte(b: bytes, idx: int) -> int
@@ -38,6 +39,34 @@ export fn char_class(b: int) -> CharClass {
     if b >= DIGIT_0 && b <= DIGIT_9 { return .Digit }                                // 0-9
     if (b >= LOWER_A && b <= LOWER_Z) || (b >= UPPER_A && b <= UPPER_Z) || b == UNDERSCORE { return .Alpha }  // a-z A-Z _
     .Other
+}
+
+// ── UTF-8 sequence width (t-47hc.2.1) ──
+//
+// The lexer needs these ONLY on its error path: a non-ASCII byte reaching
+// `advance_token`'s fallback is outside any string/comment, so the program is
+// invalid. It is still ONE character, and reporting it byte-by-byte turned a
+// single `∑` into four diagnostics (three "unexpected character" plus a
+// downstream "expected expression") — noise that buries the real first error.
+// Classification stays here beside `char_class` rather than in the lexer, so
+// the byte-range knowledge has one home.
+
+/// The byte length of the UTF-8 sequence `b` introduces: 4 / 3 / 2 for the
+/// lead ranges, and 1 for everything else — ASCII, and also a STRAY
+/// continuation byte, which leads nothing and so stands alone. Total over
+/// 0..255, so a caller never has to pre-check the range.
+export fn utf8_seq_len(b: int) -> int {
+    if b >= UTF8_LEAD4_MIN && b <= UTF8_LEAD4_MAX { return 4 }
+    if b >= UTF8_LEAD3_MIN && b <= UTF8_LEAD3_MAX { return 3 }
+    if b >= UTF8_LEAD2_MIN && b <= UTF8_LEAD2_MAX { return 2 }
+    1
+}
+
+/// True iff `b` is a UTF-8 CONTINUATION byte (0x80-0xBF). The lexer consumes
+/// only bytes that really are continuations, so a MALFORMED sequence (a lead
+/// promising more bytes than follow) cannot swallow the next valid token.
+export fn cc_is_utf8_cont(b: int) -> bool {
+    b >= UTF8_CONT_MIN && b <= UTF8_CONT_MAX
 }
 
 /// True iff the byte can START an identifier (`Alpha`: a letter or `_`).

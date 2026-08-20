@@ -37,7 +37,7 @@ the arrow and the mandatory tuple comma disambiguate.
         gram = grammar {
   paren_expr   = @peek(lparen_ident_colon) @peek(paren_arrow_ahead) "(" @onfail(bail) ps:param ( "," @onfail(bail) ps:param )* ")" "->" lb:lambda_body -> MkLambdaTyped(ps, lb)
                | @try @peek(paren_lambda_ahead) "(" ( @on(allow_dot_postfix) a:expression ( "," a:expression )* )? ")" "->" @cut lb:lambda_body -> MkLambda(a, lb)
-               | @try @peek(paren_comma_ahead) "(" @on(allow_dot_postfix) first:expression ( "," ( @on(allow_dot_postfix) rest:expression )? )+ ")" -> MkTupleFR(first, rest)
+               | @try @peek(paren_comma_ahead) "(" @on(allow_dot_postfix) first:expression @cut ( @peek(comma_not_rparen) "," @onfail(bail) @on(allow_dot_postfix) rest:expression )* ( "," )? ")" -> MkTupleFR(first, rest)
                | "(" ( @on(allow_dot_postfix) e:expression )? @require ")"
                  @expect(")", "expected `)` after expression") -> MkGroupOrEmpty(e)
   lambda_body  = block_expr | expression

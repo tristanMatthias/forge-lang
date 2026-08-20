@@ -1,0 +1,85 @@
+// WHY: t-47hc.33.3 — a postfix suffix that states a SAME-LINE entry condition
+// must re-apply it wherever the chain's step boundary happens to fall.
+//
+// The original defect: `Parser.postfix_step` consumed a RUN of `!` and then
+// fell through to the `?` arm WITHOUT re-testing the same-line guard, so
+// `x!` + a next-line `?` folded into a Try node — silently changing the
+// meaning of a program the hand oracle rejected. Whether it was observable
+// depended on where the driver put the step boundary, which is why five of
+// the six `!` compounds agreed and this one did not.
+//
+// The grammar migration removed the fallthrough entirely: `postfix_suffix` is
+// now an alternation of NAMED rules, and each carries its own entry condition
+// on its own lead terminal (`unwrap_suffix` = `@when(allow_dot_postfix) ^"!"`,
+// `index_suffix` = `^"["`, `call_suffix` = `^"("`; the `^` is the sameline
+// marker). A rule re-applies its guard on every invocation by construction, so
+// the property is now boundary-INDEPENDENT rather than accidentally correct.
+// These specs hold that: they are the assertion the ticket's prose lacked.
+//
+// `field_suffix` is deliberately NOT sameline — cross-line method chaining is
+// idiomatic — so `.f` folding across the newline is the DESIGNED behaviour and
+// is pinned here too, to keep a future "fix" from over-tightening it.
+//
+// METHOD NOTE, because measuring this wrong is easy and was done on the ticket:
+// `bs2 check` runs TYPECK, so `x![0]` fails on "cannot index an int" and `x!.f`
+// on "int has no field f" — TYPE errors on an `int?` fixture, not parse
+// results. These specs read the parse SIGNATURE and the TREE, never a whole
+// compile, so typeck cannot manufacture a finding.
+
+use @std.avrac.parse.{pin, rtree, tree_agrees_everywhere}
+
+fn src(suffix_line: string) -> string {
+    "fn f(x: int?) -> int {\n let a = x!\n" + suffix_line + "\n return 0\n}"
+}
+
+/// The emit-engine tree, for fold presence/absence checks.
+fn tree(s: string) -> string { rtree(true, s) }
+
+spec "t-47hc.33.3: a cross-line postfix does NOT fold onto an `!` run" {
+    then "`x!` + next-line `?` is REJECTED, not folded into a Try" {
+        // THE regression. The tree must not contain the Try fold, and the
+        // parse must actually report — asserting only one of those would pass
+        // on a silent drop or on a fold that happened to also report.
+        let s = src(" ?")
+        pin(s, "F0040 ") && !tree(s).contains("(? (call __avra_force_unwrap")
+    }
+    then "`x!` + next-line `[0]` stays a SEPARATE list literal, not an index" {
+        // `index_suffix` leads with `^"["`. Correct today only because the
+        // sameline marker is on the rule's own terminal — the latent case the
+        // ticket asked to make boundary-independent.
+        let s = src(" [0]")
+        pin(s, "") && !tree(s).contains("(index")
+    }
+    then "`x!` + next-line `(1)` stays a SEPARATE group, not a call" {
+        let s = src(" (1)")
+        pin(s, "") && !tree(s).contains("(call (call __avra_force_unwrap")
+    }
+    then "all three agree across the engines" {
+        tree_agrees_everywhere(src(" ?")) &&
+        tree_agrees_everywhere(src(" [0]")) &&
+        tree_agrees_everywhere(src(" (1)"))
+    }
+}
+
+spec "t-47hc.33.3: the SAME-LINE compounds still fold, and `.` still crosses" {
+    then "`x!?` on one line folds to a Try" {
+        let s = "fn f(x: int?) -> int {\n let a = x!?\n return 0\n}"
+        pin(s, "") && tree(s).contains("(? (call __avra_force_unwrap")
+    }
+    then "`x!!` on one line is a double force-unwrap" {
+        let s = "fn f(x: int?) -> int {\n let a = x!!\n return 0\n}"
+        pin(s, "") && tree(s).contains("__avra_force_unwrap ((call __avra_force_unwrap")
+    }
+    then "`x!` + next-line `.f` DOES fold — field access is intentionally cross-line" {
+        // No `^` on field_suffix. The parse is clean; the F1000 a full compile
+        // would add is typeck saying `int` has no field `f`, which is why this
+        // reads the parse signature rather than the compile.
+        let s = src(" .f")
+        tree(s).contains("(field (call __avra_force_unwrap")
+    }
+    then "the same-line and cross-line forms agree across the engines" {
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!?\n return 0\n}") &&
+        tree_agrees_everywhere("fn f(x: int?) -> int {\n let a = x!!\n return 0\n}") &&
+        tree_agrees_everywhere(src(" .f"))
+    }
+}

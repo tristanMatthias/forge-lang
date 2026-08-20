@@ -5,6 +5,7 @@
 // byte-identical to the hand lexer's (validated end-to-end by the token-stream
 // oracle, lex_oracle_test.av). Also pins the allocation-free `byte_at` accessor.
 use @std.avrac.parse.{char_class, cc_is_ident_start, cc_is_ident_cont, cc_is_digit, byte_at_str}
+use @std.avrac.parse.{utf8_seq_len, cc_is_utf8_cont}
 use @std.avrac.parse.{p_is_digit, p_is_alpha, p_is_alpha_numeric}
 
 // For a single character `c`, the byte-based classification must agree with the
@@ -45,5 +46,49 @@ spec "t-47hc.2: byte char_class agrees with the hand p_is_* predicates" {
         byte_at_str("ab", 1) == 98 &&   // 'b'
         byte_at_str("ab", 2) == -1 &&   // past end
         byte_at_str("ab", -1) == -1     // before start
+    }
+}
+
+// ── t-47hc.2.1: UTF-8 sequence width ──
+//
+// The lexer's unexpected-character fallback took only the LEAD byte, so the
+// continuation bytes were re-lexed and re-reported: one `∑` became four
+// diagnostics. These pin the width probe it now uses. Bounds matter more than
+// interiors here — an off-by-one on a lead range silently splits or merges a
+// character — so every range is asserted at BOTH ends.
+
+spec "t-47hc.2.1: utf8_seq_len classifies every lead range at its bounds" {
+    then "ASCII and the sub-lead bytes are width 1" {
+        utf8_seq_len(0) == 1 && utf8_seq_len(65) == 1 && utf8_seq_len(127) == 1
+    }
+    then "a STRAY continuation byte is width 1 — it leads nothing, so it stands alone" {
+        // 0x80-0xBF. Answering 2+ here would make the lexer eat following bytes
+        // on input that is already malformed.
+        utf8_seq_len(128) == 1 && utf8_seq_len(191) == 1
+    }
+    then "the 2-byte lead range 0xC0-0xDF" {
+        utf8_seq_len(192) == 2 && utf8_seq_len(223) == 2
+    }
+    then "the 3-byte lead range 0xE0-0xEF" {
+        utf8_seq_len(224) == 3 && utf8_seq_len(239) == 3
+    }
+    then "the 4-byte lead range 0xF0-0xF7" {
+        utf8_seq_len(240) == 4 && utf8_seq_len(247) == 4
+    }
+    then "past the 4-byte leads (0xF8-0xFF) is width 1 — not a valid lead at all" {
+        utf8_seq_len(248) == 1 && utf8_seq_len(255) == 1
+    }
+    then "the real characters the reproducer uses" {
+        // © U+00A9 = C2 A9, ∑ U+2211 = E2 88 91, 💩 U+1F4A9 = F0 9F 92 A9
+        utf8_seq_len(194) == 2 && utf8_seq_len(226) == 3 && utf8_seq_len(240) == 4
+    }
+}
+
+spec "t-47hc.2.1: cc_is_utf8_cont brackets 0x80-0xBF exactly" {
+    then "the continuation range is true at both ends" {
+        cc_is_utf8_cont(128) && cc_is_utf8_cont(191)
+    }
+    then "ASCII below and leads above are false" {
+        !cc_is_utf8_cont(127) && !cc_is_utf8_cont(192) && !cc_is_utf8_cont(226)
     }
 }
