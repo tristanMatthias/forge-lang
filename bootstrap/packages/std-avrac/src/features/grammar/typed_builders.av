@@ -321,7 +321,7 @@ fn strip_quotes(s: string) -> string {
 fn typed_targets(refs: List<BuildRef>, sigs: List<FnSig>) -> List<FnSig> {
     mut out: List<FnSig> = []
     for r in refs {
-        if central_build_kind(r.name) != "" { continue }
+        if central_build_kind(r.name) != null { continue }
         for sig in sigs {
             if sig.name != r.name { continue }
             if !sig_supported(sig) { continue }
@@ -361,7 +361,7 @@ type UnwrapRow = { ty: string, fn_name: string, takes_st: bool }
 
 /// One result-side row: a result type name → its wrap helper
 /// (executor.av capval_*_val) + the BuilderBind kind it classifies as.
-type WrapRow = { ty: string, helper: string, kind: string }
+type WrapRow = { ty: string, helper: string, kind: BuildKind }
 
 fn unwrap_rows() -> List<UnwrapRow> {
     [
@@ -387,14 +387,14 @@ fn unwrap_rows() -> List<UnwrapRow> {
 
 fn wrap_rows() -> List<WrapRow> {
     [
-        WrapRow { ty: "Stmt", helper: "capval_stmt_val", kind: "stmt" },
+        WrapRow { ty: "Stmt", helper: "capval_stmt_val", kind: BuildKind.Stmt },
         // ── match-flip rows: the result families the match/when builds
-        // construct. Kind strings are engine_build_kinds members (validated
-        // at registry build via builder_kind_supported).
-        WrapRow { ty: "Expr", helper: "capval_expr_val", kind: "expr" },
-        WrapRow { ty: "MatchArm", helper: "capval_arm_val", kind: "arm" },
-        WrapRow { ty: "WhenArm", helper: "capval_warm_val", kind: "warm" },
-        WrapRow { ty: "Pattern", helper: "capval_pat_val", kind: "pat" },
+        // construct. The kind is a `BuildKind` — the vocabulary IS the type,
+        // so there is nothing left to validate at registry build.
+        WrapRow { ty: "Expr", helper: "capval_expr_val", kind: BuildKind.Expr },
+        WrapRow { ty: "MatchArm", helper: "capval_arm_val", kind: BuildKind.Arm },
+        WrapRow { ty: "WhenArm", helper: "capval_warm_val", kind: BuildKind.Warm },
+        WrapRow { ty: "Pattern", helper: "capval_pat_val", kind: BuildKind.Pat },
     ]
 }
 
@@ -421,10 +421,10 @@ fn wrap_helper_for(vt: ValueType) -> string {
 }
 
 /// Return type → the BuilderBind kind, from the SAME row as the helper.
-fn kind_for_wrap(vt: ValueType) -> string {
+fn kind_for_wrap(vt: ValueType) -> BuildKind? {
     let n = vtype_head_name(vt)
     for r in wrap_rows() { if r.ty == n { return r.kind } }
-    ""
+    null
 }
 
 /// The table-key rendering of a pre-resolve type annotation (the parser
@@ -498,7 +498,7 @@ export fn adapter_name(build_name: string) -> string {
 fn bind_literal(store: NodeStore, sig: FnSig, mod_path: string) -> ExprId {
     let fields: List<FieldInit> = [
         FieldInit { name: "name", value_id: str_lit(store, sig.name) },
-        FieldInit { name: "kind", value_id: str_lit(store, kind_for_wrap(sig.ret)) },
+        FieldInit { name: "kind", value_id: kind_lit(store, sig.ret) },
         FieldInit { name: "arity", value_id: store.exprs.add_leaf(Expr.Number("${sig.params.length}")) },
         // Synthesized builders are span-free: the span never appears in a
         // typed fn signature (features own the AST shape, the engine owns
@@ -511,6 +511,15 @@ fn bind_literal(store: NodeStore, sig: FnSig, mod_path: string) -> ExprId {
         FieldInit { name: "build", value_id: store.exprs.add_leaf(Expr.Ident(adapter_name(sig.name))) },
     ]
     store.exprs.add_leaf(Expr.StructLit("BuilderBind", fields))
+}
+
+/// The synthesized `kind:` field — a `BuildKind.<variant>` literal, not a
+/// string. `sig_supported` gates synthesis on `wrap_helper_for(ret) != ""`,
+/// and the helper and the kind come from the SAME WrapRow, so a sig that
+/// reaches here always has a kind.
+fn kind_lit(store: NodeStore, ret: ValueType) -> ExprId {
+    let k = kind_for_wrap(ret)
+    store.exprs.add_leaf(Expr.EnumCtor("", k!.variant_name(), []))
 }
 
 fn str_lit(store: NodeStore, s: string) -> ExprId {

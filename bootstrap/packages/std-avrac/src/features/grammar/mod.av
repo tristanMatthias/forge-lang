@@ -41,7 +41,7 @@ export fn mk_grammar_block_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 fn grammar_block_builds() -> List<BuilderBind> {
-    bind_rows("features.grammar", [bind_row("MkGrammarBlock", "expr", 1, true, "mk_grammar_block_abi", mk_grammar_block_abi)])
+    bind_rows("features.grammar", [bind_row("MkGrammarBlock", BuildKind.Expr, 1, true, "mk_grammar_block_abi", mk_grammar_block_abi)])
 }
 
 /// The `grammar { … }` expression construct — the definition carries the

@@ -9,7 +9,7 @@
 
 use core.{feature_new, Registry, register}
 use features.grammar.{grammar_literals, grammar_checked, grammar_startup_fail, compose_fragments, Grammar, GrammarParse, text_is_word}
-use features.grammar.{grammar_build_refs, central_build_kind, central_tableless_builds, engine_build_kinds, str_in, BuilderBind}
+use features.grammar.{grammar_build_refs, central_build_kind, central_tableless_builds, str_in, BuilderBind, BuildKind}
 use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
@@ -76,8 +76,6 @@ export enum ManifestDefect {
     ArityMismatch(rule: string, build: string, argc: int),
     /// A supplied row no rule references — a lowering nothing can reach.
     OrphanBuilder(build: string, arity: int),
-    /// A row declares a kind the engine cannot classify.
-    UnknownKind(build: string, kind: string),
     /// `spanned` on a kind with nowhere to put a span (stmt/expr only).
     SpannedKindUnsupported(build: string, kind: string),
     /// A supplied row shadows an engine central build.
@@ -100,8 +98,6 @@ export fn render_manifest_defect(fd: FeatureDefect) -> string {
             "feature `${f}`: rule `${rule}` calls `${build}` with ${string(argc)} arg(s) but no supplied builder of that name declares that arity"
         .OrphanBuilder(build, arity) ->
             "feature `${f}`: builder `${build}`/${string(arity)} is supplied but no rule in its gram references it"
-        .UnknownKind(build, kind) ->
-            "feature `${f}`: builder `${build}` declares unknown kind `${kind}`"
         .SpannedKindUnsupported(build, kind) ->
             "feature `${f}`: builder `${build}` declares `spanned` with kind `${kind}` — the span protocol (st.build_sp) exists for `stmt` and `expr` builders only"
         .CentralShadow(build) ->
@@ -215,18 +211,12 @@ export fn manifest_defects_for(fname: string, gram: Grammar, builders: List<Buil
         if !referenced {
             out.push(FeatureDefect { feature: fname, defect: ManifestDefect.OrphanBuilder(b.name, b.arity) })
         }
-        // central_build_kind, not build_kind: the analysis wrapper defaults
-        // unknown names to "expr", which would both hide unresolved
-        // references and false-conflict every non-expr feature builder.
-        if !builder_kind_supported(b.kind) {
-            out.push(FeatureDefect { feature: fname, defect: ManifestDefect.UnknownKind(b.name, b.kind) })
-        }
         // `spanned` has ONE protocol: the generated parser threads the owning
         // rule's entry byte into the adapter as st.build_sp, and the ADAPTER
         // decides where the span lands. The fence stays at stmt+expr: no other
         // kind's CapVal carries a span slot.
-        if b.spanned && b.kind != "stmt" && b.kind != "expr" {
-            out.push(FeatureDefect { feature: fname, defect: ManifestDefect.SpannedKindUnsupported(b.name, b.kind) })
+        if b.spanned && b.kind != BuildKind.Stmt && b.kind != BuildKind.Expr {
+            out.push(FeatureDefect { feature: fname, defect: ManifestDefect.SpannedKindUnsupported(b.name, b.kind.display()) })
         }
         // ANY central-name shadow is rejected — same-kind included. The two
         // dispatchers consult in OPPOSITE orders, which is only coherent while
@@ -243,11 +233,6 @@ export fn manifest_defects_for(fname: string, gram: Grammar, builders: List<Buil
     out
 }
 
-/// A declared kind the engine can classify — `central_build_kind`'s range.
-fn builder_kind_supported(k: string) -> bool {
-    str_in(engine_build_kinds(), k)
-}
-
 /// "Engine build" — `central_build_kind`'s domain PLUS the tableless arms
 /// (MkNone / MkStampAt / MkAnnotated — arms with no kind row, deliberately:
 /// MkNone is the kind-free absent marker, and a kind row would poison
@@ -258,7 +243,7 @@ fn builder_kind_supported(k: string) -> bool {
 /// builder named MkNone — which the manifest-first consult order in both
 /// engines would silently prefer over the engine arm.
 fn is_central_build(name: string) -> bool {
-    central_build_kind(name) != "" || str_in(central_tableless_builds(), name)
+    central_build_kind(name) != null || str_in(central_tableless_builds(), name)
 }
 
 fn supplies(builders: List<BuilderBind>, name: string) -> bool {

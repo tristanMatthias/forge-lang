@@ -10,7 +10,7 @@
 // interpreter's bare adapter call reads the -1 span-free default the
 // retired `0 - 1` arms encoded. MkParam is span-free (a ParamEntry value).
 use core.{Expr, ExprId, ParamEntry, ValueType, byte_span, byte_span_none}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_node_list, capval_to_pentry_list, capval_to_texpr, capval_tok_text}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_node_list, capval_to_pentry_list, capval_to_texpr, capval_tok_text, BuildKind}
 use core.{type_expr_to_vtype}
 
 /// The untyped-lambda param conversion, kept LOCAL: extract the bare name
@@ -104,9 +104,9 @@ export fn mk_param_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// ALL of the paren family's rows.
 export fn closures_builds() -> List<BuilderBind> {
-    bind_rows("features.closures.lowering", [bind_row("MkLambdaTyped", "expr", 2, true, "mk_lambda_typed_abi", mk_lambda_typed_abi),
-     bind_row("MkLambda", "expr", 2, true, "mk_lambda_abi", mk_lambda_abi),
-     bind_row("MkTupleFR", "expr", 2, true, "mk_tuple_fr_abi", mk_tuple_fr_abi),
-     bind_row("MkGroupOrEmpty", "expr", 1, true, "mk_group_or_empty_abi", mk_group_or_empty_abi),
-     bind_row("MkParam", "pentry", 2, false, "mk_param_abi", mk_param_abi)])
+    bind_rows("features.closures.lowering", [bind_row("MkLambdaTyped", BuildKind.Expr, 2, true, "mk_lambda_typed_abi", mk_lambda_typed_abi),
+     bind_row("MkLambda", BuildKind.Expr, 2, true, "mk_lambda_abi", mk_lambda_abi),
+     bind_row("MkTupleFR", BuildKind.Expr, 2, true, "mk_tuple_fr_abi", mk_tuple_fr_abi),
+     bind_row("MkGroupOrEmpty", BuildKind.Expr, 1, true, "mk_group_or_empty_abi", mk_group_or_empty_abi),
+     bind_row("MkParam", BuildKind.Pentry, 2, false, "mk_param_abi", mk_param_abi)])
 }

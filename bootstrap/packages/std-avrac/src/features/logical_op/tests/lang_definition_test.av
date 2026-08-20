@@ -10,7 +10,7 @@ use @std.avrac.features.pipe_op.{pipe_op_lang}
 use @std.avrac.features.eq_chain.{eq_chain_lang}
 use @std.avrac.features.unary_op.{unary_op_lang}
 use @std.avrac.features.{feature_gram, feature_builders}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, BuildKind}
 use @std.avrac.parse.{oracle_expr}
 
 spec "operator families as LanguageFeatures" {
@@ -57,22 +57,22 @@ spec "operator families as LanguageFeatures" {
             && owners.contains("mk_is=features.is_keyword.lowering/flat")
             && owners.contains("mk_inlist=features.in_operator.lowering/flat")
             && owners.contains("mk_inrange=features.in_operator.lowering/flat")
-            && central_build_kind("fold_logical") == ""
-            && central_build_kind("fold_pipe") == ""
-            && central_build_kind("fold_nullish") == ""
-            && central_build_kind("mk_eqchain") == ""
-            && central_build_kind("Unary") == ""
-            && central_build_kind("mk_assign") == ""
-            && central_build_kind("rebind_eq") == ""
-            && central_build_kind("mk_is") == ""
-            && central_build_kind("mk_inlist") == ""
-            && central_build_kind("mk_inrange") == ""
-            && central_build_kind("fold_with") == ""
+            && central_build_kind("fold_logical") == null
+            && central_build_kind("fold_pipe") == null
+            && central_build_kind("fold_nullish") == null
+            && central_build_kind("mk_eqchain") == null
+            && central_build_kind("Unary") == null
+            && central_build_kind("mk_assign") == null
+            && central_build_kind("rebind_eq") == null
+            && central_build_kind("mk_is") == null
+            && central_build_kind("mk_inlist") == null
+            && central_build_kind("mk_inrange") == null
+            && central_build_kind("fold_with") == null
     }
     then "the engine keeps the fold machinery" {
-        central_build_kind("fold_binary") == "expr"
-            && central_build_kind("fold_postfix") == "expr"
-            && central_build_kind("fold_postfix_with") == "expr"
+        central_build_kind("fold_binary") == BuildKind.Expr
+            && central_build_kind("fold_postfix") == BuildKind.Expr
+            && central_build_kind("fold_postfix_with") == BuildKind.Expr
     }
 }
 

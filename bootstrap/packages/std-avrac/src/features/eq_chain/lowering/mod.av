@@ -3,7 +3,7 @@
 // rebound final (rebind_eq, features/struct_decl) reaches the tree with a
 // span. Imports ONLY features.grammar + core (F4012).
 use core.{ExprId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, fold_binary_expr}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, fold_binary_expr, BuildKind}
 
 /// `( ( == | != ) r )+` → the left-assoc `Expr.Binary` chain seeded with a
 /// MISSING left; rebind_eq retargets the spine-bottom sentinel to `base`.
@@ -18,5 +18,5 @@ export fn mk_eqchain_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn eq_chain_builds() -> List<BuilderBind> {
-    bind_rows("features.eq_chain.lowering", [bind_row("mk_eqchain", "expr", 2, false, "mk_eqchain_abi", mk_eqchain_abi)])
+    bind_rows("features.eq_chain.lowering", [bind_row("mk_eqchain", BuildKind.Expr, 2, false, "mk_eqchain_abi", mk_eqchain_abi)])
 }

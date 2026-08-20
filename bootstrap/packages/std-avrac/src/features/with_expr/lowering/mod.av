@@ -2,7 +2,7 @@
 // suffix. One spanned row, anchored at the `with` keyword. Imports ONLY
 // features.grammar + core (F4012).
 use core.{Expr, ExprId, byte_span}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_finit_list}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_finit_list, BuildKind}
 
 /// Build ONE `with { … }` suffix as a PARTIAL `Expr.With` whose receiver
 /// is a placeholder — the engine's `fold_postfix_with_expr` rebinds it
@@ -22,5 +22,5 @@ export fn mk_with_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn with_expr_builds() -> List<BuilderBind> {
-    bind_rows("features.with_expr.lowering", [bind_row("MkWithSuffix", "expr", 1, true, "mk_with_suffix_abi", mk_with_suffix_abi)])
+    bind_rows("features.with_expr.lowering", [bind_row("MkWithSuffix", BuildKind.Expr, 1, true, "mk_with_suffix_abi", mk_with_suffix_abi)])
 }

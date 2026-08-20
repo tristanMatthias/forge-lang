@@ -10,7 +10,7 @@
 // row) and each row INTERNS its StructLit exactly as the retired hand's
 // alloc_leaf did.
 use core.{Expr, ExprId, FieldInit, byte_span}
-use features.grammar.{PState, CapVal, BuilderBind, TableCtx, bind_row, bind_rows, capval_to_node_list, capval_tok_text, capval_tok_texts}
+use features.grammar.{PState, CapVal, BuilderBind, TableCtx, bind_row, bind_rows, capval_to_node_list, capval_tok_text, capval_tok_texts, BuildKind}
 
 /// Reports the hand's duplicate-column error here, at the same point the
 /// hand did (immediately after the header loop), so the diagnostic order
@@ -84,7 +84,7 @@ export fn mk_table_lit_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// ALL of the table family's rows.
 export fn table_lit_builds() -> List<BuilderBind> {
-    bind_rows("features.table_lit.lowering", [bind_row("MkTableLit", "expr", 1, true, "mk_table_lit_abi", mk_table_lit_abi),
-     bind_row("MkTableHeader", "expr", 2, false, "mk_table_header_abi", mk_table_header_abi),
-     bind_row("MkTableRow", "expr", 1, false, "mk_table_row_abi", mk_table_row_abi)])
+    bind_rows("features.table_lit.lowering", [bind_row("MkTableLit", BuildKind.Expr, 1, true, "mk_table_lit_abi", mk_table_lit_abi),
+     bind_row("MkTableHeader", BuildKind.Expr, 2, false, "mk_table_header_abi", mk_table_header_abi),
+     bind_row("MkTableRow", BuildKind.Expr, 1, false, "mk_table_row_abi", mk_table_row_abi)])
 }

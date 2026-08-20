@@ -37,6 +37,6 @@ spec "parallel as a LanguageFeature" {
             if b.name == "MkParallel" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}" }
         }
         row == "stmt/1/flat/parallel_build/features.parallel_stmt.lowering"
-            && central_build_kind("MkParallel") == ""
+            && central_build_kind("MkParallel") == null
     }
 }

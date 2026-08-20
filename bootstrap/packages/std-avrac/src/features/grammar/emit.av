@@ -2091,7 +2091,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
         // recovery loop (emit_stmt_list_loop). Non-matching refs keep the pre-existing
         // discard behaviour (byte-identical to the old `_` arm that caught `.Ref`).
         .Ref(name) -> {
-            if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == "stmt" && item.bound != "" {
+            if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == BuildKind.Stmt && item.bound != "" {
                 // emit_stmt_list_loop builds its own loop with recovery and has no
                 // seam for a cap, so honouring the bound here would mean silently
                 // dropping it — the same failure the sibling branch below guards.
@@ -2099,7 +2099,7 @@ fn emit_repeat_group(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
                 // than generate a parser whose bound does nothing.
                 "${ind}// GRAMMAR ERROR: `${item.label}:${name}*{#${item.bound}}` — a bounded statement-list repetition is unsupported (emit_stmt_list_loop has no cap seam)\n" +
                     "${ind}let _ = emit_unsupported_bounded_stmt_list\n"
-            } else if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == "stmt" {
+            } else if item.label != "" && str_in(list_labels, item.label) && rule_result_kind(g, name) == BuildKind.Stmt {
                 emit_stmt_list_loop(name, item.label, ind, item.onfail == "drop", item.onfail == "abort")
             } else if item.label != "" && str_in(list_labels, item.label) {
                 // A labeled bare-ref `*`/`+` over a NON-statement rule: its `<label>_list`
@@ -3190,32 +3190,32 @@ fn rule_self_validates(g: Grammar, name: string, visited: List<string>) -> bool 
 /// marker (the declared-FIRST discipline), never silent garbage.
 type KindRow = { coerce: string, elem: string, list_ctor: string }
 
-fn kind_row(kind: string) -> KindRow {
-    if kind == "pat" { return KindRow { coerce: "capval_to_pat", elem: "PatId", list_ctor: "CapVal.PNodes" } }
-    if kind == "stmt" { return KindRow { coerce: "capval_to_stmt", elem: "StmtId", list_ctor: "CapVal.SNodes" } }
-    if kind == "type" { return KindRow { coerce: "capval_to_texpr", elem: "TypeExpr", list_ctor: "CapVal.TExprs" } }
-    if kind == "pentry" { return KindRow { coerce: "capval_to_pentry", elem: "ParamEntry", list_ctor: "CapVal.PEntries" } }
-    if kind == "tparam" { return KindRow { coerce: "capval_to_tparam", elem: "TypeParamEntry", list_ctor: "CapVal.TParams" } }
-    if kind == "field" { return KindRow { coerce: "capval_to_field", elem: "FieldEntry", list_ctor: "CapVal.Fields" } }
-    if kind == "variant" { return KindRow { coerce: "capval_to_variant", elem: "Variant", list_ctor: "CapVal.Vars" } }
-    if kind == "arm" { return KindRow { coerce: "capval_to_arm", elem: "MatchArm", list_ctor: "CapVal.Arms" } }
-    if kind == "finit" { return KindRow { coerce: "capval_to_finit", elem: "FieldInit", list_ctor: "CapVal.FInits" } }
-    if kind == "warm" { return KindRow { coerce: "capval_to_when_arm", elem: "WhenArm", list_ctor: "CapVal.WArms" } }
-    if kind == "sarm" { return KindRow { coerce: "capval_to_select_arm", elem: "SelectArm", list_ctor: "CapVal.SArms" } }
-    if kind == "ccfg" { return KindRow { coerce: "capval_to_comp_config", elem: "CompConfig", list_ctor: "CapVal.CCfgs" } }
-    if kind == "cpair" { return KindRow { coerce: "capval_to_comp_config_pair", elem: "CompConfigPair", list_ctor: "CapVal.CPairs" } }
-    if kind == "cslot" { return KindRow { coerce: "capval_to_children_slot", elem: "ChildrenSlot", list_ctor: "CapVal.CSlots" } }
+fn kind_row(kind: BuildKind) -> KindRow {
+    if kind == BuildKind.Pat { return KindRow { coerce: "capval_to_pat", elem: "PatId", list_ctor: "CapVal.PNodes" } }
+    if kind == BuildKind.Stmt { return KindRow { coerce: "capval_to_stmt", elem: "StmtId", list_ctor: "CapVal.SNodes" } }
+    if kind == BuildKind.Type { return KindRow { coerce: "capval_to_texpr", elem: "TypeExpr", list_ctor: "CapVal.TExprs" } }
+    if kind == BuildKind.Pentry { return KindRow { coerce: "capval_to_pentry", elem: "ParamEntry", list_ctor: "CapVal.PEntries" } }
+    if kind == BuildKind.Tparam { return KindRow { coerce: "capval_to_tparam", elem: "TypeParamEntry", list_ctor: "CapVal.TParams" } }
+    if kind == BuildKind.Field { return KindRow { coerce: "capval_to_field", elem: "FieldEntry", list_ctor: "CapVal.Fields" } }
+    if kind == BuildKind.Variant { return KindRow { coerce: "capval_to_variant", elem: "Variant", list_ctor: "CapVal.Vars" } }
+    if kind == BuildKind.Arm { return KindRow { coerce: "capval_to_arm", elem: "MatchArm", list_ctor: "CapVal.Arms" } }
+    if kind == BuildKind.Finit { return KindRow { coerce: "capval_to_finit", elem: "FieldInit", list_ctor: "CapVal.FInits" } }
+    if kind == BuildKind.Warm { return KindRow { coerce: "capval_to_when_arm", elem: "WhenArm", list_ctor: "CapVal.WArms" } }
+    if kind == BuildKind.Sarm { return KindRow { coerce: "capval_to_select_arm", elem: "SelectArm", list_ctor: "CapVal.SArms" } }
+    if kind == BuildKind.Ccfg { return KindRow { coerce: "capval_to_comp_config", elem: "CompConfig", list_ctor: "CapVal.CCfgs" } }
+    if kind == BuildKind.Cpair { return KindRow { coerce: "capval_to_comp_config_pair", elem: "CompConfigPair", list_ctor: "CapVal.CPairs" } }
+    if kind == BuildKind.Cslot { return KindRow { coerce: "capval_to_children_slot", elem: "ChildrenSlot", list_ctor: "CapVal.CSlots" } }
     // list_ctor filled at t-kd4y.3.5.9: a manifest abi receives a `( an:annot )+`
     // accumulator as ONE CapVal, so the emitted call site wraps the
     // `List<Annotation>` in CapVal.Anns — the same marshalling growth the type
     // kind got for MkGenericCallSuffix (CapVal.TExprs) in .3.5.8.
-    if kind == "ann" { return KindRow { coerce: "capval_to_ann", elem: "Annotation", list_ctor: "CapVal.Anns" } }
+    if kind == BuildKind.Ann { return KindRow { coerce: "capval_to_ann", elem: "Annotation", list_ctor: "CapVal.Anns" } }
     KindRow { coerce: "capval_to_expr", elem: "ExprId", list_ctor: "CapVal.Nodes" }
 }
 
-fn kind_coerce(kind: string) -> string { kind_row(kind).coerce }
-fn kind_elem_type(kind: string) -> string { kind_row(kind).elem }
-fn kind_list_ctor(kind: string) -> string { kind_row(kind).list_ctor }
+fn kind_coerce(kind: BuildKind) -> string { kind_row(kind).coerce }
+fn kind_elem_type(kind: BuildKind) -> string { kind_row(kind).elem }
+fn kind_list_ctor(kind: BuildKind) -> string { kind_row(kind).list_ctor }
 
 /// Manifest-ABI arg spelling (t-kd4y.3 match flip): a REPETITION capture's
 /// arg is its typed accumulator wrapped in the kind's CapVal list ctor —

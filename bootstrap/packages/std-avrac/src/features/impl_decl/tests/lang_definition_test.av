@@ -45,8 +45,8 @@ spec "impl as a LanguageFeature" {
         // mean the interpreter lowered through the engine while the generated
         // parser called the feature adapter. MkAssocTypeDef joined the flip
         // in t-kd4y.3.7 (the last unflipped feature-owned build).
-        central_build_kind("MkImpl") == "" && central_build_kind("MkMethod") == ""
-            && central_build_kind("MkAssocTypeDef") == ""
+        central_build_kind("MkImpl") == null && central_build_kind("MkMethod") == null
+            && central_build_kind("MkAssocTypeDef") == null
     }
     then "the declared rules reach the whole-program view from the feature file" {
         let own = render_grammar(feature_gram(impl_decl_lang()))

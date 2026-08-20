@@ -5,7 +5,7 @@
 // st.build_sp — their rows are flat; the chain loop's snap owns the span.
 // Imports ONLY features.grammar + core (F4012).
 use core.{Expr, ExprId, FORCE_UNWRAP_FN, byte_span}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes, capval_to_node_list, capval_to_stmt_list, capval_tok_pos, capval_tok_text, postfix_step_node}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes, capval_to_node_list, capval_to_stmt_list, capval_tok_pos, capval_tok_text, postfix_step_node, BuildKind}
 
 /// Left-fold `l ( "??" r )*` into a left-associative `Expr.NullCoalesce`
 /// chain (`a ?? b ?? c` = `(a ?? b) ?? c`) — the retired hand
@@ -31,7 +31,7 @@ export fn fold_nullish_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn null_coalesce_builds() -> List<BuilderBind> {
-    bind_rows("features.null_safety.lowering", [bind_row("fold_nullish", "expr", 3, true, "fold_nullish_abi", fold_nullish_abi)])
+    bind_rows("features.null_safety.lowering", [bind_row("fold_nullish", BuildKind.Expr, 3, true, "fold_nullish_abi", fold_nullish_abi)])
 }
 
 /// `expr?` — error propagation (t-47hc.33 form 1), the hand postfix_step's
@@ -121,21 +121,21 @@ export fn mk_opt_method_call_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// The `?`/`!` unwrap pair — try_lang's rows (its `unwrap_suffix` rule
 /// spells both). Flat: the chain's own snap threads the span.
 export fn try_builds() -> List<BuilderBind> {
-    bind_rows("features.null_safety.lowering", [bind_row("MkTrySuffix", "expr", 0, false, "mk_try_suffix_abi", mk_try_suffix_abi),
-     bind_row("MkForceUnwrap", "expr", 0, false, "mk_force_unwrap_abi", mk_force_unwrap_abi)])
+    bind_rows("features.null_safety.lowering", [bind_row("MkTrySuffix", BuildKind.Expr, 0, false, "mk_try_suffix_abi", mk_try_suffix_abi),
+     bind_row("MkForceUnwrap", BuildKind.Expr, 0, false, "mk_force_unwrap_abi", mk_force_unwrap_abi)])
 }
 
 /// catch_lang's row.
 export fn catch_builds() -> List<BuilderBind> {
-    bind_rows("features.null_safety.lowering", [bind_row("MkCatchSuffix", "expr", 3, false, "mk_catch_suffix_abi", mk_catch_suffix_abi)])
+    bind_rows("features.null_safety.lowering", [bind_row("MkCatchSuffix", BuildKind.Expr, 3, false, "mk_catch_suffix_abi", mk_catch_suffix_abi)])
 }
 
 /// optional_chain_lang's row.
 export fn optional_chain_builds() -> List<BuilderBind> {
-    bind_rows("features.null_safety.lowering", [bind_row("MkOptChain", "expr", 1, false, "mk_opt_chain_abi", mk_opt_chain_abi)])
+    bind_rows("features.null_safety.lowering", [bind_row("MkOptChain", BuildKind.Expr, 1, false, "mk_opt_chain_abi", mk_opt_chain_abi)])
 }
 
 /// optional_method_call_lang's row.
 export fn optional_method_call_builds() -> List<BuilderBind> {
-    bind_rows("features.null_safety.lowering", [bind_row("MkOptMethodCall", "expr", 2, false, "mk_opt_method_call_abi", mk_opt_method_call_abi)])
+    bind_rows("features.null_safety.lowering", [bind_row("MkOptMethodCall", BuildKind.Expr, 2, false, "mk_opt_method_call_abi", mk_opt_method_call_abi)])
 }

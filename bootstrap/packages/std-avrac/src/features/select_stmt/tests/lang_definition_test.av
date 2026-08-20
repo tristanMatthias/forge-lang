@@ -49,7 +49,7 @@ spec "select as a LanguageFeature" {
     then "both builds ride the manifest and NOTHING is left central" {
         row_of("MkSelect") == "stmt/1/flat/select_build/features.select_stmt.lowering"
             && row_of("MkSelectArm") == "sarm/3/flat/select_arm_build/features.select_stmt.lowering"
-            && central_build_kind("MkSelect") == ""
-            && central_build_kind("MkSelectArm") == ""
+            && central_build_kind("MkSelect") == null
+            && central_build_kind("MkSelectArm") == null
     }
 }

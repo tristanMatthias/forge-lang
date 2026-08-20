@@ -12,7 +12,7 @@
 // binding_stmt_row / fn_decl_edges precedent) and the two thin def cores
 // here drive it — one implementation, no new module edges.
 use core.{ChildrenSlot, CompConfig, CompConfigPair, Expr, ExprId, ParamEntry, Stmt, StmtId, Tk, TypeParamEntry, ValueType, byte_span_none, type_expr_to_vtype}
-use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, binding_stmt_row, capval_present, capval_to_children_slot_list, capval_to_comp_config_list, capval_to_comp_config_pair_list, capval_to_expr, capval_to_pentry_list, capval_to_stmt_list, capval_to_texpr, capval_tok_list, capval_tok_text, capval_tok_texts, expr_id_is_error, fn_decl_edges, mk_component_def_with_params}
+use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, binding_stmt_row, capval_present, capval_to_children_slot_list, capval_to_comp_config_list, capval_to_comp_config_pair_list, capval_to_expr, capval_to_pentry_list, capval_to_stmt_list, capval_to_texpr, capval_tok_list, capval_tok_text, capval_tok_texts, expr_id_is_error, fn_decl_edges, mk_component_def_with_params, BuildKind}
 
 /// One `key: ty ( = default )?` config-schema entry — the MkCompConfig
 /// build's core. Mirrors the retired parse_comp_config_schema's row exactly,
@@ -191,17 +191,17 @@ export fn mk_method_shorthand_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// ALL of the component feature's rows — span-free (leaf rows and schema
 /// values; the statement-list loop stamps the outermost node).
 export fn component_builds() -> List<BuilderBind> {
-    bind_rows("features.component_decl.lowering", [bind_row("MkComponentDef", "stmt", 6, false, "mk_component_def_abi", mk_component_def_abi),
-     bind_row("MkComponentParenDef", "stmt", 5, false, "mk_component_paren_def_abi", mk_component_paren_def_abi),
-     bind_row("MkComponentBlock", "stmt", 4, false, "mk_component_block_abi", mk_component_block_abi),
-     bind_row("MkRawComponentBlock", "stmt", 3, false, "mk_raw_component_block_abi", mk_raw_component_block_abi),
-     bind_row("MkMethodShorthand", "stmt", 2, false, "mk_method_shorthand_abi", mk_method_shorthand_abi),
-     bind_row("MkCompField", "stmt", 3, false, "mk_comp_field_abi", mk_comp_field_abi),
-     bind_row("MkCompBodyMarker", "tok", 1, false, "mk_comp_body_marker_abi", mk_comp_body_marker_abi),
-     bind_row("MkTraitList", "toks", 1, false, "mk_trait_list_abi", mk_trait_list_abi),
-     bind_row("MkCompConfig", "ccfg", 3, false, "mk_comp_config_abi", mk_comp_config_abi),
-     bind_row("MkCompConfigPair", "cpair", 2, false, "mk_comp_config_pair_abi", mk_comp_config_pair_abi),
-     bind_row("MkCompConfigList", "ccfgs", 1, false, "mk_comp_config_list_abi", mk_comp_config_list_abi),
-     bind_row("MkChildrenSlot", "cslot", 2, false, "mk_children_slot_abi", mk_children_slot_abi),
-     bind_row("MkChildrenSlotList", "cslots", 1, false, "mk_children_slot_list_abi", mk_children_slot_list_abi)])
+    bind_rows("features.component_decl.lowering", [bind_row("MkComponentDef", BuildKind.Stmt, 6, false, "mk_component_def_abi", mk_component_def_abi),
+     bind_row("MkComponentParenDef", BuildKind.Stmt, 5, false, "mk_component_paren_def_abi", mk_component_paren_def_abi),
+     bind_row("MkComponentBlock", BuildKind.Stmt, 4, false, "mk_component_block_abi", mk_component_block_abi),
+     bind_row("MkRawComponentBlock", BuildKind.Stmt, 3, false, "mk_raw_component_block_abi", mk_raw_component_block_abi),
+     bind_row("MkMethodShorthand", BuildKind.Stmt, 2, false, "mk_method_shorthand_abi", mk_method_shorthand_abi),
+     bind_row("MkCompField", BuildKind.Stmt, 3, false, "mk_comp_field_abi", mk_comp_field_abi),
+     bind_row("MkCompBodyMarker", BuildKind.Tok, 1, false, "mk_comp_body_marker_abi", mk_comp_body_marker_abi),
+     bind_row("MkTraitList", BuildKind.Toks, 1, false, "mk_trait_list_abi", mk_trait_list_abi),
+     bind_row("MkCompConfig", BuildKind.Ccfg, 3, false, "mk_comp_config_abi", mk_comp_config_abi),
+     bind_row("MkCompConfigPair", BuildKind.Cpair, 2, false, "mk_comp_config_pair_abi", mk_comp_config_pair_abi),
+     bind_row("MkCompConfigList", BuildKind.Ccfgs, 1, false, "mk_comp_config_list_abi", mk_comp_config_list_abi),
+     bind_row("MkChildrenSlot", BuildKind.Cslot, 2, false, "mk_children_slot_abi", mk_children_slot_abi),
+     bind_row("MkChildrenSlotList", BuildKind.Cslots, 1, false, "mk_children_slot_list_abi", mk_children_slot_list_abi)])
 }

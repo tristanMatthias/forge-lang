@@ -6,7 +6,7 @@
 // construction; the feature's passes/hooks stay in ../mod.av.
 
 use core.{Stmt, ExprId, StmtId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, mk_stamp_stmt_at}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, mk_stamp_stmt_at, BuildKind}
 
 export fn build_while(c: ExprId, body: StmtId) -> Stmt { Stmt.While(c, body) }
 
@@ -18,5 +18,5 @@ export fn build_while_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn while_builds() -> List<BuilderBind> {
-    bind_rows("features.while_stmt.lowering", [bind_row("build_while", "stmt", 2, true, "build_while_abi", build_while_abi)])
+    bind_rows("features.while_stmt.lowering", [bind_row("build_while", BuildKind.Stmt, 2, true, "build_while_abi", build_while_abi)])
 }

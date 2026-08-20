@@ -15,11 +15,11 @@
 // These specs pin both halves — the deferral must not swallow a real violation,
 // and a correct fragment must survive stamping.
 use @std.avrac.features.spec_test.{avra_spec_grammar}
-use @std.avrac.features.grammar.{parse_grammar, grammar_checked, grammar_with_builder_kinds, builder_kind_rows, validate_grammar_kinds, rule_result_kind, rule_result_kind_known, Grammar, BuilderBind, PState, CapVal}
+use @std.avrac.features.grammar.{parse_grammar, grammar_checked, grammar_with_builder_kinds, builder_kind_rows, validate_grammar_kinds, rule_result_kind, rule_result_kind_known, Grammar, BuilderBind, PState, CapVal, BuildKind}
 
 fn nil_build(st: PState, vals: List<CapVal>) -> CapVal { CapVal.Nil }
 
-fn bind(name: string, kind: string, arity: int) -> BuilderBind {
+fn bind(name: string, kind: BuildKind, arity: int) -> BuilderBind {
     BuilderBind { name: name, kind: kind, arity: arity, spanned: false, module: "t", export_name: "t", build: nil_build }
 }
 
@@ -52,7 +52,7 @@ spec "@onfail(drop): stamping re-runs the check and REJECTS a real violation" {
         // loop to mint the `(error)` row it wants to drop.
         let stamped = Grammar {
             name: toy_gram().name, rules: toy_gram().rules, rule_idx: toy_gram().rule_idx,
-            builder_kinds: builder_kind_rows([bind("MkOuter", "stmt", 1), bind("MkToy", "expr", 1)]),
+            builder_kinds: builder_kind_rows([bind("MkOuter", BuildKind.Stmt, 1), bind("MkToy", BuildKind.Expr, 1)]),
         }
         let err = validate_grammar_kinds(stamped)
         err.contains("@onfail(drop)") && err.contains("outer") && err.contains("item")
@@ -63,9 +63,9 @@ spec "@onfail(drop): stamping re-runs the check and REJECTS a real violation" {
         // it, the spec above would pass on a validator that rejects everything.
         let stamped = Grammar {
             name: toy_gram().name, rules: toy_gram().rules, rule_idx: toy_gram().rule_idx,
-            builder_kinds: builder_kind_rows([bind("MkOuter", "stmt", 1), bind("MkToy", "stmt", 1)]),
+            builder_kinds: builder_kind_rows([bind("MkOuter", BuildKind.Stmt, 1), bind("MkToy", BuildKind.Stmt, 1)]),
         }
-        validate_grammar_kinds(stamped) == "" && rule_result_kind(stamped, "item") == "stmt"
+        validate_grammar_kinds(stamped) == "" && rule_result_kind(stamped, "item") == BuildKind.Stmt
     }
 }
 
@@ -75,8 +75,8 @@ spec "the production spec-test fragment survives stamping" {
         // build, so `spec_item` is underivable at fragment-parse time and
         // resolves to "stmt" only after stamping. The compiler builds at all
         // only because this passes, but pin it explicitly.
-        let rows = builder_kind_rows([bind("MkSpecBlock", "stmt", 2), bind("MkGivenBlock", "stmt", 2), bind("MkThenBlock", "stmt", 2)])
+        let rows = builder_kind_rows([bind("MkSpecBlock", BuildKind.Stmt, 2), bind("MkGivenBlock", BuildKind.Stmt, 2), bind("MkThenBlock", BuildKind.Stmt, 2)])
         let g = grammar_with_builder_kinds(avra_spec_grammar(), rows)
-        validate_grammar_kinds(g) == "" && rule_result_kind(g, "spec_item") == "stmt"
+        validate_grammar_kinds(g) == "" && rule_result_kind(g, "spec_item") == BuildKind.Stmt
     }
 }

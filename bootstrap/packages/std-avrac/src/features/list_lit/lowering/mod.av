@@ -12,7 +12,7 @@
 // parser's anchor, kept verbatim). The interpreter's bare adapter call
 // reads the -1 span-free default.
 use core.{byte_span, Expr, ExprId, TypeExpr}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_to_node_list, capval_tok_text, expr_id_is_error, capval_to_texpr}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_to_node_list, capval_tok_text, expr_id_is_error, capval_to_texpr, BuildKind}
 
 /// `[a, b, c]` list literal. A FAILED ELEMENT makes the whole literal a
 /// failure, mirroring the retired hand `parse_list_elements`, whose
@@ -50,8 +50,8 @@ export fn mk_list_comp_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// BOTH `[`-family rows.
 export fn list_lit_builds() -> List<BuilderBind> {
-    bind_rows("features.list_lit.lowering", [bind_row("MkListLit", "expr", 1, true, "mk_list_lit_abi", mk_list_lit_abi),
-     bind_row("MkListComp", "expr", 4, true, "mk_list_comp_abi", mk_list_comp_abi)])
+    bind_rows("features.list_lit.lowering", [bind_row("MkListLit", BuildKind.Expr, 1, true, "mk_list_lit_abi", mk_list_lit_abi),
+     bind_row("MkListComp", BuildKind.Expr, 4, true, "mk_list_comp_abi", mk_list_comp_abi)])
 }
 
 /// A `[T]` list type — the `TyList` build's core (t-kd4y.3.5.10): the
@@ -65,5 +65,5 @@ export fn ty_list_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn list_type_builds() -> List<BuilderBind> {
-    bind_rows("features.list_lit.lowering", [bind_row("TyList", "type", 1, false, "ty_list_abi", ty_list_abi)])
+    bind_rows("features.list_lit.lowering", [bind_row("TyList", BuildKind.Type, 1, false, "ty_list_abi", ty_list_abi)])
 }

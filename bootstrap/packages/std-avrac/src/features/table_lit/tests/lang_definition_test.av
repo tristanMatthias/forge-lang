@@ -35,9 +35,9 @@ spec "table family as a LanguageFeature" {
         tl == "expr/1/spanned/mk_table_lit_abi/features.table_lit.lowering"
             && th == "expr/2/flat/mk_table_header_abi/features.table_lit.lowering"
             && tr == "expr/1/flat/mk_table_row_abi/features.table_lit.lowering"
-            && central_build_kind("MkTableLit") == ""
-            && central_build_kind("MkTableHeader") == ""
-            && central_build_kind("MkTableRow") == ""
+            && central_build_kind("MkTableLit") == null
+            && central_build_kind("MkTableHeader") == null
+            && central_build_kind("MkTableRow") == null
     }
 }
 

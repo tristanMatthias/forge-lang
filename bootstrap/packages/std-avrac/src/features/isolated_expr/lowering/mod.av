@@ -2,7 +2,7 @@
 // features.grammar + core (the F4012 import-closure invariant). One
 // `spanned` expr row, the process-isolation twin of spawn's.
 use core.{Expr, byte_span, byte_span_none}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, BuildKind}
 
 /// Grammar-native `isolated { ... }`, the process-isolation twin of spawn.
 export fn mk_isolated(st: PState, sp_start: int, body_cv: CapVal) -> CapVal {
@@ -18,5 +18,5 @@ export fn mk_isolated_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn isolated_builds() -> List<BuilderBind> {
-    bind_rows("features.isolated_expr.lowering", [bind_row("MkIsolated", "expr", 1, true, "mk_isolated_abi", mk_isolated_abi)])
+    bind_rows("features.isolated_expr.lowering", [bind_row("MkIsolated", BuildKind.Expr, 1, true, "mk_isolated_abi", mk_isolated_abi)])
 }

@@ -6,7 +6,7 @@
 // hooks stay in ../mod.av.
 
 use core.{Stmt, SelectArm}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_to_select_arm_list, capval_to_stmt_list, capval_tok_text}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_to_select_arm_list, capval_to_stmt_list, capval_tok_text, BuildKind}
 
 /// One `binding <- channel -> { body }` arm (`MkSelectArm`, arity 3).
 /// Mirrors parse_select_arm_list's row exactly: binding name text, channel
@@ -28,6 +28,6 @@ export fn select_build(st: PState, vals: List<CapVal>) -> CapVal {
 /// names (the row name IS the gram reference, so the flip edits no rule
 /// text) to fns in THIS module, which the generated parser imports directly.
 export fn select_builds() -> List<BuilderBind> {
-    bind_rows("features.select_stmt.lowering", [bind_row("MkSelect", "stmt", 1, false, "select_build", select_build),
-     bind_row("MkSelectArm", "sarm", 3, false, "select_arm_build", select_arm_build)])
+    bind_rows("features.select_stmt.lowering", [bind_row("MkSelect", BuildKind.Stmt, 1, false, "select_build", select_build),
+     bind_row("MkSelectArm", BuildKind.Sarm, 3, false, "select_arm_build", select_arm_build)])
 }

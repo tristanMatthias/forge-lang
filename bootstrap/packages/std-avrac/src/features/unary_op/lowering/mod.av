@@ -4,7 +4,7 @@
 // capture, not the rule entry. Imports ONLY features.grammar + core
 // (F4012).
 use core.{Expr, ExprId, UnOp, byte_span}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_tok_text}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_tok_text, BuildKind}
 
 export fn unary_expr(st: PState, opcap: CapVal, opndcap: CapVal) -> ExprId {
     let operand = capval_to_expr(st, opndcap)
@@ -32,5 +32,5 @@ export fn unary_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn unary_op_builds() -> List<BuilderBind> {
-    bind_rows("features.unary_op.lowering", [bind_row("Unary", "expr", 2, false, "unary_abi", unary_abi)])
+    bind_rows("features.unary_op.lowering", [bind_row("Unary", BuildKind.Expr, 2, false, "unary_abi", unary_abi)])
 }

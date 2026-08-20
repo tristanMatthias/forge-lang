@@ -44,12 +44,12 @@ spec "ident-led family as LanguageFeatures" {
             && ws == "expr/1/spanned/features.with_expr.lowering"
             && qe == "expr/4/spanned/features.modules.lowering"
             && gb == "expr/1/spanned/features.grammar"
-            && central_build_kind("MkStructLit") == ""
-            && central_build_kind("MkFieldInit") == ""
-            && central_build_kind("mk_enum_ctor") == ""
-            && central_build_kind("MkWithSuffix") == ""
-            && central_build_kind("MkQualExpr") == ""
-            && central_build_kind("MkGrammarBlock") == ""
+            && central_build_kind("MkStructLit") == null
+            && central_build_kind("MkFieldInit") == null
+            && central_build_kind("mk_enum_ctor") == null
+            && central_build_kind("MkWithSuffix") == null
+            && central_build_kind("MkQualExpr") == null
+            && central_build_kind("MkGrammarBlock") == null
     }
     then "titles are carried on all five definitions" {
         struct_lit_lang().title.length > 0 && enum_ctor_lang().title.length > 0

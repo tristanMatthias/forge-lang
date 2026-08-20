@@ -1221,7 +1221,7 @@ fn check_drop_node(g: Grammar, node: GNode, rule: string) -> string {
                 for it in b.items {
                     if it.onfail == "drop" {
                         let nm = gprim_ref_name(it.prim)
-                        if nm != "" && emit_lookup_rule(g, nm).name != "" && rule_result_kind_known(g, nm) && rule_result_kind(g, nm) != "stmt" {
+                        if nm != "" && emit_lookup_rule(g, nm).name != "" && rule_result_kind_known(g, nm) && rule_result_kind(g, nm) != BuildKind.Stmt {
                             return "`@onfail(drop)` needs a STATEMENT repetition (rule `${rule}`) — `${nm}` builds a `${rule_result_kind(g, nm)}`, and only the statement-list loop mints the `(error)` row there would be to drop"
                         }
                     }

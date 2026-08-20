@@ -6,7 +6,7 @@
 // and hooks stay in ../mod.av.
 
 use core.{Stmt}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_stmt_list}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_stmt_list, BuildKind}
 
 /// `parallel { … }` (`MkParallel`, arity 1). The statement list is held as
 /// RAW ids under a LEAF Parallel row — the hand's
@@ -19,5 +19,5 @@ export fn parallel_build(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn parallel_builds() -> List<BuilderBind> {
-    bind_rows("features.parallel_stmt.lowering", [bind_row("MkParallel", "stmt", 1, false, "parallel_build", parallel_build)])
+    bind_rows("features.parallel_stmt.lowering", [bind_row("MkParallel", BuildKind.Stmt, 1, false, "parallel_build", parallel_build)])
 }

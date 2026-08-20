@@ -16,7 +16,7 @@ use @std.avrac.features.null_safety.{try_lang, catch_lang, optional_chain_lang, 
 use @std.avrac.features.tuples.{tuple_index_lang}
 use @std.avrac.features.struct_decl.{field_access_lang}
 use @std.avrac.features.{feature_builders}
-use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, BuildKind}
 use @std.avrac.parse.{oracle_expr}
 
 spec "postfix families as LanguageFeatures" {
@@ -73,18 +73,18 @@ spec "postfix families as LanguageFeatures" {
             && owners.contains("MkCallSuffix=features.calls.lowering/flat")
             && owners.contains("MkGenericCallSuffix=features.calls.lowering/flat")
             && owners.contains("MkCallArg=features.calls.lowering/flat")
-            && central_build_kind("MkTrySuffix") == ""
-            && central_build_kind("MkForceUnwrap") == ""
-            && central_build_kind("MkCatchSuffix") == ""
-            && central_build_kind("MkOptChain") == ""
-            && central_build_kind("MkOptMethodCall") == ""
-            && central_build_kind("MkTupleIndex") == ""
-            && central_build_kind("MkFieldAccess") == ""
-            && central_build_kind("MkEnumCtorSuffix") == ""
-            && central_build_kind("MkIndexSuffix") == ""
-            && central_build_kind("MkCallSuffix") == ""
-            && central_build_kind("MkGenericCallSuffix") == ""
-            && central_build_kind("MkCallArg") == ""
+            && central_build_kind("MkTrySuffix") == null
+            && central_build_kind("MkForceUnwrap") == null
+            && central_build_kind("MkCatchSuffix") == null
+            && central_build_kind("MkOptChain") == null
+            && central_build_kind("MkOptMethodCall") == null
+            && central_build_kind("MkTupleIndex") == null
+            && central_build_kind("MkFieldAccess") == null
+            && central_build_kind("MkEnumCtorSuffix") == null
+            && central_build_kind("MkIndexSuffix") == null
+            && central_build_kind("MkCallSuffix") == null
+            && central_build_kind("MkGenericCallSuffix") == null
+            && central_build_kind("MkCallArg") == null
     }
     then "the engine keeps the chain machinery and the toy-partial vocabulary" {
         // The lowercase names are the DSL's fold_postfix PARTIAL builders
@@ -92,12 +92,12 @@ spec "postfix families as LanguageFeatures" {
         // names — builds and rules are separate namespaces. MkExprBlock and
         // MkNone stay engine too (block_expr's build; the absent-optional
         // marshalling value index_tail spells).
-        central_build_kind("field_suffix") == "expr"
-            && central_build_kind("index_suffix") == "expr"
-            && central_build_kind("call_suffix") == "expr"
-            && central_build_kind("MkExprBlock") == "expr"
-            && central_build_kind("fold_postfix") == "expr"
-            && central_build_kind("fold_postfix_with") == "expr"
+        central_build_kind("field_suffix") == BuildKind.Expr
+            && central_build_kind("index_suffix") == BuildKind.Expr
+            && central_build_kind("call_suffix") == BuildKind.Expr
+            && central_build_kind("MkExprBlock") == BuildKind.Expr
+            && central_build_kind("fold_postfix") == BuildKind.Expr
+            && central_build_kind("fold_postfix_with") == BuildKind.Expr
     }
 }
 

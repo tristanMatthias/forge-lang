@@ -548,7 +548,7 @@ export type PState = { toks: List<Token>, pos: int, store: NodeStore, src: strin
 /// (features/lang.av), so a mismatch is a startup error, not a parse surprise.
 export type BuilderBind = {
     name: string,
-    kind: string,
+    kind: BuildKind,
     arity: int,
     // Span-threaded lowering (t-kd4y.3 span rows) — ONE protocol: the
     // EMITTED call rides `call_with_build_sp`, which carries the owning
@@ -576,7 +576,7 @@ export type BuilderBind = {
 /// spells rows through this — the verbose record ceremony lives HERE once.
 /// `module` is stamped by `bind_rows`, so a lowering module names its module
 /// path exactly once, not once per row.
-export fn bind_row(name: string, kind: string, arity: int, spanned: bool, export_name: string, build: fn(PState, List<CapVal>) -> CapVal) -> BuilderBind {
+export fn bind_row(name: string, kind: BuildKind, arity: int, spanned: bool, export_name: string, build: fn(PState, List<CapVal>) -> CapVal) -> BuilderBind {
     BuilderBind { name: name, kind: kind, arity: arity, spanned: spanned, module: "", export_name: export_name, build: build }
 }
 
@@ -1418,7 +1418,7 @@ fn exec_rule(g: Grammar, name: string, st: PState) -> CapVal {
     // "A nonterminal binds its NODE" (README): a rule that bottoms out in a
     match v {
         .Tok(t) -> {
-            if rule_result_kind(g, name) == "tok" { return v }
+            if rule_result_kind(g, name) == BuildKind.Tok { return v }
             CapVal.Node(literal_node(st, t))
         }
         _ -> v
@@ -3139,7 +3139,7 @@ fn exec_repeat_from(g: Grammar, item: GItem, st: PState, env: CapEnv, annots: Li
     let cap = item_bound_cap(item, env)
     // t-47hc.5: a STATEMENT-LIST repetition recovers instead of bailing out — the
     let rname = gprim_ref_name(item.prim)
-    if item.label != "" && rname != "" && rule_result_kind(g, rname) == "stmt" {
+    if item.label != "" && rname != "" && rule_result_kind(g, rname) == BuildKind.Stmt {
         exec_stmt_list_repeat(g, item, st, env, annots, rname, cap, already)
         return
     }
@@ -4042,7 +4042,7 @@ fn apply_build(g: Grammar, name: string, args: List<string>, env: CapEnv, st: PS
     // in a full compile. (The former null-guarded read was a #1232-era
     // cost guard from when the manifest was empty; with disjoint name sets
     // the order flip preserves semantics and the cost story both.)
-    if central_build_kind(name) == "" {
+    if central_build_kind(name) == null {
         for b in st.store.parse_features().builder_binds {
             if b.name == name && args.length == b.arity {
                 mut vals: List<CapVal> = []
@@ -4592,7 +4592,7 @@ export fn capval_to_pentry(st: PState, v: CapVal) -> ParamEntry {
 }
 
 /// A capture as ONE annotation — the scalar coercion the EMITTED parser's
-/// `( an:annot )*` accumulator applies per iteration (kind_coerce("ann")), the
+/// `( an:annot )*` accumulator applies per iteration (kind_coerce(BuildKind.Ann)), the
 /// Annotation twin of capval_to_pentry above.
 export fn capval_to_ann(st: PState, v: CapVal) -> Annotation {
     match v {
