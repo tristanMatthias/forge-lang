@@ -1,9 +1,17 @@
-// WHY: closure/lambda parser helpers.
-// `expr_contains_it` supports the implicit `it` parameter sugar:
-//   `list.map(it * 2)` → `list.map((it) -> { it * 2 })`
-
+// The `it` PRONOUN desugar (t-y2i7.1): `list.map(it * 2)` becomes
+// `list.map((it) -> it * 2)`. The grammar executor reaches it while building
+// a call's arguments (executor.av) — it is parse-time lowering, not a hand
+// parser, so it lives here rather than in a parser.av. parse/mod.av's postfix
+// arg path used to reach it too; that path (`parse_arg_list_ids_inner`) was
+// deleted with the rest of the hand postfix chain in this same slice.
+//
+// Imports ONLY core: every lowering module in the tree imports exactly
+// `core` + `features.grammar` and nothing else, because the GENERATED
+// parser imports these modules directly and its closure must not widen
+// (F4012). That is why the two `list_any` folds below are written as
+// plain loops — pulling in `list_ops` for a one-line helper would break
+// the invariant for the whole package.
 use core.{NodeStore, Expr, Stmt, StmtId, ParamEntry, ValueType, ExprId}
-use list_ops.{list_any}
 
 /// True when `expr` references the implicit `it` pronoun. Used
 /// by `wrap_in_it_lambda` to recognise method-call sugar like
@@ -40,19 +48,23 @@ export fn expr_contains_it(store: NodeStore, expr: Expr) -> bool {
 
 /// Map `expr_contains_it` over an expression-id list.
 export fn expr_list_contains_it(store: NodeStore, ids: List<ExprId>) -> bool {
-    list_any(ids, (id: ExprId) -> expr_contains_it(store, store.exprs.get(id)))
+    for id in ids {
+        if expr_contains_it(store, store.exprs.get(id)) { return true }
+    }
+    false
 }
 
 /// Map `expr_contains_it` over the expression payload of every
 /// statement. Block bodies need this so an `it` reference deep
 /// inside a `let`-init or `return` triggers the lambda wrap.
 export fn stmt_list_contains_it(store: NodeStore, ids: List<StmtId>) -> bool {
-    list_any(ids, (id: StmtId) -> stmt_contains_it(store, store.stmts.get(id)))
+    for id in ids {
+        if stmt_contains_it(store, store.stmts.get(id)) { return true }
+    }
+    false
 }
 
-/// Per-statement `it`-presence check. Pulled out of the inline
-/// match in `stmt_list_contains_it` so the predicate passed to
-/// `list_any` stays a one-liner.
+/// Per-statement `it`-presence check.
 fn stmt_contains_it(store: NodeStore, s: Stmt) -> bool {
     match s {
         .Expr(e) -> expr_contains_it(store, store.exprs.get(e))

@@ -13,7 +13,7 @@ use features.grammar.{rule_result_kind, gprim_ref_name, BuildKindRow}
 // The field-name acceptance set (t-47hc.33.1).
 use core.{tk_is_field_name}
 use core.{SelectArm}
-use core.{CompConfig, CompConfigPair, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct, lookup_stmt_parser}
+use core.{CompConfig, CompConfigPair, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct, is_registered_component}
 use features.grammar.{code_at, is_ident_start_code}
 // The RAW-SOURCE lookahead cores (t-47hc.5.1 slice B1), SHARED with
 // Parser's peek_after_ident_is_* wrappers. The component config-pair
@@ -23,7 +23,7 @@ use features.grammar.{code_at, is_ident_start_code}
 use features.grammar.{word_excluded_as_instance_name, src_next_nonws_is_quote, src_next_nonws_is_digit, src_next_nonws_starts_with, src_next_nonws_is_single_eq, src_next_nonws_is_lbrace, src_next_nonws_is_value_word, src_at_empty_call_block}
 use parse.{parser_new_with_store, Parser, desugar_template_store}
 use list_ops.{lower_bound}
-use features.closures.{expr_contains_it, wrap_in_it_lambda}
+use features.closures.lowering.{expr_contains_it, wrap_in_it_lambda}
 
 extern fn avra_gensym() -> int
 
@@ -2362,14 +2362,14 @@ fn comp_name_is_raw_body(st: PState) -> bool {
 /// Is the current identifier a REGISTERED component name? (t-47hc.5.1 slice C)
 ///
 /// The hand reaches the bare-IDENT instantiation by looking the current lexeme up
-/// in the registry's `stmt_parsers` map — `register_component_def` puts every
-/// component name there via `register_component_name`. So this asks the SAME map
+/// in the registry's `component_names` set — `register_component_def` puts every
+/// component name there via `register_component_name`. So this asks the SAME set
 /// rather than re-deriving a token-level notion of "component-like name", which is
 /// not decidable: `acct_sr a { … }` and `foo bar { … }` are the same token shape
 /// and differ only by whether a `component` declaration registered the name.
 fn comp_name_is_registered(st: PState) -> bool {
     if st.host == null { return false }
-    lookup_stmt_parser(st.host!.features, st.cur().text) != null
+    is_registered_component(st.host!.features, st.cur().text)
 }
 
 /// The shared prefix of both config-pair conds — every reason
@@ -4477,11 +4477,14 @@ export fn mk_component_def_with_params(st: PState, name: string, params: List<Pa
     }
     if st.host != null {
         let p = st.host!
+        // Every component name is registered; only a `body: TokenStream`
+        // one additionally opts into raw capture (vez6.9). The two used to
+        // sit in separate branches because each also passed a DIFFERENT
+        // instance-block handler — raw vs bare — but nothing ever invoked
+        // those handlers, so the branch now differs by exactly this flag.
+        register_component_name(p.features, name)
         if body_declares_token_stream(st.store, all_ids) {
-            register_component_name(p.features, name, (q: Parser) -> q.parse_component_block_raw())
             register_raw_body_component(p.features, name)
-        } else {
-            register_component_name(p.features, name, (q: Parser) -> q.parse_component_block_bare())
         }
     }
     CapVal.SNode(st.store.stmts.add_leaf(Stmt.ComponentDef(name, params, capval_to_comp_config_list(cfg_cv), children, implements, all_ids)))
