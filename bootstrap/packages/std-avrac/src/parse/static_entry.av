@@ -1,0 +1,69 @@
+// WHY: THE production boundary between `parse/mod.av` and the CHECKED-IN
+// generated static parser (`parse/gen_parser.av`). Every family's entry lives
+// here, and this is the ONLY module that imports the generated one.
+//
+// It does two jobs, and both are the reason it exists rather than mod.av
+// importing gen_parser directly:
+//
+//   1. NAMING. The generated module exports FREE fns called `parse_expression`,
+//      `parse_declaration`, `parse_statement` and `parse_type_expr` — the exact
+//      names of `Parser` METHODS. Importing them into mod.av would shadow the
+//      methods. Re-exporting them as `run_static_*` keeps both callable.
+//
+//   2. THE IMPORT GRAPH. Production is
+//      mod.av -> static_entry -> gen_parser -> grammar builders, and NEVER
+//      -> emit.av. The emitter is a build-time tool; routing the production
+//      parse through a module that imports it would drag the whole generator
+//      into every compile.
+//
+// It was FOUR files (static_{decl,expr,pat,type}_entry.av) doing this one job.
+// The standardization design record called them "the engine dispatch table
+// written as four files" and planned to delete them by generating a name-to-fn
+// dispatch — which would have removed the boundary and reintroduced both
+// problems above. They are not a dispatch table: each entry binds ONE generated
+// fn to ONE runner, and the runners have DIFFERENT signatures and result types
+// (DslStmtResult / DslExprResult / DslTypeResult / DslPatResult), so there is no
+// table to build. The correct simplification was one boundary file, not zero.
+
+use parse.gen_parser.{parse_declaration, parse_statement, parse_expression, parse_bitxor, parse_type_expr, parse_pattern_or}
+use parse.{Parser}
+use features.grammar.{run_static_snode_at_shared, run_static_expr_at_shared, run_static_type_at_shared, run_static_pat_at_shared, Token, ExprModes, DslStmtResult, DslExprResult, DslTypeResult, DslPatResult, LexDiag}
+use core.{NodeStore}
+
+/// The generated static DECLARATION parser over the shared token stream at
+/// `start_byte`, threading the outer parser's live modes + host delegate — the
+/// static sibling of `run_dsl_decl_at_shared` (the Grammar-tree interpreter).
+/// Same PState, same builders ⇒ byte-identical AST, at straight-line speed.
+export fn run_static_decl(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
+    run_static_snode_at_shared(lex_diags, toks, start_byte, src, file, store, modes, delegate, parse_declaration)
+}
+
+/// The STATEMENT sibling (t-47hc.8) — the engine behind `Parser.parse_statement`
+/// when `stmt_static` (the default). Statements were the LAST family whose
+/// production seam ran only the interpreter.
+export fn run_static_stmt(lex_diags: List<LexDiag>, toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?) -> DslStmtResult {
+    run_static_snode_at_shared(lex_diags, toks, start_byte, src, file, store, modes, delegate, parse_statement)
+}
+
+/// The EXPRESSION entry.
+export fn run_static_expr(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser?) -> DslExprResult {
+    run_static_expr_at_shared(toks, start_byte, src, file, store, modes, delegate, parse_expression)
+}
+
+/// A table CELL: parsed at bitwise-xor precedence so the column separator `|`
+/// is never swallowed. Same runner, different start rule — which is the whole
+/// "where parsing starts is not a property of the grammar" point.
+export fn run_static_expr_cell(toks: List<Token>, start_byte: int, src: string, file: string, store: NodeStore, modes: ExprModes, delegate: Parser) -> DslExprResult {
+    run_static_expr_at_shared(toks, start_byte, src, file, store, modes, delegate, parse_bitxor)
+}
+
+/// The TYPE entry. No host delegate: types embed no value expressions, so the
+/// type family is self-contained.
+export fn run_static_type(toks: List<Token>, start_byte: int, src: string, store: NodeStore) -> DslTypeResult {
+    run_static_type_at_shared(toks, start_byte, src, store, parse_type_expr)
+}
+
+/// The PATTERN entry. Self-contained for the same reason as types.
+export fn run_static_pat(toks: List<Token>, start_byte: int, src: string, store: NodeStore) -> DslPatResult {
+    run_static_pat_at_shared(toks, start_byte, src, store, parse_pattern_or)
+}
