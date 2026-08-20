@@ -2,14 +2,14 @@
 // a two-engine differential (interpreter vs generated parser), covering nested
 // interpolation, adjacent templates, and the plain-string boundary.
 
-use @std.avrac.features.grammar.{run_grammar_expr, avra_expr_grammar}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.parse.{oracle_expr}
 use @std.avrac.core.{render_expr_id}
 
 // The DSL's rendered expr for `src` under the production expression grammar, whose
 // `template_lit` rule owns the TEMPLATE token natively.
 fn dsl_expr(src: string) -> string {
-    let r = run_grammar_expr(avra_expr_grammar(), src)
+    let r = run_grammar_expr_at(avra_program_grammar(), "expression", src)
     if r.had_error { return "<dsl err>" }
     render_expr_id(r.store, r.root)
 }

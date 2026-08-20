@@ -12,7 +12,7 @@
 // Scope (simplest-first): break, continue, `return <expr>`, and bare
 // expression-statements. Bare `return` (ReturnEmpty, newline-sensitive), block,
 // let/mut/const, if, for follow in later slices.
-use @std.avrac.features.grammar.{avra_stmt_flip_grammar, run_grammar_stmt}
+use @std.avrac.features.grammar.{avra_stmt_flip_grammar, avra_program_grammar, run_grammar_stmt_at}
 use @std.avrac.parse.{oracle_stmt}
 use @std.avrac.core.{render_stmt_id}
 
@@ -24,7 +24,7 @@ use @std.avrac.core.{render_stmt_id}
 
 // The DSL-generated statement parser's tree for `src`, rendered canonically.
 fn dsl_stmt(src: string) -> string {
-    let r = run_grammar_stmt(avra_stmt_flip_grammar(), src)
+    let r = run_grammar_stmt_at(avra_program_grammar(), "statement", src)
     // A diagnostic-bearing (error-tolerant partial) parse is a distinct
     // outcome — surface it so a recovered tree can't spuriously match the
     // hand-written parser's clean tree in the differential comparison.

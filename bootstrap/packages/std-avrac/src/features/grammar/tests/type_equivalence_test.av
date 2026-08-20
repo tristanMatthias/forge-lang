@@ -19,8 +19,8 @@
 // a lexer concern, and stays with the gnarly-5% catalogue (ps3t.6.5.10).
 // Qualified `@pkg::T` and `~splice` type atoms are likewise out of scope.
 // Single-level generics fully exercise the generic mechanism.
-use @std.avrac.features.grammar.{avra_type_grammar, run_grammar_type}
-use @std.avrac.parse.{parser_new}
+use @std.avrac.features.grammar.{avra_type_grammar, avra_program_grammar, run_grammar_type_at}
+use @std.avrac.parse.{pinned_parser}
 use @std.avrac.core.{render_type_id, type_expr_to_vtype}
 
 // The type grammar is the SOURCE-OF-TRUTH `grammar { }` block dogfooded into
@@ -30,22 +30,28 @@ use @std.avrac.core.{render_type_id, type_expr_to_vtype}
 
 // The DSL-generated type parser's ValueType for `src`, rendered canonically.
 fn dsl_type(src: string) -> string {
-    let r = run_grammar_type(avra_type_grammar(), src)
+    let r = run_grammar_type_at(avra_program_grammar(), "type_expr", src)
     if r.had_error { return "<dsl parse error>" }
     render_type_id(r.store, r.root)
 }
 
-// The hand-written parser's ValueType for `src`, rendered the SAME way — it
+// The GENERATED parser's ValueType for `src`, rendered the SAME way — it
 // builds a TypeExpr, lowers it via the shared type_expr_to_vtype, and renders
 // the arena'd ValueType.
 fn hand_type(src: string) -> string {
-    mut p = parser_new(src)
-    // t-47hc.37 — was `parse_type_expr_hand`, which is DELETED (the last of the three ITEM-LEVEL
-    // hand tails). The oracle half is the INTERPRETER engine now: `type_static = false`
-    // selects run_dsl_type_at_shared over the generated run_static_type. Two engines,
-    // one grammar — and the interpreter is still PRODUCTION for the type family, so this
-    // is a live differential rather than a museum piece.
-    p.type_static = false
+    // The oracle half is the EMIT engine — the checked-in generated static parser.
+    //
+    // It used to set `type_static = false`, which selects the INTERPRETER — the same
+    // engine `dsl_type` above already runs via run_grammar_type_at. The comment claimed
+    // "two engines, one grammar"; it was ONE engine reached two ways, so the matrix
+    // could go green on a regression both sides shared. Caught in review on #1306.
+    //
+    // `pinned_parser` is the fix rather than flipping the one field: the Parser routes
+    // decl/stmt/type/expr INDEPENDENTLY and every field is env-defaulted, so pinning
+    // only "the field distinguishing its mode" inherits the rest from the environment —
+    // the exact collapse this file just demonstrated, and which testkit.av exists to
+    // prevent (its WHY records the same vacuity being re-fixed file-by-file three times).
+    mut p = pinned_parser("emit", src, null)
     match p.parse_type_expr("expected type") {
         .Ok(te) -> {
             let tid = p.store.types.add_leaf(type_expr_to_vtype(te))

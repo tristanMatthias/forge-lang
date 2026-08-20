@@ -24,11 +24,11 @@
 // byte-identical: the primary speculations run before the enclosing chain calls
 // seed_postfix, so the accumulator they restore is one that is about to be overwritten.
 
-use @std.avrac.features.grammar.{run_grammar_expr, avra_expr_grammar, dump_expr}
+use @std.avrac.features.grammar.{dump_expr, avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.parse.{parse_expression_generated_probe}
 
 fn dsl(src: string) -> string {
-    let r = run_grammar_expr(avra_expr_grammar(), src)
+    let r = run_grammar_expr_at(avra_program_grammar(), "expression", src)
     dump_expr(r.store, r.root)
 }
 

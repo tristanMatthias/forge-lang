@@ -13,12 +13,12 @@
 //
 // Interpolated sources are built by concatenating a lone "$" with "{...}", so no
 // interpolation syntax appears in this file (which would interpolate here).
-use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr}
+use @std.avrac.features.grammar.{avra_expr_grammar, avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.parse.{oracle_expr}
 use @std.avrac.core.{render_expr_id}
 
 fn dsl(src: string) -> string {
-    let r = run_grammar_expr(avra_expr_grammar(), src)
+    let r = run_grammar_expr_at(avra_program_grammar(), "expression", src)
     if r.had_error { return "<err>" }
     render_expr_id(r.store, r.root)
 }

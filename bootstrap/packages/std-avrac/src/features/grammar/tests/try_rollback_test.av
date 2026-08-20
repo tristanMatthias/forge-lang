@@ -9,7 +9,7 @@
 // second half.
 
 use @std.avrac.parse.{parse_expression_source}
-use @std.avrac.features.grammar.{run_grammar_expr, avra_expr_grammar}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.core.{render_expr}
 
 // A `(`-led or `[`-led statement following another statement inside a lambda block.
@@ -65,10 +65,13 @@ spec "t-3keo: the INTERPRETER agrees — the two engines stay in lockstep" {
         // exec_node's speculative arm and emit's generated block are twins; arming the
         // snapshot in only one would silently split the oracle from the production
         // parser, which is the failure mode the whole grammar-flip program guards.
-        !run_grammar_expr(avra_expr_grammar(), block_with("(v)")).had_error
+        // Scope note: `run_grammar_expr_at` starts with NO threaded host delegate, and
+        // these inputs do not trigger its lazy creation — so "no desync" is a claim
+        // about THESE inputs, not about the seam in general.
+        !run_grammar_expr_at(avra_program_grammar(), "expression", block_with("(v)")).had_error
     }
     then "and the native-primary control, on the same engine" {
-        !run_grammar_expr(avra_expr_grammar(), block_with("(1)")).had_error
+        !run_grammar_expr_at(avra_program_grammar(), "expression", block_with("(1)")).had_error
     }
 }
 

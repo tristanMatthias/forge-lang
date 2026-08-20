@@ -6,7 +6,7 @@
 // oracle for scaling the DSL to the full grammar rule-family by
 // rule-family — expressions are the first family, proven equivalent.
 
-use @std.avrac.features.grammar.{avra_expr_grammar, run_grammar_expr, dump_expr}
+use @std.avrac.features.grammar.{dump_expr, avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.parse.{parse_expression_generated_probe}
 
 // Avra's full binary-operator precedence, mirrored from the hand-written
@@ -19,7 +19,7 @@ use @std.avrac.parse.{parse_expression_generated_probe}
 
 // The generated parser's tree for `src`, as a prefix dump.
 fn grammar_tree(src: string) -> string {
-    let r = run_grammar_expr(avra_expr_grammar(), src)
+    let r = run_grammar_expr_at(avra_program_grammar(), "expression", src)
     dump_expr(r.store, r.root)
 }
 
