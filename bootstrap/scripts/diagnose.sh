@@ -4230,7 +4230,26 @@ mode_check_core_layering() {
   [ -d "$sd/core" ] || die "check-core-layering: core dir not found: $sd/core"
 
   # Layers ABOVE core. A `use <layer>.…` from core/ is an inversion.
-  local upper="codegen typeck resolve parse desugar query features check build lang_gen test_runner"
+  #
+  # DERIVED, NOT HARDCODED, and that is the point. This was a fixed list, which
+  # made the check FAIL-OPEN: a top-level dir that did not appear in it was
+  # invisible, so creating one (src/eval/, P4c) silently added a layer the lint
+  # could not police — and relocating a subsystem INTO such a dir would have made
+  # an existing inversion vanish from the report rather than be fixed. A lint
+  # whose blind spot grows when you refactor is worse than no lint.
+  #
+  # So: every top-level dir under src/ is UPPER unless it is core/ itself or is
+  # named below-core here. Adding a directory now defaults to POLICED.
+  local below_core="list_ops pathutil"
+  local upper=""
+  local _d _b
+  for _d in "$sd"/*/; do
+    [ -d "$_d" ] || continue
+    _b=$(basename "$_d")
+    [ "$_b" = "core" ] && continue
+    case " $below_core " in *" $_b "*) continue ;; esac
+    upper="$upper $_b"
+  done
 
   # Known inversions, each with its owner. SHRINK THIS LIST; do not grow it.
   #   registry.av  t-y2i7.13  DOWN TO ONE import: features.grammar.{BuilderBind},
