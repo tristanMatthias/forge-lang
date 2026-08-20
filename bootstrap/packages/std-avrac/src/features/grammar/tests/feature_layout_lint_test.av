@@ -1,0 +1,46 @@
+// WHY: features/WHY.md declares an EXHAUSTIVE canonical file set for a feature
+// directory. Until `diagnose.sh --check-feature-layout` existed, that was a doc
+// claim — and both WHY.md and CLAUDE.md asserted the layout was "enforced"
+// while nothing enforced it. A rule that reads as a gate and cannot fail is
+// worse than no rule, so this spec exists to keep the gate honest.
+//
+// It mirrors codegen/tests/layout_boundary_lint_test.av: drive the real script,
+// assert it PASSES on the tree as it stands, and assert it FAILS when the
+// invariant is broken — the anti-vacuity half, without which a lint that always
+// returned 0 would look identical to a lint that works.
+
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_shell_exec_status(cmd: string) -> int
+
+spec "the feature-layout lint is real" {
+    then "it passes on the tree as it stands" {
+        avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1") == 0
+    }
+    then "an OFF-LIST file makes it FAIL — the anti-vacuity half" {
+        // Plant a file that is on no canonical name and no allowlist entry.
+        // `defer` is not available here (the shell-out is the cleanup), so the
+        // removal is unconditional and runs before the assertion is evaluated.
+        let planted = "packages/std-avrac/src/features/tuples/not_a_canonical_name.av"
+        let _ = avra_shell_exec("printf '// planted by feature_layout_lint_test\\n' > '${planted}'")
+        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1")
+        let _ = avra_shell_exec("rm -f '${planted}'")
+        rc != 0
+    }
+    then "and it passes again once the planted file is gone" {
+        // Proves the previous case cleaned up after itself, so a failure here
+        // means the planted file leaked rather than the lint being wrong.
+        avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1") == 0
+    }
+}
+
+spec "the lint names non-feature directories rather than mis-reporting them" {
+    then "a directory with no `<name>_lang()` is called out as machinery, not a missing mod.av" {
+        // derive/, marshal/, walker/, comptime/ and friends define ZERO
+        // *_lang() and are not registered in features/mod.av. They are @derive
+        // and comptime MACHINERY living under features/ by historical accident.
+        // Requiring mod.av of them would report a missing FILE when the real
+        // finding is a misplaced DIRECTORY.
+        let out = avra_shell_exec("bash scripts/diagnose.sh --check-feature-layout --list 2>&1")
+        out.contains("not a feature") && out.contains("derive") && out.contains("walker")
+    }
+}
