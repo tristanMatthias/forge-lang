@@ -11,7 +11,7 @@
 
 use parse.gen_parser.{parse_declaration, parse_statement}
 use parse.{Parser}
-use features.grammar.{run_static_snode_at_shared, Token, ExprModes, DslStmtResult, LexDiag}
+use features.grammar.{run_static_snode_at_shared, Token, PState, CapVal, ExprModes, DslStmtResult, LexDiag}
 use core.{NodeStore}
 
 /// Drive the generated static DECLARATION parser over the shared token stream at

@@ -27,7 +27,7 @@
 use core.{avra_selfhost_read_file, avra_shell_exec, avra_selfhost_levenshtein}
 use parse.{parse_program_source}
 use indexer.{extract_from_ast_at, extract_calls_from_ast_at}
-use @std.lsp.{Sym, CallEdge}
+use @std.lsp.{Sym, SymKind, CallEdge}
 use @std.json.{json_str}
 use render.{bold, dim, cyan, green, yellow, red,
             pad_right, truncate_str, rule, first_line, icase_eq, pct}

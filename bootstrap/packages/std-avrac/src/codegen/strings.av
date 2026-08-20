@@ -2,6 +2,7 @@
 
 use core.{Expr, VarBinding}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use codegen.{strip_quotes}
 
 /// Codegen for the binary `+` operator on Strings. Allocates a
 /// `lhs.length + rhs.length + 1` RC buffer, memcpys both sides plus

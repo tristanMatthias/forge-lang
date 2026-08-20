@@ -18,7 +18,7 @@
 // module exists to kill. Those verbs arrive when the traversal substrate
 // does (the deferred design session's first work item; see the RFC).
 
-use core.{NodeStore, NodeRef, StmtId, ExprId, ParamEntry, ValueType, stmt_unwrap}
+use core.{NodeStore, NodeRef, Stmt, StmtId, ExprId, ParamEntry, ValueType, stmt_unwrap}
 
 /// A selection: a store plus the refs currently selected, with a breadcrumb
 /// of the combinator steps that produced it (`desc` — what must() reports,

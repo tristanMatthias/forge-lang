@@ -19,7 +19,7 @@ use typeck.{typecheck_env, typecheck_program_from_env, typecheck_env_seeded, sna
 use features.generics.{monomorphize}
 use diagnostics.{DiagnosticBag, bag_has_errors, render_bag, MacroFnOrigin}
 use codegen.{codegen_and_emit_ir_cov, compile_one_fn_module, collect_fn_targets, partition_targets, emit_cgu_object, emit_wrapper_object, FnTarget, fn_target_is_erased, parse_pkg_roots}
-use build.link.{link_objects, link_objects_with_coverage, default_link_options, llvm_prefix_dir, coverage_runtime_args, host_is_macos, link_opts_canonical}
+use build.link.{link_objects, link_objects_with_coverage, LinkOptions, default_link_options, llvm_prefix_dir, coverage_runtime_args, host_is_macos, link_opts_canonical}
 use build.cache.{cache_for, linked_bin_key, linked_bin_lookup, linked_bin_publish}
 use build.{toolchain_fingerprint, fn_unit_store_for_ns, fn_unit_store_init, fn_unit_key_cgu, CguMember, fn_unit_lookup, fn_unit_publish}
 use build.{f2_typeenv_read, f2_typeenv_write}

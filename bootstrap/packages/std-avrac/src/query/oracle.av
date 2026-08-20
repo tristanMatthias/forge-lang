@@ -22,7 +22,7 @@
 // equality and that the incremental replay computed strictly less.
 
 use query.{Db, QueryCtx, QueryKey, Computed, Fetched, QueryCycle, db_new, qk_render}
-use diagnostics.{diag_canonical}
+use diagnostics.{Diagnostic, diag_canonical}
 
 /// One input assignment: set query `q` to `value` (with its content hash —
 /// the driver hashes, engine compares).

@@ -10,7 +10,7 @@
 
 use parse.gen_parser.{parse_expression, parse_bitxor}
 use parse.{Parser}
-use features.grammar.{run_static_expr_at_shared, Token, ExprModes, DslExprResult}
+use features.grammar.{run_static_expr_at_shared, Token, PState, CapVal, ExprModes, DslExprResult}
 use core.{NodeStore}
 
 /// Drive the generated static expression parser over the shared token stream at

@@ -7,7 +7,7 @@
 // Component expansion is a SEPARATE pass that runs before desugar.
 // See features/component_decl/expand.av.
 
-use core.{Expr, Stmt, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name, vtype_struct}
+use core.{Expr, Stmt, stmt_unwrap, FieldEntry, FieldInit, MatchArm, WhenArm, Pattern, BinOp, UnOp, ValueType, Variant, TypeParamEntry, ParamEntry, vtype_list_elem, vtype_struct_name, vtype_struct}
 use core.{NodeStore, ExprId, StmtId}
 use list_ops.{list_map, list_concat}
 

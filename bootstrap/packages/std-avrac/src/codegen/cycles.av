@@ -6,7 +6,7 @@
 // functions when refcount decrements to non-zero.
 
 use core.{FieldEntry, ValueType, Variant}
-use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup}
+use codegen.{StructReg, EnumReg, struct_reg_lookup, enum_reg_lookup, vtype_is_ptr_type}
 use list_ops.{list_push_copy, list_any}
 
 /// Set of type names whose layout can reach back to itself through

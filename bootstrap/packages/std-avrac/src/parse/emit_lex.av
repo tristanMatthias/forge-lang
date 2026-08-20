@@ -19,7 +19,7 @@
 // (parse/gen_operator_scanner.av) is what production consumes. RELATIVE imports:
 // this is an in-package compiler-src module (absolute `@std.avrac.` self-imports
 // double-expand the package — F4012).
-use parse.{operator_rules, keyword_rules, char_run_rules, delim_run_rules, str_run_rules, nest_run_rules, interp_run_rules, escape_rules, LitRule, CharRun, DelimRun, StrRun, NestRun, InterpRun, byte_at, ascii_const_name}
+use parse.{operator_rules, keyword_rules, char_run_rules, delim_run_rules, str_run_rules, nest_run_rules, interp_run_rules, escape_rules, LitRule, CharRun, DelimRun, StrRun, NestRun, InterpRun, EscapeRule, byte_at, ascii_const_name}
 use core.{Tk, tk_name}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
