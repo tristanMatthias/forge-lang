@@ -2150,7 +2150,26 @@ acquire_compile_slot() {
             # (a timeout-killed regen left slot.2 pid-less; a full suite
             # run sat behind it for 20+ minutes). Reap once the dir is
             # provably older than the window.
-            now=$(date +%s); born=$(stat -c %Y "$dir" 2>/dev/null || stat -f %m "$dir" 2>/dev/null || echo "$now")
+            # 6cks portability, reapplied: this hardcoded the GNU spelling with
+            # the BSD one as a FALLBACK, which is worse than either alone. On
+            # Linux `stat -f` means --file-system, so `%m` is taken as a
+            # FILENAME and the fallback prints filesystem text starting
+            # `  File: "..."`. That lands in `born`, and `$((now - born))` then
+            # evaluates it ARITHMETICALLY, where the bare word `File` is read as
+            # a variable — under `set -u` that aborts the whole script with
+            # "File: unbound variable".
+            #
+            # The fallback only fires when the primary fails, i.e. when the dir
+            # vanished mid-reap — exactly the contention this loop exists for.
+            # So it killed the slot-fuzz harness under load and reported as a
+            # gate failure with no verdict.
+            #
+            # $STAT_MTIME is the probe 6cks added for precisely this and is
+            # word-split deliberately. Guard the arithmetic too: a non-numeric
+            # reading must not reach `$(( ))`, or the next portability slip
+            # aborts the script again instead of degrading.
+            now=$(date +%s); born=$($STAT_MTIME "$dir" 2>/dev/null || echo "$now")
+            case "$born" in (*[!0-9]*|"") born="$now" ;; esac
             [ $((now - born)) -ge 5 ] && rm -rf "$dir" 2>/dev/null
           fi
         fi
@@ -2179,8 +2198,13 @@ acquire_compile_slot() {
         if [ -n "$owner" ]; then
           ! kill -0 "$owner" 2>/dev/null && rm -rf "$dir" 2>/dev/null
         else
-          # Same empty-pid reap as the heavy loop above (t-kdyj.12).
-          now=$(date +%s); born=$(stat -c %Y "$dir" 2>/dev/null || stat -f %m "$dir" 2>/dev/null || echo "$now")
+          # Same empty-pid reap as the heavy loop above (t-kdyj.12), and the
+          # same $STAT_MTIME portability + numeric guard — see the comment
+          # there. Both sites must use the probe: the GNU/BSD `stat` fallback
+          # aborts the script under `set -u`, and fixing only one leaves the
+          # other to fire under exactly the same contention.
+          now=$(date +%s); born=$($STAT_MTIME "$dir" 2>/dev/null || echo "$now")
+          case "$born" in (*[!0-9]*|"") born="$now" ;; esac
           [ $((now - born)) -ge 5 ] && rm -rf "$dir" 2>/dev/null
         fi
       done
