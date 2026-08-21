@@ -194,6 +194,7 @@ export fn avra_match_table_grammar() -> Grammar {
 // ── definitions ──
 
 /// The `match` feature definition — statement + expression positions.
+@language_feature
 export fn match_lang() -> LanguageFeature {
     let empty_arms: List<MatchArm> = []
     LanguageFeature match_def {
@@ -250,6 +251,7 @@ desugars into ordinary arms.
 /// The subjectless `when` definition. Its arm syntax lives in the shared
 /// match-arm fragment above (one `match_when_arm` rule referenced by both
 /// families), so `gram` stays empty — no rules of its own to compose.
+@language_feature
 export fn when_lang() -> LanguageFeature {
     let empty_arms: List<WhenArm> = []
     LanguageFeature when_def {

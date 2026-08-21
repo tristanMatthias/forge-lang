@@ -14,6 +14,7 @@ use features.grammar.{parse_grammar}
 /// (t-47hc.8 dissolution) — the engine's checked-in `_gb_` adapters import
 /// them back. The engine's `Break()` / `Continue()` builds survive as
 /// toy-grammar vocabulary.
+@language_feature
 export fn break_lang() -> LanguageFeature {
     LanguageFeature break_def {
         name = "break",
@@ -32,6 +33,7 @@ run before control leaves.
     break_def
 }
 
+@language_feature
 export fn continue_lang() -> LanguageFeature {
     LanguageFeature continue_def {
         name = "continue",

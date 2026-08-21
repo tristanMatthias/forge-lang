@@ -11,6 +11,7 @@ use features.grammar.{parse_grammar}
 /// the validation + docs surface for rules composed there); its lowerings
 /// travel with it (t-kd4y.3.3.3). Type-checking for `impl Trait for Type`
 /// and dyn dispatch live in `typeck.av` and `codegen.av`.
+@language_feature
 export fn trait_lang() -> LanguageFeature {
     LanguageFeature trait_def {
         name = "trait_decl",
@@ -62,6 +63,7 @@ one without is a signature an `impl Name for T` block must supply.
 /// `dyn Trait` in TYPE position (t-kd4y.3.5.10) — the trait system's
 /// type-position face, so the rule + its TyDyn rows live here.
 /// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+@language_feature
 export fn dyn_type_lang() -> LanguageFeature {
     LanguageFeature dyn_type_def {
         name = "dyn_type",

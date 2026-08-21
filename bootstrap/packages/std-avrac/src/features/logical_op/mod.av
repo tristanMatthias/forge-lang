@@ -13,6 +13,7 @@ use features.grammar.{parse_grammar}
 /// row per the no-orphans validator. `gram_family = "expr"`; the ladder
 /// enters from `null_coalesce` (features/null_safety) and exits to
 /// `equality` (features/struct_decl's field_assign) by name.
+@language_feature
 export fn logical_op_lang() -> LanguageFeature {
     LanguageFeature logical_op_def {
         name = "logical_op",

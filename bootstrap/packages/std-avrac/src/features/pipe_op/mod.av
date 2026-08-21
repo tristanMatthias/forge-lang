@@ -13,6 +13,7 @@ use features.grammar.{parse_grammar}
 /// `fold_pipe` row per the no-orphans validator (t-kd4y.3.5.7).
 /// `gram_family = "expr"`; `assignment` enters here and the stratum exits
 /// to `null_coalesce` by name.
+@language_feature
 export fn pipe_op_lang() -> LanguageFeature {
     LanguageFeature pipe_op_def {
         name = "pipe_op",

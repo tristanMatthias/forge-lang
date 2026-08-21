@@ -7,6 +7,7 @@
 /// lead-keyword family), and its lowering (MkExtern) rides fn_lang's
 /// manifest, so this definition carries the surface alone (t-kd4y.3.3.1;
 /// the retired `feature_new("extern_decl")` register was hookless too).
+@language_feature
 export fn extern_lang() -> LanguageFeature {
     LanguageFeature extern_def {
         name = "extern_decl",

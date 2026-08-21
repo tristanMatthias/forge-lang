@@ -26,6 +26,7 @@ fn check_effect_body(tc: TC, body: ExprId) -> TC {
     check_expr(tc_gate_unthreaded_lambda(tc, e), e).tc
 }
 
+@language_feature
 export fn defer_lang() -> LanguageFeature {
     LanguageFeature defer_def {
         name = "defer",
@@ -65,6 +66,7 @@ and error propagation via `?`.
     defer_def
 }
 
+@language_feature
 export fn errdefer_lang() -> LanguageFeature {
     LanguageFeature errdefer_def {
         name = "errdefer",

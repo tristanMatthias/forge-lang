@@ -24,6 +24,7 @@ use features.grammar.{parse_grammar}
 /// splice-struct branch reference `field_init` cross-fragment by name —
 /// the `param` precedent). `gram_family = "expr"`; the ladder dispatches
 /// to `struct_lit_expr` behind @peek(ident_lbrace_plain).
+@language_feature
 export fn struct_lit_lang() -> LanguageFeature {
     LanguageFeature struct_lit_def {
         name = "struct_lit",
@@ -69,6 +70,7 @@ partial updates go through `with`).
 /// LAST `.`-led branch. FIELDNAME (not IDENT): `consume_field_name`
 /// accepts reserved-but-inactive keywords (`x.ref`), a set the DSL's
 /// IDENT terminal cannot spell. `gram_family = "expr"`.
+@language_feature
 export fn field_access_lang() -> LanguageFeature {
     LanguageFeature field_access_def {
         name = "field_access",
@@ -99,6 +101,7 @@ upper-case receiver the same syntax reads as `Type.STATIC` /
 /// (t-kd4y.3.5.8) with both rows. Lives next to struct_lit because the
 /// parsing/typeck shape is similar; the `Type.Variant` form arrives via
 /// field-access rewriting. `gram_family = "expr"`.
+@language_feature
 export fn enum_ctor_lang() -> LanguageFeature {
     LanguageFeature enum_ctor_def {
         name = "enum_ctor",
@@ -129,6 +132,7 @@ export fn enum_ctor_lang() -> LanguageFeature {
 /// the three feature-owned tails. The resolver-side mutability check
 /// (deep immutability) is handled directly in `resolve/mod.av`, so the
 /// resolver hook here is a pass-through walk. `gram_family = "expr"`.
+@language_feature
 export fn field_assign_lang() -> LanguageFeature {
     LanguageFeature field_assign_def {
         name = "field_assign",
@@ -168,6 +172,7 @@ Assignment is right-associative and yields the assigned value.
 /// composed by the decl view + fragment registry. No stmt hooks:
 /// `Stmt.TypeDecl`/`NewtypeDecl`/`UnionAliasDecl` are core passes, exactly
 /// as the retired hookless `feature_new("type_decl")` register left them.
+@language_feature
 export fn type_decl_lang() -> LanguageFeature {
     LanguageFeature type_decl_def {
         name = "type_decl",
@@ -226,6 +231,7 @@ optional `<T, U: Bound>` list.
 /// `shape` — structural typing (width subtyping, spec Axis 1). The SYNTAX
 /// lives in the type fragment (`shape_decl` beside `type_decl` — same
 /// family), so this definition carries the surface alone.
+@language_feature
 export fn shape_lang() -> LanguageFeature {
     LanguageFeature shape_def {
         name = "shape_decl",
@@ -354,6 +360,7 @@ fn field_assign_check_expr(tc: TC, expr: Expr) -> ExprResult {
 /// constructor core (mk_qualified_type composes mk_named_type — the
 /// F4012 closure keeps shared cores within one lowering).
 /// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+@language_feature
 export fn named_type_lang() -> LanguageFeature {
     LanguageFeature named_type_def {
         name = "named_type",

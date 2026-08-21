@@ -19,6 +19,7 @@ use features.grammar.{parse_grammar}
 /// derive its single-literal FIRST and `@require` on the ref demands a
 /// rule-NAME key (the quote_expr precedent); composed, the token-keyed
 /// message is the one both engines read.
+@language_feature
 export fn spawn_lang() -> LanguageFeature {
     LanguageFeature spawn_def {
         name = "spawn",

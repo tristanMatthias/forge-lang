@@ -14,6 +14,7 @@ use features.grammar.{parse_grammar}
 /// `given_blk` and `then_blk` because one feature directory owns all three
 /// keywords, exactly as features/modules carries `use` and `mod` together.
 /// The sibling definitions below add only their own pass hooks.
+@language_feature
 export fn spec_lang() -> LanguageFeature {
     let empty_body: List<StmtId> = []
     LanguageFeature spec_def {
@@ -55,6 +56,7 @@ so an early exit would silently drop every later block.
 /// The `given "context" { ... }` test arm, used inside `spec` blocks to group
 /// related `then` assertions. Grammar and lowerings ride `spec_lang`'s
 /// fragment.
+@language_feature
 export fn given_lang() -> LanguageFeature {
     let empty_body: List<StmtId> = []
     LanguageFeature given_def {
@@ -77,6 +79,7 @@ and groups the `then` assertions that share its setup. Structurally it is a
 
 /// The `then "expectation" { cond }` assertion. The body's final expression is
 /// its boolean result; the runner reports PASS/FAIL per arm.
+@language_feature
 export fn then_lang() -> LanguageFeature {
     LanguageFeature then_def {
         name = "then",

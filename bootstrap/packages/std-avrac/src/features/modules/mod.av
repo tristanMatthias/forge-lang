@@ -12,6 +12,7 @@ use features.grammar.{parse_grammar}
 /// Register the `mod` declaration feature. Wires up the parser,
 /// resolver, and eval hooks. Codegen is provided implicitly by
 /// the codegen pipeline emitting `__init_<name>()` per module.
+@language_feature
 export fn mod_lang() -> LanguageFeature {
     let empty_body: List<StmtId> = []
     LanguageFeature mod_def {
@@ -30,6 +31,7 @@ inside resolve locally to the module's scope.
     mod_def
 }
 
+@language_feature
 export fn use_lang() -> LanguageFeature {
     LanguageFeature use_def {
         name = "use",
@@ -67,6 +69,7 @@ may be named `defer`); the imported names themselves stay identifiers.
 /// `gram_family` stays "" — declaration rules, composed by the decl view
 /// (`declaration` and the annotation family's `wrapped_inner` reference
 /// `export_decl` cross-fragment by name).
+@language_feature
 export fn export_lang() -> LanguageFeature {
     LanguageFeature export_def {
         name = "export",
@@ -121,6 +124,7 @@ form (`export let` compiles to module-local allocas).
 /// struct-literal form behind the @when(allow_struct_lit) gate;
 /// `field_init` is referenced cross-fragment (struct_lit_lang owns it).
 /// `gram_family = "expr"`; the ladder dispatches on the `@` token.
+@language_feature
 export fn qualified_ref_lang() -> LanguageFeature {
     LanguageFeature qualified_ref_def {
         name = "qualified_ref",

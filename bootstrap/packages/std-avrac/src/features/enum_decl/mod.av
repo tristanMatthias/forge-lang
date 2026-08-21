@@ -9,6 +9,7 @@ use features.{composed}
 use features.enum_decl.lowering.{enum_builds}
 use features.grammar.{parse_grammar}
 
+@language_feature
 export fn enum_lang() -> LanguageFeature {
     LanguageFeature enum_def {
         name = "enum_decl",

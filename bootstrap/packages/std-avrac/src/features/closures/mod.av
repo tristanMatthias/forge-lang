@@ -18,6 +18,7 @@ use features.grammar.{parse_grammar}
 /// rules into every expression view via avra_expr_core; the spine's unary
 /// ladder references `paren_expr` by name. Captures referenced bindings
 /// from the enclosing scope; spec Axis 28.
+@language_feature
 export fn closures_lang() -> LanguageFeature {
     LanguageFeature closures_def {
         name = "lambda",

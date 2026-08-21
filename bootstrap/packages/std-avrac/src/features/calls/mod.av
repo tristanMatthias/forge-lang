@@ -53,6 +53,7 @@ use features.grammar.{parse_grammar}
 /// speculation — the index expression is parsed exactly once. The `]` branch is
 /// `@fallback` so it owns the message for a token that starts NEITHER (`a[1 2]`).
 /// `gram_family = "expr"`.
+@language_feature
 export fn calls_lang() -> LanguageFeature {
     LanguageFeature calls_def {
         name = "calls",

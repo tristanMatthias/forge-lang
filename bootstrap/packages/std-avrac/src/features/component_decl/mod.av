@@ -13,6 +13,7 @@ use features.grammar.{parse_grammar}
 /// pipeline. `gram_family` stays "" — declaration rules, composed by the
 /// decl view + fragment registry. No stmt hooks: expansion is the comptime
 /// pipeline's, exactly as the retired hookless register left it.
+@language_feature
 export fn component_lang() -> LanguageFeature {
     LanguageFeature component_def {
         name = "component_decl",
