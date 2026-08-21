@@ -1,0 +1,146 @@
+// WHY: t-y2i7.7 Phase A. `KwId` only earns its keep if it cannot DRIFT from the
+// keyword set it mirrors.
+//
+// A keyword currently lives in three places — a `Tk.Kw*` variant, a
+// `keyword_rules()` row, and the spelling in its feature's grammar — and two of
+// those are hand-edited per the CLAUDE.md checklist. Phase A adds a FOURTH
+// (`KwId`), which is only an improvement if adding a keyword to one and not the
+// other FAILS rather than silently diverging. That is what this pins, by
+// reading the sources rather than by restating a number:
+//
+//   - every distinct `Tk.Kw*` named by keyword_rules() has a `KwId` counterpart
+//   - every `KwId` has a `Tk.Kw*` counterpart (no orphans in either direction)
+//   - `kwid_name` is TOTAL and injective over KwId
+//
+// Deliberately source-derived: a hand-copied list of 48 names would itself be a
+// fifth place to drift, which is the defect this ticket exists to remove.
+use @std.avrac.core.{KwId, kwid_name}
+
+extern fn avra_selfhost_read_file(path: string) -> string
+
+/// Value-equality membership. `List<string>.contains` matches by IDENTITY, not
+/// value (t-xpi0), so a name built by `substring` is reported ABSENT from a list
+/// that holds it — silently, and in the "not present" direction. Every list here
+/// is built from source text, so every needle is runtime-built; using `contains`
+/// made this guard fail for a reason that had nothing to do with the invariant,
+/// and made the extractor return 59 names where 48 are distinct.
+fn has(xs: List<string>, needle: string) -> bool {
+    for x in xs { if x == needle { return true } }
+    false
+}
+
+fn ast_src() -> string { avra_selfhost_read_file("packages/std-avrac/src/core/ast.av") }
+fn table_src() -> string { avra_selfhost_read_file("packages/std-avrac/src/parse/token_table.av") }
+
+/// The `Kw*` names the Tk enum declares, as they appear in `tk_name`'s arms.
+fn tk_kw_names() -> List<string> {
+    mut out: List<string> = []
+    for line in ast_src().split("\n") {
+        let t = line.trim()
+        if t.starts_with(".Kw") && t.contains(" -> \"Kw") {
+            let name = t.substring(1, t.index_of(" ->"))
+            if !has(out, name) { out.push(name) }
+        }
+    }
+    out
+}
+
+/// The `Kw*` names keyword_rules() actually maps spellings onto.
+fn table_kw_names() -> List<string> {
+    mut out: List<string> = []
+    for line in table_src().split("\n") {
+        let marker = "tk: Tk.Kw"
+        let at = line.index_of(marker)
+        if at >= 0 {
+            // Cut at the FIRST of space / brace / comma. Deliberately not a
+            // character loop: `split("")` does not yield characters here, and a
+            // silently-wrong extractor makes this guard compare garbage and
+            // "fail" for a reason that has nothing to do with the invariant.
+            let rest = line.substring(at + 7, line.length)
+            mut cut = rest.length
+            let sp = rest.index_of(" ")
+            if sp >= 0 && sp < cut { cut = sp }
+            let br = rest.index_of("}")
+            if br >= 0 && br < cut { cut = br }
+            let cm = rest.index_of(",")
+            if cm >= 0 && cm < cut { cut = cm }
+            let name = rest.substring(0, cut)
+            if name != "" && !out.contains(name) { out.push(name) }
+        }
+    }
+    out
+}
+
+/// The ids `KwId` actually declares, read from the enum body — NOT a copied
+/// list, which would be a fifth place to drift.
+fn kwid_names() -> List<string> {
+    mut out: List<string> = []
+    mut inside = false
+    for line in ast_src().split("\n") {
+        let t = line.trim()
+        if t == "export enum KwId {" { inside = true continue }
+        if inside && t == "}" { break }
+        if inside && t != "" && !t.starts_with("//") {
+            for part in t.split(",") {
+                let n = part.trim()
+                if n != "" && !has(out, n) { out.push(n) }
+            }
+        }
+    }
+    out
+}
+
+spec "t-y2i7.7: KwId stays in lockstep with the keyword set it mirrors" {
+    then "the sources are non-empty — anti-vacuity" {
+        // Without this every set-comparison below passes on two empty lists,
+        // which is exactly how a lockstep guard rots into a no-op.
+        tk_kw_names().length > 40 && table_kw_names().length > 40
+    }
+
+    then "every keyword_rules() target is a declared Tk.Kw* variant" {
+        mut ok = true
+        let declared = tk_kw_names()
+        for n in table_kw_names() { if !has(declared, n) { ok = false } }
+        ok
+    }
+
+    then "KwId declares exactly one id per distinct Tk.Kw* variant" {
+        // BOTH populations read from source, then compared — the earlier version
+        // of this arm asserted `tk_kw_names().length == 48`, which pins the Tk
+        // side against a CONSTANT and would not have noticed a KwId variant
+        // being dropped at all. That is the drift this guard exists to catch.
+        kwid_names().length == tk_kw_names().length
+    }
+
+    then "every Tk.Kw* variant has a KwId counterpart, name for name" {
+        // Population equality alone would tolerate one added and one removed.
+        // `KwDefer` <-> `Defer`: the id is the variant minus its `Kw` prefix.
+        mut ok = true
+        let ids = kwid_names()
+        for n in tk_kw_names() {
+            if !has(ids, n.substring(2, n.length)) { ok = false }
+        }
+        ok
+    }
+
+    then "the KwId extractor is not vacuous" {
+        // Without this, a parser that returned [] would make both arms above
+        // pass whenever the Tk side also broke.
+        kwid_names().length > 40
+    }
+
+    then "kwid_name is injective — no two ids share a rendering" {
+        // A duplicated arm would make two keywords indistinguishable in the
+        // token oracle while still compiling.
+        let a = kwid_name(KwId.Defer)
+        let b = kwid_name(KwId.Return)
+        let c = kwid_name(KwId.Reserved)
+        a != b && b != c && a != c
+    }
+
+    then "kwid_name renders the LEGACY Tk.Kw* spelling, so lex_dump is unchanged" {
+        // Phase A must not move the token-stream oracle: both representations
+        // coexist until the Phase B sweep, and lex_dump characterises output.
+        kwid_name(KwId.Defer) == "KwDefer" && kwid_name(KwId.Fn) == "KwFn"
+    }
+}
