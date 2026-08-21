@@ -1,0 +1,95 @@
+// WHY: t-y2i7.5. Discovery by ANNOTATION declares membership; every shape-based
+// discriminator tried before it INFERRED membership and over-selected by exactly
+// one — a different one each time, on the same problem:
+//
+//   ctx_items_with_suffix(ctx, "_lang")  -> 71 not 70; also finds `register_lang`,
+//                                           the registration HELPER.
+//   selecting on return type             -> 71 not 70; also finds
+//                                           `LanguageFeature_new`, the constructor
+//                                           SYNTHESIZED for the component.
+//
+// Special-casing either by name would be the string-matching heuristic the repo
+// forbids. A mark admits neither, so this spec plants BOTH near-miss shapes as
+// decoys and requires them excluded.
+//
+// Same shape as its ctx_* siblings: a real macro emits a println of what it
+// found, so RUNTIME OUTPUT is the evidence and the `[]` stub cannot fake it.
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "ResolverCtx: ctx_items_with_annotation discovers by DECLARED mark" {
+    then "it finds the marked items and excludes both near-miss decoys" {
+        let out = write_fixture_and_run("/tmp/avra_ctx_items_with_annotation_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_items_with_annotation}\n" +
+            "\n" +
+            "type Marker = { tag: int }\n" +
+            // Two MARKED items — the ones discovery must find.
+            "@sample_feature\n" +
+            "fn alpha_lang() -> Marker { Marker { tag: 1 } }\n" +
+            "@sample_feature\n" +
+            "fn beta_lang() -> Marker { Marker { tag: 2 } }\n" +
+            // DECOY 1: the `register_lang` shape — same `_lang` suffix, unmarked.
+            // A suffix-based selector finds this; an annotation must not.
+            "fn register_lang(m: Marker) -> int { m.tag }\n" +
+            // DECOY 2: the `<T>_new` shape — same RETURN TYPE, unmarked.
+            // A return-type selector finds this; an annotation must not.
+            "fn Marker_new(t: int) -> Marker { Marker { tag: t } }\n" +
+            // DECOY 3: a nil-ary producer of the same type, still unmarked, so
+            // even signature matching would catch it. Only the mark separates.
+            "fn helper() -> Marker { Marker { tag: 9 } }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let found = ctx_items_with_annotation(ctx, \"sample_feature\")\n" +
+            "    mut saw_decoy = false\n" +
+            "    for f in found {\n" +
+            "        if f.contains(\"register_lang\") { saw_decoy = true }\n" +
+            "        if f.contains(\"Marker_new\") { saw_decoy = true }\n" +
+            "        if f.contains(\"helper\") { saw_decoy = true }\n" +
+            "    }\n" +
+            // Delimiter-anchored: a bare contains() on a number is a PREFIX
+            // match, so "n=2" would also be satisfied by 20 or 22. That false
+            // pass has already happened once on a sibling spec in this directory.
+            "    let msg = \"n=\" + string(found.length) + \";\" +\n" +
+            "              \" decoy=\" + string(saw_decoy) + \";\"\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // EXACTLY the two marked items, and NONE of the three decoys — the
+        // decoy flag is what makes this more than a count assertion.
+        out.contains("n=2;") && out.contains("decoy=false;") && !out.contains("error[")
+    }
+
+    then "an annotation nobody carries yields an EMPTY list, not everything" {
+        // The degradation worth pinning: a lookup that silently ignored its
+        // argument would return every annotated item, and a derived registry
+        // would be wrong rather than empty.
+        let out = write_fixture_and_run("/tmp/avra_ctx_items_annotation_empty_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_items_with_annotation}\n" +
+            "\n" +
+            "@sample_feature\n" +
+            "fn alpha() -> int { 1 }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let none_carry = ctx_items_with_annotation(ctx, \"no_such_mark\")\n" +
+            "    let msg = \"n=\" + string(none_carry.length) + \";\"\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("n=0;") && !out.contains("error[")
+    }
+}
