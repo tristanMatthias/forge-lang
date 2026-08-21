@@ -225,7 +225,7 @@ fn try_capture_test_annot(p: Parser, entries_ref: List<DiscoveredEntry>) {
     }
     p.advance()
     if p.current_kind == Tk.LeftParen { skip_paren_group(p) }
-    advance_until(p, Tk.Keyword(KwId.Fn))
+    advance_until_kw(p, KwId.Fn)
     if !tk_is_kw(p.current_kind, KwId.Fn) { return }
     p.advance()
     if p.current_kind == Tk.Identifier {
@@ -240,6 +240,17 @@ fn try_capture_test_annot(p: Parser, entries_ref: List<DiscoveredEntry>) {
 /// match from the EOF case.
 fn advance_until(p: Parser, stop: Tk) {
     while p.current_kind != Tk.Eof && p.current_kind != stop {
+        p.advance()
+    }
+}
+
+/// The keyword-aware sibling of `advance_until`. REQUIRED for keywords: the
+/// `!=` above compares whole `Tk` values, and on a payload-carrying variant
+/// that compares only the TAG (t-vcb1) — so `advance_until(p, Tk.Keyword(
+/// KwId.Fn))` stopped at the FIRST keyword of any kind, skipping past valid
+/// `@test` functions.
+fn advance_until_kw(p: Parser, id: KwId) {
+    while p.current_kind != Tk.Eof && !tk_is_kw(p.current_kind, id) {
         p.advance()
     }
 }

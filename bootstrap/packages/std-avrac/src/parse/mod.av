@@ -668,6 +668,21 @@ fn parser_ctor(source: string, file: string, store: NodeStore, feats: Registry) 
     parser
 }
 
+/// Statement-start keywords (plus `}`) that panic-mode recovery stops at.
+///
+/// A LIST + `in` is the natural spelling and is WRONG here: `in` compares with
+/// `==`, and on a payload-carrying variant that compares only the TAG (t-vcb1),
+/// so every keyword matched and `synchronize` stopped at the first one it saw.
+/// Matching the payload out and comparing `KwId` — a bare enum, where `==` is
+/// exact — is what actually discriminates.
+fn is_sync_stop(tk: Tk) -> bool {
+    match tk {
+        .RightBrace -> true
+        .Keyword(id) -> id in [KwId.Fn, KwId.Let, KwId.Const, KwId.Mut, KwId.Type, KwId.Enum, KwId.Impl, KwId.If, KwId.While, KwId.For, KwId.Match, KwId.Return, KwId.Extern, KwId.Trait, KwId.Defer, KwId.Spec, KwId.Given, KwId.Then, KwId.Select]
+        _ -> false
+    }
+}
+
 impl Parser {
     /// Mint a hygienic, collision-proof temp name `$<tag>$<n>` for a parser
     /// desugar (`if let` / `let-else` etc.). The `$` is the key: the lexer
@@ -1186,6 +1201,14 @@ impl Parser {
         self.current_kind == kind
     }
 
+    /// The keyword-aware sibling of `check`. REQUIRED for keywords: `check`
+    /// compares whole `Tk` values with `==`, which on a payload-carrying
+    /// variant compares only the TAG (t-vcb1) — so `check(Tk.Keyword(KwId.Fn))`
+    /// answers true for EVERY keyword, not just `fn`.
+    fn check_kw(self, id: KwId) -> bool {
+        tk_is_kw(self.current_kind, id)
+    }
+
     fn peek_after_ident_is_colon(self) -> bool {
         let end = self.current_start + self.current_lexeme.length
         mut i = end
@@ -1319,7 +1342,7 @@ impl Parser {
     /// the parser silently accepted `bare`, `await`, etc. as
     /// identifiers and the use site emitted a confusing F0001.
     fn consume_identifier(self, message: string) -> Result<string, string> {
-        if self.check(Tk.Keyword(KwId.Reserved)) {
+        if self.check_kw(KwId.Reserved) {
             self.reject_reserved_keyword("as an identifier — rename the binding")
             return .Err("parse error")
         }
@@ -1609,7 +1632,7 @@ impl Parser {
     // parsing and find more errors.
     fn synchronize(self) {
         while !self.check(Tk.Eof) {
-            if self.current_kind in [Tk.Keyword(KwId.Fn), Tk.Keyword(KwId.Let), Tk.Keyword(KwId.Const), Tk.Keyword(KwId.Mut), Tk.Keyword(KwId.Type), Tk.Keyword(KwId.Enum), Tk.Keyword(KwId.Impl), Tk.Keyword(KwId.If), Tk.Keyword(KwId.While), Tk.Keyword(KwId.For), Tk.Keyword(KwId.Match), Tk.Keyword(KwId.Return), Tk.Keyword(KwId.Extern), Tk.Keyword(KwId.Trait), Tk.Keyword(KwId.Defer), Tk.Keyword(KwId.Spec), Tk.Keyword(KwId.Given), Tk.Keyword(KwId.Then), Tk.Keyword(KwId.Select), Tk.RightBrace] {
+            if is_sync_stop(self.current_kind) {
                 return
             }
             self.advance()

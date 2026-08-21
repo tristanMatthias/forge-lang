@@ -19,7 +19,7 @@
 // only for human readability. token_table_test.av proves every rule is faithful to
 // the hand lexer (each spelling lexes to exactly its declared token) THROUGH the
 // same `lex_dump` oracle the byte-scanner uses.
-use core.{Tk}
+use core.{KwId, Tk}
 
 /// One fixed-spelling terminal: the exact source text `spelling` lexes to token
 /// kind `tk`. The declarative `">>" = Tk.Shr` binding. `spelling` is pure ASCII
