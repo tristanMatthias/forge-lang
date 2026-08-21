@@ -1,0 +1,54 @@
+// t-5qi0: an OPTIONAL newtype parameter (`RuleName?`) enforces the wrapper
+// exactly as the required form (`RuleName`) does.
+//
+// The gate in `tc_check_newtype_args` tested `param_ty is .Newtype`, which is
+// FALSE for `Optional(Newtype)` — so the entire newtype check was skipped for
+// every `T?` slot and a bare `string` sailed through. Nothing downstream caught
+// it either: the auto-widen in `check_expr_expected` strips the optional and
+// threads the inner type into a path guarded only by `ptr_nominal_conflict`,
+// which exempts newtype-vs-its-own-underlying BY DESIGN (t-axu9). So the
+// optional form had no enforcement anywhere.
+//
+// This is why it mattered: the t-y2i7.3 pilot introduced `RuleName` and used
+// `RuleName?` for the 6 executor seams to keep a `start == ""` sentinel working.
+// The suite went 1328/1328 and the newtype looked landed — while all 19 call
+// sites still passed bare strings. A type-safety change measured ZERO safety,
+// and the passing suite is what made that invisible.
+//
+// The `null` specs are not padding: the first fix rejected `null` too (it types
+// as `void`), which would have made every optional newtype param unusable.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_getpid}
+
+/// Compile a probe with the REAL bs2 and return its diagnostics.
+fn onc_check(slug: string, body: string) -> string {
+    let root = avra_shell_exec("pwd").trim()
+    let path = "/tmp/avra_t5qi0_${slug}_${string(avra_getpid())}.av"
+    let src = "type RuleName = string\n"
+        + "fn takes_req(r: RuleName) -> string { r.raw() }\n"
+        + "fn takes_opt(r: RuleName?) -> string { \"ok\" }\n"
+        + "fn main() -> int {\n    ${body}\n    0\n}\n"
+    let _ = avra_selfhost_write_file(path, src)
+    avra_shell_exec("cd '${root}' && ./build/bs2 check '${path}' 2>&1")
+}
+
+spec "an optional newtype param enforces the wrapper (t-5qi0)" {
+    then "a BARE string into `RuleName?` is REJECTED — the bug this pins" {
+        onc_check("opt_bare", "let _ = takes_opt(\"BARE\")").contains("error[F1000]")
+    }
+    then "the rejection names the optional param type, not the stripped inner" {
+        onc_check("opt_bare_msg", "let _ = takes_opt(\"BARE\")").contains("expects `RuleName?`")
+    }
+    then "a BARE string into a required `RuleName` stays REJECTED (unchanged)" {
+        onc_check("req_bare", "let _ = takes_req(\"BARE\")").contains("error[F1000]")
+    }
+    then "a properly wrapped `RuleName` into `RuleName?` COMPILES" {
+        !onc_check("opt_wrapped", "let _ = takes_opt(RuleName(\"W\"))").contains("error[")
+    }
+    then "`null` into `RuleName?` COMPILES — the optional must stay usable" {
+        !onc_check("opt_null", "let _ = takes_opt(null)").contains("error[")
+    }
+    then "a properly wrapped `RuleName` into a required param COMPILES" {
+        !onc_check("req_wrapped", "let _ = takes_req(RuleName(\"W\"))").contains("error[")
+    }
+}

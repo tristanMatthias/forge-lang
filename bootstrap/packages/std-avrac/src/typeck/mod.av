@@ -3490,8 +3490,26 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, tp: List<TypeParamEntry>, para
         cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let param_ty = resolve_vtype(cur, p.vtype)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
-        if param_ty is .Newtype {
-            if !vtype_eq(param_ty, arg_ty) && !vtype_assignable(arg_ty, param_ty) && !(arg_ty is .Unknown) {
+        // An OPTIONAL newtype param (`RuleName?`) enforces the wrapper exactly as the
+        // required form does (t-5qi0). `param_ty is .Newtype` alone is false for
+        // `Optional(Newtype)`, so the whole gate used to be skipped and every `RuleName?`
+        // slot silently accepted a bare `string` — the auto-widen in
+        // `check_expr_expected` strips the optional and threads the inner type into a
+        // path guarded only by `ptr_nominal_conflict`, which exempts newtype-vs-its-own-
+        // underlying by design. That left the optional form with NO enforcement at all,
+        // which is why the RuleName pilot measured zero safety at 19 call sites.
+        //
+        // The arg is stripped ONLY when the param is optional. For a required param
+        // `param_core == param_ty`, so the comparison below is byte-identical to the
+        // original and passing a `T?` into a `T` still reports.
+        let param_core = vtype_strip_optional(param_ty)
+        if param_core is .Newtype {
+            let arg_core = if vtype_is_optional(param_ty) { vtype_strip_optional(arg_ty) } else { arg_ty }
+            // `null` types as `void` and satisfies ANY optional slot — the one arg an
+            // optional param must keep accepting. (`ptr_nominal_conflict` exempts `void`
+            // for the same reason; it is the dominant artifact there too.)
+            let null_ok = vtype_is_optional(param_ty) && arg_core is .Void
+            if !null_ok && !vtype_eq(param_core, arg_core) && !vtype_assignable(arg_core, param_core) && !(arg_core is .Unknown) {
                 let msg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
                 cur = tc_report(cur, DiagCode.TypeMismatch, msg)
             }
