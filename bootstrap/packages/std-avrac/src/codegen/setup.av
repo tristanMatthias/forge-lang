@@ -154,6 +154,10 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     decl(m, "avra_array_reduce", i64t, [pt, i64t, i64t])
     decl(m, "avra_array_contains", i64t, [pt, i64t])
     decl(m, "avra_array_index_of", i64t, [pt, i64t])
+    // t-xpi0: string elements need VALUE equality; the plain forms compare by
+    // identity, which is right for scalars and wrong for strings.
+    decl(m, "avra_array_contains_str", i64t, [pt, i64t])
+    decl(m, "avra_array_index_of_str", i64t, [pt, i64t])
     decl(m, "avra_array_reverse", pt, [pt])
     decl(m, "avra_array_sort", pt, [pt, i64t])
     decl(m, "avra_array_insert", pt, [pt, i64t, i64t])

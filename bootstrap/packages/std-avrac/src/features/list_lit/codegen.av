@@ -145,13 +145,26 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
             let elem_ty = vtype_list_elem(list_ty)
             return emit_list_reduce_typed(ctx, env, list_val, args, elem_ty)
         }
+        // t-xpi0: STRING elements need VALUE equality. The plain runtime forms
+        // compare `data[i] == value`, i.e. by identity — right for int/bool/enum
+        // tags, wrong for strings, where two equal strings at different
+        // addresses compared unequal. `contains` therefore DISAGREED with `==`
+        // for any needle built at runtime (concatenation, substring, trim, a
+        // file read, a split); literals hid it by interning to one pointer.
+        // Silent, and in the "not present" direction, so dedup loops kept
+        // duplicates and membership guards passed vacuously.
+        //
+        // Dispatched HERE because the element type is known statically, so the
+        // scalar paths keep their single-compare loop at no cost.
         "contains" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(ctx.call("avra_array_contains", [list_val, arg_r.value]), .Int)
+            let fname = if vtype_list_elem(list_ty) is .Str { "avra_array_contains_str" } else { "avra_array_contains" }
+            return ok_emit(ctx.call(fname, [list_val, arg_r.value]), .Int)
         }
         "index_of" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            return ok_emit(ctx.call("avra_array_index_of", [list_val, arg_r.value]), .Int)
+            let fname = if vtype_list_elem(list_ty) is .Str { "avra_array_index_of_str" } else { "avra_array_index_of" }
+            return ok_emit(ctx.call(fname, [list_val, arg_r.value]), .Int)
         }
         "reverse" -> {
             return ok_emit(ctx.call("avra_array_reverse", [list_val]), list_ty)
