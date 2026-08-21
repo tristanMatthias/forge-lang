@@ -5,7 +5,7 @@
 // dir-as-module flattens every sibling .av into one flat namespace, so
 // mod.av reaches them exactly as before the move.
 use core.{Stmt}
-use features.eval.{Runtime, StepResult, ok_result, value_null}
+use eval.{Runtime, StepResult, ok_result, value_null}
 
 /// Tree-walk evaluator hook for `mod`. The evaluator doesn't yet
 /// model module scoping — return null and let body evaluation

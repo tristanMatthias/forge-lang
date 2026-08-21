@@ -18,7 +18,7 @@
 //     whole point: the macro can then `match` on it.
 
 use @std.avrac.core.{NodeStore, ExprId, new_node_store, build_line_index, Expr}
-use @std.avrac.features.eval.{Runtime, runtime_new, eval_expr, step_value, step_had_error}
+use @std.avrac.eval.{Runtime, runtime_new, eval_expr, step_value, step_had_error}
 
 /// Fresh store + runtime per probe. (Uniquely named — top-level fns
 /// leak cross-module in a bundled shard, so this must not collide with

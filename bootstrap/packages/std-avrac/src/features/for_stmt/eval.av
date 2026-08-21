@@ -2,7 +2,7 @@
 // One file per pass (features/WHY.md); module-private, reached from mod.av
 // through the dir-as-module flat namespace.
 use core.{Stmt}
-use features.eval.{Runtime, StepResult, execute_for_range, execute_for_in, error_result}
+use eval.{Runtime, StepResult, execute_for_range, execute_for_in, error_result}
 
 /// Tree-walk eval hook for the range form. Delegates the iteration
 /// itself to `execute_for_range` so the loop mechanics + scope

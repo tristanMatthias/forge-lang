@@ -62,7 +62,7 @@ expressions must evaluate to a string at runtime.
   `features/map_lit/codegen.av`.
 - @comptime eval (`map_lit_eval_expr`, rmzs): a literal evaluates to
   a kind="map" Value (string-keyed rows, insertion order, duplicate
-  keys last-write-wins), and `eval_map_method` (features/eval)
+  keys last-write-wins), and `eval_map_method` (src/eval)
   mirrors the compiled method surface — `get` / `has` / `set` /
   `len` / `length` / `keys` / `values` / `remove` — so macro bodies
   can use maps. `get` on a missing key yields null. This includes

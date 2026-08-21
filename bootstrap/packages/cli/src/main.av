@@ -82,7 +82,7 @@ use @std.avrac.list_ops.{list_map, list_filter, list_fold}
 use @std.avrac.parse.{parse_expression_source, parse_program_source}
 use @std.avrac.core.{render_expr, render_stmt_ids, Stmt}
 use @std.avrac.core.{NodeStore, new_node_store, build_line_index, StmtId, l1_sidetable_summary}
-use @std.avrac.features.eval.{render_value, eval_parsed_expression}
+use @std.avrac.eval.{render_value, eval_parsed_expression}
 use @std.avrac.desugar.{desugar_program, inject_intrinsics}
 use @std.avrac.features.component_decl.{expand_components}
 use @std.avrac.resolve.{NameResolveResult}

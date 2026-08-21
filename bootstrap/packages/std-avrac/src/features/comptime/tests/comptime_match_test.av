@@ -4,7 +4,7 @@
 // "match statements are not supported by the tree-walk evaluator".
 
 use @std.avrac.core.{NodeStore, StmtId, ExprId, new_node_store, build_line_index, Stmt, Expr, ParamEntry, ValueType, BinOp, Pattern, MatchArm, render_expr}
-use @std.avrac.features.eval.{Value, value_enum, value_number, eval_fn_with_resolved_args, step_value, step_had_error, runtime_new}
+use @std.avrac.eval.{Value, value_enum, value_number, eval_fn_with_resolved_args, step_value, step_had_error, runtime_new}
 use @std.avrac.features.comptime.{CompTimeFn, CompTimeRegistry, try_fold_call, prepare_runtime, comptime_registry_new}
 
 /// Fresh empty store for inline-AST probes — F2 renderers resolve

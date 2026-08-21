@@ -2,7 +2,7 @@
 // One file per pass (features/WHY.md); module-private, reached from mod.av
 // through the dir-as-module flat namespace.
 use core.{Expr, Stmt, Pattern, PatId, ParamEntry, MatchArm, ExprId, avra_selfhost_string_to_float}
-use features.eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy, value_is_enumish, step_runtime, step_value, step_had_error, step_is_return, step_error_message}
+use eval.{error_result, ok_result, eval_expr, execute_stmt, Runtime, StepResult, Value, define_binding, enter_scope, exit_scope, value_null, is_truthy, value_is_enumish, step_runtime, step_value, step_had_error, step_is_return, step_error_message}
 
 /// Tree-walk evaluator hook for `Match`. ty5v: Implements pattern
 /// matching for the @comptime tree-walk evaluator. Evaluates the
@@ -238,7 +238,7 @@ fn try_match_pattern_list(rt: Runtime, patterns: List<PatId>, payload: List<Valu
 extern fn avra_selfhost_string_to_int(s: string) -> int
 
 /// Parse decimal-int text via the runtime helper that backs the
-/// numeric-literal evaluator. Mirrors features.eval's `parse_num`
+/// numeric-literal evaluator. Mirrors eval's `parse_num`
 /// but inlined here to avoid exporting another helper just for
 /// this one call site.
 fn parse_int_text(s: string) -> int { avra_selfhost_string_to_int(s) }

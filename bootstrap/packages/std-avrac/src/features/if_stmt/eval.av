@@ -2,7 +2,7 @@
 // One file per pass (features/WHY.md); module-private, reached from mod.av
 // through the dir-as-module flat namespace.
 use core.{Expr, Stmt}
-use features.eval.{Runtime, StepResult, eval_expr, execute_stmt, error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
+use eval.{Runtime, StepResult, eval_expr, execute_stmt, error_result, is_truthy, ok_result, value_null, step_had_error, step_value, step_runtime}
 
 /// Tree-walk evaluator hook for `IfExpr`. Evaluates the condition
 /// and returns the value of whichever branch the truthiness picks.

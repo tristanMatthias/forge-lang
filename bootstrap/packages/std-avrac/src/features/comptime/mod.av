@@ -20,7 +20,7 @@
 
 use core.{Stmt, ParamEntry, ValueType, TypeParamEntry, Annotation, stmt_unwrap}
 use core.{NodeStore, StmtId, TypeRegistry, type_registry_new}
-use features.eval.{Runtime, runtime_new, execute_stmt}
+use eval.{Runtime, runtime_new, execute_stmt}
 use features.comptime.{rewrite_program_ids}
 use features.comptime.{check_comptime_purity, PurityViolation}
 use parse.{parse_body_source}

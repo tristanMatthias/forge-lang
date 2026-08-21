@@ -4230,7 +4230,26 @@ mode_check_core_layering() {
   [ -d "$sd/core" ] || die "check-core-layering: core dir not found: $sd/core"
 
   # Layers ABOVE core. A `use <layer>.…` from core/ is an inversion.
-  local upper="codegen typeck resolve parse desugar query features check build lang_gen test_runner"
+  #
+  # DERIVED, NOT HARDCODED, and that is the point. This was a fixed list, which
+  # made the check FAIL-OPEN: a top-level dir that did not appear in it was
+  # invisible, so creating one (src/eval/, P4c) silently added a layer the lint
+  # could not police — and relocating a subsystem INTO such a dir would have made
+  # an existing inversion vanish from the report rather than be fixed. A lint
+  # whose blind spot grows when you refactor is worse than no lint.
+  #
+  # So: every top-level dir under src/ is UPPER unless it is core/ itself or is
+  # named below-core here. Adding a directory now defaults to POLICED.
+  local below_core="list_ops pathutil"
+  local upper=""
+  local _d _b
+  for _d in "$sd"/*/; do
+    [ -d "$_d" ] || continue
+    _b=$(basename "$_d")
+    [ "$_b" = "core" ] && continue
+    case " $below_core " in *" $_b "*) continue ;; esac
+    upper="$upper $_b"
+  done
 
   # Known inversions, each with its owner. SHRINK THIS LIST; do not grow it.
   #   registry.av  t-y2i7.13  DOWN TO ONE import: features.grammar.{BuilderBind},
@@ -4296,6 +4315,19 @@ mode_check_feature_layout() {
   local allow_dirs="grammar"
   # One line: a `case` glob cannot match across newlines, so a wrapped list
   # silently allowlists nothing after the first line.
+  # Directories under features/ that define no `<name>_lang()` and are NOT
+  # language features. P4c set out to relocate all of them to src/; after
+  # `eval` moved (a genuine PASS, peer of resolve/typeck/codegen) the USER
+  # RULED that the rest STAY — the @derive/@comptime cluster is cohesive, its
+  # layering is subtle, and relocating ~131 files to satisfy a directory-name
+  # taxonomy is churn against an organizational win. See t-y2i7.13.
+  #
+  # So these are ACCEPTED, not pending. They are still LISTED — the point is
+  # that "features/ means a language feature" has known, named exceptions, not
+  # that the exceptions are invisible. An unlisted non-feature directory is
+  # still DRIFT and still fails: a new one must be argued for, not absorbed.
+  local accepted_non_feature="comptime derive derive_registry error_propagation marshal query_surface walker"
+
   local allow_files="expand.av mono.av reporter.av runner.av eval.av purity.av rewrite.av synth.av macro_types.av expand_macro.av resolver_ctx.av classify.av emit.av eq.av hash.av shape.av walk.av derive.av dir_module.av graph_build.av package.av unit_filter.av resolver.av lower.av"
 
   local drift=0 out=""
@@ -4317,10 +4349,23 @@ mode_check_feature_layout() {
     # here by historical accident, not language features. Requiring mod.av of
     # them would report a missing file when the real finding is a misplaced
     # directory, so they are named as their own category (P4c decides the home).
-    if grep -rqs 'fn [a-z_]*_lang()' "$d"*.av; then
+    # A directory with NO .av files at all is not a misplaced subsystem — it is
+    # EMPTY, usually leftover untracked build sidecars (*.avra-sha256) whose
+    # sources were deleted. Reporting those as "not a feature" invents a P4c
+    # directory that does not exist: features/error_messages/ read that way on a
+    # local tree while being four orphaned sidecars and nothing else, and is
+    # absent from a clean checkout entirely. The two need different actions, so
+    # they get different lines.
+    if ! ls "$d"*.av >/dev/null 2>&1; then
+      out="$out  (empty — no .av files; stale sidecars? not a P4c directory) $name"$'\n'
+    elif grep -rqs 'fn [a-z_]*_lang()' "$d"*.av; then
       [ -f "$d/mod.av" ] || { out="$out  MISSING mod.av in $name"$'\n'; drift=$((drift + 1)); }
     else
-      out="$out  (not a feature — no <name>_lang(), P4c) $name"$'\n'
+      case " $accepted_non_feature " in
+        *" $name "*) out="$out  (subsystem, ACCEPTED here by decision — not drift) $name"$'\n' ;;
+        *) out="$out  (not a feature — no <name>_lang(), and no decision on record) $name"$'\n'
+           drift=$((drift + 1)) ;;
+      esac
     fi
   done
 

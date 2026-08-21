@@ -4,7 +4,7 @@
 // produces a runtime Stmt value the @expand pass can extract.
 
 use @std.avrac.core.{NodeStore, ExprId, new_node_store, build_line_index, Expr, Stmt, ValueType}
-use @std.avrac.features.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value, value_to_stmt, list_value_to_stmt_id_list}
+use @std.avrac.eval.{Runtime, StepResult, Value, runtime_new, eval_expr, value_enum, render_value, value_to_stmt, list_value_to_stmt_id_list}
 
 /// Fresh empty store for inline-AST probes — F2 renderers resolve
 /// flipped pattern ids through it (never read for id-free nodes).

@@ -2,7 +2,7 @@
 // One file per pass (features/WHY.md); module-private, reached from mod.av
 // through the dir-as-module flat namespace.
 use core.{Expr}
-use features.eval.{Runtime, StepResult, eval_expr, ok_result, error_result, value_bool, step_had_error, step_runtime, step_value, value_is_enumish}
+use eval.{Runtime, StepResult, eval_expr, ok_result, error_result, value_bool, step_had_error, step_runtime, step_value, value_is_enumish}
 
 /// @comptime eval hook for `IsCheck`. so07.7.6 needed `k is .Scalar`
 /// inside derive_walker; the noop_eval_expr dispatch was firing

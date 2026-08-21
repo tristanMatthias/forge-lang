@@ -2,7 +2,7 @@
 // One file per pass (features/WHY.md); module-private, reached from mod.av
 // through the dir-as-module flat namespace.
 use core.{Stmt}
-use features.eval.{Runtime, StepResult, eval_expr, define_binding, error_result, ok_result, value_null}
+use eval.{Runtime, StepResult, eval_expr, define_binding, error_result, ok_result, value_null}
 
 /// Tree-walk evaluator hook for `let (a, b) = expr`. Evaluates the
 /// initializer to a tuple/list Value and binds each name to the

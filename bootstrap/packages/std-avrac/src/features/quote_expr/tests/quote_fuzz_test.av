@@ -10,7 +10,7 @@
 
 use @std.avrac.core.{NodeStore, ExprId, Expr, Stmt, BinOp, UnOp, new_node_store, build_line_index, render_expr_id}
 use @std.avrac.features.quote_expr.{construct_stmt}
-use @std.avrac.features.eval.{runtime_new, eval_expr, step_had_error, value_to_stmt}
+use @std.avrac.eval.{runtime_new, eval_expr, step_had_error, value_to_stmt}
 use @std.avrac.testing.{Rng, gen_choice, check_property_shrink}
 
 // ── Round-trip predicate ──
