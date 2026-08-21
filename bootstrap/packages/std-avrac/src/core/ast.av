@@ -3017,6 +3017,25 @@ export fn tk_is_field_name(tk: Tk) -> bool {
     tk == Tk.Identifier || tk_is_kw(tk, KwId.Reserved)
 }
 
+/// The `NUMBER` terminal's token set. `3.14` lexes as `Tk.Float` and `3` as
+/// `Tk.Number`, and the grammar spells both `NUMBER` — the lexeme keeps the dot,
+/// so the num builds still split Int/Float on it.
+///
+/// SHARED so the set has ONE definition: `tk_to_grammar_kind` (real_lex.av, the
+/// executor's view) and `named_tk_guard` (emit.av, the generated parser's view)
+/// both read it. Respelled in each, they drift — the failure mode FIELDNAME
+/// already had (t-y2i7.8).
+export fn tk_is_number_lit(tk: Tk) -> bool {
+    tk == Tk.Number || tk == Tk.Float
+}
+
+/// The `BOOL` terminal's token set. `true` / `false` are KEYWORDS to the lexer
+/// but a literal terminal to the grammars; the BOOL kind is what `literal_node`
+/// reads to build `Expr.Bool`. Shared for the same reason as above.
+export fn tk_is_bool_lit(tk: Tk) -> bool {
+    tk_is_kw(tk, KwId.True) || tk_is_kw(tk, KwId.False)
+}
+
 // Bridge: convert Tk keyword to the string used by the feature registry.
 // Returns "" for non-keyword tokens.
 /// Map a keyword Tk variant back to its source-form string. Used by
