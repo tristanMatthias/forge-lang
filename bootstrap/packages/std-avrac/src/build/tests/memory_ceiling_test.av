@@ -515,3 +515,44 @@ spec "t-u602: the soft borrow/trip decision, pure and floor-composed" {
         avra_mem_should_trip(floored + 1024, floored, 1, 900000, 1000000) == 1
     }
 }
+
+// t-2fe6: the soft-hold window is CUMULATIVE PER PROCESS, not per call.
+//
+// `avra_mem_poll` runs from the allocation hot path. Its wait budget used to
+// live in a LOCAL, so a tree oscillating around the pressure threshold got a
+// FRESH window on every re-entry: hold ~60s, clear for one sample, allocate a
+// sliver, hold again — indefinitely, never accumulating toward the trip. The
+// process therefore never reported F4014 and never died; from outside it was a
+// shard that simply never finished, with FLAT memory because it was sleeping
+// rather than allocating.
+//
+// Under concurrency that is self-sustaining: each holder's RSS keeps
+// MemAvailable low, which keeps its neighbours holding, and the release valve
+// cannot break the tie because flat memory neither falls (no valve) nor
+// recovers (no progress). Observed as two CI suites frozen at 112/150 and
+// 113/150 with three shards in flight until the job timeout killed them.
+extern fn avra_mem_hold_remaining_ms(budget_ms: int, already_ms: int) -> int
+
+spec "t-2fe6: the soft-hold window is cumulative, so it cannot be reset by re-entry" {
+    then "a process that has held NOTHING gets the whole window" {
+        avra_mem_hold_remaining_ms(60000, 0) == 60000
+    }
+    then "a process that has already held part of it gets only the REMAINDER" {
+        // The defect in one line: this used to answer 60000, because each
+        // re-entry started a fresh budget.
+        avra_mem_hold_remaining_ms(60000, 20000) == 40000
+    }
+    then "a process that has spent the window gets ZERO — the next entry trips" {
+        // Zero is what converts an indefinite wedge into a diagnosable F4014.
+        avra_mem_hold_remaining_ms(60000, 60000) == 0
+    }
+    then "an OVER-held process gets zero, never negative grace" {
+        avra_mem_hold_remaining_ms(60000, 90000) == 0
+    }
+    then "a disabled window grants nothing regardless of history" {
+        avra_mem_hold_remaining_ms(0, 0) == 0
+    }
+    then "the window is honoured exactly at its boundary" {
+        avra_mem_hold_remaining_ms(60000, 59999) == 1
+    }
+}

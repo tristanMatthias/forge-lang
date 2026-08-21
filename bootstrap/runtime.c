@@ -6478,6 +6478,24 @@ static int64_t avra_mem_hold_margin_kb(void) {
     return v;
 }
 
+// How much soft-hold grace remains for THIS process (t-2fe6).
+//
+// The window is CUMULATIVE, not per call. `avra_mem_poll` runs from the
+// allocation hot path, so a tree oscillating around the pressure threshold
+// re-enters constantly; if each entry were granted the full window it could
+// hold forever in 60s slices, never accumulating toward the trip. Returning 0
+// once the window is spent is what makes sustained pressure trip and REPORT,
+// instead of wedging silently until an outer timeout kills the job.
+//
+// Clamps at 0 and never returns negative: an over-held process gets no grace,
+// not inverted grace.
+int64_t avra_mem_hold_remaining_ms(int64_t budget_ms, int64_t already_ms) {
+    if (budget_ms <= 0) return 0;
+    if (already_ms <= 0) return budget_ms;
+    int64_t remaining = budget_ms - already_ms;
+    return remaining > 0 ? remaining : 0;
+}
+
 static int64_t avra_mem_soft_wait_ms(void) {
     static _Atomic int64_t cached = -1;
     int64_t c = atomic_load(&cached);
@@ -6573,6 +6591,9 @@ static void avra_mem_poll(void) {
     // ~ms of allocation work per 4096-allocation window, and the tighter
     // window bounds how far past the floor a borrower can run.
     static _Atomic int avra_mem_borrowing = 0;
+    // Cumulative soft-hold time for THIS process (t-2fe6). See the back-off
+    // block below: the wait budget must span calls, not restart on each one.
+    static _Atomic int64_t avra_mem_soft_held_ms = 0;
     int64_t mask = atomic_load_explicit(&avra_mem_borrowing, memory_order_relaxed)
                        ? (AVRA_MEM_POLL_MASK >> 4) : AVRA_MEM_POLL_MASK;
     int64_t n = atomic_fetch_add_explicit(&avra_mem_poll_ctr, 1, memory_order_relaxed);
@@ -6583,7 +6604,13 @@ static void avra_mem_poll(void) {
     if (rss > prev) atomic_store_explicit(&avra_mem_peak_kb, rss, memory_order_relaxed);
     int soft = atomic_load_explicit(&avra_mem_limit_soft, memory_order_relaxed);
     if (rss < limit_kb) {
-        if (soft) atomic_store_explicit(&avra_mem_borrowing, 0, memory_order_relaxed);
+        if (soft) {
+            atomic_store_explicit(&avra_mem_borrowing, 0, memory_order_relaxed);
+            // Back under the grant is GENUINE recovery, not the momentary
+            // flicker the oscillator exploits — so the cumulative hold budget
+            // resets only here, never on a mid-hold sample.
+            atomic_store_explicit(&avra_mem_soft_held_ms, 0, memory_order_relaxed);
+        }
         return;
     }
     // Crossing is rare (once per poll window at most), so the soft-grant
@@ -6605,14 +6632,32 @@ static void avra_mem_poll(void) {
     // trip decision — this loop only re-asks it with fresh readings.
     int64_t waited_ms = 0;
     int deepened = 0;
+    int64_t held_total_ms = 0;
     if (soft) {
         int64_t budget_ms = avra_mem_soft_wait_ms();
+        // THE BUDGET IS CUMULATIVE PER PROCESS, NOT PER CALL (t-2fe6). This
+        // hook runs from the allocation hot path, so `waited_ms` being a local
+        // meant a tree oscillating around the pressure threshold re-entered
+        // with a FRESH 60s every time: hold, clear for a single sample,
+        // allocate a sliver, hold again — indefinitely, never accumulating
+        // toward the trip. From outside that is a shard that never finishes,
+        // with FLAT memory (it is sleeping, not allocating) and no diagnostic
+        // at all. Worse, it is self-sustaining under concurrency: each
+        // holder's RSS keeps MemAvailable low, which keeps its neighbours
+        // holding, and the release valve cannot break the tie because flat
+        // memory neither falls (no valve) nor recovers (no progress).
+        // Observed as two CI suites frozen at 112/150 and 113/150 with three
+        // shards in flight until the job timeout killed them.
+        // Carrying the total forward means SUSTAINED pressure trips and says
+        // so, while a transient trough still gets its full grace.
+        int64_t already_ms = atomic_load_explicit(&avra_mem_soft_held_ms, memory_order_relaxed);
+        int64_t remaining_ms = avra_mem_hold_remaining_ms(budget_ms, already_ms);
         int64_t high_water_kb = avail_kb;
-        while (waited_ms < budget_ms) {
+        while (waited_ms < remaining_ms) {
             // Sleep the REMAINDER when under one quantum, so the total wait
             // lands exactly on the budget (never past it) and the report's
             // duration is the configured bound, not a rounded-up one.
-            int64_t slice_ms = budget_ms - waited_ms;
+            int64_t slice_ms = remaining_ms - waited_ms;
             if (slice_ms > 100) slice_ms = 100;
             struct timespec ts = { slice_ms / 1000, (slice_ms % 1000) * 1000000L };
             // Retry interrupted sleeps with the REMAINDER before charging the
@@ -6623,7 +6668,14 @@ static void avra_mem_poll(void) {
             waited_ms += slice_ms;
             rss = avra_mem_rss_kb();
             avail_kb = avra_mem_available_kb();
-            if (!avra_mem_should_trip(rss, limit_kb, soft, avail_kb, floor_kb)) return;
+            if (!avra_mem_should_trip(rss, limit_kb, soft, avail_kb, floor_kb)) {
+                // Pressure lifted — resume, but CHARGE what we just held.
+                // This charge is the whole fix: without it an oscillator
+                // returns here and its next hold starts from zero again.
+                atomic_fetch_add_explicit(&avra_mem_soft_held_ms, waited_ms,
+                                          memory_order_relaxed);
+                return;
+            }
             // The release valve (avra_mem_hold_is_safe): holding is only
             // legitimate while the box holds steady or recovers. Still
             // falling past the margin = a neighbour is allocating into the
@@ -6636,10 +6688,12 @@ static void avra_mem_poll(void) {
                 break;
             }
         }
+        atomic_fetch_add_explicit(&avra_mem_soft_held_ms, waited_ms, memory_order_relaxed);
+        held_total_ms = already_ms + waited_ms;
     }
     // Latch: the first thread to cross reports; others fall through to _exit.
     if (atomic_exchange_explicit(&avra_mem_tripped, 1, memory_order_relaxed)) return;
-    avra_mem_ceiling_report(rss, limit_kb, soft, avail_kb, floor_kb, waited_ms, deepened);
+    avra_mem_ceiling_report(rss, limit_kb, soft, avail_kb, floor_kb, held_total_ms, deepened);
 }
 
 // Per-`while`-loop iteration ceiling for comptime execution. A comptime loop
