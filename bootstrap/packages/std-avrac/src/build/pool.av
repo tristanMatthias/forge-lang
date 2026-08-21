@@ -26,6 +26,8 @@ extern fn avra_process_is_alive(handle: int) -> int
 extern fn avra_process_wait(handle: int) -> string
 extern fn avra_sleep_ms(ms: int)
 extern fn avra_parse_int(s: string) -> int
+extern fn avra_uptime_ms() -> int
+extern fn avra_process_env_get(name: string) -> string
 
 use @std.json.{json_str}
 use resources.{MemGovernor, governor_width_only, ResourceSnapshot, resource_snapshot_for_test}
@@ -206,6 +208,15 @@ export fn pool_run_resource_admitted_with_progress(commands: List<string>, slugs
 // (estimate 0) short-circuits every budget check and never invokes the
 // sampler, so the plain pool_run paths behave exactly as before admission
 // control existed.
+fn pool_beat_ms() -> int {
+    let env = avra_process_env_get("AVRA_POOL_BEAT_MS")
+    if env != "" {
+        let n = avra_parse_int(env)
+        if n > 0 { return n }
+    }
+    30000
+}
+
 fn pool_run_core(commands: List<string>, slugs: List<string>, marker_dir: string, gov: MemGovernor, sampler: fn() -> ResourceSnapshot) -> int {
     let want_markers = marker_dir != "" && slugs.length == commands.length
     let workers = workers_init(gov.width_cap)
@@ -214,11 +225,40 @@ fn pool_run_core(commands: List<string>, slugs: List<string>, marker_dir: string
     mut next_idx = 0
     mut completed = 0
     mut max_rc = 0
+    // t-65qv: a TIME-BASED progress heartbeat, so a run that is KILLED leaves a
+    // trail. Today a killed suite emits `[per-file] …` and then nothing at all —
+    // the full logs zip for such a run is 44KB with zero shard detail, which is
+    // why six separate mechanisms were proposed for that failure and all six
+    // were refuted: there was nothing to attribute it to.
+    //
+    // TIME-based, NOT per-round. controller.av documents why an edge-triggered
+    // pair flaps (37 recovered/backing-off pairs in nine dirs), and a per-round
+    // line in this loop would be worse still — the loop spins every 50ms while
+    // waiting. At 30s the cost is a handful of lines per run and the benefit is
+    // that "how far did it get, and what was resident" survives the kill.
+    // AVRA_POOL_BEAT_MS shrinks the interval for testing — an internal hook,
+    // not an operator knob, mirroring AVRA_TEST_STALL_MS. A heartbeat nobody has
+    // watched fire is not a guard, and at the 30s default a spec would have to
+    // burn 30s to see one.
+    let beat_ms = pool_beat_ms()
+    let t0 = avra_uptime_ms()
+    mut last_beat = t0
     while completed < total {
         let reaped = workers_reap_with_markers(workers, started_slugs, marker_dir, want_markers)
         completed = completed + reaped.completed
         max_rc = pool_max_rc(max_rc, reaped.max_rc)
         if completed >= total { return max_rc }
+        let now = avra_uptime_ms()
+        if now - last_beat >= beat_ms {
+            last_beat = now
+            // Sampling here rather than reusing the admission sample: the point
+            // is what was true AT THE KILL, and admission may not have run for
+            // a while if the pool is saturated.
+            let snap = sampler()
+            eprintln("[pool] " + string(completed) + "/" + string(total) +
+                     " done, " + string(workers_active(workers)) + " in flight, avail " +
+                     string(snap.available_mb) + "MB, " + string((now - t0) / 1000) + "s elapsed")
+        }
         let dispatched_count = dispatch_batch(commands, slugs, next_idx, total, workers, started_slugs, marker_dir, want_markers, gov, sampler)
         next_idx = next_idx + dispatched_count
         if dispatched_count == 0 && completed < total {

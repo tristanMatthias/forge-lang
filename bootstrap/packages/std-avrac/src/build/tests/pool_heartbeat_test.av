@@ -1,0 +1,60 @@
+// WHY: t-65qv. A killed suite used to emit `[per-file] shard concurrency: …`
+// and then NOTHING — the full logs zip for such a run is 44KB with zero shard
+// detail. That silence is why six separate mechanisms were proposed for the
+// failure and all six were refuted: there was nothing to attribute it to.
+//
+// The heartbeat is TIME-based, not per-round. controller.av documents why an
+// edge-triggered pair flaps (37 recovered/backing-off pairs across nine dirs),
+// and a per-round line here would be worse — the dispatch loop spins every 50ms
+// while waiting for a worker.
+//
+// AVRA_POOL_BEAT_MS shrinks the 30s default so a spec can watch one fire.
+// A heartbeat nobody has seen emit is not a guard.
+use @std.avrac.build.{pool_run_admitted}
+use @std.avrac.resources.{governor_for}
+
+extern fn avra_shell_exec(cmd: string) -> string
+
+spec "pool: a time-based heartbeat survives a killed run" {
+    then "it reports progress, in-flight width, and available memory" {
+        // Driven through a real child bs2 so the eprintln goes to a real stderr
+        // rather than a per-thread test sink.
+        let src = "/tmp/avra_pool_beat_probe.av"
+        let _ = avra_shell_exec("cat > '" + src + "' <<'AVEOF'\n" +
+            "use @std.avrac.build.{pool_run_admitted}\n" +
+            "use @std.avrac.resources.{governor_for}\n" +
+            "fn main() {\n" +
+            "    let gov = governor_for(2, 100, 0, 100000)\n" +
+            "    let rc = pool_run_admitted([\"sleep 1\", \"sleep 1\", \"sleep 1\", \"sleep 1\"], gov, () -> 100000)\n" +
+            "    println(\"rc=\" + string(rc))\n" +
+            "}\n" +
+            "AVEOF")
+        let out = avra_shell_exec("AVRA_POOL_BEAT_MS=200 ./build/bs2 run '" + src + "' 2>&1")
+        let _ = avra_shell_exec("rm -f '" + src + "'")
+        // Every field must be present: a line that lost the width or the memory
+        // reading would still "be a heartbeat" while dropping what makes a kill
+        // attributable.
+        out.contains("[pool]") && out.contains("/4 done")
+            && out.contains("in flight") && out.contains("avail ")
+            && out.contains("s elapsed") && out.contains("rc=0")
+    }
+
+    then "the default interval is quiet — no heartbeat on a short run" {
+        // The 30s default must not spam an ordinary run. Without this the
+        // obvious "fix" to a flaky heartbeat is to shorten it, which reintroduces
+        // exactly the flapping controller.av warns about.
+        let src = "/tmp/avra_pool_beat_quiet.av"
+        let _ = avra_shell_exec("cat > '" + src + "' <<'AVEOF'\n" +
+            "use @std.avrac.build.{pool_run_admitted}\n" +
+            "use @std.avrac.resources.{governor_for}\n" +
+            "fn main() {\n" +
+            "    let gov = governor_for(2, 100, 0, 100000)\n" +
+            "    let rc = pool_run_admitted([\"true\", \"true\"], gov, () -> 100000)\n" +
+            "    println(\"rc=\" + string(rc))\n" +
+            "}\n" +
+            "AVEOF")
+        let out = avra_shell_exec("./build/bs2 run '" + src + "' 2>&1")
+        let _ = avra_shell_exec("rm -f '" + src + "'")
+        !out.contains("[pool]") && out.contains("rc=0")
+    }
+}
