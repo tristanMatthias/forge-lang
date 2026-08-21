@@ -121,7 +121,7 @@ export fn lex_real_full(src: string) -> LexedSource {
 /// keyword-ness — this only patches the one variant that table omits.
 fn tk_is_keyword(tk: Tk) -> bool {
     match tk {
-        .KwReserved -> true
+        .Keyword(.Reserved) -> true
         _ -> tk_keyword_str(tk) != ""
     }
 }
@@ -143,8 +143,8 @@ fn tk_to_grammar_kind(tk: Tk) -> string {
         // `true` / `false` are keywords in the real lexer but literal terminals
         // in the grammars (`"true"`), matched by text; the BOOL kind is what
         // `literal_node` reads to build `Expr.Bool`.
-        .KwTrue     -> "BOOL"
-        .KwFalse    -> "BOOL"
+        .Keyword(.True)     -> "BOOL"
+        .Keyword(.False)    -> "BOOL"
         .Eof        -> "EOF"
         .Error      -> "ERROR"
         // Interpolated / doc-comment tokens have no grammar terminal in the

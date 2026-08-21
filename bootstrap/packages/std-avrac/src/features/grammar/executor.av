@@ -1,7 +1,7 @@
 // WHY: ps3t.6.4 — the grammar-DSL *generator*, in its executable form.
 
 use features.{is_expr_keyword, is_registered_component, register_component_name, register_raw_body_component, component_is_raw_body}
-use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list}
+use core.{Annotation, BinOp, Expr, ExprId, FieldEntry, FieldInit, KwId, LogicOp, MatchArm, NodeRef, NodeStore, ParamEntry, PatId, Pattern, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeId, TypeParamEntry, UnOp, ValueType, Variant, WhenArm, build_line_index, byte_span, byte_span_none, gensym_name, new_node_store, render_type_name_list, tk_is_kw, type_expr_to_vtype}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GPrim, GAnnot}
 use features.grammar.{Token, lex_real, LexDiag, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
@@ -694,7 +694,7 @@ impl PState {
     /// it from `handle_missing` (which already knows the expected terminal) and the
     /// generated parsers call it wherever emit renders an IDENT terminal miss.
     fn report_ident(self, msg: string) {
-        if self.cur().tk == Tk.KwReserved {
+        if tk_is_kw(self.cur().tk, KwId.Reserved) {
             self.report("`${self.cur().text}` is a reserved keyword and cannot be used as an identifier — rename the binding")
             return
         }
@@ -710,7 +710,7 @@ impl PState {
     /// reserved-keyword substitution is preserved, and keeps its own F0001, because that
     /// diagnostic is about the LEXEME rather than the position that asked for it.
     fn report_ident_coded(self, code: string, msg: string) {
-        if self.cur().tk == Tk.KwReserved {
+        if tk_is_kw(self.cur().tk, KwId.Reserved) {
             self.report("`${self.cur().text}` is a reserved keyword and cannot be used as an identifier — rename it")
             return
         }
@@ -1056,11 +1056,11 @@ impl PState {
     fn synchronize_stmt(self) {
         while !self.at_end() {
             let k = self.cur().tk
-            if k == Tk.KwFn || k == Tk.KwLet || k == Tk.KwConst || k == Tk.KwMut ||
-                k == Tk.KwType || k == Tk.KwEnum || k == Tk.KwImpl || k == Tk.KwIf ||
-                k == Tk.KwWhile || k == Tk.KwFor || k == Tk.KwMatch || k == Tk.KwReturn ||
-                k == Tk.KwExtern || k == Tk.KwTrait || k == Tk.KwDefer || k == Tk.KwSpec ||
-                k == Tk.KwGiven || k == Tk.KwThen || k == Tk.KwSelect || k == Tk.RightBrace {
+            if tk_is_kw(k, KwId.Fn) || tk_is_kw(k, KwId.Let) || tk_is_kw(k, KwId.Const) || tk_is_kw(k, KwId.Mut) ||
+                tk_is_kw(k, KwId.Type) || tk_is_kw(k, KwId.Enum) || tk_is_kw(k, KwId.Impl) || tk_is_kw(k, KwId.If) ||
+                tk_is_kw(k, KwId.While) || tk_is_kw(k, KwId.For) || tk_is_kw(k, KwId.Match) || tk_is_kw(k, KwId.Return) ||
+                tk_is_kw(k, KwId.Extern) || tk_is_kw(k, KwId.Trait) || tk_is_kw(k, KwId.Defer) || tk_is_kw(k, KwId.Spec) ||
+                tk_is_kw(k, KwId.Given) || tk_is_kw(k, KwId.Then) || tk_is_kw(k, KwId.Select) || k == Tk.RightBrace {
                 return
             }
             let _ = self.advance()
@@ -1969,7 +1969,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // Checked here BEFORE consuming `if`, so the ordinary branch's
     // FIRST stays a plain `if`.
     if cond == "if_let" {
-        return st.cur().tk == Tk.KwIf && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].tk == Tk.KwLet
+        return tk_is_kw(st.cur().tk, KwId.If) && st.pos + 1 < st.toks.length && tk_is_kw(st.toks[st.pos + 1].tk, KwId.Let)
     }
     // t-bwjg: the two quote kinds whose BODY is not a block expression, split so each can
     // be routed on its own. `type` parses a type_expr into an Expr.TypeLit carrier
@@ -2019,7 +2019,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // selection is unchanged (comp_field already won on `let` by order), but
     // the dispatch is now a declared lookahead, not a silent FIRST overlap.
     if cond == "kw_let" {
-        return st.cur().tk == Tk.KwLet
+        return tk_is_kw(st.cur().tk, KwId.Let)
     }
     // `let (` / `let mut (` — the DESTRUCTURE shape (t-47hc.5). Both binding rules lead
     // with `let`, and the order between them was previously decided by `let_decl` having
@@ -2028,7 +2028,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // apart by LOOKAHEAD instead — which is what the grammar's own note said would be
     // needed the moment `let` converted.
     if cond == "let_destructure" {
-        if st.cur().tk != Tk.KwLet { return false }
+        if !tk_is_kw(st.cur().tk, KwId.Let) { return false }
         if st.pos + 1 >= st.toks.length { return false }
         if st.toks[st.pos + 1].tk == Tk.LeftParen { return true }
         if st.pos + 2 >= st.toks.length { return false }
@@ -2423,7 +2423,7 @@ fn comp_name_is_registered(st: PState) -> bool {
 fn cfg_pair_common(st: PState) -> bool {
     // `fn` / `component` / `let` end the pairs and begin the block body.
     let tk = st.cur().tk
-    if tk == Tk.KwFn || tk == Tk.KwComponent || tk == Tk.KwLet { return false }
+    if tk_is_kw(tk, KwId.Fn) || tk_is_kw(tk, KwId.Component) || tk_is_kw(tk, KwId.Let) { return false }
     if st.cur().kind != "IDENT" { return false }
     // `on` is reserved for the event-handler form, never a config key.
     if st.cur().text == "on" { return false }
@@ -4069,7 +4069,7 @@ export fn literal_node(st: PState, t: Token) -> ExprId {
     // `null` / `none` are keyword tokens (Tk.KwNull/KwNone → the generic "KW" grammar
     // kind), so they match by tk here rather than kind — byte-identical to hand
     // parse_primary's `Tk.KwNull|KwNone -> alloc_leaf(Expr.None)` (the absence literal).
-    if t.tk == Tk.KwNull || t.tk == Tk.KwNone { return st.store.intern_expr_leaf(Expr.None) }
+    if tk_is_kw(t.tk, KwId.Null) || tk_is_kw(t.tk, KwId.None) { return st.store.intern_expr_leaf(Expr.None) }
     st.store.intern_expr_leaf(Expr.Ident(t.text))
 }
 

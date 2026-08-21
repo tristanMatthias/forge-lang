@@ -1,78 +1,54 @@
-// WHY: t-y2i7.7 Phase A. `KwId` only earns its keep if it cannot DRIFT from the
-// keyword set it mirrors.
+// WHY: t-y2i7.7. `KwId` only earns its keep if it cannot DRIFT from the keyword
+// set it mirrors.
 //
-// A keyword currently lives in three places — a `Tk.Kw*` variant, a
-// `keyword_rules()` row, and the spelling in its feature's grammar — and two of
-// those are hand-edited per the CLAUDE.md checklist. Phase A adds a FOURTH
-// (`KwId`), which is only an improvement if adding a keyword to one and not the
-// other FAILS rather than silently diverging. That is what this pins, by
-// reading the sources rather than by restating a number:
+// Phase A added `KwId` alongside the 48 `Tk.Kw*` variants and this guard pinned
+// the two against each other. Phase B REMOVED those variants — `Tk.Keyword(id:
+// KwId)` is now the only spelling — so the pairing this file used to assert no
+// longer exists. The invariant survives the collapse by re-anchoring on the two
+// places a keyword still lives: the `KwId` declaration and the `keyword_rules()`
+// row that maps a spelling onto it. Adding one without the other must FAIL.
 //
-//   - every distinct `Tk.Kw*` named by keyword_rules() has a `KwId` counterpart
-//   - every `KwId` has a `Tk.Kw*` counterpart (no orphans in either direction)
-//   - `kwid_name` is TOTAL and injective over KwId
+//   - every `keyword_rules()` target is a declared `KwId`
+//   - every declared `KwId` is a `keyword_rules()` target (no orphans either way)
+//   - `kwid_keyword_str` is TOTAL over `KwId` (bar `Reserved`, which covers the
+//     12 reserved-future spellings and so has no single one of its own)
+//   - `kwid_name` is injective and still renders the LEGACY spelling
 //
 // Deliberately source-derived: a hand-copied list of 48 names would itself be a
-// fifth place to drift, which is the defect this ticket exists to remove.
-use @std.avrac.core.{KwId, kwid_name}
+// place to drift, which is the defect this ticket exists to remove.
+use @std.avrac.core.{KwId, kwid_name, kwid_keyword_str}
 
 extern fn avra_selfhost_read_file(path: string) -> string
-
-/// Value-equality membership. `List<string>.contains` matches by IDENTITY, not
-/// value (t-xpi0), so a name built by `substring` is reported ABSENT from a list
-/// that holds it — silently, and in the "not present" direction. Every list here
-/// is built from source text, so every needle is runtime-built; using `contains`
-/// made this guard fail for a reason that had nothing to do with the invariant,
-/// and made the extractor return 59 names where 48 are distinct.
-fn has(xs: List<string>, needle: string) -> bool {
-    for x in xs { if x == needle { return true } }
-    false
-}
 
 fn ast_src() -> string { avra_selfhost_read_file("packages/std-avrac/src/core/ast.av") }
 fn table_src() -> string { avra_selfhost_read_file("packages/std-avrac/src/parse/token_table.av") }
 
-/// The `Kw*` names the Tk enum declares, as they appear in `tk_name`'s arms.
-fn tk_kw_names() -> List<string> {
+/// Text between `open` and the next `close`, for every occurrence in `src`.
+/// Every needle below is runtime-built, which is why `List<string>.contains` is
+/// load-bearing here: it compared by IDENTITY until t-xpi0 (#1333) taught it
+/// value equality, and before that fix this extractor reported 59 names where 48
+/// are distinct — a guard failing for a reason unrelated to its invariant.
+fn between_all(src: string, open: string, close: string) -> List<string> {
     mut out: List<string> = []
-    for line in ast_src().split("\n") {
-        let t = line.trim()
-        if t.starts_with(".Kw") && t.contains(" -> \"Kw") {
-            let name = t.substring(1, t.index_of(" ->"))
-            if !has(out, name) { out.push(name) }
-        }
+    for line in src.split("\n") {
+        let at = line.index_of(open)
+        if at < 0 { continue }
+        let rest = line.substring(at + open.length, line.length)
+        let cut = rest.index_of(close)
+        if cut <= 0 { continue }
+        let name = rest.substring(0, cut)
+        if name != "" && !out.contains(name) { out.push(name) }
     }
     out
 }
 
-/// The `Kw*` names keyword_rules() actually maps spellings onto.
-fn table_kw_names() -> List<string> {
-    mut out: List<string> = []
-    for line in table_src().split("\n") {
-        let marker = "tk: Tk.Kw"
-        let at = line.index_of(marker)
-        if at >= 0 {
-            // Cut at the FIRST of space / brace / comma. Deliberately not a
-            // character loop: `split("")` does not yield characters here, and a
-            // silently-wrong extractor makes this guard compare garbage and
-            // "fail" for a reason that has nothing to do with the invariant.
-            let rest = line.substring(at + 7, line.length)
-            mut cut = rest.length
-            let sp = rest.index_of(" ")
-            if sp >= 0 && sp < cut { cut = sp }
-            let br = rest.index_of("}")
-            if br >= 0 && br < cut { cut = br }
-            let cm = rest.index_of(",")
-            if cm >= 0 && cm < cut { cut = cm }
-            let name = rest.substring(0, cut)
-            if name != "" && !out.contains(name) { out.push(name) }
-        }
-    }
-    out
-}
+/// The ids `keyword_rules()` maps spellings onto: `tk: Tk.Keyword(KwId.X)`.
+fn table_kw_ids() -> List<string> { between_all(table_src(), "tk: Tk.Keyword(KwId.", ")") }
 
-/// The ids `KwId` actually declares, read from the enum body — NOT a copied
-/// list, which would be a fifth place to drift.
+/// The arms `kwid_keyword_str` actually covers: `.X -> "kw_x"`.
+fn kwid_str_arms() -> List<string> { between_all(ast_src(), "        .", " -> \"kw_") }
+
+/// The ids `KwId` declares, read from the enum body — NOT a copied list.
 fn kwid_names() -> List<string> {
     mut out: List<string> = []
     mut inside = false
@@ -83,7 +59,7 @@ fn kwid_names() -> List<string> {
         if inside && t != "" && !t.starts_with("//") {
             for part in t.split(",") {
                 let n = part.trim()
-                if n != "" && !has(out, n) { out.push(n) }
+                if n != "" && !out.contains(n) { out.push(n) }
             }
         }
     }
@@ -93,40 +69,38 @@ fn kwid_names() -> List<string> {
 spec "t-y2i7.7: KwId stays in lockstep with the keyword set it mirrors" {
     then "the sources are non-empty — anti-vacuity" {
         // Without this every set-comparison below passes on two empty lists,
-        // which is exactly how a lockstep guard rots into a no-op.
-        tk_kw_names().length > 40 && table_kw_names().length > 40
+        // which is exactly how a lockstep guard rots into a no-op. It is also
+        // what caught the Phase B collapse: the old extractor read `Tk.Kw*`
+        // arms that no longer exist and this arm went red rather than silently
+        // comparing nothing.
+        kwid_names().length > 40 && table_kw_ids().length > 40
     }
 
-    then "every keyword_rules() target is a declared Tk.Kw* variant" {
+    then "every keyword_rules() target is a declared KwId" {
         mut ok = true
-        let declared = tk_kw_names()
-        for n in table_kw_names() { if !has(declared, n) { ok = false } }
+        let declared = kwid_names()
+        for n in table_kw_ids() { if !declared.contains(n) { ok = false } }
         ok
     }
 
-    then "KwId declares exactly one id per distinct Tk.Kw* variant" {
-        // BOTH populations read from source, then compared — the earlier version
-        // of this arm asserted `tk_kw_names().length == 48`, which pins the Tk
-        // side against a CONSTANT and would not have noticed a KwId variant
-        // being dropped at all. That is the drift this guard exists to catch.
-        kwid_names().length == tk_kw_names().length
-    }
-
-    then "every Tk.Kw* variant has a KwId counterpart, name for name" {
-        // Population equality alone would tolerate one added and one removed.
-        // `KwDefer` <-> `Defer`: the id is the variant minus its `Kw` prefix.
+    then "every declared KwId is a keyword_rules() target — no orphans" {
+        // The other direction: population equality alone would tolerate one
+        // added and one removed, and a one-way check would let a KwId with no
+        // spelling sit unnoticed forever.
         mut ok = true
-        let ids = kwid_names()
-        for n in tk_kw_names() {
-            if !has(ids, n.substring(2, n.length)) { ok = false }
-        }
+        let targets = table_kw_ids()
+        for n in kwid_names() { if !targets.contains(n) { ok = false } }
         ok
     }
 
-    then "the KwId extractor is not vacuous" {
-        // Without this, a parser that returned [] would make both arms above
-        // pass whenever the Tk side also broke.
-        kwid_names().length > 40
+    then "kwid_keyword_str is total over KwId, bar Reserved" {
+        // Reserved covers the 12 reserved-future spellings, so it has no single
+        // one of its own and is the ONE deliberate omission. Asserted from the
+        // arms in source, so a dropped arm fails here rather than returning "".
+        mut missing = 0
+        let arms = kwid_str_arms()
+        for n in kwid_names() { if n != "Reserved" && !arms.contains(n) { missing = missing + 1 } }
+        missing == 0 && !arms.contains("Reserved")
     }
 
     then "kwid_name is injective — no two ids share a rendering" {
@@ -138,9 +112,14 @@ spec "t-y2i7.7: KwId stays in lockstep with the keyword set it mirrors" {
         a != b && b != c && a != c
     }
 
-    then "kwid_name renders the LEGACY Tk.Kw* spelling, so lex_dump is unchanged" {
-        // Phase A must not move the token-stream oracle: both representations
-        // coexist until the Phase B sweep, and lex_dump characterises output.
+    then "kwid_name still renders the LEGACY Tk.Kw* spelling, so lex_dump is unchanged" {
+        // The variants are gone but the token-stream oracle must not move:
+        // lex_dump characterises output, and renaming its labels would show up
+        // as a diff in every characterisation test for no semantic reason.
         kwid_name(KwId.Defer) == "KwDefer" && kwid_name(KwId.Fn) == "KwFn"
+    }
+
+    then "kwid_keyword_str answers the kind-string, not the spelling" {
+        kwid_keyword_str(KwId.Defer) == "kw_defer" && kwid_keyword_str(KwId.Fn) == "kw_fn"
     }
 }

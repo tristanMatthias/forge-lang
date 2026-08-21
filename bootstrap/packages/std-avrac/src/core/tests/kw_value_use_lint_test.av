@@ -1,0 +1,107 @@
+// WHY: t-vcb1's blast radius, caught as a CLASS rather than three instances.
+//
+// `==` on a payload-carrying enum compares only the TAG, so `Tk.Keyword(KwId.Fn)`
+// equals EVERY keyword. Any site that hands a constructed `Tk.Keyword(...)` to
+// something that decides by equality is therefore silently wrong, and it
+// type-checks, and the compiler still builds. Three shipped in the P7 sweep and
+// all three were invisible to a scan for `== Tk.Keyword(...)`:
+//
+//   advance_until(p, Tk.Keyword(KwId.Fn))      // fn compares internally
+//   self.check(Tk.Keyword(KwId.Reserved))      // method compares internally
+//   self.current_kind in [Tk.Keyword(...), …]  // `in` compares by equality
+//
+// The fix in each case is to pass the bare `KwId` and compare it there, because
+// `KwId` is a bare enum where `==` is exact. This lint pins the shape: in
+// non-test compiler source a `Tk.Keyword(...)` may only be CONSTRUCTED (returned,
+// bound, or stored in a record field), never passed onward as a value.
+//
+// Deliberately source-derived. The alternative — a spec per fixed call site —
+// tests three lines and says nothing about the fourth one someone writes next.
+use @std.avrac.core.{KwId, Tk, tk_is_kw}
+
+extern fn avra_selfhost_read_file(path: string) -> string
+
+/// Files to lint. Non-test compiler source that mentions keyword tokens.
+/// `parse/gen_keyword_scanner.av` is EXCLUDED: it is generated, and it is
+/// nothing but constructions (`return Tk.Keyword(KwId.And)`).
+fn linted_files() -> List<string> {
+    [
+        "packages/std-avrac/src/parse/mod.av",
+        "packages/std-avrac/src/parse/token_table.av",
+        "packages/std-avrac/src/parse/emit_lex.av",
+        "packages/std-avrac/src/test_runner/discovery.av",
+        "packages/std-avrac/src/features/grammar/executor.av",
+        "packages/std-avrac/src/features/grammar/emit.av",
+        "packages/std-avrac/src/lang_gen/mod.av",
+    ]
+}
+
+/// A line CONSTRUCTS a keyword token if it returns one, binds one, or stores one
+/// in a record field. Anything else that mentions one is passing it onward.
+fn is_construction(line: string) -> bool {
+    let t = line.trim()
+    t.starts_with("return ") || t.starts_with("let ") || t.starts_with("mut ") || line.contains("tk: Tk.Keyword(")
+}
+
+/// True when the mention sits inside a comment — LEADING or TRAILING. Checking
+/// only `trim().starts_with("//")` misses the trailing form, and emit_lex.av has
+/// exactly that shape (`"use core.{Tk, KwId}\n\n"   // ... Tk.Keyword(KwId.X) ...`),
+/// so the first cut of this lint reported two false positives.
+fn mention_is_commented(line: string) -> bool {
+    let c = line.index_of("//")
+    if c < 0 { return false }
+    let m = line.index_of("Tk.Keyword(KwId.")
+    m > c
+}
+
+/// Lines handing a constructed keyword token onward as a value.
+fn value_use_sites() -> List<string> {
+    mut out: List<string> = []
+    for path in linted_files() {
+        let src = avra_selfhost_read_file(path)
+        mut n = 0
+        for line in src.split("\n") {
+            n = n + 1
+            if !line.contains("Tk.Keyword(KwId.") { continue }
+            if mention_is_commented(line) { continue }
+            if is_construction(line) { continue }
+            out.push(path + ":" + string(n))
+        }
+    }
+    out
+}
+
+spec "t-vcb1: a payload keyword is never handed onward where `==` would decide" {
+    then "the lint reads real sources — anti-vacuity" {
+        // Without this the arm below passes on an unreadable path list, which is
+        // how a source lint rots into a no-op.
+        // Counts OCCURRENCES, not files: token_table.av alone carries 59 keyword
+        // rows, so a threshold on occurrences degrades loudly if the table moves
+        // or a path goes stale, where a file count would sit at 1 and look fine.
+        mut total = 0
+        for path in linted_files() {
+            for line in avra_selfhost_read_file(path).split("\n") {
+                if line.contains("Tk.Keyword(KwId.") { total = total + 1 }
+            }
+        }
+        total > 50
+    }
+
+    then "no non-test source passes a constructed Tk.Keyword onward" {
+        value_use_sites().length == 0
+    }
+
+    then "the shapes that replaced them discriminate" {
+        // The point of the fix: comparing the inner KwId is exact, where
+        // comparing the whole Tk is not.
+        tk_is_kw(Tk.Keyword(KwId.Fn), KwId.Fn) &&
+        !tk_is_kw(Tk.Keyword(KwId.Let), KwId.Fn) &&
+        !tk_is_kw(Tk.Identifier, KwId.Fn)
+    }
+
+    then "and `in` over the BARE enum is exact, which is why the fix works" {
+        // KwId carries no payload, so `==` (and therefore `in`) is exact on it.
+        // This is the property is_sync_stop relies on after matching the payload out.
+        KwId.Fn in [KwId.Fn, KwId.Let] && !(KwId.Match in [KwId.Fn, KwId.Let])
+    }
+}

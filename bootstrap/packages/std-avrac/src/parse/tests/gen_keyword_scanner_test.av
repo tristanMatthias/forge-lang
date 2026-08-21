@@ -6,7 +6,7 @@
 // semantics, and the reserved-word collapse. The independent proof that it equals
 // the OLD string-ladder is the full-selfhost diff-test (byte-identical IR).
 use @std.avrac.parse.{classify_keyword, keyword_rules, KEYWORD_RULE_COUNT}
-use @std.avrac.core.{Tk}
+use @std.avrac.core.{KwId, Tk, tk_is_kw}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
 
@@ -53,16 +53,16 @@ spec "t-47hc.2: generated classify_keyword == the keyword table" {
         let b = avra_bytes_from_string("xif")
         // `iffy`: [0,2) is "if" -> KwIf; [0,4) is "iffy" -> Identifier
         let c = avra_bytes_from_string("iffy")
-        classify_keyword(b, 1, 3) == Tk.KwIf &&
+        tk_is_kw(classify_keyword(b, 1, 3), KwId.If) &&
         classify_keyword(b, 0, 3) == Tk.Identifier &&
-        classify_keyword(c, 0, 2) == Tk.KwIf &&
+        tk_is_kw(classify_keyword(c, 0, 2), KwId.If) &&
         classify_keyword(c, 0, 4) == Tk.Identifier
     }
     then "reserved future keywords collapse to KwReserved" {
-        classify("async") == Tk.KwReserved &&
-        classify("await") == Tk.KwReserved &&
-        classify("unsafe") == Tk.KwReserved &&
-        classify("borrow") == Tk.KwReserved &&
-        classify("hardware") == Tk.KwReserved
+        tk_is_kw(classify("async"), KwId.Reserved) &&
+        tk_is_kw(classify("await"), KwId.Reserved) &&
+        tk_is_kw(classify("unsafe"), KwId.Reserved) &&
+        tk_is_kw(classify("borrow"), KwId.Reserved) &&
+        tk_is_kw(classify("hardware"), KwId.Reserved)
     }
 }

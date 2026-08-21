@@ -2987,55 +2987,7 @@ export enum Tk {
     Template
     Identifier
     // Keywords
-    KwAnd
-    KwBreak
-    KwCatch
-    KwChannel
-    KwConst
-    KwContinue
-    KwDefer
-    KwElse
-    KwErrdefer
-    KwEnum
-    KwExport
-    KwExtern
-    KwFalse
-    KwFn
-    KwFor
-    KwGiven
-    KwIf
-    KwImpl
-    KwIn
-    KwIs
-    KwLet
-    KwMatch
-    KwMod
-    KwMut
-    KwNot
-    KwNull
-    KwNone
-    KwOr
-    KwParallel
-    KwReturn
-    KwSpawn
-    KwIsolated
-    KwSelect
-    KwShape
-    KwSpec
-    KwThen
-    KwTrait
-    KwTrue
-    KwType
-    KwUse
-    KwWhere
-    KwWhile
-    KwWith
-    KwComponent
-    KwDyn
-    KwWhen
-    KwQuote
     // Reserved future keywords (parse as errors)
-    KwReserved
     // Doc comments
     DocComment
     ModDocComment
@@ -3062,7 +3014,7 @@ export enum Tk {
 /// hand. That gap is why `@hand(postfix_suffix)` had to stay: the native `.`-led
 /// branches declined on `x.ref` and the delegate picked it up.
 export fn tk_is_field_name(tk: Tk) -> bool {
-    tk == Tk.Identifier || tk == Tk.KwReserved
+    tk == Tk.Identifier || tk_is_kw(tk, KwId.Reserved)
 }
 
 // Bridge: convert Tk keyword to the string used by the feature registry.
@@ -3070,55 +3022,105 @@ export fn tk_is_field_name(tk: Tk) -> bool {
 /// Map a keyword Tk variant back to its source-form string. Used by
 /// the parser's stmt-keyword dispatch and by error rendering when
 /// the lexer's lexeme isn't directly accessible.
+/// The registry source-form of a keyword id — "kw_and" for `KwId.And`.
+///
+/// The `Tk.Kw*`-keyed twin of this map had 47 arms for 48 ids: `Reserved` has no
+/// single source form (it collapses 12 reserved-future spellings), so it falls
+/// through to "". Kept as a wildcard rather than an explicit arm so a NEW id
+/// added without a spelling also lands on "" instead of failing to compile in a
+/// map that cannot answer for it.
+export fn kwid_keyword_str(id: KwId) -> string {
+    match id {
+        .And -> "kw_and"
+        .Break -> "kw_break"
+        .Catch -> "kw_catch"
+        .Channel -> "kw_channel"
+        .Const -> "kw_const"
+        .Continue -> "kw_continue"
+        .Defer -> "kw_defer"
+        .Else -> "kw_else"
+        .Errdefer -> "kw_errdefer"
+        .Enum -> "kw_enum"
+        .Export -> "kw_export"
+        .Extern -> "kw_extern"
+        .False -> "kw_false"
+        .Fn -> "kw_fn"
+        .For -> "kw_for"
+        .Given -> "kw_given"
+        .If -> "kw_if"
+        .Impl -> "kw_impl"
+        .In -> "kw_in"
+        .Is -> "kw_is"
+        .Let -> "kw_let"
+        .Match -> "kw_match"
+        .Mod -> "kw_mod"
+        .Mut -> "kw_mut"
+        .Not -> "kw_not"
+        .Null -> "kw_null"
+        .None -> "kw_none"
+        .Or -> "kw_or"
+        .Parallel -> "kw_parallel"
+        .Return -> "kw_return"
+        .Spawn -> "kw_spawn"
+        .Isolated -> "kw_isolated"
+        .Select -> "kw_select"
+        .Shape -> "kw_shape"
+        .Spec -> "kw_spec"
+        .Then -> "kw_then"
+        .Trait -> "kw_trait"
+        .True -> "kw_true"
+        .Type -> "kw_type"
+        .Use -> "kw_use"
+        .Where -> "kw_where"
+        .While -> "kw_while"
+        .With -> "kw_with"
+        .Component -> "kw_component"
+        .Dyn -> "kw_dyn"
+        .When -> "kw_when"
+        .Quote -> "kw_quote"
+        _ -> ""
+    }
+}
+
+/// Render a `Tk` as the SOURCE EXPRESSION that reconstructs it — "Tk.Identifier",
+/// or "Tk.Keyword(KwId.Defer)" for a keyword (P7).
+///
+/// The lexer generators build their output by concatenating "Tk." onto
+/// `tk_name`. That worked while every token was a bare variant; a keyword is now
+/// a CONSTRUCTOR CALL, so the name alone no longer round-trips. Centralised here
+/// rather than duplicated in each emitter, because a generator that emits a
+/// token spelling the compiler cannot parse fails at the regen gate, not at the
+/// edit — an expensive place to learn it.
+/// Is `tk` the keyword `want`? (P7)
+///
+/// USE THIS INSTEAD OF `tk == Tk.Keyword(KwId.X)`. That comparison type-checks
+/// and is WRONG: `==` on a payload-carrying enum compares only the TAG, so it
+/// answers true for EVERY keyword (t-vcb1). Binding the payload and comparing
+/// the inner id works, because `KwId` is a bare enum where `==` is exact.
+///
+/// It is also the better spelling on its own terms — a named predicate says
+/// what is being asked, where a raw `==` against a constructor call does not.
+export fn tk_is_kw(tk: Tk, want: KwId) -> bool {
+    match tk {
+        .Keyword(id) -> id == want
+        _ -> false
+    }
+}
+
+export fn tk_source_expr(tk: Tk) -> string {
+    match tk {
+        .Keyword(id) -> "Tk.Keyword(KwId." + kwid_name(id).substring(2, kwid_name(id).length) + ")"
+        _ -> "Tk." + tk_name(tk)
+    }
+}
+
 export fn tk_keyword_str(tk: Tk) -> string {
     match tk {
-        .KwAnd -> "kw_and"
-        .KwBreak -> "kw_break"
-        .KwCatch -> "kw_catch"
-        .KwChannel -> "kw_channel"
-        .KwConst -> "kw_const"
-        .KwContinue -> "kw_continue"
-        .KwDefer -> "kw_defer"
-        .KwElse -> "kw_else"
-        .KwErrdefer -> "kw_errdefer"
-        .KwEnum -> "kw_enum"
-        .KwExport -> "kw_export"
-        .KwExtern -> "kw_extern"
-        .KwFalse -> "kw_false"
-        .KwFn -> "kw_fn"
-        .KwFor -> "kw_for"
-        .KwGiven -> "kw_given"
-        .KwIf -> "kw_if"
-        .KwImpl -> "kw_impl"
-        .KwIn -> "kw_in"
-        .KwIs -> "kw_is"
-        .KwLet -> "kw_let"
-        .KwMatch -> "kw_match"
-        .KwMod -> "kw_mod"
-        .KwMut -> "kw_mut"
-        .KwNot -> "kw_not"
-        .KwNull -> "kw_null"
-        .KwNone -> "kw_none"
-        .KwOr -> "kw_or"
-        .KwParallel -> "kw_parallel"
-        .KwReturn -> "kw_return"
-        .KwSpawn -> "kw_spawn"
-        .KwIsolated -> "kw_isolated"
-        .KwSelect -> "kw_select"
-        .KwShape -> "kw_shape"
-        .KwSpec -> "kw_spec"
-        .KwThen -> "kw_then"
-        .KwTrait -> "kw_trait"
-        .KwTrue -> "kw_true"
-        .KwType -> "kw_type"
-        .KwUse -> "kw_use"
-        .KwWhere -> "kw_where"
-        .KwWhile -> "kw_while"
-        .KwWith -> "kw_with"
-        .KwComponent -> "kw_component"
-        .KwDyn -> "kw_dyn"
-        .KwWhen -> "kw_when"
-        .KwQuote -> "kw_quote"
+        // P7 Phase B: one arm for every keyword. The 47 hand-written arms this
+        // replaces were a second place for a keyword to be registered, and the
+        // one most likely to be forgotten — it is a BRIDGE, not a place anyone
+        // looks when adding syntax.
+        .Keyword(id) -> kwid_keyword_str(id)
         _ -> ""
     }
 }
@@ -3238,54 +3240,6 @@ export fn tk_name(tk: Tk) -> string {
         // Phase A: renders identically to the legacy variants, so the token
         // oracle (lex_dump) is unchanged while both forms coexist.
         .Keyword(id) -> kwid_name(id)
-        .KwAnd -> "KwAnd"
-        .KwBreak -> "KwBreak"
-        .KwCatch -> "KwCatch"
-        .KwChannel -> "KwChannel"
-        .KwConst -> "KwConst"
-        .KwContinue -> "KwContinue"
-        .KwDefer -> "KwDefer"
-        .KwElse -> "KwElse"
-        .KwErrdefer -> "KwErrdefer"
-        .KwEnum -> "KwEnum"
-        .KwExport -> "KwExport"
-        .KwExtern -> "KwExtern"
-        .KwFalse -> "KwFalse"
-        .KwFn -> "KwFn"
-        .KwFor -> "KwFor"
-        .KwGiven -> "KwGiven"
-        .KwIf -> "KwIf"
-        .KwImpl -> "KwImpl"
-        .KwIn -> "KwIn"
-        .KwIs -> "KwIs"
-        .KwLet -> "KwLet"
-        .KwMatch -> "KwMatch"
-        .KwMod -> "KwMod"
-        .KwMut -> "KwMut"
-        .KwNot -> "KwNot"
-        .KwNull -> "KwNull"
-        .KwNone -> "KwNone"
-        .KwOr -> "KwOr"
-        .KwParallel -> "KwParallel"
-        .KwReturn -> "KwReturn"
-        .KwSpawn -> "KwSpawn"
-        .KwIsolated -> "KwIsolated"
-        .KwSelect -> "KwSelect"
-        .KwShape -> "KwShape"
-        .KwSpec -> "KwSpec"
-        .KwThen -> "KwThen"
-        .KwTrait -> "KwTrait"
-        .KwTrue -> "KwTrue"
-        .KwType -> "KwType"
-        .KwUse -> "KwUse"
-        .KwWhere -> "KwWhere"
-        .KwWhile -> "KwWhile"
-        .KwWith -> "KwWith"
-        .KwComponent -> "KwComponent"
-        .KwDyn -> "KwDyn"
-        .KwWhen -> "KwWhen"
-        .KwQuote -> "KwQuote"
-        .KwReserved -> "KwReserved"
         .DocComment -> "DocComment"
         .ModDocComment -> "ModDocComment"
         .Eof -> "Eof"

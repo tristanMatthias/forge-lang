@@ -4,7 +4,7 @@
 // entry as a /// documented Avra const. The CLI's docs command (after
 // x35m.6's --scope=lang) reads this file via the AST extractor.
 
-use core.{avra_selfhost_write_file}
+use core.{KwId, avra_selfhost_write_file, tk_is_kw}
 use diagnostics.{DiagCode, error_def}
 use parse.{keyword_rules}
 use core.{Tk}
@@ -32,7 +32,7 @@ use core.{Tk}
 export fn active_keywords() -> List<string> {
     mut out: List<string> = []
     for r in keyword_rules() {
-        if r.tk != Tk.KwReserved { out.push(r.spelling) }
+        if !tk_is_kw(r.tk, KwId.Reserved) { out.push(r.spelling) }
     }
     out
 }
@@ -40,7 +40,7 @@ export fn active_keywords() -> List<string> {
 export fn reserved_keywords() -> List<string> {
     mut out: List<string> = []
     for r in keyword_rules() {
-        if r.tk == Tk.KwReserved { out.push(r.spelling) }
+        if tk_is_kw(r.tk, KwId.Reserved) { out.push(r.spelling) }
     }
     out
 }
