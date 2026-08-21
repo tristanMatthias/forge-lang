@@ -52,6 +52,7 @@ fn grammar_block_builds() -> List<BuilderBind> {
 /// `Call(Ident("parse_grammar"), …)` flows through the existing passes
 /// with no new AST node, so no per-pass handlers are needed.
 /// `gram_family = "expr"`.
+@language_feature
 export fn grammar_block_lang() -> LanguageFeature {
     LanguageFeature grammar_block_def {
         name = "grammar",

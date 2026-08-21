@@ -12,6 +12,7 @@ use features.grammar.{parse_grammar}
 /// `gram_family = "expr"`; the ladder's primary alternation dispatches to
 /// `template_lit` on a TEMPLATE token and to `tagged_template` behind
 /// @peek(ident_template).
+@language_feature
 export fn templates_lang() -> LanguageFeature {
     LanguageFeature templates_def {
         name = "templates",

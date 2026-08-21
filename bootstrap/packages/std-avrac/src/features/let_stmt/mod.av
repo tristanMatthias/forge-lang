@@ -21,6 +21,7 @@ use features.grammar.{parse_grammar}
 /// from its alternations by name. No stmt hooks: `Stmt.Let`/`Mut`/`Const`
 /// codegen, resolve, and typeck are core passes, exactly as the retired
 /// hookless `feature_new("let")` register left them.
+@language_feature
 export fn let_lang() -> LanguageFeature {
     LanguageFeature let_def {
         name = "let",
@@ -67,6 +68,7 @@ initializer is null. `let (a, b) = pair` destructures a tuple by position.
 /// `mut` — mutable bindings. The SYNTAX lives in let_lang's gram
 /// (`mut_decl`, plus the `let mut` modifier on `let_decl`), so this
 /// definition carries the surface alone.
+@language_feature
 export fn mut_lang() -> LanguageFeature {
     LanguageFeature mut_def {
         name = "mut",
@@ -83,6 +85,7 @@ function-local `mut` and thread state explicitly.
 
 /// `const` — compile-time constant bindings. Syntax in let_lang's gram
 /// (`const_decl`); surface only.
+@language_feature
 export fn const_lang() -> LanguageFeature {
     LanguageFeature const_def {
         name = "const",
@@ -101,6 +104,7 @@ bare within it.
 /// (`Stmt.LetDestructure`) so codegen / typeck / eval dispatch pick these
 /// hooks; the SYNTAX lives in let_lang's gram (`letdes_decl`), so this
 /// definition carries hooks alone.
+@language_feature
 export fn let_destructure_lang() -> LanguageFeature {
     LanguageFeature letdes_def {
         name = "let_destructure",

@@ -45,6 +45,7 @@ fn while_check(tc: TC, stmt: Stmt) -> TC {
 /// st.build_sp via mk_stamp_stmt_at), never this fn. Home in the feature file
 /// (t-47hc.8 dissolution) — the engine's checked-in `_gb_` adapter imports
 /// it back.
+@language_feature
 export fn while_lang() -> LanguageFeature {
     LanguageFeature while_def {
         name = "while",

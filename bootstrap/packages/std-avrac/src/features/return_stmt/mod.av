@@ -12,6 +12,7 @@ use features.grammar.{parse_grammar}
 /// same-line/FIRST gating lives in the rule below; this build only folds
 /// presence. Home in the feature file (t-47hc.8 dissolution) — the engine's
 /// checked-in `_gb_` adapter imports it back.
+@language_feature
 export fn return_lang() -> LanguageFeature {
     LanguageFeature return_def {
         name = "return",

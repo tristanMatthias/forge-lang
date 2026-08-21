@@ -15,6 +15,7 @@ use features.grammar.{parse_grammar}
 /// alternations by name. No stmt hooks: `Stmt.Function` codegen, resolve,
 /// and typeck are core passes, exactly as the retired hookless
 /// `feature_new("fn_decl")` register left them.
+@language_feature
 export fn fn_lang() -> LanguageFeature {
     LanguageFeature fn_def {
         name = "fn_decl",
@@ -96,6 +97,7 @@ An absent return type means the function returns nothing (`Void`).
 /// `fn(A, B) -> R` in TYPE position (t-kd4y.3.5.10) — the fn family's
 /// type-position face, so the rule + its MkFn row live here.
 /// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+@language_feature
 export fn fn_type_lang() -> LanguageFeature {
     LanguageFeature fn_type_def {
         name = "fn_type",

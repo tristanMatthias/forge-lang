@@ -17,6 +17,7 @@ use features.grammar.{parse_grammar}
 /// by name (`declaration` dispatches to doc_decl / annot_decl /
 /// mdoc_decl; export_decl lives with the modules feature and
 /// `wrapped_inner` references it cross-fragment).
+@language_feature
 export fn annotations_lang() -> LanguageFeature {
     LanguageFeature annotations_def {
         name = "annotations",

@@ -25,6 +25,7 @@ use features.grammar.{parse_grammar}
 /// fragment (`paren_expr`'s tuple branch + MkTupleFR ride closures_lang,
 /// one gram owning the whole `(`-led alternation — t-kd4y.3.5.3), so this
 /// definition carries the Tuple hooks alone.
+@language_feature
 export fn tuples_lang() -> LanguageFeature {
     LanguageFeature tuples_def {
         name = "tuple",
@@ -46,6 +47,7 @@ export fn tuples_lang() -> LanguageFeature {
 /// `.field` BEFORE either `.`-led rule is entered, and what lets this
 /// rule sort ahead of field_suffix's unguarded `.` fallback.
 /// `gram_family = "expr"`.
+@language_feature
 export fn tuple_index_lang() -> LanguageFeature {
     LanguageFeature tuple_index_def {
         name = "tuple_index",
@@ -115,6 +117,7 @@ fn tuple_index_check(tc: TC, expr: Expr) -> ExprResult {
 /// type-position face, so the rule + its TyParen row live here. One
 /// element is a grouping; zero or several are a tuple type.
 /// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+@language_feature
 export fn tuple_type_lang() -> LanguageFeature {
     LanguageFeature tuple_type_def {
         name = "tuple_type",

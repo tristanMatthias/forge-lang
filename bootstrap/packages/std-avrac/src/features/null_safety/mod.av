@@ -24,6 +24,7 @@ use features.grammar.{parse_grammar}
 /// (t-kd4y.3.5.7) — the sibling `?.`/`?`/`catch` forms are postfix-chain
 /// definitions below (t-kd4y.3.5.8). `gram_family = "expr"`; `pipe`
 /// enters here and the stratum exits to `logic_or` by name.
+@language_feature
 export fn null_coalesce_lang() -> LanguageFeature {
     LanguageFeature null_coalesce_def {
         name = "null_coalesce",
@@ -55,6 +56,7 @@ associate left and stop at the first non-null value: `a ?? b ?? c`.
 /// `@peek(qdot_method_call)` gate on the SIBLING branch: the same
 /// same-line test read in opposite directions keeps `?.f` and `?.m(args)`
 /// apart before either rule is entered. `gram_family = "expr"`.
+@language_feature
 export fn optional_chain_lang() -> LanguageFeature {
     LanguageFeature optional_chain_def {
         name = "optional_chain",
@@ -86,6 +88,7 @@ short-circuit at the first null receiver.
 /// `is_method || saved_it` disjunction is already decided). The arg list
 /// references `call_arg` cross-fragment (features/calls) by name.
 /// `gram_family = "expr"`.
+@language_feature
 export fn optional_method_call_lang() -> LanguageFeature {
     LanguageFeature optional_method_call_def {
         name = "optional_method_call",
@@ -116,6 +119,7 @@ the `it` pronoun sugar exactly as a plain method call does.
 /// same entry guard (`@when(allow_dot_postfix)` + same-line `^`), same
 /// flat chain-threaded lowering, and `x!?` simply runs two steps.
 /// `gram_family = "expr"`.
+@language_feature
 export fn try_lang() -> LanguageFeature {
     LanguageFeature try_def {
         name = "try",
@@ -146,6 +150,7 @@ Both continue the postfix chain: `x!.field` and `f()?.g()` compose.
 /// (referenced cross-fragment by name); the node keeps the `catch`
 /// KEYWORD's line/col, read off the captured token's byte offset.
 /// `gram_family = "expr"`.
+@language_feature
 export fn catch_lang() -> LanguageFeature {
     LanguageFeature catch_def {
         name = "catch",

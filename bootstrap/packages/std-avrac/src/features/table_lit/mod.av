@@ -12,6 +12,7 @@ use features.grammar.{parse_grammar}
 /// MkTableRow). `gram_family = "expr"`; the spine's postfix ladder and
 /// primary alternation dispatch to `table_lit` by name behind
 /// @peek(ident_lbrace_feature).
+@language_feature
 export fn table_lit_lang() -> LanguageFeature {
     LanguageFeature table_lit_def {
         name = "table_lit",

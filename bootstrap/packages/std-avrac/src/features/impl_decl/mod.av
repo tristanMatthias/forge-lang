@@ -7,6 +7,7 @@ use features.grammar.{parse_grammar}
 /// The `impl` block feature. Owns the `impl` keyword (both inherent —
 /// `impl Type { ... }` — and trait — `impl Trait for Type { ... }`), its
 /// method + associated-type-definition rules, and their lowerings.
+@language_feature
 export fn impl_decl_lang() -> LanguageFeature {
     LanguageFeature impl_def {
         name = "impl_decl",

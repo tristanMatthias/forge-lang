@@ -42,6 +42,7 @@ fn parallel_check(tc: TC, stmt: Stmt) -> TC {
 /// its own grammar references. `gram_family` stays "" — `parallel_decl` is
 /// a DECLARATION rule, composed by `feature_decl_grammar_fragments` beside
 /// the other decl keywords, not by the statement views.
+@language_feature
 export fn parallel_lang() -> LanguageFeature {
     let empty_body: List<StmtId> = []
     LanguageFeature parallel_def {

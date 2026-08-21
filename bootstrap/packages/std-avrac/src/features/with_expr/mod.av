@@ -12,6 +12,7 @@ use features.grammar.{parse_grammar}
 /// branch's `( @onfail(bail) s:with_suffix )*` tail references it
 /// cross-fragment by name, and the fold that rebinds the partial nodes
 /// (fold_postfix_with) stays engine-core. `gram_family = "expr"`.
+@language_feature
 export fn with_expr_lang() -> LanguageFeature {
     LanguageFeature with_expr_def {
         name = "with",

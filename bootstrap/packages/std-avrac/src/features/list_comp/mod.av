@@ -25,6 +25,7 @@ use typeck.{TC, ExprResult, tc_er, tc_bind, tc_enter, tc_exit, check_expr}
 /// t-kd4y.3.5.4), so this definition carries the ListComp hooks alone
 /// (the tuples_lang precedent). Sentinel `Expr.ListComp(...)` pins the
 /// variant tag so the registry routes dispatch to the hooks below.
+@language_feature
 export fn list_comp_lang() -> LanguageFeature {
     LanguageFeature list_comp_def {
         name = "list_comp",

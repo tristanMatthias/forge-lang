@@ -10,6 +10,7 @@ use features.grammar.{parse_grammar}
 /// spelling — the core moved with the row).
 /// `gram_family = "type"`; the type spine's `type_atom` dispatch and every
 /// cross-family `type_expr` reference resolve to this rule by name.
+@language_feature
 export fn union_type_lang() -> LanguageFeature {
     LanguageFeature union_type_def {
         name = "union_type",
