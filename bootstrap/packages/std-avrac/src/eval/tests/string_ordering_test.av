@@ -103,4 +103,52 @@ spec "eval: strings order lexicographically at comptime" {
         // different failure (a typo in the fixture) cannot satisfy this arm.
         out.contains("operand must be a number")
     }
+
+    then "SEVENTY elements sort at comptime without blowing the allocation ceiling" {
+        // The SCALE is the bug. The character-ranking workaround this fix
+        // replaced was CORRECT at four elements and died at seventy with
+        // "comptime allocation exceeded 268435456 bytes", so a four-element
+        // fixture cannot tell this fix apart from the thing it replaced.
+        // Input is REVERSE-sorted: insertion sort's worst case, and the most
+        // allocation-heavy ordering.
+        let out = write_fixture_and_run("/tmp/avra_eval_string_ordering_70_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, AnnotatedDecl, ResolverCtx}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn probe(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let xs = [" +
+            "\"f69\", \"f68\", \"f67\", \"f66\", \"f65\", \"f64\", \"f63\", \"f62\", \"f61\", \"f60\"," +
+            "\"f59\", \"f58\", \"f57\", \"f56\", \"f55\", \"f54\", \"f53\", \"f52\", \"f51\", \"f50\"," +
+            "\"f49\", \"f48\", \"f47\", \"f46\", \"f45\", \"f44\", \"f43\", \"f42\", \"f41\", \"f40\"," +
+            "\"f39\", \"f38\", \"f37\", \"f36\", \"f35\", \"f34\", \"f33\", \"f32\", \"f31\", \"f30\"," +
+            "\"f29\", \"f28\", \"f27\", \"f26\", \"f25\", \"f24\", \"f23\", \"f22\", \"f21\", \"f20\"," +
+            "\"f19\", \"f18\", \"f17\", \"f16\", \"f15\", \"f14\", \"f13\", \"f12\", \"f11\", \"f10\"," +
+            "\"f09\", \"f08\", \"f07\", \"f06\", \"f05\", \"f04\", \"f03\", \"f02\", \"f01\", \"f00\"" +
+            "]\n" +
+            "    mut out: List<string> = []\n" +
+            "    for x in xs {\n" +
+            "        mut placed = false\n" +
+            "        mut next: List<string> = []\n" +
+            "        for y in out {\n" +
+            "            if !placed && x < y { next.push(x) placed = true }\n" +
+            "            next.push(y)\n" +
+            "        }\n" +
+            "        if !placed { next.push(x) }\n" +
+            "        out = next\n" +
+            "    }\n" +
+            "    mut msg = \"sorted:\"\n" +
+            "    for o in out { msg = msg + \" \" + o }\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(probe)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // The COMPLETE ordered sequence of all seventy: a comparator that
+        // ordered only a prefix, or a sort that silently truncated, fails.
+        out.contains("sorted: f00 f01 f02 f03 f04 f05 f06 f07 f08 f09 f10 f11 f12 f13 f14 f15 f16 f17 f18 f19 f20 f21 f22 f23 f24 f25 f26 f27 f28 f29 f30 f31 f32 f33 f34 f35 f36 f37 f38 f39 f40 f41 f42 f43 f44 f45 f46 f47 f48 f49 f50 f51 f52 f53 f54 f55 f56 f57 f58 f59 f60 f61 f62 f63 f64 f65 f66 f67 f68 f69") && !out.contains("error[")
+    }
 }
