@@ -32,19 +32,50 @@ spec "the core-layering lint is real" {
     }
     then "a NEW upward import makes it FAIL — the anti-vacuity half" {
         // fingerprint.av is core and is NOT allowlisted, so an upward import
-        // there must be caught. Cleanup is unconditional and runs before the
-        // assertion, since `defer` is unavailable in this shell-out style.
-        let f = "packages/std-avrac/src/core/fingerprint.av"
-        let _ = avra_shell_exec("cp '${f}' '${f}.linttmp'")
-        let _ = avra_shell_exec("printf 'use typeck.{tc_er}\\n' | cat - '${f}.linttmp' > '${f}'")
-        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-core-layering >/dev/null 2>&1")
-        let _ = avra_shell_exec("mv '${f}.linttmp' '${f}'")
-        rc != 0
+        // there must be caught.
+        //
+        // t-frix: this plants into a THROWAWAY COPY via --root, never into the
+        // tracked tree. It used to overwrite the real core/fingerprint.av in
+        // place and `mv` it back. The suite runs shards IN PARALLEL, so for that
+        // window every other shard compiling core/ saw deliberately broken
+        // source; and because `defer` is unavailable in this shell-out style,
+        // a crash mid-window left the tree POISONED, with the real file
+        // stranded at fingerprint.av.linttmp. The copy costs a few hundred ms
+        // and removes the race outright rather than narrowing it.
+        let root = avra_shell_exec("mktemp -d").trim()
+        let _ = avra_shell_exec("cp -R packages/std-avrac/src '${root}/src'")
+        // The CLEAN copy must pass FIRST. Without this, `rc != 0` below is
+        // satisfied by any setup failure — a failed `cp -R`, a `--root` that
+        // does not exist, a `--root` implementation that always dies — and the
+        // anti-vacuity check would prove nothing while looking green. Pinning
+        // the clean case makes the planted case attributable to the PLANT.
+        let clean_rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-core-layering --root '${root}/src' >/dev/null 2>&1")
+        let f = "${root}/src/core/fingerprint.av"
+        let _ = avra_shell_exec("printf 'use typeck.{tc_er}\\n' | cat - '${f}' > '${f}.planted' && mv '${f}.planted' '${f}'")
+        // Capture the OUTPUT too: a nonzero rc says "something failed", while the
+        // INVERSION line says the lint failed for the reason under test.
+        let output = avra_shell_exec("bash scripts/diagnose.sh --check-core-layering --root '${root}/src' 2>&1")
+        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-core-layering --root '${root}/src' >/dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${root}'")
+        clean_rc == 0 && rc != 0 && output.contains("INVERSION core/fingerprint.av -> typeck")
     }
-    then "and it passes again once the planted import is gone" {
-        // A failure HERE means the planted import leaked rather than the lint
-        // being wrong — the two are worth telling apart.
-        avra_shell_exec_status("bash scripts/diagnose.sh --check-core-layering >/dev/null 2>&1") == 0
+    then "the probe leaves the tracked tree BYTE-IDENTICAL" {
+        // Snapshotting the tree state is the assertion that matches this spec's
+        // NAME. Re-running the lint only proves the tree still PASSES, which a
+        // legal edit to core/fingerprint.av would also satisfy — so on its own it
+        // does not establish that the probe touched nothing.
+        let before = avra_shell_exec("git status --porcelain -- packages/std-avrac/src")
+        let root = avra_shell_exec("mktemp -d").trim()
+        let _ = avra_shell_exec("cp -R packages/std-avrac/src '${root}/src'")
+        let f = "${root}/src/core/fingerprint.av"
+        let _ = avra_shell_exec("printf 'use typeck.{tc_er}\\n' | cat - '${f}' > '${f}.planted' && mv '${f}.planted' '${f}'")
+        let _ = avra_shell_exec_status("bash scripts/diagnose.sh --check-core-layering --root '${root}/src' >/dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${root}'")
+        let after = avra_shell_exec("git status --porcelain -- packages/std-avrac/src")
+        // Two independent properties, asserted separately: the tree did not
+        // CHANGE, and the real tree still PASSES.
+        before == after
+            && avra_shell_exec_status("bash scripts/diagnose.sh --check-core-layering >/dev/null 2>&1") == 0
     }
     then "the allowlist NAMES the two known inversions and their owner" {
         // The allowlist is the measurement. If it silently emptied, the lint
