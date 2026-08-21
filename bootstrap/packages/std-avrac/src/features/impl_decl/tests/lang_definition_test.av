@@ -6,7 +6,8 @@
 // (the row name IS the gram ref), so what proves the flip is where they
 // DISPATCH: the manifest, with no central classification left behind.
 use @std.avrac.features.impl_decl.{impl_decl_lang}
-use @std.avrac.features.{feature_keywords, feature_gram, feature_builders, builder_validation_error}
+use @std.avrac.features.impl_decl.lowering.{impl_decl_builds}
+use @std.avrac.features.{with_builders, feature_keywords, feature_gram, feature_builders, builder_validation_error}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
 
 fn manifest_row_desc(name: string) -> string {
@@ -33,7 +34,11 @@ spec "impl as a LanguageFeature" {
         // Every build name the gram references resolves (feature-first, then
         // the engine's central rows for the shared wrapper it borrows —
         // MkDocAnnotated), no orphan rows, no shadowing.
-        builder_validation_error(impl_decl_lang()) == ""
+                // t-y2i7.14: a feature no longer NAMES its builders — the generated
+        // registry attaches them. So the definition alone validates empty, and
+        // the property under test is that THIS gram and THIS manifest agree;
+        // pairing them here states that, rather than duplicating any wiring.
+        builder_validation_error(with_builders(impl_decl_lang(), impl_decl_builds())) == ""
     }
     then "MkImpl, MkMethod and MkAssocTypeDef ride the manifest, owned by the feature" {
         manifest_row_desc("MkImpl") == "stmt/3/flat/features.impl_decl.lowering.impl_build" &&
