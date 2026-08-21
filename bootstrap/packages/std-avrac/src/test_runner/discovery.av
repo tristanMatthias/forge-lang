@@ -26,11 +26,7 @@
 // continue to reject files that declare their own program entry point
 // (those would override the test reporter's main).
 
-use core.{
-    avra_readdir, avra_is_dir, avra_str_ends_with,
-    avra_selfhost_read_file, avra_selfhost_file_exists,
-    Tk,
-}
+use core.{KwId, Tk, avra_is_dir, avra_readdir, avra_selfhost_file_exists, avra_selfhost_read_file, avra_str_ends_with, tk_is_kw}
 use parse.{parser_new_lex_only}
 use list_ops.{list_filter}
 use pathutil.{basename_no_ext}
@@ -179,7 +175,7 @@ export fn classify_av_source(path: string, source: string) -> DiscoveredFile {
         }
         if brace_depth == 0 && paren_depth == 0 {
             let consumed = match p.current_kind {
-                .KwSpec -> {
+                .Keyword(.Spec) -> {
                     try_capture_spec(p, entries)
                     true
                 }
@@ -187,7 +183,7 @@ export fn classify_av_source(path: string, source: string) -> DiscoveredFile {
                     try_capture_test_annot(p, entries)
                     true
                 }
-                .KwFn -> {
+                .Keyword(.Fn) -> {
                     if try_detect_main(p) { has_top_main = true }
                     true
                 }
@@ -229,8 +225,8 @@ fn try_capture_test_annot(p: Parser, entries_ref: List<DiscoveredEntry>) {
     }
     p.advance()
     if p.current_kind == Tk.LeftParen { skip_paren_group(p) }
-    advance_until(p, Tk.KwFn)
-    if p.current_kind != Tk.KwFn { return }
+    advance_until(p, Tk.Keyword(KwId.Fn))
+    if !tk_is_kw(p.current_kind, KwId.Fn) { return }
     p.advance()
     if p.current_kind == Tk.Identifier {
         mut entries = entries_ref

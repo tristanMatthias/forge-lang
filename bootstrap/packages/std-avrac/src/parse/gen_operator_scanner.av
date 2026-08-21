@@ -3,7 +3,7 @@
 // maximal-munch byte-branch trie by parse/emit_lex.av). Editing the operator
 // table without regenerating fails parse/tests/gen_operator_scanner_regen_test.av.
 use parse.{OpMatch, byte_at, BANG, PERCENT, AMP, LPAREN, RPAREN, STAR, PLUS, COMMA, MINUS, DOT, SLASH, COLON, LESS, EQUALS, GREATER, QUESTION, AT, LBRACKET, RBRACKET, CARET, LBRACE, PIPE, RBRACE, TILDE}
-use core.{Tk}
+use core.{Tk, KwId}
 
 /// GENERATED maximal-munch scanner for the operator/punctuation table.
 /// Returns the longest matching token at `pos` and its byte length, or

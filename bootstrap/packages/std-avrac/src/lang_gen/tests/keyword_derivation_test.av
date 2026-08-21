@@ -18,7 +18,7 @@
 
 use @std.avrac.lang_gen.{active_keywords, reserved_keywords}
 use @std.avrac.parse.{keyword_rules}
-use @std.avrac.core.{Tk}
+use @std.avrac.core.{KwId, Tk, tk_is_kw}
 
 fn has(xs: List<string>, s: string) -> bool {
     for x in xs { if x == s { return true } }
@@ -29,7 +29,7 @@ spec "the keyword lists are derived, so they cannot drift from keyword_rules" {
     then "every active row appears, and every reserved row does not" {
         mut ok = true
         for r in keyword_rules() {
-            if r.tk == Tk.KwReserved {
+            if tk_is_kw(r.tk, KwId.Reserved) {
                 if has(active_keywords(), r.spelling) { ok = false }
                 if !has(reserved_keywords(), r.spelling) { ok = false }
             } else {

@@ -2389,7 +2389,7 @@ export fn derived_import_lines_for(src: string, binds: List<BuildKindRow>, gramm
 /// parser calls free lives in features.grammar (engine helpers + _gb_
 /// adapters) — by construction of emit_call_build and the marshalling rows.
 fn core_fn_homes() -> List<string> {
-    ["pattern_optional_present", "pattern_optional_absent"]
+    ["pattern_optional_present", "pattern_optional_absent", "tk_is_kw"]
 }
 
 /// Types the engine module owns.
@@ -2400,7 +2400,7 @@ fn grammar_type_homes() -> List<string> {
 /// Types core owns that generated code can reference (annotations, enum
 /// paths like `Tk.` / `Stmt.`, list element types).
 fn core_type_homes() -> List<string> {
-    ["ExprId", "StmtId", "PatId", "Expr", "Stmt", "Pattern", "MatchArm", "SelectArm", "CompConfig", "CompConfigPair", "ChildrenSlot", "Tk", "SrcPos", "TypeParamEntry", "Annotation", "TypeExpr", "ParamEntry", "FieldEntry", "FieldInit", "Variant", "WhenArm", "ValueType", "NodeStore"]
+    ["ExprId", "StmtId", "PatId", "Expr", "Stmt", "Pattern", "MatchArm", "SelectArm", "CompConfig", "CompConfigPair", "ChildrenSlot", "Tk", "KwId", "SrcPos", "TypeParamEntry", "Annotation", "TypeExpr", "ParamEntry", "FieldEntry", "FieldInit", "Variant", "WhenArm", "ValueType", "NodeStore"]
 }
 
 /// Builtins that read as free calls but are language-level, never imported.
@@ -2786,10 +2786,10 @@ fn named_tk_guard(tok: string) -> string {
     // (gen_parser_files.av) is fixed and a guard is emitted into FIRST chains where a
     // bare comparison composes; the executor's `named_tok_matches` reads the shared
     // predicate, and reserved_kw_field_test asserts the two stay the same set.
-    if tok == "FIELDNAME" { return "(st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved)" }
+    if tok == "FIELDNAME" { return "(st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved))" }
     if tok == "NUMBER"   { return "(st.cur().tk == Tk.Number || st.cur().tk == Tk.Float)" }
     if tok == "STRING"   { return "st.cur().tk == Tk.String" }
-    if tok == "BOOL"     { return "(st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse)" }
+    if tok == "BOOL"     { return "(tk_is_kw(st.cur().tk, KwId.True) || tk_is_kw(st.cur().tk, KwId.False))" }
     if tok == "TEMPLATE" { return "st.cur().tk == Tk.Template" }
     if tok == "EOF"      { return "st.cur().tk == Tk.Eof" }
     if tok == "DOC"      { return "st.cur().tk == Tk.DocComment" }

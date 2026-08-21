@@ -56,11 +56,11 @@ fn field_rule_src() -> string {
 
 spec "t-47hc.33.1: the shared predicate IS consume_field_name's acceptance set" {
     then "a plain identifier is a field name" { tk_is_field_name(Tk.Identifier) }
-    then "a reserved-but-inactive keyword is a field name" { tk_is_field_name(Tk.KwReserved) }
+    then "a reserved-but-inactive keyword is a field name" { tk_is_field_name(Tk.Keyword(KwId.Reserved)) }
     then "an ACTIVE keyword is NOT — this is the half `KW` would have got wrong" {
         // The whole reason the DSL's KW kind was unusable. `if` lexes as Tk.KwIf, not
         // KwReserved, and the hand rejects `x.if`; a KW-matching branch would accept it.
-        !tk_is_field_name(Tk.KwIf) && !tk_is_field_name(Tk.KwMatch) && !tk_is_field_name(Tk.KwReturn)
+        !tk_is_field_name(Tk.Keyword(KwId.If)) && !tk_is_field_name(Tk.Keyword(KwId.Match)) && !tk_is_field_name(Tk.Keyword(KwId.Return))
     }
     then "and neither is a non-name token" {
         !tk_is_field_name(Tk.Number) && !tk_is_field_name(Tk.LeftParen) && !tk_is_field_name(Tk.Eof)
@@ -108,10 +108,10 @@ spec "t-47hc.33.1: the EMITTED static parser carries the widened guard" {
     // The executor and the generated parser are different code paths; an executor-only
     // change passes every interpreter-driven spec above and emits nothing usable. This
     // asserts the emit side lowered FIELDNAME to the same Tk set.
-    then "the emitted field branches test Tk.KwReserved" {
-        field_rule_src().contains("Tk.KwReserved")
+    then "the emitted field branches test the Reserved keyword id" {
+        field_rule_src().contains("KwId.Reserved")
     }
     then "and keep Tk.Identifier alongside it — the pair, not a replacement" {
-        field_rule_src().contains("st.cur().tk == Tk.Identifier || st.cur().tk == Tk.KwReserved")
+        field_rule_src().contains("st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)")
     }
 }

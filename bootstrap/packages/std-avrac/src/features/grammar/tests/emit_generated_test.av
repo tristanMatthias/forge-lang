@@ -253,7 +253,7 @@ fn ")
         // (NUMBER/BOOL are many-to-one → parenthesised disjunctions).
         src.contains("if (st.cur().tk == Tk.Number || st.cur().tk == Tk.Float) {") &&
         src.contains("if st.cur().tk == Tk.String {") &&
-        src.contains("if (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) {") &&
+        src.contains("if (tk_is_kw(st.cur().tk, KwId.True) || tk_is_kw(st.cur().tk, KwId.False)) {") &&
         // null/none are keyword tokens (no distinct grammar kind), matched by text.
         src.contains("if st.cur().text == \"null\" || st.cur().text == \"none\" {") &&
         src.contains("let b = CapVal.Tok(st.advance())") &&
@@ -364,7 +364,7 @@ fn ")
         // BOOL, then null/none, then the `.Variant` enum-ctor. (The tail's absence is
         // asserted above; behavioural coverage of the no-match itself lives in
         // error_recovery_differential_test, which compares all three paths.)
-        src.index_of("if (st.cur().tk == Tk.KwTrue || st.cur().tk == Tk.KwFalse) {") < src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") &&
+        src.index_of("if (tk_is_kw(st.cur().tk, KwId.True) || tk_is_kw(st.cur().tk, KwId.False)) {") < src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") &&
         src.index_of("if st.cur().text == \"null\" || st.cur().text == \"none\" {") < src.index_of("let base = parse_variant_ctor(st)")
     }
 

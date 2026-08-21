@@ -3,7 +3,7 @@
 // exact-match byte-branch trie by parse/emit_lex.av). Editing the keyword table
 // without regenerating fails parse/tests/gen_keyword_scanner_regen_test.av.
 use parse.{byte_at, LOWER_A, LOWER_B, LOWER_C, LOWER_D, LOWER_E, LOWER_F, LOWER_G, LOWER_H, LOWER_I, LOWER_K, LOWER_L, LOWER_M, LOWER_N, LOWER_O, LOWER_P, LOWER_Q, LOWER_R, LOWER_S, LOWER_T, LOWER_U, LOWER_V, LOWER_W, LOWER_X, LOWER_Y}
-use core.{Tk}
+use core.{Tk, KwId}
 
 /// GENERATED exact-match keyword recogniser for the keyword table.
 /// Returns the keyword `Tk` for the identifier bytes [start, end), or
@@ -15,7 +15,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
         if b1 == LOWER_N {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_D {
-                if start + 3 == end { return Tk.KwAnd }
+                if start + 3 == end { return Tk.Keyword(KwId.And) }
             }
         }
         if b1 == LOWER_S {
@@ -25,7 +25,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_N {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_C {
-                        if start + 5 == end { return Tk.KwReserved }
+                        if start + 5 == end { return Tk.Keyword(KwId.Reserved) }
                     }
                 }
             }
@@ -37,7 +37,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_I {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_T {
-                        if start + 5 == end { return Tk.KwReserved }
+                        if start + 5 == end { return Tk.Keyword(KwId.Reserved) }
                     }
                 }
             }
@@ -50,7 +50,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
             if b2 == LOWER_R {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_E {
-                    if start + 4 == end { return Tk.KwReserved }
+                    if start + 4 == end { return Tk.Keyword(KwId.Reserved) }
                 }
             }
         }
@@ -63,7 +63,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                     if b4 == LOWER_O {
                         let b5 = byte_at(src, start + 5)
                         if b5 == LOWER_W {
-                            if start + 6 == end { return Tk.KwReserved }
+                            if start + 6 == end { return Tk.Keyword(KwId.Reserved) }
                         }
                     }
                 }
@@ -76,7 +76,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_A {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_K {
-                        if start + 5 == end { return Tk.KwBreak }
+                        if start + 5 == end { return Tk.Keyword(KwId.Break) }
                     }
                 }
             }
@@ -91,7 +91,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_C {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_H {
-                        if start + 5 == end { return Tk.KwCatch }
+                        if start + 5 == end { return Tk.Keyword(KwId.Catch) }
                     }
                 }
             }
@@ -107,7 +107,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                         if b5 == LOWER_E {
                             let b6 = byte_at(src, start + 6)
                             if b6 == LOWER_L {
-                                if start + 7 == end { return Tk.KwChannel }
+                                if start + 7 == end { return Tk.Keyword(KwId.Channel) }
                             }
                         }
                     }
@@ -129,7 +129,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                                 if b7 == LOWER_N {
                                     let b8 = byte_at(src, start + 8)
                                     if b8 == LOWER_T {
-                                        if start + 9 == end { return Tk.KwComponent }
+                                        if start + 9 == end { return Tk.Keyword(KwId.Component) }
                                     }
                                 }
                             }
@@ -142,7 +142,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_S {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_T {
-                        if start + 5 == end { return Tk.KwConst }
+                        if start + 5 == end { return Tk.Keyword(KwId.Const) }
                     }
                 }
                 if b3 == LOWER_T {
@@ -154,7 +154,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                             if b6 == LOWER_U {
                                 let b7 = byte_at(src, start + 7)
                                 if b7 == LOWER_E {
-                                    if start + 8 == end { return Tk.KwContinue }
+                                    if start + 8 == end { return Tk.Keyword(KwId.Continue) }
                                 }
                             }
                         }
@@ -172,7 +172,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_E {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_R {
-                        if start + 5 == end { return Tk.KwDefer }
+                        if start + 5 == end { return Tk.Keyword(KwId.Defer) }
                     }
                 }
             }
@@ -180,7 +180,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
         if b1 == LOWER_Y {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_N {
-                if start + 3 == end { return Tk.KwDyn }
+                if start + 3 == end { return Tk.Keyword(KwId.Dyn) }
             }
         }
     }
@@ -191,7 +191,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
             if b2 == LOWER_S {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_E {
-                    if start + 4 == end { return Tk.KwElse }
+                    if start + 4 == end { return Tk.Keyword(KwId.Else) }
                 }
             }
         }
@@ -200,7 +200,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
             if b2 == LOWER_U {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_M {
-                    if start + 4 == end { return Tk.KwEnum }
+                    if start + 4 == end { return Tk.Keyword(KwId.Enum) }
                 }
             }
         }
@@ -217,7 +217,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                             if b6 == LOWER_E {
                                 let b7 = byte_at(src, start + 7)
                                 if b7 == LOWER_R {
-                                    if start + 8 == end { return Tk.KwErrdefer }
+                                    if start + 8 == end { return Tk.Keyword(KwId.Errdefer) }
                                 }
                             }
                         }
@@ -234,7 +234,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                     if b4 == LOWER_R {
                         let b5 = byte_at(src, start + 5)
                         if b5 == LOWER_T {
-                            if start + 6 == end { return Tk.KwExport }
+                            if start + 6 == end { return Tk.Keyword(KwId.Export) }
                         }
                     }
                 }
@@ -246,7 +246,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                     if b4 == LOWER_R {
                         let b5 = byte_at(src, start + 5)
                         if b5 == LOWER_N {
-                            if start + 6 == end { return Tk.KwExtern }
+                            if start + 6 == end { return Tk.Keyword(KwId.Extern) }
                         }
                     }
                 }
@@ -262,18 +262,18 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_S {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_E {
-                        if start + 5 == end { return Tk.KwFalse }
+                        if start + 5 == end { return Tk.Keyword(KwId.False) }
                     }
                 }
             }
         }
         if b1 == LOWER_N {
-            if start + 2 == end { return Tk.KwFn }
+            if start + 2 == end { return Tk.Keyword(KwId.Fn) }
         }
         if b1 == LOWER_O {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_R {
-                if start + 3 == end { return Tk.KwFor }
+                if start + 3 == end { return Tk.Keyword(KwId.For) }
             }
         }
     }
@@ -286,7 +286,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_E {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_N {
-                        if start + 5 == end { return Tk.KwGiven }
+                        if start + 5 == end { return Tk.Keyword(KwId.Given) }
                     }
                 }
             }
@@ -307,7 +307,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                             if b6 == LOWER_R {
                                 let b7 = byte_at(src, start + 7)
                                 if b7 == LOWER_E {
-                                    if start + 8 == end { return Tk.KwReserved }
+                                    if start + 8 == end { return Tk.Keyword(KwId.Reserved) }
                                 }
                             }
                         }
@@ -319,19 +319,19 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
     if b0 == LOWER_I {
         let b1 = byte_at(src, start + 1)
         if b1 == LOWER_F {
-            if start + 2 == end { return Tk.KwIf }
+            if start + 2 == end { return Tk.Keyword(KwId.If) }
         }
         if b1 == LOWER_M {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_P {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_L {
-                    if start + 4 == end { return Tk.KwImpl }
+                    if start + 4 == end { return Tk.Keyword(KwId.Impl) }
                 }
             }
         }
         if b1 == LOWER_N {
-            if start + 2 == end { return Tk.KwIn }
+            if start + 2 == end { return Tk.Keyword(KwId.In) }
         }
         if b1 == LOWER_S {
             let b2 = byte_at(src, start + 2)
@@ -346,14 +346,14 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                             if b6 == LOWER_E {
                                 let b7 = byte_at(src, start + 7)
                                 if b7 == LOWER_D {
-                                    if start + 8 == end { return Tk.KwIsolated }
+                                    if start + 8 == end { return Tk.Keyword(KwId.Isolated) }
                                 }
                             }
                         }
                     }
                 }
             }
-            if start + 2 == end { return Tk.KwIs }
+            if start + 2 == end { return Tk.Keyword(KwId.Is) }
         }
     }
     if b0 == LOWER_L {
@@ -361,7 +361,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
         if b1 == LOWER_E {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_T {
-                if start + 3 == end { return Tk.KwLet }
+                if start + 3 == end { return Tk.Keyword(KwId.Let) }
             }
         }
     }
@@ -374,7 +374,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_R {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_O {
-                        if start + 5 == end { return Tk.KwReserved }
+                        if start + 5 == end { return Tk.Keyword(KwId.Reserved) }
                     }
                 }
             }
@@ -383,7 +383,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_C {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_H {
-                        if start + 5 == end { return Tk.KwMatch }
+                        if start + 5 == end { return Tk.Keyword(KwId.Match) }
                     }
                 }
             }
@@ -391,19 +391,19 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
         if b1 == LOWER_O {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_D {
-                if start + 3 == end { return Tk.KwMod }
+                if start + 3 == end { return Tk.Keyword(KwId.Mod) }
             }
             if b2 == LOWER_V {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_E {
-                    if start + 4 == end { return Tk.KwReserved }
+                    if start + 4 == end { return Tk.Keyword(KwId.Reserved) }
                 }
             }
         }
         if b1 == LOWER_U {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_T {
-                if start + 3 == end { return Tk.KwMut }
+                if start + 3 == end { return Tk.Keyword(KwId.Mut) }
             }
         }
     }
@@ -414,11 +414,11 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
             if b2 == LOWER_N {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_E {
-                    if start + 4 == end { return Tk.KwNone }
+                    if start + 4 == end { return Tk.Keyword(KwId.None) }
                 }
             }
             if b2 == LOWER_T {
-                if start + 3 == end { return Tk.KwNot }
+                if start + 3 == end { return Tk.Keyword(KwId.Not) }
             }
         }
         if b1 == LOWER_U {
@@ -426,7 +426,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
             if b2 == LOWER_L {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_L {
-                    if start + 4 == end { return Tk.KwNull }
+                    if start + 4 == end { return Tk.Keyword(KwId.Null) }
                 }
             }
         }
@@ -434,7 +434,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
     if b0 == LOWER_O {
         let b1 = byte_at(src, start + 1)
         if b1 == LOWER_R {
-            if start + 2 == end { return Tk.KwOr }
+            if start + 2 == end { return Tk.Keyword(KwId.Or) }
         }
         if b1 == LOWER_W {
             let b2 = byte_at(src, start + 2)
@@ -443,7 +443,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_E {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_D {
-                        if start + 5 == end { return Tk.KwReserved }
+                        if start + 5 == end { return Tk.Keyword(KwId.Reserved) }
                     }
                 }
             }
@@ -464,7 +464,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                             if b6 == LOWER_E {
                                 let b7 = byte_at(src, start + 7)
                                 if b7 == LOWER_L {
-                                    if start + 8 == end { return Tk.KwParallel }
+                                    if start + 8 == end { return Tk.Keyword(KwId.Parallel) }
                                 }
                             }
                         }
@@ -482,7 +482,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_T {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_E {
-                        if start + 5 == end { return Tk.KwQuote }
+                        if start + 5 == end { return Tk.Keyword(KwId.Quote) }
                     }
                 }
             }
@@ -493,7 +493,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
         if b1 == LOWER_E {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_F {
-                if start + 3 == end { return Tk.KwReserved }
+                if start + 3 == end { return Tk.Keyword(KwId.Reserved) }
             }
             if b2 == LOWER_T {
                 let b3 = byte_at(src, start + 3)
@@ -502,7 +502,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                     if b4 == LOWER_R {
                         let b5 = byte_at(src, start + 5)
                         if b5 == LOWER_N {
-                            if start + 6 == end { return Tk.KwReturn }
+                            if start + 6 == end { return Tk.Keyword(KwId.Return) }
                         }
                     }
                 }
@@ -520,7 +520,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                     if b4 == LOWER_C {
                         let b5 = byte_at(src, start + 5)
                         if b5 == LOWER_T {
-                            if start + 6 == end { return Tk.KwSelect }
+                            if start + 6 == end { return Tk.Keyword(KwId.Select) }
                         }
                     }
                 }
@@ -533,7 +533,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_P {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_E {
-                        if start + 5 == end { return Tk.KwShape }
+                        if start + 5 == end { return Tk.Keyword(KwId.Shape) }
                     }
                 }
             }
@@ -545,14 +545,14 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_W {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_N {
-                        if start + 5 == end { return Tk.KwSpawn }
+                        if start + 5 == end { return Tk.Keyword(KwId.Spawn) }
                     }
                 }
             }
             if b2 == LOWER_E {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_C {
-                    if start + 4 == end { return Tk.KwSpec }
+                    if start + 4 == end { return Tk.Keyword(KwId.Spec) }
                 }
             }
         }
@@ -567,7 +567,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                         if b5 == LOWER_M {
                             let b6 = byte_at(src, start + 6)
                             if b6 == LOWER_S {
-                                if start + 7 == end { return Tk.KwReserved }
+                                if start + 7 == end { return Tk.Keyword(KwId.Reserved) }
                             }
                         }
                     }
@@ -582,7 +582,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
             if b2 == LOWER_E {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_N {
-                    if start + 4 == end { return Tk.KwThen }
+                    if start + 4 == end { return Tk.Keyword(KwId.Then) }
                 }
             }
         }
@@ -593,14 +593,14 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_I {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_T {
-                        if start + 5 == end { return Tk.KwTrait }
+                        if start + 5 == end { return Tk.Keyword(KwId.Trait) }
                     }
                 }
             }
             if b2 == LOWER_U {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_E {
-                    if start + 4 == end { return Tk.KwTrue }
+                    if start + 4 == end { return Tk.Keyword(KwId.True) }
                 }
             }
         }
@@ -609,7 +609,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
             if b2 == LOWER_P {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_E {
-                    if start + 4 == end { return Tk.KwType }
+                    if start + 4 == end { return Tk.Keyword(KwId.Type) }
                 }
             }
         }
@@ -625,7 +625,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                     if b4 == LOWER_F {
                         let b5 = byte_at(src, start + 5)
                         if b5 == LOWER_E {
-                            if start + 6 == end { return Tk.KwReserved }
+                            if start + 6 == end { return Tk.Keyword(KwId.Reserved) }
                         }
                     }
                 }
@@ -634,7 +634,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
         if b1 == LOWER_S {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_E {
-                if start + 3 == end { return Tk.KwUse }
+                if start + 3 == end { return Tk.Keyword(KwId.Use) }
             }
         }
     }
@@ -645,12 +645,12 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
             if b2 == LOWER_E {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_N {
-                    if start + 4 == end { return Tk.KwWhen }
+                    if start + 4 == end { return Tk.Keyword(KwId.When) }
                 }
                 if b3 == LOWER_R {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_E {
-                        if start + 5 == end { return Tk.KwWhere }
+                        if start + 5 == end { return Tk.Keyword(KwId.Where) }
                     }
                 }
             }
@@ -659,7 +659,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_L {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_E {
-                        if start + 5 == end { return Tk.KwWhile }
+                        if start + 5 == end { return Tk.Keyword(KwId.While) }
                     }
                 }
             }
@@ -669,7 +669,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
             if b2 == LOWER_T {
                 let b3 = byte_at(src, start + 3)
                 if b3 == LOWER_H {
-                    if start + 4 == end { return Tk.KwWith }
+                    if start + 4 == end { return Tk.Keyword(KwId.With) }
                 }
             }
         }
@@ -683,7 +683,7 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
                 if b3 == LOWER_L {
                     let b4 = byte_at(src, start + 4)
                     if b4 == LOWER_D {
-                        if start + 5 == end { return Tk.KwReserved }
+                        if start + 5 == end { return Tk.Keyword(KwId.Reserved) }
                     }
                 }
             }

@@ -20,7 +20,7 @@
 // this is an in-package compiler-src module (absolute `@std.avrac.` self-imports
 // double-expand the package — F4012).
 use parse.{operator_rules, keyword_rules, char_run_rules, delim_run_rules, str_run_rules, nest_run_rules, interp_run_rules, escape_rules, LitRule, CharRun, DelimRun, StrRun, NestRun, InterpRun, byte_at, ascii_const_name}
-use core.{Tk, tk_name}
+use core.{Tk, tk_name, tk_source_expr}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
 
@@ -117,7 +117,7 @@ fn emit_op_node(node: OpTrie, depth: int, indent: string) -> string {
         // The spelling is emitted as a STATIC string literal, so the caller uses it
         // as the lexeme with zero allocation (operators contain no escape-worthy
         // byte, so verbatim quoting is safe).
-        out = out + indent + "return OpMatch { tk: Tk." + tk_name(node.tk) + ", len: " + string(depth) + ", spelling: \"" + node.spelling + "\" }\n"
+        out = out + indent + "return OpMatch { tk: " + tk_source_expr(node.tk) + ", len: " + string(depth) + ", spelling: \"" + node.spelling + "\" }\n"
     }
     out
 }
@@ -178,7 +178,7 @@ export fn gen_operator_scanner_header() -> string {
     "// maximal-munch byte-branch trie by parse/emit_lex.av). Editing the operator\n" +
     "// table without regenerating fails parse/tests/gen_operator_scanner_regen_test.av.\n" +
     "use parse.{OpMatch, byte_at, " + const_import_list(operator_rules()) + "}\n" +
-    "use core.{Tk}\n\n"
+    "use core.{Tk, KwId}\n\n"   // KwId: emitted keyword tokens are Tk.Keyword(KwId.X) (P7)
 }
 
 /// The COMPLETE text of parse/gen_operator_scanner.av: header + generated body.
@@ -217,7 +217,7 @@ fn emit_kw_node(node: OpTrie, depth: int, indent: string) -> string {
     }
     if node.has_tk {
         // EXACT match: this is a keyword only if the identifier ends right here.
-        out = out + indent + "if start + " + string(depth) + " == end { return Tk." + tk_name(node.tk) + " }\n"
+        out = out + indent + "if start + " + string(depth) + " == end { return " + tk_source_expr(node.tk) + " }\n"
     }
     out
 }
@@ -245,7 +245,7 @@ export fn gen_keyword_scanner_header() -> string {
     "// exact-match byte-branch trie by parse/emit_lex.av). Editing the keyword table\n" +
     "// without regenerating fails parse/tests/gen_keyword_scanner_regen_test.av.\n" +
     "use parse.{byte_at, " + const_import_list(keyword_rules()) + "}\n" +
-    "use core.{Tk}\n\n"
+    "use core.{Tk, KwId}\n\n"   // KwId: emitted keyword tokens are Tk.Keyword(KwId.X) (P7)
 }
 
 /// The COMPLETE text of parse/gen_keyword_scanner.av: header + generated body.
