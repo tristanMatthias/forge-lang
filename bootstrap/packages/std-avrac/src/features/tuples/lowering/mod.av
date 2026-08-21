@@ -35,6 +35,6 @@ export fn ty_paren_abi(st: PState, vals: List<CapVal>) -> CapVal {
     mk_paren_type(capval_to_texpr_list(vals[0]))
 }
 
-export fn paren_type_builds() -> List<BuilderBind> {
+export fn tuple_type_builds() -> List<BuilderBind> {
     bind_rows("features.tuples.lowering", [bind_row("TyParen", BuildKind.Type, 1, false, "ty_paren_abi", ty_paren_abi)])
 }

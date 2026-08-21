@@ -5,7 +5,7 @@
 // graph_build.av + dir_module.av auto-load as siblings, surface flat
 // at `features.modules.{...}`.
 use core.{Stmt, StmtId}
-use features.modules.lowering.{modules_builds, qualified_builds, export_builds}
+use features.modules.lowering.{use_builds, qualified_ref_builds, export_builds}
 use features.{composed}
 use features.grammar.{parse_grammar}
 
@@ -56,7 +56,7 @@ may be named `defer`); the imported names themselves stay identifiers.
   mod_decl    = @try "mod" @cut @require mdname:WORD
                 @expect("WORD", "expected module name after `mod`") -> MkModule(mdname)
             },
-        builders = modules_builds(),
+        builders = use_builds(),
         snippet = r"use ${1:path}.{${2:names}}",
         stmt_tag = Stmt.Use("", []),
         eval_stmt = use_eval,
@@ -144,7 +144,7 @@ annotation syntax — a qualified reference always carries `::`.
                    @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
                    @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
         },
-        builders = qualified_builds(),
+        builders = qualified_ref_builds(),
         gram_family = "expr",
     }
     qualified_ref_def
