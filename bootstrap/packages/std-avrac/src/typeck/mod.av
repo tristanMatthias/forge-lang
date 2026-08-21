@@ -3895,7 +3895,7 @@ fn arith_aggregate_operand(vt: ValueType) -> bool {
 /// (`.Unknown` from inference or an unbound type param, `.Void`) is left
 /// alone: gating it would reject generic code that is fine, which is the
 /// false-positive class t-axu9's gate shipped with.
-fn tc_eq_operands(tc: TcState, left: ValueType, right: ValueType, opname: string) -> ExprResult {
+fn tc_eq_operands(tc: TC, left: ValueType, right: ValueType, opname: string) -> ExprResult {
     // SAME nominal type is always legal, and `vtype_eq` is the right question
     // because it compares nominal identity KIND-AGNOSTICALLY: a parser-default
     // `Struct("StmtId")` and a resolved `Newtype("StmtId")` of the same FQN are
