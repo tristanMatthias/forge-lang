@@ -6326,7 +6326,24 @@ void avra_compile_slot_gate(void) {
     int64_t threshold_kb = avra_slot_gate_threshold_kb();
     if (threshold_kb <= 0) return;
     int64_t avail_kb = avra_slot_gate_avail_kb();
-    if (!avra_slot_gate_should_wait(avail_kb, threshold_kb)) return;
+    // PREDICTIVE HEADROOM (t-2fe6), OFF BY DEFAULT. The gate is REACTIVE: above
+    // the threshold it returns below WITHOUT taking a slot, so on a healthy box
+    // it bounds nothing and several heavy compiles can start in one window.
+    // Measured on a full suite (per-process peaks, commands labelled), the top
+    // consumers are FIXTURE COMPILES, not shards — 4779 / 3515 / 3449 MB, all
+    // `bs2 compile /tmp/avra_*`. CI then loses ~8GB inside one 30s heartbeat and
+    // the runner evicts the job (exit 143).
+    //
+    // Reserving headroom ON TOP of the threshold makes the decision predictive:
+    // a compile waits while the box can still absorb it, rather than after it has
+    // committed. DEFAULT 0 = today's behaviour byte for byte, because the wrong
+    // value is expensive — `compute_shard_jobs` records TWO prior tunings here
+    // that were measurement artefacts and HALVED CI wall-time. Enable on a run,
+    // measure WALL-TIME as well as survival, then consider a default.
+    int64_t headroom_kb = 0;
+    { const char* h = getenv("AVRA_SLOT_GATE_HEADROOM_MB");
+      if (h && *h) { int64_t hv = strtoll(h, NULL, 10); if (hv > 0) headroom_kb = hv * 1024; } }
+    if (!avra_slot_gate_should_wait(avail_kb, threshold_kb + headroom_kb)) return;
     const char* dir = getenv("AVRA_COMPILE_SLOT_DIR");
     if (!dir || !*dir) dir = "/tmp/.avra-slots";   // dot-named: outside the
                                                    // /tmp/avra_* prune glob
@@ -6342,7 +6359,7 @@ void avra_compile_slot_gate(void) {
     if (avra_slot_gate_fd >= 0) return;
     fprintf(stderr,
         "[slot-gate] memory pressure (%lld MiB available < %lld MiB): waiting for one of %lld compile slots\n",
-        (long long)(avail_kb / 1024), (long long)(threshold_kb / 1024), (long long)width);
+        (long long)(avail_kb / 1024), (long long)((threshold_kb + headroom_kb) / 1024), (long long)width);
     for (;;) {
         struct timespec ts = { 0, 200 * 1000 * 1000 };
         nanosleep(&ts, NULL);
