@@ -6,7 +6,7 @@
 // emit_parser_file() so a grammar edit that isn't regenerated fails the suite.
 
 use features.grammar.{CapVal, PState, Token, base_pred, call_with_build_sp, capval_is_error_expr, capval_is_error_stmt, capval_present, capval_to_ann, capval_to_arm, capval_to_children_slot, capval_to_comp_config, capval_to_comp_config_pair, capval_to_expr, capval_to_field, capval_to_finit, capval_to_pat, capval_to_pentry, capval_to_select_arm, capval_to_stmt, capval_to_texpr, capval_to_tparam, capval_to_variant, capval_to_when_arm, capval_tok_text, error_stmt_of, fold_postfix_with_expr, gensym_token, literal_node, lookahead_ok, mk_binary, mk_block, mk_doc_annotated, mk_expr_block, mk_grammar_block_abi, mk_none_cap, mk_plain_name, mk_splice, mk_splice_arm, mk_splice_name, mk_splice_struct, mk_splice_type, mk_stamp_stmt_at, modes_with_counter_bumped, modes_with_flag_off, modes_with_flag_on, rawbrace_scan, text_is_word}
-use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, KwId, MatchArm, ParamEntry, PatId, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, Variant, WhenArm, tk_is_kw}
+use core.{Annotation, ChildrenSlot, CompConfig, CompConfigPair, ExprId, FieldEntry, FieldInit, KwId, MatchArm, ParamEntry, PatId, SelectArm, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeParamEntry, Variant, WhenArm, tk_is_field_name, tk_is_kw}
 use features.modules.lowering.{mk_export_abi, mk_qualified_abi, module_build, use_bare_build, use_pkg_build}
 use features.annotations.lowering.{mk_ann_abi, mk_annotated_args_abi, mk_module_doc_abi}
 use features.struct_decl.lowering.{mk_assign_abi, mk_enum_ctor_abi, mk_enum_ctor_suffix_abi, mk_field_abi, mk_field_access_abi, mk_field_init_abi, mk_named_type_abi, mk_qualified_type_abi, mk_shape_decl_abi, mk_struct_lit_abi, mk_type_decl_any_abi, rebind_eq_abi}
@@ -5056,7 +5056,7 @@ fn parse_null_coalesce(st: PState) -> CapVal {
 fn parse_optchain_suffix(st: PState) -> CapVal {
     st.snap_postfix_step()
     let _ = st.advance()
-    let n = if (st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)) { CapVal.Tok(st.advance()) } else {
+    let n = if tk_is_field_name(st.cur().tk) { CapVal.Tok(st.advance()) } else {
         st.report("expected `FIELDNAME`")
         CapVal.Tok(st.cur())
     }
@@ -5067,7 +5067,7 @@ fn parse_optcall_suffix(st: PState) -> CapVal {
     st.snap_postfix_step()
     mut a_list: List<ExprId> = []
     let _ = st.advance()
-    let n = if (st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)) { CapVal.Tok(st.advance()) } else {
+    let n = if tk_is_field_name(st.cur().tk) { CapVal.Tok(st.advance()) } else {
         st.report("expected `FIELDNAME`")
         CapVal.Tok(st.cur())
     }
@@ -5302,7 +5302,7 @@ fn parse_enum_ctor_suffix(st: PState) -> CapVal {
     st.snap_postfix_step()
     mut a_list: List<ExprId> = []
     let _ = st.advance()
-    let n = if (st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)) { CapVal.Tok(st.advance()) } else {
+    let n = if tk_is_field_name(st.cur().tk) { CapVal.Tok(st.advance()) } else {
         st.report("expected `FIELDNAME`")
         CapVal.Tok(st.cur())
     }
@@ -5343,7 +5343,7 @@ fn parse_field_suffix(st: PState) -> CapVal {
     st.snap_postfix_step()
     if lookahead_ok("dot_plain_field", st) && base_pred("dot_postfix_ok", st) && (st.cur().tk == Tk.Dot) {
         let _ = st.advance()
-        let n = if (st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)) { CapVal.Tok(st.advance()) } else {
+        let n = if tk_is_field_name(st.cur().tk) { CapVal.Tok(st.advance()) } else {
             st.report("expected `FIELDNAME`")
             CapVal.Tok(st.cur())
         }
@@ -5352,7 +5352,7 @@ fn parse_field_suffix(st: PState) -> CapVal {
     if st.cur().tk == Tk.Dot { let _ = st.advance() } else {
         st.report("expected `.`")
     }
-    let n = if (st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)) { CapVal.Tok(st.advance()) } else {
+    let n = if tk_is_field_name(st.cur().tk) { CapVal.Tok(st.advance()) } else {
         st.report_coded("F0040", "expected field name after `.`")
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())

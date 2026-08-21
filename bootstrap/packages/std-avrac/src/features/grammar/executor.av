@@ -1083,14 +1083,16 @@ fn list_has(xs: List<string>, s: string) -> bool {
 /// Match a NAMED terminal against a token. Every terminal but one is a `kind`
 /// string straight out of `tk_to_grammar_kind` (real_lex.av); `FIELDNAME` is the
 /// exception, and it exists because that mapping is too COARSE to spell what is
-/// accepted after a `.` — `Tk.KwReserved` folds into `KW` along with every
+/// accepted after a `.` — the reserved-keyword token folds into `KW` along with every
 /// other keyword, so `IDENT` is narrower than `consume_field_name` and `KW` is
 /// vastly wider. `FIELDNAME` reads the shared `tk_is_field_name` (core/ast.av)
 /// instead, `consume_field_name`'s own predicate (t-47hc.33.1).
 ///
-/// LOCKSTEP: emit's `named_tk_guard` must lower `FIELDNAME` to the SAME Tk set.
-/// That pairing is asserted by reserved_kw_field_test — the two engines drifting
-/// is the recurring failure mode in this slice (`base_field_access`, `dot_number`).
+/// ONE DEFINITION, not a pairing (t-y2i7.8): emit's `named_tk_guard` EMITS A CALL
+/// to this same `tk_is_field_name` rather than respelling its Tk set, so the two
+/// engines cannot drift — the recurring failure mode in this slice
+/// (`base_field_access`, `dot_number`). reserved_kw_field_test pins the call and
+/// forbids the respelling; `WORD` below has always worked this way.
 fn named_tok_matches(name: string, tok: Token) -> bool {
     if name == "FIELDNAME" { return tk_is_field_name(tok.tk) }
     // WORD: any identifier-shaped token — identifiers AND keywords — so

@@ -108,10 +108,10 @@ spec "t-47hc.33.1: the EMITTED static parser carries the widened guard" {
     // The executor and the generated parser are different code paths; an executor-only
     // change passes every interpreter-driven spec above and emits nothing usable. This
     // asserts the emit side lowered FIELDNAME to the same Tk set.
-    then "the emitted field branches test the Reserved keyword id" {
-        field_rule_src().contains("KwId.Reserved")
+    then "the emitted field branches call the SHARED predicate" {
+        field_rule_src().contains("tk_is_field_name(st.cur().tk)")
     }
-    then "and keep Tk.Identifier alongside it — the pair, not a replacement" {
-        field_rule_src().contains("st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)")
+    then "and do NOT respell the Tk set — one definition, not two" {
+        !field_rule_src().contains("st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)")
     }
 }

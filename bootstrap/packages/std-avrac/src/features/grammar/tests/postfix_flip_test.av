@@ -140,7 +140,7 @@ spec "t-47hc.33: `expr?.field` is grammar-native" {
         // Asserted as the full disjunction, not the `Tk.Identifier` substring: that
         // prefix matches BOTH spellings, so it would have passed against the old
         // IDENT-only guard and proved nothing.
-        rule_src("optchain_suffix").contains("st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)")
+        rule_src("optchain_suffix").contains("tk_is_field_name(st.cur().tk)")
     }
 }
 
