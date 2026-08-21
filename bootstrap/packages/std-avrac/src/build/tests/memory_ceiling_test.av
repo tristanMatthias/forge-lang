@@ -515,3 +515,59 @@ spec "t-u602: the soft borrow/trip decision, pure and floor-composed" {
         avra_mem_should_trip(floored + 1024, floored, 1, 900000, 1000000) == 1
     }
 }
+
+// t-2fe6: the soft-hold window is a process-wide monotonic DEADLINE, so it
+// cannot be reset by re-entry and cannot be double-charged across threads.
+//
+// `avra_mem_poll` runs from the allocation hot path. Its wait budget used to
+// live in a LOCAL, so a tree oscillating around the pressure threshold got a
+// FRESH window on every re-entry: hold ~60s, clear for one sample, allocate a
+// sliver, hold again — indefinitely, never accumulating toward the trip. The
+// process therefore never reported F4014 and never died; from outside it was a
+// shard that simply never finished, with FLAT memory because it was sleeping
+// rather than allocating.
+//
+// Under concurrency that is self-sustaining: each holder's RSS keeps
+// MemAvailable low, which keeps its neighbours holding, and the release valve
+// cannot break the tie because flat memory neither falls (no valve) nor
+// recovers (no progress). Observed as two CI suites frozen at 112/150 and
+// 113/150 with three shards in flight until the job timeout killed them.
+//
+// A DEADLINE rather than a summed duration: the window is WALL CLOCK, and
+// summing per-thread hold times double-counts when several allocator threads
+// hold at once (two threads sleeping the same 300ms would charge 600ms and
+// trip early). One deadline is the same instant for every thread.
+extern fn avra_mem_hold_remaining_ms(deadline_ms: int, now_ms: int) -> int
+
+spec "t-2fe6: the soft-hold window is a shared deadline, not a per-call budget" {
+    then "a freshly opened window offers its whole span" {
+        // Opened at t=1000 with a 60s budget.
+        avra_mem_hold_remaining_ms(61000, 1000) == 60000
+    }
+    then "a re-entry MID-window inherits the remainder, not a fresh budget" {
+        // The defect in one line: this used to answer 60000 on every re-entry,
+        // which is what let a hold run forever in 60s slices.
+        avra_mem_hold_remaining_ms(61000, 21000) == 40000
+    }
+    then "a window at its deadline offers ZERO — the next entry trips" {
+        // Zero is what converts an indefinite wedge into a diagnosable F4014.
+        avra_mem_hold_remaining_ms(61000, 61000) == 0
+    }
+    then "a window PAST its deadline offers zero, never negative grace" {
+        avra_mem_hold_remaining_ms(61000, 90000) == 0
+    }
+    then "no open window grants nothing" {
+        // deadline <= 0 is the closed state, set on genuine recovery.
+        avra_mem_hold_remaining_ms(0, 1000) == 0
+    }
+    then "the deadline is honoured exactly at its boundary" {
+        avra_mem_hold_remaining_ms(61000, 60999) == 1
+    }
+    then "two threads reading the SAME window at the same instant agree" {
+        // The anti-double-charge property: a second holder adopting an open
+        // window derives the same remainder, rather than opening its own.
+        // Summed-duration accounting could not express this.
+        avra_mem_hold_remaining_ms(61000, 31000) == avra_mem_hold_remaining_ms(61000, 31000)
+            && avra_mem_hold_remaining_ms(61000, 31000) == 30000
+    }
+}
