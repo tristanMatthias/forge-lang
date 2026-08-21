@@ -1,0 +1,50 @@
+// WHY: core/registry.av used to carry THREE feature-specific set fields —
+// `component_names`, `expr_keywords`, `raw_body_comps` — plus five accessors
+// named after what they held. That put knowledge of what a "component" is, and
+// of `kw { … }` expression forms, into the layer every feature imports.
+// CLAUDE.md states the rule outright: core/ is infrastructure only (t-y2i7.11).
+//
+// The fix was not to move the fields but to make core STOP KNOWING: it stores
+// generic named sets keyed "<set>:<key>", and the set NAMES live in features/.
+// This guard exists because the regression is silent and easy — the natural way
+// to add a fourth kind of registry set is to add a fourth field here.
+//
+// Textual, and matching the DECLARATION form deliberately. An earlier guard in
+// this program matched a bare substring and flagged the file's own commentary
+// as the defect; core/registry.av's header legitimately NAMES these fields
+// while explaining why they left.
+extern fn avra_selfhost_read_file(path: string) -> string
+
+use @std.avrac.core.{registry_new, registry_set_add, registry_set_has}
+
+spec "core/ stores generic named sets, not feature-specific ones" {
+    given "core/registry.av's source" {
+        then "no feature-specific SET FIELD is declared" {
+            let src = avra_selfhost_read_file("packages/std-avrac/src/core/registry.av")
+            !src.contains("    component_names: ptr,")
+                && !src.contains("    expr_keywords: ptr,")
+                && !src.contains("    raw_body_comps: ptr,")
+        }
+        then "the generic field IS declared — the guard is not vacuous" {
+            // Without this, deleting named_sets entirely would pass the arm above.
+            let src = avra_selfhost_read_file("packages/std-avrac/src/core/registry.av")
+            src.contains("    named_sets: ptr,")
+        }
+    }
+    given "a fresh registry" {
+        then "sets are independent — the composite key does not leak across them" {
+            let reg = registry_new()
+            registry_set_add(reg, "component", "Button")
+            registry_set_has(reg, "component", "Button")
+                && !registry_set_has(reg, "raw_body", "Button")
+                && !registry_set_has(reg, "component", "Missing")
+        }
+        then "two sets can hold the same key without colliding" {
+            let reg = registry_new()
+            registry_set_add(reg, "component", "Grammar")
+            registry_set_add(reg, "expr_keyword", "Grammar")
+            registry_set_has(reg, "component", "Grammar")
+                && registry_set_has(reg, "expr_keyword", "Grammar")
+        }
+    }
+}

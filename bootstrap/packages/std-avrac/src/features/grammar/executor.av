@@ -1,6 +1,7 @@
 // WHY: ps3t.6.4 — the grammar-DSL *generator*, in its executable form.
 
-use core.{is_expr_keyword, Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list}
+use features.{is_expr_keyword, is_registered_component, register_component_name, register_raw_body_component, component_is_raw_body}
+use core.{Expr, ExprId, Stmt, StmtId, Pattern, PatId, ParamEntry, TypeParamEntry, FieldEntry, FieldInit, Variant, MatchArm, WhenArm, Annotation, ValueType, TypeExpr, TypeId, type_expr_to_vtype, BinOp, UnOp, LogicOp, NodeStore, NodeRef, new_node_store, build_line_index, byte_span, byte_span_none, SrcPos, Tk, gensym_name, render_type_name_list}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GPrim, GAnnot}
 use features.grammar.{Token, lex_real, LexDiag, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
@@ -13,7 +14,7 @@ use features.grammar.{rule_result_kind, gprim_ref_name, BuildKindRow}
 // The field-name acceptance set (t-47hc.33.1).
 use core.{tk_is_field_name}
 use core.{SelectArm}
-use core.{CompConfig, CompConfigPair, ChildrenSlot, register_component_name, register_raw_body_component, component_is_raw_body, body_declares_token_stream, vtype_struct, is_registered_component}
+use core.{CompConfig, CompConfigPair, ChildrenSlot, body_declares_token_stream, vtype_struct}
 use features.grammar.{code_at, is_ident_start_code}
 // The RAW-SOURCE lookahead cores (t-47hc.5.1 slice B1), SHARED with
 // Parser's peek_after_ident_is_* wrappers. The component config-pair

@@ -10,7 +10,7 @@
 // tag-keyed intmaps and the component-name helpers — data and map operations,
 // no pass vocabulary.
 
-use core.{Registry, registry_new, register_component_name, NodeStore, Expr, Stmt, Ctx, VarBinding, EmitValue, Resolver, TC, ExprResult}
+use core.{Registry, registry_new, registry_set_add, registry_set_has, NodeStore, Expr, Stmt, Ctx, VarBinding, EmitValue, Resolver, TC, ExprResult}
 
 // The registry's tag + intmap primitives, declared here as core/registry.av
 // declares them: `extern fn` is per-file in this codebase.
@@ -23,6 +23,59 @@ use eval.{value_null, Runtime, StepResult}
 
 
 /// Codegen no-op for expressions — `err_emit("no expr handler")`.
+// ── Component registry sets ──
+//
+// The SET NAMES live here, not in core/. core/registry.av used to carry
+// `component_names`, `expr_keywords` and `raw_body_comps` as FIELDS plus five
+// accessors, which meant the bottom layer knew what a "component" is and what a
+// `kw { … }` expression form is — feature-specific knowledge in the layer every
+// feature imports (CLAUDE.md: "core is infrastructure only"; t-y2i7.11). Core
+// now stores generic named sets and knows nothing about what they mean; this
+// vocabulary belongs to the features that own it.
+//
+// Every one of these is a PRESENCE test or a presence write. That is not a
+// simplification made here — it is what the core accessors already were: all
+// three reads were a bare `avra_map_has_cstr(...) != 0`, and the maps' value
+// slots were a constant 1. The handler each map once claimed to store had no
+// caller, which is why one generic set primitive covers all three.
+
+/// Register a component name for keyword-free instantiation. After this,
+/// `name instance { ... }` at statement level parses as a ComponentBlock — the
+/// component declaration's name acts as a pseudo-keyword in the stmt parser.
+export fn register_component_name(reg: Registry, name: string) {
+    registry_set_add(reg, "component", name)
+}
+
+/// True when `name` was declared as a component.
+export fn is_registered_component(reg: Registry, name: string) -> bool {
+    registry_set_has(reg, "component", name)
+}
+
+/// Mark `name` as a `body: TokenStream` component (vez6.9): its instance
+/// blocks capture raw tokens instead of structured Avra.
+export fn register_raw_body_component(reg: Registry, name: string) {
+    registry_set_add(reg, "raw_body", name)
+}
+
+/// True when `name` was declared with `body: TokenStream`.
+export fn component_is_raw_body(reg: Registry, name: string) -> bool {
+    registry_set_has(reg, "raw_body", name)
+}
+
+/// True when `keyword` leads a registered `kw { … }` expression construct
+/// (e.g. `grammar`). Presence is the whole contract: it drives the
+/// `ident_lbrace_plain` / `ident_lbrace_feature` peek conditions that
+/// disambiguate `IDENT {` between a struct literal, `grammar { … }` and
+/// `table { … }`.
+export fn is_expr_keyword(reg: Registry, keyword: string) -> bool {
+    registry_set_has(reg, "expr_keyword", keyword)
+}
+
+/// Register `keyword` as leading a `kw { … }` expression construct.
+export fn register_expr_keyword(reg: Registry, keyword: string) {
+    registry_set_add(reg, "expr_keyword", keyword)
+}
+
 export fn noop_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<EmitValue, string> { err_emit("no expr handler") }
 
 /// Codegen no-op for statements — `err_sr("no stmt handler")`.
@@ -74,7 +127,7 @@ export fn register(reg: Registry, f: LanguageFeature) {
     // match; the component_names set serves component names, written by
     // register_component_name). Batch A deleted the fields.
     if f.expr_keyword.length > 0 {
-        avra_map_set_cstr(reg.expr_keywords, f.expr_keyword, 1)
+        registry_set_add(reg, "expr_keyword", f.expr_keyword)
     }
 }
 
