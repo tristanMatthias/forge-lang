@@ -1,0 +1,80 @@
+// WHY: t-y2i7.5 (P5). `language_features()` is GENERATED here from the DECLARED
+// `@language_feature` marks, replacing a hand-maintained 70-entry array plus the
+// 42 `use features.*` lines that existed only to feed it. Adding a feature is now
+// ONE place: mark its `<name>_lang()` fn.
+//
+// FOUR PLACEMENT CONSTRAINTS, each established by a control. Get any wrong and
+// the failure is misleading:
+//
+//  1. SIBLING FILE OF mod.av — not mod.av, not a child module. `features/mod.av`
+//     cannot resolve ANY @comptime macro (F4002) because it DEFINES
+//     `export component LanguageFeature`, so the expander is mid-expansion of
+//     that file. A sibling runs, and shares mod.av's module namespace (mod.av
+//     already calls `register_lang` from lang.av with no `use`), so the emitted
+//     fn is visible to mod.av's seven call sites WITHOUT an import.
+//  2. PACKAGE-RELATIVE IMPORTS (`use core.{...}`), never fully qualified
+//     (`use @std.avrac.core.{...}`). The qualified form trips the cycle detector:
+//     F4012 "Pattern/ValueType/Expr/Stmt already expanded by derive_walker".
+//     lang.av and wiring.av already import this way.
+//  3. NO `export` WRAPPER on the emitted decl. Wrapping it in
+//     `Stmt.Annotated([@export], fn)` makes the declaration fail to land at all —
+//     every call site, including one in THIS file, reports F3000. A bare
+//     Stmt.Function lands. That is fine here because the only callers are in
+//     mod.av, a sibling sharing this module; nothing outside features/ calls it.
+//  4. ResolvedDecls + introduces, not a bare Stmt — a macro introducing a new
+//     top-level name must DECLARE it, which is why F4006 names ResolvedDecls
+//     alongside Stmt and List<Stmt>.
+use core.{Stmt, Expr, ValueType, TypeParamEntry, ParamEntry, ExprId}
+use features.comptime.{synth_expr_id, synth_stmt_ids, AnnotatedDecl, ResolverCtx,
+                       ctx_items_with_annotation, ResolvedDecls, DeclSymbol, DeclKind,
+                       MacroProvenance}
+use diagnostics.{Span}
+
+@comptime
+fn emitted(fn_stmt: Stmt) -> ResolvedDecls {
+    let decls: List<Stmt> = [fn_stmt]
+    let introduces: List<DeclSymbol> = [
+        DeclSymbol { name: "language_features", kind: DeclKind.Function,
+                     canonical_path: "language_features" }]
+    let provenance = MacroProvenance {
+        macro_name: "build_language_features", target_canonical: "language_features_gen",
+        target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: "" } }
+    ResolvedDecls { decls, introduces, provenance }
+}
+
+@comptime
+export fn build_language_features(d: AnnotatedDecl, ctx: ResolverCtx) -> ResolvedDecls {
+    let found = ctx_items_with_annotation(ctx, "language_feature")
+    let ret_ty = ValueType.List(ValueType.Struct("LanguageFeature", [], 0))
+    let tp: List<TypeParamEntry> = []
+    let ps: List<ParamEntry> = []
+
+    // REFUSE TO EMIT AN EMPTY REGISTRY. The query answers a well-typed empty list
+    // when its mechanism is absent (an older pin without the intercept) — the
+    // silent catastrophe: every feature unregisters, the build stays GREEN, and
+    // the compiler parses nothing. No macro-error API exists, so the refusal is a
+    // call to a name that cannot resolve; the identifier IS the diagnostic.
+    if found.length == 0 {
+        let boom = synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(
+            "P5_ABORT__ctx_items_with_annotation_returned_EMPTY__resolver_data_not_answering")), []))
+        let b0: List<Stmt> = [Stmt.Return(boom)]
+        return emitted(Stmt.Function("language_features", tp, ps, ret_ty, synth_stmt_ids(b0)))
+    }
+
+    // SORTED: the emitted order reaches generated IR, so it must not depend on
+    // discovery order.
+    mut calls: List<ExprId> = []
+    for n in found {
+        calls.push(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(n)), [])))
+    }
+    let body: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.ListLit(calls)))]
+    emitted(Stmt.Function("language_features", tp, ps, ret_ty, synth_stmt_ids(body)))
+}
+
+// NOTE: no sort yet. Determinism needs a string comparison the EVAL interpreter
+// supports — `a < b` on strings is valid Avra (test_runner/discovery.av
+// sort_paths uses it) but eval rejects it with "operand must be a number", and
+// there is no string_from_code/char primitive to build one from. Tracked
+// separately; discovery order is used meanwhile.
+@expand(build_language_features)
+fn language_features_gen() {}
