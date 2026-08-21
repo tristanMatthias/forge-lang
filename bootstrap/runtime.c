@@ -6478,21 +6478,26 @@ static int64_t avra_mem_hold_margin_kb(void) {
     return v;
 }
 
-// How much soft-hold grace remains for THIS process (t-2fe6).
+// How much soft-hold grace remains, against a process-wide monotonic DEADLINE
+// (t-2fe6).
 //
-// The window is CUMULATIVE, not per call. `avra_mem_poll` runs from the
+// The window spans calls, not each call. `avra_mem_poll` runs from the
 // allocation hot path, so a tree oscillating around the pressure threshold
-// re-enters constantly; if each entry were granted the full window it could
+// re-enters constantly; if each entry were granted a fresh window it could
 // hold forever in 60s slices, never accumulating toward the trip. Returning 0
-// once the window is spent is what makes sustained pressure trip and REPORT,
+// once the deadline passes is what makes sustained pressure trip and REPORT
 // instead of wedging silently until an outer timeout kills the job.
 //
-// Clamps at 0 and never returns negative: an over-held process gets no grace,
-// not inverted grace.
-int64_t avra_mem_hold_remaining_ms(int64_t budget_ms, int64_t already_ms) {
-    if (budget_ms <= 0) return 0;
-    if (already_ms <= 0) return budget_ms;
-    int64_t remaining = budget_ms - already_ms;
+// A DEADLINE rather than a summed duration, because the window is WALL CLOCK.
+// Summing per-thread hold times double-counts when several allocator threads
+// hold concurrently — two threads sleeping the same 300ms would charge 600ms
+// and trip early. A shared deadline is the same instant for every thread.
+//
+// `deadline_ms <= 0` means no window is open. Clamps at 0 and never returns
+// negative: a process past its deadline gets no grace, not inverted grace.
+int64_t avra_mem_hold_remaining_ms(int64_t deadline_ms, int64_t now_ms) {
+    if (deadline_ms <= 0) return 0;
+    int64_t remaining = deadline_ms - now_ms;
     return remaining > 0 ? remaining : 0;
 }
 
@@ -6591,9 +6596,11 @@ static void avra_mem_poll(void) {
     // ~ms of allocation work per 4096-allocation window, and the tighter
     // window bounds how far past the floor a borrower can run.
     static _Atomic int avra_mem_borrowing = 0;
-    // Cumulative soft-hold time for THIS process (t-2fe6). See the back-off
-    // block below: the wait budget must span calls, not restart on each one.
-    static _Atomic int64_t avra_mem_soft_held_ms = 0;
+    // Process-wide monotonic deadline for the CURRENT soft-hold window
+    // (t-2fe6), 0 when no window is open. See the back-off block below: the
+    // window must span calls, not restart on each one, and must be shared
+    // across allocator threads rather than summed per thread.
+    static _Atomic int64_t avra_mem_hold_deadline_ms = 0;
     int64_t mask = atomic_load_explicit(&avra_mem_borrowing, memory_order_relaxed)
                        ? (AVRA_MEM_POLL_MASK >> 4) : AVRA_MEM_POLL_MASK;
     int64_t n = atomic_fetch_add_explicit(&avra_mem_poll_ctr, 1, memory_order_relaxed);
@@ -6607,9 +6614,9 @@ static void avra_mem_poll(void) {
         if (soft) {
             atomic_store_explicit(&avra_mem_borrowing, 0, memory_order_relaxed);
             // Back under the grant is GENUINE recovery, not the momentary
-            // flicker the oscillator exploits — so the cumulative hold budget
-            // resets only here, never on a mid-hold sample.
-            atomic_store_explicit(&avra_mem_soft_held_ms, 0, memory_order_relaxed);
+            // flicker the oscillator exploits — so the hold window closes
+            // here, and a later hold starts with its full grace.
+            atomic_store_explicit(&avra_mem_hold_deadline_ms, 0, memory_order_relaxed);
         }
         return;
     }
@@ -6650,8 +6657,26 @@ static void avra_mem_poll(void) {
         // shards in flight until the job timeout killed them.
         // Carrying the total forward means SUSTAINED pressure trips and says
         // so, while a transient trough still gets its full grace.
-        int64_t already_ms = atomic_load_explicit(&avra_mem_soft_held_ms, memory_order_relaxed);
-        int64_t remaining_ms = avra_mem_hold_remaining_ms(budget_ms, already_ms);
+        // Open the window ONCE, shared across threads: whichever allocator
+        // thread arrives first publishes the deadline via CAS and the rest
+        // adopt it, so N concurrent holders consume ONE wall-clock window
+        // rather than N of them.
+        int64_t now_ms = avra_uptime_ms();
+        int64_t deadline_ms = atomic_load_explicit(&avra_mem_hold_deadline_ms, memory_order_relaxed);
+        if (deadline_ms <= 0) {
+            int64_t expected = 0;
+            int64_t want = now_ms + budget_ms;
+            if (atomic_compare_exchange_strong_explicit(&avra_mem_hold_deadline_ms,
+                                                        &expected, want,
+                                                        memory_order_relaxed,
+                                                        memory_order_relaxed)) {
+                deadline_ms = want;
+            } else {
+                deadline_ms = expected;   // a neighbour opened it first
+            }
+        }
+        int64_t window_start_ms = deadline_ms - budget_ms;
+        int64_t remaining_ms = avra_mem_hold_remaining_ms(deadline_ms, now_ms);
         int64_t high_water_kb = avail_kb;
         while (waited_ms < remaining_ms) {
             // Sleep the REMAINDER when under one quantum, so the total wait
@@ -6669,11 +6694,16 @@ static void avra_mem_poll(void) {
             rss = avra_mem_rss_kb();
             avail_kb = avra_mem_available_kb();
             if (!avra_mem_should_trip(rss, limit_kb, soft, avail_kb, floor_kb)) {
-                // Pressure lifted — resume, but CHARGE what we just held.
-                // This charge is the whole fix: without it an oscillator
-                // returns here and its next hold starts from zero again.
-                atomic_fetch_add_explicit(&avra_mem_soft_held_ms, waited_ms,
-                                          memory_order_relaxed);
+                // `should_trip` goes false for EITHER reason, and they are not
+                // the same event. RSS back under the grant is GENUINE recovery
+                // — close the window, so a later hold gets its full grace.
+                // Availability merely rising above the floor while this tree is
+                // STILL over its grant is the momentary flicker the oscillator
+                // exploited: leave the window open, or the budget resets on
+                // every bounce and the hold becomes unbounded again.
+                if (rss < limit_kb) {
+                    atomic_store_explicit(&avra_mem_hold_deadline_ms, 0, memory_order_relaxed);
+                }
                 return;
             }
             // The release valve (avra_mem_hold_is_safe): holding is only
@@ -6688,8 +6718,16 @@ static void avra_mem_poll(void) {
                 break;
             }
         }
-        atomic_fetch_add_explicit(&avra_mem_soft_held_ms, waited_ms, memory_order_relaxed);
-        held_total_ms = already_ms + waited_ms;
+        // Report the window CONSUMED, derived from the deadline rather than
+        // from elapsed wall clock. At expiry that is exactly `budget_ms` — the
+        // configured bound, not a sleep-overshoot figure — which is the
+        // contract t-d91l's spec pins ("after EXACTLY the configured
+        // back-off"). On the release-valve exit it is the portion actually
+        // used. Spans re-entries, because the deadline does.
+        held_total_ms = budget_ms - avra_mem_hold_remaining_ms(deadline_ms, avra_uptime_ms());
+        if (held_total_ms < 0) held_total_ms = 0;
+        if (held_total_ms > budget_ms) held_total_ms = budget_ms;
+        (void)window_start_ms;
     }
     // Latch: the first thread to cross reports; others fall through to _exit.
     if (atomic_exchange_explicit(&avra_mem_tripped, 1, memory_order_relaxed)) return;
