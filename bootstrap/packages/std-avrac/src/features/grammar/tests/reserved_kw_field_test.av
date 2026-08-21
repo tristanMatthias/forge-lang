@@ -108,10 +108,53 @@ spec "t-47hc.33.1: the EMITTED static parser carries the widened guard" {
     // The executor and the generated parser are different code paths; an executor-only
     // change passes every interpreter-driven spec above and emits nothing usable. This
     // asserts the emit side lowered FIELDNAME to the same Tk set.
-    then "the emitted field branches test the Reserved keyword id" {
-        field_rule_src().contains("KwId.Reserved")
+    then "the emitted field branches call the SHARED predicate" {
+        field_rule_src().contains("tk_is_field_name(st.cur().tk)")
     }
-    then "and keep Tk.Identifier alongside it — the pair, not a replacement" {
-        field_rule_src().contains("st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)")
+    then "and do NOT respell the Tk set — one definition, not two" {
+        !field_rule_src().contains("st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)")
+    }
+}
+
+// ── Every FIELDNAME consumer, not just field_suffix ────────────────────────
+// `field_rule_src()` above checks ONE rule. FIELDNAME is consumed by four:
+// field_suffix (struct_decl, two alternatives), enum_ctor_suffix (struct_decl),
+// optchain_suffix and optcall_suffix (null_safety). A regression in any of the
+// other three would leave the specs above green while breaking the shared-
+// predicate contract, so these arms sweep EVERY rule instead of naming them —
+// a fifth consumer is covered the day it is written.
+
+/// Rules whose emitted source calls the shared predicate.
+fn rules_calling_predicate() -> int {
+    let g = avra_program_grammar()
+    mut n = 0
+    for gr in g.rules {
+        if emit_rule_fn(g, gr).contains("tk_is_field_name(st.cur().tk)") { n = n + 1 }
+    }
+    n
+}
+
+/// Rules whose emitted source RESPELLS the Tk set instead of calling it.
+/// Returns names, so a failure says which rule regressed rather than just a count.
+fn rules_respelling_the_set() -> List<string> {
+    let g = avra_program_grammar()
+    mut out: List<string> = []
+    for gr in g.rules {
+        if emit_rule_fn(g, gr).contains("st.cur().tk == Tk.Identifier || tk_is_kw(st.cur().tk, KwId.Reserved)") {
+            out.push(gr.name)
+        }
+    }
+    out
+}
+
+spec "t-y2i7.8: EVERY emitted FIELDNAME branch calls the shared predicate" {
+    then "at least the four known consumers call it — anti-vacuity" {
+        // field_suffix, enum_ctor_suffix, optchain_suffix, optcall_suffix.
+        // A floor rather than an equality: adding a consumer must not fail this.
+        rules_calling_predicate() >= 4
+    }
+
+    then "no rule anywhere respells the Tk set" {
+        rules_respelling_the_set().length == 0
     }
 }
