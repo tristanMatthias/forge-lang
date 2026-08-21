@@ -56,9 +56,11 @@ spec "pool: a time-based heartbeat survives a killed run" {
             "AVEOF")
         let out = avra_shell_exec("AVRA_POOL_BEAT_MS=200 ./build/bs2 run '" + src + "' 2>&1")
         let _ = avra_shell_exec("rm -f '" + src + "'")
-        // The SLUG must appear. A line carrying only a count would satisfy the
-        // arm above and still leave a hang unattributable.
-        out.contains("in flight [") && out.contains("alpha_shard") && out.contains("rc=0")
+        // BOTH slugs must appear. Asserting only the first would pass on a
+        // heartbeat that named one worker and dropped the rest — and on a
+        // wedge it is precisely the OTHER stuck units you need named.
+        out.contains("in flight [") && out.contains("alpha_shard")
+            && out.contains("beta_shard") && !out.contains("[?") && out.contains("rc=0")
     }
 
     then "with no slugs it falls back to the command INDEX, never a placeholder" {
@@ -69,14 +71,17 @@ spec "pool: a time-based heartbeat survives a killed run" {
             "use @std.avrac.build.{pool_run_admitted}\n" +
             "use @std.avrac.resources.{governor_for}\n" +
             "fn main() {\n" +
-            "    let gov = governor_for(1, 100, 0, 100000)\n" +
-            "    let rc = pool_run_admitted([\"sleep 1\"], gov, () -> 100000)\n" +
+            "    let gov = governor_for(2, 100, 0, 100000)\n" +
+            "    let rc = pool_run_admitted([\"sleep 1\", \"sleep 1\"], gov, () -> 100000)\n" +
             "    println(\"rc=\" + string(rc))\n" +
             "}\n" +
             "AVEOF")
         let out = avra_shell_exec("AVRA_POOL_BEAT_MS=200 ./build/bs2 run '" + src + "' 2>&1")
         let _ = avra_shell_exec("rm -f '" + src + "'")
-        out.contains("in flight [#0]") && !out.contains("[?]") && out.contains("rc=0")
+        // TWO concurrent commands, so both indices must appear — a one-command
+        // probe cannot tell "names every worker" from "names the first".
+        out.contains("#0") && out.contains("#1")
+            && !out.contains("?") && out.contains("rc=0")
     }
 
     then "the default interval is quiet — no heartbeat on a short run" {

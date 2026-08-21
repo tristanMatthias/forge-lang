@@ -83,7 +83,13 @@ fn workers_active_slugs(ws: List<Worker>, slugs: List<string>) -> string {
             // Slugs are optional on the bare entry points (pool_run_admitted
             // passes []), so fall back to the command INDEX rather than a
             // placeholder — "#7" still identifies the unit, "?" does not.
-            let name = if idx >= 0 && idx < slugs.length { slugs[idx] } else { "#" + string(idx) }
+            //
+            // An EMPTY slug counts as unavailable, not as a name: the list
+            // length can be right while an entry is "", and that would render
+            // `in flight [, ]` — silently defeating the identification this
+            // whole line exists to provide.
+            let named = idx >= 0 && idx < slugs.length && slugs[idx] != ""
+            let name = if named { slugs[idx] } else { "#" + string(idx) }
             out = if out == "" { name } else { out + ", " + name }
         }
         i = i + 1
