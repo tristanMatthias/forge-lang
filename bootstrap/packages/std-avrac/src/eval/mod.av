@@ -2488,6 +2488,29 @@ fn eval_binary(runtime: Runtime, left: Expr, op: BinOp, right: Expr) -> StepResu
         .Eq -> ok_result(rt, value_bool(values_equal(left_value, right_value)))
         .Ne -> ok_result(rt, value_bool(!values_equal(left_value, right_value)))
         _ -> {
+            // t-v2n0: ORDER STRINGS LEXICOGRAPHICALLY, as compiled code already
+            // does. `a < b` on strings is valid Avra everywhere else —
+            // test_runner/discovery.av:325 sorts paths with exactly that — but
+            // the interpreter fell straight through to as_number_text and
+            // reported "operand must be a number". So a @comptime fn could not
+            // sort, and the only workaround (rank each char against an ordered
+            // table) costs a substring allocation per character and blew the
+            // 256MB comptime ceiling on 70 items.
+            //
+            // Both sides must be strings: a mixed comparison stays an error
+            // rather than silently coercing, matching eval_plus, which errors on
+            // mixed operands "so the user catches accidental coercion".
+            if left_value.kind == "string" && right_value.kind == "string" {
+                let a = left_value.text
+                let b = right_value.text
+                match op {
+                    .Lt -> return ok_result(rt, value_bool(a < b))
+                    .Le -> return ok_result(rt, value_bool(a <= b))
+                    .Gt -> return ok_result(rt, value_bool(a > b))
+                    .Ge -> return ok_result(rt, value_bool(a >= b))
+                    _ -> {}
+                }
+            }
             let left_text = as_number_text(left_value)
             if left_text == null {
                 return error_result(rt, "operand must be a number")

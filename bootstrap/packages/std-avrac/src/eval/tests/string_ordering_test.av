@@ -1,0 +1,79 @@
+// WHY: t-v2n0. `a < b` on strings is valid Avra everywhere — test_runner/
+// discovery.av:325 sorts paths with exactly `sorted.sort((a, b) -> if a < b …)`
+// — but the EVAL interpreter fell through to as_number_text and reported
+// "operand must be a number". So a @comptime fn could not sort, which blocked
+// deriving any ordered artifact at expansion time (t-y2i7.5's feature registry).
+//
+// The only workaround without this was to rank each character against an
+// ordered table, costing a substring allocation per character; on 70 items that
+// blew the 256MB comptime ceiling outright. So this is not a convenience — it
+// is the difference between deterministic generated output and none.
+//
+// Asserted through RUNTIME OUTPUT of a real @comptime fn, not a unit call, so
+// the interpreter path is what is exercised.
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "eval: strings order lexicographically at comptime" {
+    then "a @comptime fn can compare and SORT strings" {
+        let out = write_fixture_and_run("/tmp/avra_eval_string_ordering_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, AnnotatedDecl, ResolverCtx}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn probe(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let xs = [\"pear\", \"apple\", \"fig\", \"banana\"]\n" +
+            "    mut out: List<string> = []\n" +
+            "    for x in xs {\n" +
+            "        mut placed = false\n" +
+            "        mut next: List<string> = []\n" +
+            "        for y in out {\n" +
+            "            if !placed && x < y { next.push(x) placed = true }\n" +
+            "            next.push(y)\n" +
+            "        }\n" +
+            "        if !placed { next.push(x) }\n" +
+            "        out = next\n" +
+            "    }\n" +
+            "    mut msg = \"sorted:\"\n" +
+            "    for o in out { msg = msg + \" \" + o }\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(probe)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // The full ordered sequence, not a membership check: a comparator that
+        // returned a constant would still emit all four names.
+        out.contains("sorted: apple banana fig pear") && !out.contains("error[")
+    }
+
+    then "all four ordering operators answer, and a MIXED comparison still errors" {
+        // The mixed case is the guard against silently coercing — eval_plus
+        // errors on mixed operands "so the user catches accidental coercion",
+        // and ordering must not be laxer than addition.
+        let out = write_fixture_and_run("/tmp/avra_eval_string_ordering_ops_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, AnnotatedDecl, ResolverCtx}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn probe(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let msg = \"lt=\" + string(\"a\" < \"b\") + \";\" +\n" +
+            "              \" gt=\" + string(\"b\" > \"a\") + \";\" +\n" +
+            "              \" le=\" + string(\"a\" <= \"a\") + \";\" +\n" +
+            "              \" ge=\" + string(\"a\" >= \"a\") + \";\" +\n" +
+            "              \" eqlen=\" + string(\"ab\" < \"abc\") + \";\"\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(probe)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // Delimiter-anchored: a bare contains() on a boolean word would match a
+        // prefix of something else.
+        out.contains("lt=true;") && out.contains("gt=true;") && out.contains("le=true;")
+            && out.contains("ge=true;") && out.contains("eqlen=true;") && !out.contains("error[")
+    }
+}
