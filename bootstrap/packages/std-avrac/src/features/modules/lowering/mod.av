@@ -6,7 +6,7 @@
 // closure — so `use features.modules.lowering.{…}` widens nothing, and the
 // engine-side `_gb_` wrapper layer never needs to exist. Rows live here
 // beside the fns they bind; the feature's definition (../mod.av) imports
-// modules_builds back.
+// use_builds back.
 //
 // Each fn is the normalized builder ABI — fn(PState, List<CapVal>) ->
 // CapVal — with BOTH engines' unpacking folded in: the executor's env
@@ -52,7 +52,7 @@ export fn module_build(st: PState, vals: List<CapVal>) -> CapVal {
 /// The modules feature's rows — Batch A shape: rows bind the EXISTING Mk
 /// names (zero gram edits) to fns in THIS module, which the generated
 /// parser imports directly.
-export fn modules_builds() -> List<BuilderBind> {
+export fn use_builds() -> List<BuilderBind> {
     bind_rows("features.modules.lowering", [bind_row("MkUseBare", BuildKind.Stmt, 2, false, "use_bare_build", use_bare_build),
      bind_row("MkUsePkg", BuildKind.Stmt, 3, false, "use_pkg_build", use_pkg_build),
      bind_row("MkModule", BuildKind.Stmt, 1, false, "module_build", module_build)])
@@ -79,7 +79,7 @@ export fn mk_qualified_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 /// The qualified-reference row (t-kd4y.3.5.6) — spanned at the `@` byte.
-export fn qualified_builds() -> List<BuilderBind> {
+export fn qualified_ref_builds() -> List<BuilderBind> {
     bind_rows("features.modules.lowering", [bind_row("MkQualExpr", BuildKind.Expr, 4, true, "mk_qualified_abi", mk_qualified_abi)])
 }
 

@@ -1,0 +1,80 @@
+// WHY: t-y2i7.14. A feature's builders should not be passed by hand, and the
+// association that makes deriving it possible is a NAMING CONVENTION:
+//
+//     export fn X_lang() -> LanguageFeature { … builders = X_builds() … }
+//
+// Across all 58 feature definitions that now holds 58/58 — but only after four
+// fns were renamed into it (impl_builds -> impl_decl_builds, qualified_builds ->
+// qualified_ref_builds, paren_type_builds -> tuple_type_builds, modules_builds ->
+// use_builds). Before those it held 54/58, and the four exceptions were the whole
+// reason the association looked underivable.
+//
+// The earlier reading — that builds fns are SHARED between features, so a name
+// cannot identify one — does not hold: there are 58 sites and 58 DISTINCT names.
+// What actually defeats directory-derivation is the opposite relationship, ONE
+// DIRECTORY hosting MANY features (null_safety declares 5, struct_decl 6), each
+// with its own builds fn. Keying on the lang fn, not the directory, is what works.
+//
+// This guard is what lets a generator derive the builders name from the lang fn
+// name instead of every feature spelling it out. Without it the convention is a
+// fact about today's tree rather than a rule, and the first feature to break it
+// breaks the derivation silently.
+use @std.avrac.core.{avra_readdir, avra_selfhost_read_file}
+
+fn features_root() -> string { "packages/std-avrac/src/features" }
+
+/// `"<lang>|<builders>"` for every feature definition in the tree. Pairs by
+/// position: a `builders =` line belongs to the nearest `export fn X_lang()`
+/// above it, which is how the file is actually written.
+fn lang_builder_pairs() -> List<string> {
+    mut out: List<string> = []
+    for entry in avra_readdir(features_root()) {
+        let src = avra_selfhost_read_file(features_root() + "/" + entry + "/mod.av")
+        if src == "" { continue }
+        mut cur = ""
+        for line in src.split("\n") {
+            let t = line.trim()
+            if t.starts_with("export fn ") && t.contains("_lang()") {
+                let rest = t.substring(10, t.length)
+                let at = rest.index_of("_lang()")
+                if at > 0 { cur = rest.substring(0, at) }
+                continue
+            }
+            let bat = t.index_of("builders = ")
+            if bat >= 0 && cur != "" {
+                let rest = t.substring(bat + 11, t.length)
+                let paren = rest.index_of("(")
+                if paren > 0 { out.push(cur + "|" + rest.substring(0, paren)) }
+                cur = ""
+            }
+        }
+    }
+    out
+}
+
+/// Pairs whose builders fn is NOT named after its lang fn. Returns the pairs,
+/// so a failure names the offender instead of reporting a bare count.
+fn violations() -> List<string> {
+    mut out: List<string> = []
+    for pair in lang_builder_pairs() {
+        let bar = pair.index_of("|")
+        let lang = pair.substring(0, bar)
+        let builds = pair.substring(bar + 1, pair.length)
+        if builds != lang + "_builds" { out.push(pair) }
+    }
+    out
+}
+
+spec "t-y2i7.14: a feature's builders fn is named after its lang fn" {
+    then "the scan finds every feature definition — anti-vacuity" {
+        // 58 today. A FLOOR, not an equality: adding a feature must not fail
+        // this, but a scan that quietly stopped reading mod.av files must.
+        lang_builder_pairs().length >= 55
+    }
+
+    then "every X_lang() uses X_builds() — no exceptions" {
+        // This is what makes the association DERIVABLE: a generator holding the
+        // lang fn name can construct the builders name with no exception table.
+        violations().length == 0
+    }
+}
