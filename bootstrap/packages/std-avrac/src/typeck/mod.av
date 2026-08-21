@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, vtype_underlying_value_scalar, vtype_newtype_underlying, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, vtype_underlying_value_scalar, vtype_newtype_underlying, vtype_newtype_name, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
 use core.{Registry, avra_stmt_tag, avra_expr_tag}
@@ -3882,6 +3882,46 @@ fn arith_aggregate_operand(vt: ValueType) -> bool {
     }
 }
 
+/// `==` / `!=` on NOMINAL identity (t-tzt0).
+///
+/// Newtypes were enforced at call boundaries and ignored at comparison: a
+/// `RuleName` compared equal to a bare string, and to a `BuildName`, with no
+/// diagnostic. That is the hole that makes the identifier-newtype sweep
+/// (t-y2i7.3 section 14) not worth its cost — comparison against a bare
+/// literal is how these identifiers actually get misused, e.g.
+/// `b.module != "features.grammar"`.
+///
+/// Only a CONCRETE disagreement is rejected. An under-determined side
+/// (`.Unknown` from inference or an unbound type param, `.Void`) is left
+/// alone: gating it would reject generic code that is fine, which is the
+/// false-positive class t-axu9's gate shipped with.
+fn tc_eq_operands(tc: TC, left: ValueType, right: ValueType, opname: string) -> ExprResult {
+    // SAME nominal type is always legal, and `vtype_eq` is the right question
+    // because it compares nominal identity KIND-AGNOSTICALLY: a parser-default
+    // `Struct("StmtId")` and a resolved `Newtype("StmtId")` of the same FQN are
+    // the same type. Comparing newtype NAMES instead reads the unresolved side
+    // as "" and rejects `StmtId == StmtId` — which is exactly what the first
+    // version of this gate did to arena_test.
+    if vtype_eq(left, right) { return tc_er(tc, .Bool) }
+    // Under-determined operands are not this gate's business. Rejecting them
+    // is the false-positive class t-axu9's gate shipped with.
+    if vtype_is_unknown(left) || vtype_is_unknown(right) { return tc_er(tc, .Bool) }
+    if vtype_eq(left, .Void) || vtype_eq(right, .Void) { return tc_er(tc, .Bool) }
+    // Reject ONLY the newtype-specific confusion: two types that would compare
+    // equal once their newtype wrappers are peeled. Anything else that differs
+    // is an ordinary mismatch other checks own, and this gate stays out of it.
+    let ln = vtype_newtype_name(left)
+    let rn = vtype_newtype_name(right)
+    if ln == "" && rn == "" { return tc_er(tc, .Bool) }
+    if !vtype_eq(vtype_newtype_underlying(left), vtype_newtype_underlying(right)) {
+        return tc_er(tc, .Bool)
+    }
+    let lhs = if ln == "" { vtype_render_full(left) } else { ln }
+    let rhs = if rn == "" { vtype_render_full(right) } else { rn }
+    tc_er(tc_report(tc, DiagCode.TypeMismatch,
+        "`${opname}` compares `${lhs}` with `${rhs}` — a newtype is nominally distinct from its underlying type and from other newtypes; unwrap one side to compare the values"), .Bool)
+}
+
 fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> ExprResult {
     // If either operand is Float, arithmetic produces Float.
     let arith_ty = if vtype_eq(left, .Float) || vtype_eq(right, .Float) { ValueType.Float } else { ValueType.Int }
@@ -3926,8 +3966,8 @@ fn check_binary_type(tc: TC, left: ValueType, op: BinOp, right: ValueType) -> Ex
         .Mul -> tc_er(tc, arith_ty)
         .Div -> tc_er(tc, arith_ty)
         .Mod -> tc_er(tc, arith_ty)
-        .Eq -> tc_er(tc, .Bool)
-        .Ne -> tc_er(tc, .Bool)
+        .Eq -> tc_eq_operands(tc, left, right, "==")
+        .Ne -> tc_eq_operands(tc, left, right, "!=")
         .Lt -> tc_er(tc, .Bool)
         .Le -> tc_er(tc, .Bool)
         .Gt -> tc_er(tc, .Bool)

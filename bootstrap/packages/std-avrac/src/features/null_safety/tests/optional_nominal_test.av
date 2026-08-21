@@ -55,8 +55,15 @@ spec "a local optional struct/newtype unwraps to its resolved inner" {
         let sum = if let v = p { v.x + v.y } else { 0 - 1 }
         sum == 7
     }
-    then "force-unwrap a local newtype optional yields the underlying value" {
+    then "force-unwrap a local newtype optional yields the NEWTYPE, not the raw value" {
+        // `!` removes the OPTIONAL, not the newtype: `Tag?` unwraps to `Tag`.
+        // This read `(t!) == 42` and compiled only because `==` did not check
+        // nominal identity (t-tzt0) — a Tag comparing equal to a bare int is
+        // exactly the confusion the newtype exists to prevent, and this spec
+        // was a live instance of it. Comparing against `Tag(42)` still proves
+        // the value round-trips through the optional; it just says so in the
+        // type the unwrap actually produces.
         let t: Tag? = 42
-        (t!) == 42
+        (t!) == Tag(42)
     }
 }

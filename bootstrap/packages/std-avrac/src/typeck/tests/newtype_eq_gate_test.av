@@ -1,0 +1,112 @@
+// t-tzt0: `==` / `!=` compare on NOMINAL identity.
+//
+// Newtypes were enforced at CALL boundaries and ignored at COMPARISON. All of
+// these compiled clean before this gate:
+//
+//     r == ""      a newtype against its own underlying type
+//     r == b       two DIFFERENT newtypes
+//
+// That is not a tidiness gap. Comparison against a bare literal is how these
+// identifiers actually get misused — t-y2i7.3 section 14's own motivating
+// example is `b.module != "features.grammar"` — so a newtype sweep bought
+// call-boundary separation while leaving the failure mode it is sold against
+// wide open. Found while attempting that sweep (the RuleName attempt, reverted).
+//
+// The gate is deliberately NARROW. Only a CONCRETE disagreement is rejected;
+// an under-determined side is left alone, because gating inference results is
+// the false-positive class t-axu9's gate shipped with (935 naive hits narrowed
+// to 0 by exemptions, and three live false-positive classes still in it).
+use @std.avrac.core.{avra_shell_exec}
+
+fn check(src: string) -> string {
+    let f = "/tmp/avra_tzt0_${string(avra_getpid())}.av"
+    let _ = avra_selfhost_write_file(f, src)
+    let out = avra_shell_exec("./build/bs2 check '${f}' 2>&1")
+    let _ = avra_shell_exec("rm -f '${f}'")
+    out
+}
+
+extern fn avra_getpid() -> int
+extern fn avra_selfhost_write_file(path: string, content: string) -> int
+
+spec "t-tzt0: a newtype does not compare equal to its underlying type" {
+    then "newtype vs bare string is rejected, and NAMES both sides" {
+        let out = check("type RuleName = string\n" +
+                        "fn f(r: RuleName) -> bool { r == \"\" }\n" +
+                        "fn main() {}\n")
+        out.contains("nominally distinct") && out.contains("RuleName") && out.contains("string")
+    }
+
+    then "two DIFFERENT newtypes over the same underlying type are rejected" {
+        // The case a `vtype_eq` on the underlying type cannot catch: both are
+        // strings underneath, and interchanging them is exactly the accident
+        // the newtype exists to prevent.
+        let out = check("type RuleName = string\n" +
+                        "type BuildName = string\n" +
+                        "fn f(r: RuleName, b: BuildName) -> bool { r == b }\n" +
+                        "fn main() {}\n")
+        out.contains("nominally distinct") && out.contains("RuleName") && out.contains("BuildName")
+    }
+
+    then "`!=` is gated too, not just `==`" {
+        let out = check("type RuleName = string\n" +
+                        "fn f(r: RuleName) -> bool { r != \"x\" }\n" +
+                        "fn main() {}\n")
+        out.contains("nominally distinct")
+    }
+}
+
+spec "t-tzt0: the gate is narrow — it rejects only a CONCRETE disagreement" {
+    then "the SAME newtype on both sides stays legal" {
+        // The direction that would make the gate useless if it over-fired:
+        // comparing two RuleNames is the whole point of having the type.
+        let out = check("type RuleName = string\n" +
+                        "fn f(a: RuleName, b: RuleName) -> bool { a == b }\n" +
+                        "fn main() {}\n")
+        !out.contains("nominally distinct")
+    }
+
+    then "plain types are untouched" {
+        let out = check("fn f(a: int, b: int) -> bool { a == b }\n" +
+                        "fn g(a: string, b: string) -> bool { a == b }\n" +
+                        "fn main() {}\n")
+        !out.contains("nominally distinct")
+    }
+
+    then "a newtype compared with its own constructor is legal" {
+        // `RuleName("")` IS a RuleName, so this must pass — it is the
+        // rewrite the gate's own diagnostic tells you to make.
+        let out = check("type RuleName = string\n" +
+                        "fn f(r: RuleName) -> bool { r == RuleName(\"\") }\n" +
+                        "fn main() {}\n")
+        !out.contains("nominally distinct")
+    }
+
+    // NOT GUARDED HERE, deliberately — and this is the regression the gate
+    // actually shipped with, so the gap is worth naming.
+    //
+    // v1 decided on newtype NAMES instead of `vtype_eq`. Because vtype_eq
+    // compares nominal identity KIND-AGNOSTICALLY (a parser-default
+    // `Struct("StmtId")` and a resolved `Newtype("StmtId")` of the same FQN are
+    // the SAME type), the unresolved side read as "" and v1 rejected
+    // `StmtId == StmtId`, failing core/tests/arena_test to compile.
+    //
+    // A spec for it was written here and DELETED: in a small fixture both sides
+    // resolve to `Newtype`, so name comparison succeeds and the spec passed
+    // even with v1 restored verbatim — a guard that cannot fail. Measured both
+    // ways under a faithful v1: arena_test COMPILE FAILED (F1000), this file
+    // 8/8 green.
+    //
+    // So `core/tests/arena_test.av` is the real coverage for that direction.
+    // Reproducing it here needs a type that reaches `==` through an UNRESOLVED
+    // representation, which this file's self-contained fixtures cannot build.
+
+    then "the tree's own opaque id newtypes behave the same way" {
+        // ExprId/StmtId are `type X = int` over the SAME underlying type, so
+        // this is the id-confusion the four node-id newtypes exist to prevent.
+        let out = check("use @std.avrac.core.{ExprId, StmtId}\n" +
+                        "fn f(e: ExprId, s: StmtId) -> bool { e == s }\n" +
+                        "fn main() {}\n")
+        out.contains("nominally distinct")
+    }
+}
