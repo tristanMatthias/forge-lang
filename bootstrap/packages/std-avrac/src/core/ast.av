@@ -2904,7 +2904,42 @@ export fn render_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> strin
 ///   - literals (Number, String, Bool, ...)
 ///   - documentation (DocComment, ModDocComment)
 ///   - whitespace / structural (Newline, Eof)
+/// The keyword IDENTITY, split out of `Tk` (t-y2i7.7 / design record section 5).
+///
+/// A keyword lives in three places today — a `Tk.KwX` variant, a `keyword_rules()`
+/// row, and the spelling in its feature's grammar — and two of those are
+/// hand-edited per the CLAUDE.md checklist. Collapsing the 48 `Tk.Kw*` variants
+/// into ONE `Tk.Keyword(id: KwId)` removes a whole axis of that duplication while
+/// GAINING the id/typing distinction: consumers match `KwId` exhaustively instead
+/// of comparing `tok.spelling == "defer"`, which the repo rules forbid outright.
+///
+/// Kept in EXACT lockstep with `keyword_rules()` and with the `Tk.Kw*` set by
+/// kwid_lockstep_test — one distinct `KwId` per distinct `Tk.Kw*`, so a keyword
+/// added to one and not the other fails the suite rather than drifting.
+///
+/// NOTE the collapse is many-spellings-to-one-id in exactly one place:
+/// `Reserved` covers the 12 reserved-future keywords, mirroring `Tk.KwReserved`.
+export enum KwId {
+    And, Break, Catch, Channel, Component, Const,
+    Continue, Defer, Dyn, Else, Enum, Errdefer,
+    Export, Extern, False, Fn, For, Given,
+    If, Impl, In, Is, Isolated, Let,
+    Match, Mod, Mut, None, Not, Null,
+    Or, Parallel, Quote, Reserved, Return, Select,
+    Shape, Spawn, Spec, Then, Trait, True,
+    Type, Use, When, Where, While, With
+}
+
 export enum Tk {
+    // t-y2i7.7 PHASE A: the collapsed keyword token, added ADDITIVELY beside the
+    // 48 `Kw*` variants it will replace. Nothing constructs it yet — the sweep of
+    // the 252 call sites and the two generator sites is Phase B, per the
+    // two-phase bootstrap discipline (add the type, land it, THEN dogfood it).
+    //
+    // Construction is POSITIONAL: `Tk.Keyword(KwId.Defer)`. The named form
+    // `Tk.Keyword(id: KwId.Defer)` is a PARSE ERROR — the field name here is
+    // documentation for the declaration, not call syntax.
+    Keyword(id: KwId),
     // Punctuation
     LeftParen
     RightParen
@@ -3095,6 +3130,66 @@ export fn tk_keyword_str(tk: Tk) -> string {
 /// characterize the hand lexer's exact output — the byte-identical gate the
 /// generated DFA lexer (t-47hc.2, Phase 1) must reproduce. Distinct from
 /// `tk_keyword_str` (registry bridge, keyword-only, `kw_*` form).
+/// The `tk_name` spelling of a keyword id — "KwDefer" for `KwId.Defer`.
+///
+/// Exists so `tk_name`'s `.Keyword` arm stays TOTAL over KwId the same way the
+/// rest of that function is total over Tk: adding a keyword forces an arm here
+/// and the token-stream oracle keeps characterising every token. The strings
+/// deliberately match the legacy `Tk.Kw*` names so lex_dump output is unchanged
+/// while both representations coexist through Phase A.
+export fn kwid_name(id: KwId) -> string {
+    match id {
+        .And -> "KwAnd"
+        .Break -> "KwBreak"
+        .Catch -> "KwCatch"
+        .Channel -> "KwChannel"
+        .Component -> "KwComponent"
+        .Const -> "KwConst"
+        .Continue -> "KwContinue"
+        .Defer -> "KwDefer"
+        .Dyn -> "KwDyn"
+        .Else -> "KwElse"
+        .Enum -> "KwEnum"
+        .Errdefer -> "KwErrdefer"
+        .Export -> "KwExport"
+        .Extern -> "KwExtern"
+        .False -> "KwFalse"
+        .Fn -> "KwFn"
+        .For -> "KwFor"
+        .Given -> "KwGiven"
+        .If -> "KwIf"
+        .Impl -> "KwImpl"
+        .In -> "KwIn"
+        .Is -> "KwIs"
+        .Isolated -> "KwIsolated"
+        .Let -> "KwLet"
+        .Match -> "KwMatch"
+        .Mod -> "KwMod"
+        .Mut -> "KwMut"
+        .None -> "KwNone"
+        .Not -> "KwNot"
+        .Null -> "KwNull"
+        .Or -> "KwOr"
+        .Parallel -> "KwParallel"
+        .Quote -> "KwQuote"
+        .Reserved -> "KwReserved"
+        .Return -> "KwReturn"
+        .Select -> "KwSelect"
+        .Shape -> "KwShape"
+        .Spawn -> "KwSpawn"
+        .Spec -> "KwSpec"
+        .Then -> "KwThen"
+        .Trait -> "KwTrait"
+        .True -> "KwTrue"
+        .Type -> "KwType"
+        .Use -> "KwUse"
+        .When -> "KwWhen"
+        .Where -> "KwWhere"
+        .While -> "KwWhile"
+        .With -> "KwWith"
+    }
+}
+
 export fn tk_name(tk: Tk) -> string {
     match tk {
         .LeftParen -> "LeftParen"
@@ -3140,6 +3235,9 @@ export fn tk_name(tk: Tk) -> string {
         .String -> "String"
         .Template -> "Template"
         .Identifier -> "Identifier"
+        // Phase A: renders identically to the legacy variants, so the token
+        // oracle (lex_dump) is unchanged while both forms coexist.
+        .Keyword(id) -> kwid_name(id)
         .KwAnd -> "KwAnd"
         .KwBreak -> "KwBreak"
         .KwCatch -> "KwCatch"
