@@ -4224,9 +4224,24 @@ mode_check_core_layering() {
   # Built BEFORE the fix on purpose, the same way --check-feature-layout was
   # (P4a): the allowlist IS the measurement, and it must SHRINK. Each entry
   # names the ticket that removes it.
-  local list_only=0
-  [ "${1:-}" = "--list" ] && list_only=1
-  local sd="$BOOTSTRAP_DIR/packages/std-avrac/src"
+  # --root <dir> scans a DIFFERENT src/ tree instead of the repo's own. It exists
+  # for the anti-vacuity probe (core/tests/core_layering_lint_test.av): proving the
+  # lint is non-vacuous requires PLANTING an illegal import, and the probe used to
+  # do that by overwriting the real core/fingerprint.av in place. The suite runs
+  # shards IN PARALLEL, so for that window every other shard compiling core/ saw
+  # deliberately broken source — and a crash mid-window left the tree poisoned,
+  # with the real file stranded at fingerprint.av.linttmp (t-frix). With --root the
+  # probe plants into a throwaway copy and the tracked tree is never touched.
+  local list_only=0 sd=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --list) list_only=1 ;;
+      --root) shift; [ $# -gt 0 ] || die "check-core-layering: --root needs a directory"; sd="$1" ;;
+      *) ;;
+    esac
+    shift
+  done
+  [ -n "$sd" ] || sd="$BOOTSTRAP_DIR/packages/std-avrac/src"
   [ -d "$sd/core" ] || die "check-core-layering: core dir not found: $sd/core"
 
   # Layers ABOVE core. A `use <layer>.…` from core/ is an inversion.
