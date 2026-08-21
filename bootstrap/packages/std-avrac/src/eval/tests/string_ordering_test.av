@@ -76,4 +76,31 @@ spec "eval: strings order lexicographically at comptime" {
         out.contains("lt=true;") && out.contains("gt=true;") && out.contains("le=true;")
             && out.contains("ge=true;") && out.contains("eqlen=true;") && !out.contains("error[")
     }
+
+    then "a MIXED string/number comparison is still an ERROR" {
+        // The arm above NAMES this case and explains why, but asserts only the
+        // all-string operators — so a regression that coerced `"a" < 1` into a
+        // number comparison would pass it unchanged. Its own fixture, because
+        // the error aborts the expansion and would suppress the arm above.
+        let out = write_fixture_and_run("/tmp/avra_eval_string_ordering_mixed_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id, AnnotatedDecl, ResolverCtx}\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn probe(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let xs = [\"a\"]\n" +
+            "    let ns = [1]\n" +
+            "    let msg = \"mixed=\" + string(xs[0] < ns[0])\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(probe)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // Not merely "some error": the SPECIFIC mixed-operand message, so a
+        // different failure (a typo in the fixture) cannot satisfy this arm.
+        out.contains("operand must be a number")
+    }
 }
