@@ -1653,6 +1653,7 @@ fn ctx_kind_from_path(path: string) -> string {
     if last == "ctx_unwrap_path_to" { return "unwrap_path_to" }
     if last == "ctx_modules_under"  { return "modules_under" }
     if last == "ctx_items_with_suffix" { return "items_with_suffix" }
+    if last == "ctx_items_with_annotation" { return "items_with_annotation" }
     ""
 }
 
@@ -1679,6 +1680,9 @@ extern fn avra_rd_module_count() -> int
 extern fn avra_rd_global_count() -> int
 extern fn avra_rd_global_name_at(i: int) -> string
 extern fn avra_rd_global_canonical_at(i: int) -> string
+extern fn avra_rd_annot_count() -> int
+extern fn avra_rd_annot_item_at(i: int) -> string
+extern fn avra_rd_annot_name_at(i: int) -> string
 extern fn avra_rd_module_at(i: int) -> string
 extern fn avra_rd_lookup_alias(name: string) -> string
 extern fn avra_rd_lookup_global(name: string) -> string
@@ -1728,6 +1732,20 @@ fn eval_resolver_ctx_call(runtime: Runtime, kind: string, args: List<ExprId>) ->
         while i < avra_rd_module_count() {
             let name = avra_rd_module_at(i)
             if name.starts_with(prefix) { hits = push_unique(hits, name) }
+            i = i + 1
+        }
+        return ok_result(rt, value_list(hits))
+    }
+    if kind == "items_with_annotation" {
+        // args[0] = ctx, args[1] = the annotation name, WITHOUT the leading `@`.
+        if args_result.values.length < 2 { return ok_result(rt, value_list([])) }
+        let want = args_result.values[1].text
+        mut hits: List<Value> = []
+        mut i = 0
+        while i < avra_rd_annot_count() {
+            if avra_rd_annot_name_at(i) == want {
+                hits = push_unique(hits, avra_rd_annot_item_at(i))
+            }
             i = i + 1
         }
         return ok_result(rt, value_list(hits))
