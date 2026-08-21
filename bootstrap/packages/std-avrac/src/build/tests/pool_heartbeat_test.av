@@ -39,6 +39,46 @@ spec "pool: a time-based heartbeat survives a killed run" {
             && out.contains("s elapsed") && out.contains("rc=0")
     }
 
+    then "it NAMES the in-flight units, not just how many there are" {
+        // t-2fe6: `3 in flight` says a run wedged but not WHICH units wedged,
+        // and a killed run flushes no per-shard output at all — so the
+        // heartbeat is the only progress signal on a hang. Without names it
+        // supports an inference and nothing more; three investigations of one
+        // hang stalled on exactly that. Driven through the SLUG-bearing entry
+        // point, because that is the one the test runner uses.
+        let src = "/tmp/avra_pool_beat_named.av"
+        let _ = avra_shell_exec("cat > '" + src + "' <<'AVEOF'\n" +
+            "use @std.avrac.build.{pool_run_with_progress}\n" +
+            "fn main() {\n" +
+            "    let rc = pool_run_with_progress([\"sleep 1\", \"sleep 1\"], [\"alpha_shard\", \"beta_shard\"], 2, \"\")\n" +
+            "    println(\"rc=\" + string(rc))\n" +
+            "}\n" +
+            "AVEOF")
+        let out = avra_shell_exec("AVRA_POOL_BEAT_MS=200 ./build/bs2 run '" + src + "' 2>&1")
+        let _ = avra_shell_exec("rm -f '" + src + "'")
+        // The SLUG must appear. A line carrying only a count would satisfy the
+        // arm above and still leave a hang unattributable.
+        out.contains("in flight [") && out.contains("alpha_shard") && out.contains("rc=0")
+    }
+
+    then "with no slugs it falls back to the command INDEX, never a placeholder" {
+        // pool_run_admitted passes [] for slugs. "#0" still identifies the
+        // unit; "?" would not, and would quietly undo the point of the change.
+        let src = "/tmp/avra_pool_beat_idx.av"
+        let _ = avra_shell_exec("cat > '" + src + "' <<'AVEOF'\n" +
+            "use @std.avrac.build.{pool_run_admitted}\n" +
+            "use @std.avrac.resources.{governor_for}\n" +
+            "fn main() {\n" +
+            "    let gov = governor_for(1, 100, 0, 100000)\n" +
+            "    let rc = pool_run_admitted([\"sleep 1\"], gov, () -> 100000)\n" +
+            "    println(\"rc=\" + string(rc))\n" +
+            "}\n" +
+            "AVEOF")
+        let out = avra_shell_exec("AVRA_POOL_BEAT_MS=200 ./build/bs2 run '" + src + "' 2>&1")
+        let _ = avra_shell_exec("rm -f '" + src + "'")
+        out.contains("in flight [#0]") && !out.contains("[?]") && out.contains("rc=0")
+    }
+
     then "the default interval is quiet — no heartbeat on a short run" {
         // The 30s default must not spam an ordinary run. Without this the
         // obvious "fix" to a flaky heartbeat is to shorten it, which reintroduces
