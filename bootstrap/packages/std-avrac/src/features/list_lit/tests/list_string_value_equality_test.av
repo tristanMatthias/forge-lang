@@ -1,0 +1,78 @@
+// WHY: t-xpi0. `contains` and `index_of` compared list elements by IDENTITY.
+//
+// For int / bool / enum-tag elements identity IS value equality, so it looked
+// correct. For STRINGS it was not: two equal strings at different addresses
+// compared unequal, so `xs.contains(needle)` returned false for a needle that
+// `==` reported EQUAL — whenever the needle was built at runtime. Literals hid
+// the bug entirely, because they intern to one pointer.
+//
+// It failed SILENTLY and in the "not present" direction: a dedup loop kept
+// duplicates, a lookup missed, a membership guard passed vacuously. Nothing
+// errored. It was found only because a lockstep guard failed for a reason that
+// had nothing to do with the invariant it was testing, and returned 59 names
+// where 48 were distinct.
+//
+// Every needle below is built at RUNTIME on purpose — a literal needle passes
+// even against the broken implementation, so a literal-only test proves nothing.
+
+spec "t-xpi0: list membership compares strings by VALUE, not identity" {
+    then "contains finds a RUNTIME-BUILT string equal to a member" {
+        // The exact defect. This returned false before the fix.
+        let xs = ["alpha", "beta"]
+        let built = "al" + "pha"
+        xs.contains(built)
+    }
+
+    then "and `==` agrees with it — the two must not diverge" {
+        // The bug was precisely that these disagreed, so pin them together.
+        let xs = ["alpha"]
+        let built = "al" + "pha"
+        xs.contains(built) == (xs[0] == built)
+    }
+
+    then "contains finds a SUBSTRING-derived needle" {
+        // substring/trim/split/file-reads all produce fresh allocations; this
+        // is the shape that actually occurs in the compiler's own source tools.
+        let xs = ["Defer", "Return"]
+        let derived = "KwDefer".substring(2, 7)
+        xs.contains(derived)
+    }
+
+    then "contains still reports a genuine ABSENCE" {
+        // The fix must not turn membership into "always true" — the failure
+        // direction that a value-comparison bug could plausibly introduce.
+        let xs = ["alpha", "beta"]
+        let missing = "gam" + "ma"
+        !xs.contains(missing)
+    }
+
+    then "index_of returns the POSITION of a runtime-built string" {
+        // Same identity bug, same file, and it would otherwise stay broken
+        // after contains was fixed.
+        let xs = ["alpha", "beta", "gamma"]
+        let built = "be" + "ta"
+        xs.index_of(built) == 1
+    }
+
+    then "index_of returns -1 for a genuine absence" {
+        let xs = ["alpha"]
+        let missing = "ze" + "ta"
+        xs.index_of(missing) == 0 - 1
+    }
+
+    then "dedup by contains keeps ONE entry per distinct value" {
+        // The observable consequence: this loop used to keep every duplicate,
+        // which is how the defect first surfaced (59 names instead of 48).
+        let src = ["a", "b", "a", "b", "a"]
+        mut out: List<string> = []
+        for x in src { if !out.contains(x + "") { out.push(x + "") } }
+        out.length == 2
+    }
+
+    then "INT lists still compare by value — the scalar path is untouched" {
+        // Scalars route to the original identity compare, which for an int IS
+        // value equality. A regression here would mean the dispatch went wrong.
+        let ns = [10, 20, 30]
+        ns.contains(10 + 10) && ns.index_of(30) == 2 && !ns.contains(99)
+    }
+}

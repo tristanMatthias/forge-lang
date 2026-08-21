@@ -2951,7 +2951,50 @@ void avra_array_foreach(void* arr, int64_t fn_ptr) {
     }
 }
 
-// Check if array contains a value. For strings, does pointer/strcmp comparison.
+// STRING-ELEMENT variants (t-xpi0). The plain forms below compare `data[i] ==
+// value`, i.e. by IDENTITY. For int/bool/enum-tag elements that IS value
+// equality. For STRINGS it is not: two equal strings at different addresses
+// compare unequal, so `contains` disagreed with `==` for any needle built at
+// runtime (concatenation, substring, trim, a file read, a split). Literals hid
+// it by interning to one pointer.
+//
+// It failed SILENTLY and in the "not present" direction, so a dedup loop kept
+// duplicates and a membership guard passed vacuously — nothing errored.
+//
+// Dispatch is at CODEGEN, where the element type is known statically
+// (features/list_lit/codegen.av), rather than by tagging arrays at runtime:
+// the non-string paths keep the single-compare loop with no added cost.
+//
+// The pointer check is kept as a fast path — `avra_streq` does it first anyway,
+// and it makes the common interned-literal case free.
+int64_t avra_array_contains_str(void* arr, int64_t value) {
+    AvraArray* a = (AvraArray*)arr;
+    const char* needle = (const char*)value;
+    if (!needle) return 0;
+    for (int64_t i = 0; i < a->len; i++) {
+        const char* elem = (const char*)a->data[i];
+        if (elem == needle) return 1;
+        if (elem && avra_streq(elem, needle)) return 1;
+    }
+    return 0;
+}
+
+// Index of a STRING value by value equality. Same reasoning as
+// avra_array_contains_str; -1 when absent.
+int64_t avra_array_index_of_str(void* arr, int64_t value) {
+    AvraArray* a = (AvraArray*)arr;
+    const char* needle = (const char*)value;
+    if (!needle) return -1;
+    for (int64_t i = 0; i < a->len; i++) {
+        const char* elem = (const char*)a->data[i];
+        if (elem == needle) return i;
+        if (elem && avra_streq(elem, needle)) return i;
+    }
+    return -1;
+}
+
+// Check if array contains a value. IDENTITY comparison — correct for scalar
+// elements; string elements go through avra_array_contains_str (t-xpi0).
 int64_t avra_array_contains(void* arr, int64_t value) {
     AvraArray* a = (AvraArray*)arr;
     for (int64_t i = 0; i < a->len; i++) {
@@ -2960,7 +3003,8 @@ int64_t avra_array_contains(void* arr, int64_t value) {
     return 0;
 }
 
-// Find index of value in array. Returns -1 if not found.
+// Find index of value in array. IDENTITY comparison — string elements go
+// through avra_array_index_of_str (t-xpi0). Returns -1 if not found.
 int64_t avra_array_index_of(void* arr, int64_t value) {
     AvraArray* a = (AvraArray*)arr;
     for (int64_t i = 0; i < a->len; i++) {
