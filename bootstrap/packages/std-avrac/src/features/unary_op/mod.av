@@ -15,6 +15,7 @@ use features.grammar.{parse_grammar}
 /// exact complements (`quote_depth == 0` vs `> 0`), which is what makes
 /// that branch order behavior-identical to the retired in-spine one.
 /// `gram_family = "expr"`.
+@language_feature
 export fn unary_op_lang() -> LanguageFeature {
     LanguageFeature unary_op_def {
         name = "unary_op",

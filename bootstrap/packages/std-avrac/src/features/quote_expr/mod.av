@@ -21,6 +21,7 @@ use features.grammar.{parse_grammar}
 /// alternation (engine ladder, spine-owned) before `quote` is consumed, so
 /// the plain rule's FIRST stays a bare `quote` and it serves as the
 /// unguarded catch-all.
+@language_feature
 export fn quote_lang() -> LanguageFeature {
     LanguageFeature quote_def {
         name = "quote",

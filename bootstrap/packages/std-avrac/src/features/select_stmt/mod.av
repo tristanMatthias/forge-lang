@@ -48,6 +48,7 @@ fn select_check(tc: TC, stmt: Stmt) -> TC {
 /// `select_decl` is a DECLARATION rule, composed by
 /// `feature_decl_grammar_fragments` beside the other decl keywords, not by
 /// the statement views.
+@language_feature
 export fn select_lang() -> LanguageFeature {
     let empty_arms: List<SelectArm> = []
     LanguageFeature select_def {

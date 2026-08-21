@@ -11,6 +11,7 @@ use features.grammar.{parse_grammar}
 /// left-assoc `Binary` chain seeded with a MISSING left, and the
 /// `equality` stratum's `rebind_eq` (features/struct_decl) retargets the
 /// sentinel to the real base. `gram_family = "expr"`.
+@language_feature
 export fn eq_chain_lang() -> LanguageFeature {
     LanguageFeature eq_chain_def {
         name = "eq_chain",

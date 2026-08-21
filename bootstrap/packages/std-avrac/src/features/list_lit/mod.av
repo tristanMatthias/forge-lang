@@ -14,6 +14,7 @@ use features.grammar.{parse_grammar}
 /// closures/tuples precedent). `gram_family = "expr"` folds the rules
 /// into every expression view; the spine's primary ladder references
 /// `list_expr` by name.
+@language_feature
 export fn list_lit_lang() -> LanguageFeature {
     LanguageFeature list_lit_def {
         name = "list_lit",
@@ -77,6 +78,7 @@ fn list_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Emi
 /// `[T]` in TYPE position (t-kd4y.3.5.10) — the list family's
 /// type-position face, so the rule + its TyList row live here.
 /// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+@language_feature
 export fn list_type_lang() -> LanguageFeature {
     LanguageFeature list_type_def {
         name = "list_type",

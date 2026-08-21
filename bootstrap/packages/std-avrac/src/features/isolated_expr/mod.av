@@ -17,6 +17,7 @@ use features.grammar.{parse_grammar}
 /// `isolated { body }` — the definition carries the feature whole
 /// (t-kd4y.3.5.1). Same double-keyed `@expect` as spawn_lang (fragment
 /// rule, external block_expr), same t-rd44 `@require` gate.
+@language_feature
 export fn isolated_lang() -> LanguageFeature {
     LanguageFeature isolated_def {
         name = "isolated",

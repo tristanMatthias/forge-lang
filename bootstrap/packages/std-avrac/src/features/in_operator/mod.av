@@ -13,6 +13,7 @@ use features.grammar.{parse_grammar}
 /// with MISSING sentinels — the `equality` stratum's rebind_eq
 /// (features/struct_decl) installs the real subject into either shape.
 /// `gram_family = "expr"`.
+@language_feature
 export fn in_operator_lang() -> LanguageFeature {
     LanguageFeature in_operator_def {
         name = "in",

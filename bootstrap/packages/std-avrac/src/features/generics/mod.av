@@ -18,6 +18,7 @@ use features.grammar.{parse_grammar}
 /// rule (every generic decl keyword references it by name across the
 /// merged rule set) and its one lowering (t-kd4y.3.3.1). No pass hooks:
 /// monomorphization is a core pass (mono.av), not tag-dispatched.
+@language_feature
 export fn generics_lang() -> LanguageFeature {
     LanguageFeature generics_def {
         name = "generics",

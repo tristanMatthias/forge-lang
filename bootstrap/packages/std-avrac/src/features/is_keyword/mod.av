@@ -13,6 +13,7 @@ use features.grammar.{parse_grammar}
 /// (features/struct_decl) installs the real subject. Wired to the
 /// resolver, type-checker, codegen, and the @comptime evaluator via the
 /// standard tag-based dispatch. `gram_family = "expr"`.
+@language_feature
 export fn is_keyword_lang() -> LanguageFeature {
     LanguageFeature is_keyword_def {
         name = "is",

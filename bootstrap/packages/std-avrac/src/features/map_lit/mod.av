@@ -12,6 +12,7 @@ use features.grammar.{parse_grammar}
 /// typeck, codegen, and the @comptime evaluator. Spec axis 28.
 /// `gram_family = "expr"`; the spine's `brace_expr` dispatches to
 /// `map_literal` by name behind the @peek(brace_map) scan.
+@language_feature
 export fn map_lit_lang() -> LanguageFeature {
     LanguageFeature map_lit_def {
         name = "map_lit",
