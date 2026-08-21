@@ -14,7 +14,7 @@ use features.grammar.{rule_result_kind, gprim_ref_name, BuildKindRow}
 // The field-name acceptance set (t-47hc.33.1).
 use core.{tk_is_field_name}
 use core.{SelectArm}
-use core.{CompConfig, CompConfigPair, ChildrenSlot, body_declares_token_stream, vtype_struct, is_registered_component}
+use core.{CompConfig, CompConfigPair, ChildrenSlot, body_declares_token_stream, vtype_struct}
 use features.grammar.{code_at, is_ident_start_code}
 // The RAW-SOURCE lookahead cores (t-47hc.5.1 slice B1), SHARED with
 // Parser's peek_after_ident_is_* wrappers. The component config-pair
