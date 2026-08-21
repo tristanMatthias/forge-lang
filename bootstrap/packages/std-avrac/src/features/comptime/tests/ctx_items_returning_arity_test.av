@@ -1,0 +1,90 @@
+// WHY: t-3aax. `ctx_items_returning` selects on what an item PRODUCES, which is
+// the right discriminator for the feature registry — but it is not sufficient on
+// its own, and the reason is concrete rather than stylistic.
+//
+// Measured on the real package compile, asking for the LanguageFeature producers
+// returns **71**, not the 70 the hand-written array lists. The extra is
+// `LanguageFeature_new`: the constructor SYNTHESIZED for `export component
+// LanguageFeature`. It genuinely returns a LanguageFeature, so the query is not
+// wrong — but it TAKES PARAMETERS, and the consumer emits nil-ary calls, so a
+// derived registry would emit `LanguageFeature_new()` with no arguments.
+//
+// This is the same near-miss that ruled out `ctx_items_with_suffix("_lang")` one
+// layer down: that returned 71 where the odd one out was `register_lang`. Every
+// name-shaped discriminator admits exactly one wrong item, and a `_new` suffix
+// test would be the string-matching heuristic the repo forbids — the same one
+// already rejected for `register_lang` on this exact problem.
+//
+// ARITY separates them structurally. Same shape as its siblings: a real macro
+// emits a println of what it found, so RUNTIME OUTPUT is the evidence and the
+// `[]` stub cannot fake it.
+use @std.avrac.test_runner.{write_fixture_and_run}
+
+spec "ResolverCtx: ctx_items_returning_arity narrows by PARAMETER COUNT" {
+    then "it selects the nil-ary producers and excludes a same-typed constructor" {
+        let out = write_fixture_and_run("/tmp/avra_ctx_items_returning_arity_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_items_returning, ctx_items_returning_arity}\n" +
+            "\n" +
+            "type Marker = { tag: int }\n" +
+            // Two NIL-ARY producers and one that returns the same type but takes
+            // a parameter — the `<T>_new` shape, which return type alone cannot
+            // separate from the other two.
+            "fn a_marker() -> Marker { Marker { tag: 1 } }\n" +
+            "fn b_marker() -> Marker { Marker { tag: 2 } }\n" +
+            "fn make_marker(t: int) -> Marker { Marker { tag: t } }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let all_of_them = ctx_items_returning(ctx, \"Marker\")\n" +
+            "    let nilary = ctx_items_returning_arity(ctx, \"Marker\", 0)\n" +
+            "    let one_arg = ctx_items_returning_arity(ctx, \"Marker\", 1)\n" +
+            // Delimiter-anchored: a bare contains() on a number is a PREFIX
+            // match, so "n=2" would also be satisfied by 20 or 22. That false
+            // pass has already happened once on a sibling spec in this directory.
+            "    let msg = \"all=\" + string(all_of_them.length) + \";\" +\n" +
+            "              \" n0=\" + string(nilary.length) + \";\" +\n" +
+            "              \" n1=\" + string(one_arg.length) + \";\"\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        // all=3 is the OVER-SELECTION this query exists to fix; n0=2 is the
+        // answer a nil-ary consumer needs; n1=1 proves the filter discriminates
+        // rather than merely shrinking the set.
+        out.contains("all=3;") && out.contains("n0=2;") && out.contains("n1=1;")
+            && !out.contains("error[")
+    }
+
+    then "an arity nothing matches yields an EMPTY list, not everything" {
+        // The failure mode worth pinning: a filter that silently degrades to
+        // "no filter" would return 3 here and a derived registry would be wrong
+        // rather than empty.
+        let out = write_fixture_and_run("/tmp/avra_ctx_items_arity_empty_test.av",
+            "use @std.avrac.core.{Stmt, Expr}\n" +
+            "use @std.avrac.features.comptime.{synth_expr_id}\n" +
+            "use @std.avrac.features.comptime.{AnnotatedDecl, ResolverCtx, ctx_items_returning_arity}\n" +
+            "\n" +
+            "type Marker = { tag: int }\n" +
+            "fn a_marker() -> Marker { Marker { tag: 1 } }\n" +
+            "\n" +
+            "@comptime\n" +
+            "fn build(d: AnnotatedDecl, ctx: ResolverCtx) -> Stmt {\n" +
+            "    let none_match = ctx_items_returning_arity(ctx, \"Marker\", 7)\n" +
+            "    let msg = \"n7=\" + string(none_match.length) + \";\"\n" +
+            "    let args = [synth_expr_id(Expr.String(\"\\\"\" + msg + \"\\\"\"))]\n" +
+            "    return Stmt.Expr(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(\"println\")), args)))\n" +
+            "}\n" +
+            "\n" +
+            "@expand(build)\n" +
+            "fn placeholder() {}\n" +
+            "\n" +
+            "fn main() {}\n")
+        out.contains("n7=0;") && !out.contains("error[")
+    }
+}

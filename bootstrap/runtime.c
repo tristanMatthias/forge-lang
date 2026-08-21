@@ -8181,6 +8181,14 @@ static const char** avra_rd_ret_keys = NULL;
 static const char** avra_rd_ret_vals = NULL;
 static int64_t avra_rd_ret_n = 0;
 static int64_t avra_rd_ret_cap = 0;
+// PARAMETER COUNT per producer, parallel to the two arrays above. Return type
+// alone does not identify a discoverable item: `export component Foo` also
+// synthesizes `Foo_new`, which returns a Foo and TAKES PARAMETERS. A consumer
+// that emits nil-ary calls (the feature registry does) would emit `Foo_new()`
+// with no arguments. Arity separates them STRUCTURALLY; the alternative — a
+// `_new` suffix test — is the string-matching heuristic the repo forbids, and
+// is the same one already rejected for `register_lang` on this exact problem.
+static int64_t* avra_rd_ret_arity = NULL;
 
 static const char** avra_rd_type_canonicals = NULL;
 static const char** avra_rd_type_kinds = NULL;
@@ -8343,9 +8351,26 @@ void avra_rd_add_global(const char* short_name, const char* canonical) {
 // them exactly: the 70 return LanguageFeature, the helper returns nothing.
 // Discriminating structurally is what the repo rules require in place of
 // string-matching.
-void avra_rd_add_ret(const char* canonical, const char* ret_type) {
+void avra_rd_add_ret(const char* canonical, const char* ret_type, int64_t arity) {
+    int64_t before_cap = avra_rd_ret_cap;
+    int64_t slot = avra_rd_ret_n;
     rd_strmap_add(&avra_rd_ret_keys, &avra_rd_ret_vals,
                   &avra_rd_ret_n, &avra_rd_ret_cap, canonical, ret_type);
+    // rd_strmap_add may have grown the string arrays; mirror that growth here so
+    // index i is valid in all three. Re-read the cap rather than assuming.
+    if (avra_rd_ret_cap != before_cap || avra_rd_ret_arity == NULL) {
+        int64_t* grown = (int64_t*)realloc(avra_rd_ret_arity,
+                                           (size_t)avra_rd_ret_cap * sizeof(int64_t));
+        if (!grown) return;   /* leave arity unrecorded rather than crash */
+        avra_rd_ret_arity = grown;
+    }
+    if (slot >= 0 && slot < avra_rd_ret_cap) avra_rd_ret_arity[slot] = arity;
+}
+
+// -1 for an out-of-range index, so a caller cannot read a stale slot as arity 0
+// and mistake a constructor for a nil-ary producer.
+int64_t avra_rd_ret_arity_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_ret_n && avra_rd_ret_arity) ? avra_rd_ret_arity[i] : -1;
 }
 
 int64_t avra_rd_ret_count(void) { return avra_rd_ret_n; }

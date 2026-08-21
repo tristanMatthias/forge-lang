@@ -84,7 +84,7 @@ extern fn avra_rd_clear()
 extern fn avra_rd_set_current_module(s: string)
 extern fn avra_rd_add_alias(short_name: string, canonical: string)
 extern fn avra_rd_add_module(canonical: string)
-extern fn avra_rd_add_ret(canonical: string, ret_type: string)
+extern fn avra_rd_add_ret(canonical: string, ret_type: string, arity: int)
 extern fn avra_rd_add_global(short_name: string, canonical: string)
 extern fn avra_rd_begin_type(canonical: string, kind: string) -> int
 extern fn avra_rd_add_type_field(type_id: int, field_name: string, field_type_canonical: string)
@@ -157,9 +157,14 @@ fn register_type_decl(store: NodeStore, stmt: Stmt, mod_path: string) {
         // does not work for the feature registry: 71 `*_lang` fns, 70
         // features, and the odd one out is the `register_lang` helper — with
         // no naming rule to separate them. Return type separates them exactly.
-        .Function(name, _, _, ret_vt, _) -> {
+        .Function(name, _, params, ret_vt, _) -> {
+            // ARITY is recorded alongside the return type because the type alone
+            // does not identify a discoverable item: `export component Foo` also
+            // synthesizes `Foo_new`, which returns a Foo and takes parameters.
+            // A consumer emitting nil-ary calls would emit `Foo_new()`.
             avra_rd_add_ret(qualify_or_keep(mod_path, name),
-                            vtype_canonical_name(ret_vt))
+                            vtype_canonical_name(ret_vt),
+                            params.length)
         }
         _ -> {}
     }

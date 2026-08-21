@@ -113,6 +113,35 @@ export fn ctx_items_returning(ctx: ResolverCtx, type_name: string) -> List<strin
     []
 }
 
+/// `ctx_items_returning` narrowed to items of a given PARAMETER COUNT.
+///
+/// Return type alone is not enough to identify a discoverable item. Measured on
+/// the real package compile, `ctx_items_returning(ctx,
+/// "@std::avrac::features::LanguageFeature")` answers **71**, not 70: the extra
+/// is `LanguageFeature_new`, the constructor SYNTHESIZED for `export component
+/// LanguageFeature`. It genuinely returns a LanguageFeature, so the query is not
+/// wrong — but it takes parameters, and a consumer that emits nil-ary calls (the
+/// feature registry does) would emit `LanguageFeature_new()` with no arguments.
+///
+/// This is the same near-miss that ruled out `ctx_items_with_suffix("_lang")`,
+/// one layer down: that returned 71 where the odd one out was `register_lang`.
+/// Every name-shaped discriminator so far admits exactly one wrong item, and
+/// filtering on a `_new` suffix would be the string-matching heuristic the repo
+/// forbids — the same one already rejected for `register_lang`.
+///
+/// ARITY separates them structurally: `arity = 0` selects exactly the 70.
+///
+/// NOTE the type name must be the CANONICAL one. On a resolved package compile
+/// that is fully qualified (`@std::avrac::features::LanguageFeature`); a bare
+/// `LanguageFeature` matches nothing and returns an EMPTY LIST with no error.
+/// Assert non-empty at the call site — a silently empty result is how a derived
+/// registry ends up inert while the build stays green.
+///
+/// Stub body like its siblings — the real answer comes from the eval intercept.
+export fn ctx_items_returning_arity(ctx: ResolverCtx, type_name: string, arity: int) -> List<string> {
+    []
+}
+
 /// Every module whose canonical name starts with `prefix`, e.g.
 /// `ctx_modules_under(ctx, "@std::avrac::features")`. The answer comes from the
 /// compiler's own module graph — the resolver already walked those directories —
