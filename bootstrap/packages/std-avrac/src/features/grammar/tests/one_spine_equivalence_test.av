@@ -147,61 +147,61 @@ spec "P2c(c): the FLAT composition reproduces the nested chain's rule order" {
         "block_expr\n" +
         "table_cell\n" +
         "null_cell\n" +
-        "qualified_expr\n" +
-        "quote_type_expr\n" +
-        "quote_arm_expr\n" +
-        "quote_expr\n" +
-        "paren_expr\n" +
-        "lambda_body\n" +
-        "param\n" +
-        "tuple_suffix\n" +
-        "list_expr\n" +
-        "list_comp\n" +
-        "map_literal\n" +
-        "table_lit\n" +
-        "table_head\n" +
-        "table_row\n" +
-        "struct_lit_expr\n" +
-        "field_init\n" +
-        "variant_ctor\n" +
-        "enum_ctor_suffix\n" +
-        "field_suffix\n" +
-        "with_suffix\n" +
-        "grammar_expr\n" +
-        "spawn_expr\n" +
-        "isolated_expr\n" +
-        "channel_expr\n" +
-        "assignment\n" +
-        "equality\n" +
-        "null_coalesce\n" +
-        "optchain_suffix\n" +
-        "optcall_suffix\n" +
-        "unwrap_suffix\n" +
-        "catch_suffix\n" +
         "index_suffix\n" +
         "index_tail\n" +
         "call_suffix\n" +
         "call_arg\n" +
-        "logic_or\n" +
-        "logic_and\n" +
-        "pipe\n" +
-        "pipe_arg\n" +
+        "channel_expr\n" +
+        "paren_expr\n" +
+        "lambda_body\n" +
+        "param\n" +
         "eqchain_tail\n" +
-        "is_tail\n" +
+        "grammar_expr\n" +
         "in_tail\n" +
         "in_rhs\n" +
-        "unary_prefix\n" +
+        "is_tail\n" +
+        "isolated_expr\n" +
+        "list_expr\n" +
+        "list_comp\n" +
+        "logic_or\n" +
+        "logic_and\n" +
+        "map_literal\n" +
+        "qualified_expr\n" +
+        "catch_suffix\n" +
+        "null_coalesce\n" +
+        "optchain_suffix\n" +
+        "optcall_suffix\n" +
+        "unwrap_suffix\n" +
+        "pipe\n" +
+        "pipe_arg\n" +
+        "quote_type_expr\n" +
+        "quote_arm_expr\n" +
+        "quote_expr\n" +
+        "spawn_expr\n" +
+        "variant_ctor\n" +
+        "enum_ctor_suffix\n" +
+        "field_suffix\n" +
+        "assignment\n" +
+        "equality\n" +
+        "struct_lit_expr\n" +
+        "field_init\n" +
+        "table_lit\n" +
+        "table_head\n" +
+        "table_row\n" +
         "template_lit\n" +
         "tagged_template\n" +
+        "tuple_suffix\n" +
+        "unary_prefix\n" +
+        "with_suffix\n" +
         "type_expr\n" +
         "splice_type\n" +
         "type_atom\n" +
         "fn_type\n" +
-        "dyn_type\n" +
         "list_type\n" +
-        "paren_type\n" +
         "qualified_type\n" +
         "named_type\n" +
+        "dyn_type\n" +
+        "paren_type\n" +
         "pattern_or\n" +
         "pattern\n" +
         "opt_present\n" +
@@ -221,19 +221,19 @@ spec "P2c(c): the FLAT composition reproduces the nested chain's rule order" {
         "when_arm\n" +
         "match_table_stmt\n" +
         "match_table_expr\n" +
+        "break_stmt\n" +
+        "continue_stmt\n" +
         "defer_stmt\n" +
         "errdefer_stmt\n" +
-        "return_stmt\n" +
-        "while_stmt\n" +
+        "for_stmt\n" +
+        "for_binding\n" +
         "if_stmt\n" +
         "iflet_stmt\n" +
         "iflet_expr\n" +
         "if_expr\n" +
         "else_tail\n" +
-        "for_stmt\n" +
-        "for_binding\n" +
-        "break_stmt\n" +
-        "continue_stmt\n"
+        "return_stmt\n" +
+        "while_stmt\n"
         mut actual = ""
         for r in avra_program_grammar().rules { actual = actual + r.name + "\n" }
         actual == expected
