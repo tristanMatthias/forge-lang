@@ -17,19 +17,38 @@ spec "the feature-layout lint is real" {
         avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1") == 0
     }
     then "an OFF-LIST file makes it FAIL — the anti-vacuity half" {
-        // Plant a file that is on no canonical name and no allowlist entry.
-        // `defer` is not available here (the shell-out is the cleanup), so the
-        // removal is unconditional and runs before the assertion is evaluated.
-        let planted = "packages/std-avrac/src/features/tuples/not_a_canonical_name.av"
+        // t-9obn: plants into a THROWAWAY COPY via --root, never the live tree.
+        // This used to write into features/tuples/ directly. The suite runs
+        // shards IN PARALLEL, so a concurrent shard could observe the stray
+        // file; and `rm -f` is the only cleanup (no `defer` in this shell-out
+        // style), so a crash mid-probe left it behind and the NEXT run failed
+        // the lint for real. Same fix as --check-core-layering got in t-frix.
+        let root = avra_shell_exec("mktemp -d").trim()
+        let _ = avra_shell_exec("cp -R packages/std-avrac/src/features '${root}/features'")
+        // The CLEAN copy must pass FIRST. Without this, `rc != 0` below is
+        // satisfied by any setup failure — a failed cp, a --root that does not
+        // exist — and the anti-vacuity check proves nothing while looking green.
+        let clean_rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout --root '${root}/features' >/dev/null 2>&1")
+        let planted = "${root}/features/tuples/not_a_canonical_name.av"
         let _ = avra_shell_exec("printf '// planted by feature_layout_lint_test\\n' > '${planted}'")
-        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1")
-        let _ = avra_shell_exec("rm -f '${planted}'")
-        rc != 0
+        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout --root '${root}/features' >/dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${root}'")
+        clean_rc == 0 && rc != 0
     }
-    then "and it passes again once the planted file is gone" {
-        // Proves the previous case cleaned up after itself, so a failure here
-        // means the planted file leaked rather than the lint being wrong.
-        avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1") == 0
+    then "the probe leaves the tracked tree BYTE-IDENTICAL" {
+        // Matches this spec's NAME to its assertion. Re-running the lint only
+        // proves the tree still PASSES, which a legal edit under features/ would
+        // also satisfy — so on its own it does not establish that the probe
+        // touched nothing.
+        let before = avra_shell_exec("git status --porcelain -- packages/std-avrac/src/features")
+        let root = avra_shell_exec("mktemp -d").trim()
+        let _ = avra_shell_exec("cp -R packages/std-avrac/src/features '${root}/features'")
+        let _ = avra_shell_exec("printf '// planted\\n' > '${root}/features/tuples/not_a_canonical_name.av'")
+        let _ = avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout --root '${root}/features' >/dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${root}'")
+        let after = avra_shell_exec("git status --porcelain -- packages/std-avrac/src/features")
+        before == after
+            && avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1") == 0
     }
 }
 
@@ -54,12 +73,19 @@ spec "the lint names non-feature directories rather than mis-reporting them" {
         // still FAILS. Otherwise "ACCEPTED" would have quietly become a blanket
         // exemption for the whole category, which is the opposite of the point.
         // Same plant-and-clean idiom as the OFF-LIST case above.
-        let d = "packages/std-avrac/src/features/zz_unlisted_probe"
+        // t-9obn: also plants into a copy. This site is the more dangerous of
+        // the two — it created a whole RESOLVABLE MODULE under features/, and
+        // the resolver ENUMERATES directories, so a concurrent shard could see
+        // a module that was about to vanish.
+        let root = avra_shell_exec("mktemp -d").trim()
+        let _ = avra_shell_exec("cp -R packages/std-avrac/src/features '${root}/features'")
+        let clean_rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout --root '${root}/features' >/dev/null 2>&1")
+        let d = "${root}/features/zz_unlisted_probe"
         let _ = avra_shell_exec("mkdir -p '${d}' && printf 'export fn zz_helper() -> int { 1 }\n' > '${d}/mod.av'")
-        let out = avra_shell_exec("bash scripts/diagnose.sh --check-feature-layout --list 2>&1")
-        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1")
-        let _ = avra_shell_exec("rm -rf '${d}'")
-        rc != 0 && out.contains("no decision on record")
+        let out = avra_shell_exec("bash scripts/diagnose.sh --check-feature-layout --root '${root}/features' --list 2>&1")
+        let rc = avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout --root '${root}/features' >/dev/null 2>&1")
+        let _ = avra_shell_exec("rm -rf '${root}'")
+        clean_rc == 0 && rc != 0 && out.contains("no decision on record")
     }
     then "and it passes again once the planted directory is gone" {
         avra_shell_exec_status("bash scripts/diagnose.sh --check-feature-layout >/dev/null 2>&1") == 0
