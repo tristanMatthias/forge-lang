@@ -681,6 +681,20 @@ A red run ends with the LIST of failing shards, each **named by its CAUSE CLASS*
 
 **A shard is NAMED after the FIRST file in its batch, NOT the file that failed.** `libbuild_stale_ll_test_x8_886d266dd390 — 1 TEST FAILURE(S)` means "the 8-file batch whose first member is libbuild_stale_ll_test"; the `x8` IS the batch size. The failure was in `decl_flip_dispatch_test`, a different file in the same batch. Three rounds of investigation went into the named file — which passes standalone, passes batched with its own directory, and was never the problem. **Open the shard LOG and read which spec says FAIL; never infer the failing test from the shard name.** Corollary for CI: the job-log API serves only a ~600KB tail, so a shard that ran early is truncated away entirely. **Get the full logs instead — `actions_get get_workflow_run_logs_url` then download it IMMEDIATELY.** That URL is signed with a short-lived signature: fetch it and curl it in the same breath and it returns 200, but sit on it for a few minutes and it 403s, which reads exactly like the agent proxy blocking it and is not (this cost a wrong entry in these notes and an unnecessary full local rerun). A FULL local `bs2 test` also reproduces — batching is deterministic, so the same batch re-forms and its log lands in `build/test_shards/<pid>/` — but that is ~10 minutes, so reach for the logs zip first. A test that passes standalone AND passes with its directory can still fail in the full suite, because only the full run builds that batch.
 
+**NEVER DIAGNOSE A CI FAILURE BY TEXT-GREPPING `gh run view --log-failed`.** The
+log contains every cause class's marker text as the PASSING output of that class's
+own guard specs, and spec NAMES routinely contain the word FAIL — e.g. four
+different passing specs are named `...FAIL — the anti-vacuity half`, `...FAILS to
+compile — the anti-vacuity half`. Grepping for a symptom therefore returns
+confident hits on a run whose real failure is somewhere else entirely; a fix was
+once built and shipped on such a misattribution. Only two things are trustworthy:
+the `✗` line, and `[shard-summary]` with `fail>0`. Get them from the full logs
+zip, and note the zip is itself capped at a ~600KB TAIL — on a long run the
+failure point can be truncated away, leaving only checkout noise, which is NOT
+evidence that the suite passed. Cheap first discriminator before any of that:
+`gh run view <id> --log-failed | grep -oE 'exit code [0-9]+'` — 143 is the
+runner-kill class (rerun), exit 1 is a real failure worth reading.
+
 **Read the cause class before opening the log — it answers "is this my code or is it the box?" first.** The classes, in the order they are tested (the order is load-bearing, because each environmental cause also emits text matching a later, more generic rule):
 `DISK FULL` (ENOSPC — outranks everything; t-2qn0 shipped as false test FAILURES for exactly this) → `MEMORY CEILING` (an `error[F4014]`, quoting the `phase:` — checked BEFORE the generic `error[` rule, or box pressure reports as a code error) → `KILLED` (line-anchored, so a failing test that merely *mentions* killing stays a test failure; points at `make stray`) → `COMPILE FAILED` (with the first F-code) → `CRASHED` → `TEST FAILURE(S)` (with the first failing spec name) → `FAILED — cause not classified` (says so plainly rather than inventing a cause).
 The recorded incident this prevents: a memory kill investigated as a type-gate bug that did not exist, because the operator-visible output for both was identical. A green FULL run (no filter, no path args) writes `build/.tests_verified`, the pre-commit hook's suite-cache marker, so the hook skips its duplicate suite pass at commit time.
@@ -910,6 +924,19 @@ slices onto one branch/PR. Each slice is its OWN branch and its OWN PR,
   Do not pause the work to request permission, and do not treat a bot's "confirmed
   as addressed" as the thing you were waiting for — there is nothing to wait for.
   PRs merge bottom-up as each goes green.
+- **READING THE THREAD COUNT: `gh pr view --json reviewThreads` IS NOT A VALID
+  FIELD.** It errors (`Unknown JSON field: "reviewThreads"`), and if the error is
+  swallowed — piped, `2>/dev/null`, or bundled into a loop — the count renders as
+  EMPTY, which reads exactly like "0 unresolved". A PR one command from merge with
+  two live CodeRabbit findings looks identical to a clean one. Use GraphQL:
+  ```
+  gh api graphql -f query='{repository(owner:"<o>",name:"<r>"){pullRequest(number:N){
+      reviewThreads(first:50){nodes{isResolved}}}}}' \
+    --jq '[.data.repository.pullRequest.reviewThreads.nodes[]|select(.isResolved==false)]|length'
+  ```
+  And check `mergeStateStatus` too: **UNSTABLE means a check is still running** —
+  merging on it lands a PR whose last gate was never verified. Only `CLEAN`
+  (or an all-green `gh pr checks`) plus 0 unresolved satisfies the authorization.
 - **Rebase** — when a lower PR merges (the merged-PR webhook fires reliably),
   rebase the rest of the stack onto the new integration tip, re-target the next
   PR's base to integration, and re-fetch the pinned seed. **Do BOTH — the rebase
