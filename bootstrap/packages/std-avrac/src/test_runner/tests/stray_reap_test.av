@@ -49,8 +49,14 @@ fn harness_of(tag: string, src: string, body: string) -> string {
         // signature for its own path. No-op on Linux, which has no codesign.
         "if command -v codesign >/dev/null 2>&1; then\n" +
         "  for b in \"$root/$name\" \"$root/$kid\"; do\n" +
+        // `|| true` on the REMOVE is deliberate: the input may be unsigned.
+        // The SIGN must succeed — without a valid signature the copy is
+        // SIGKILLed at exec, and every spec here then fails as a --stray
+        // problem instead of the setup error it actually is. Fail loudly at
+        // the setup step rather than misattributing it five specs later.
         "    codesign --remove-signature \"$b\" >/dev/null 2>&1 || true\n" +
-        "    codesign -s - \"$b\" >/dev/null 2>&1 || true\n" +
+        "    codesign -s - \"$b\" >/dev/null 2>&1 || {\n" +
+        "      echo \"HARNESS_SETUP_FAILED: codesign -s - $b\"; exit 90; }\n" +
         "  done\n" +
         "fi\n" +
         "export AVRA_HEAVY_PROCS=\"$name $kid\"\n" +
@@ -137,7 +143,12 @@ spec "t-ce5t: --stray reports strays with RSS, and cannot report ITSELF" {
         // The two halves that ARE the contract hold on BOTH hosts and stay
         // unconditional: --stray must not report itself, and must still find
         // the real process.
-        (out.contains("PGREP_SELF_MATCHED") == (avra_host_os() != "macos"))
+        // `== "linux"`, NOT `!= "macos"`: avra_host_os() returns "unknown" on
+        // BSD, so the negative form would demand Linux's self-match on a host
+        // whose pgrep behaves like macOS's — asserting the opposite of what
+        // this spec documents. The self-match is a Linux property; everywhere
+        // else the only claim is that it does NOT happen.
+        (out.contains("PGREP_SELF_MATCHED") == (avra_host_os() == "linux"))
             && !out.contains("STRAY_SELF_MATCHED")
             && out.contains("STRAY_FOUND_THE_REAL_ONE")
     }
