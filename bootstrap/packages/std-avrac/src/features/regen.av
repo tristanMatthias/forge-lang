@@ -64,17 +64,34 @@ export fn build_language_features(d: AnnotatedDecl, ctx: ResolverCtx) -> Resolve
     // SORTED: the emitted order reaches generated IR, so it must not depend on
     // discovery order.
     mut calls: List<ExprId> = []
-    for n in found {
+    for n in sort_strings(found) {
         calls.push(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(n)), [])))
     }
     let body: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.ListLit(calls)))]
     emitted(Stmt.Function("language_features", tp, ps, ret_ty, synth_stmt_ids(body)))
 }
 
-// NOTE: no sort yet. Determinism needs a string comparison the EVAL interpreter
-// supports — `a < b` on strings is valid Avra (test_runner/discovery.av
-// sort_paths uses it) but eval rejects it with "operand must be a number", and
-// there is no string_from_code/char primitive to build one from. Tracked
-// separately; discovery order is used meanwhile.
+/// Insertion sort. N is 70 and List<T>.sort has no codegen path yet (t-0pw4).
+/// @comptime because a @comptime fn can only call @comptime fns (0q0m).
+///
+/// This depends on t-v2n0: until eval supported `<` on strings, a comparator had
+/// to rank each character against an ordered table, which cost a substring
+/// allocation per character and blew the 256MB comptime ceiling on 70 items.
+@comptime
+fn sort_strings(xs: List<string>) -> List<string> {
+    mut out: List<string> = []
+    for x in xs {
+        mut placed = false
+        mut next: List<string> = []
+        for y in out {
+            if !placed && x < y { next.push(x) placed = true }
+            next.push(y)
+        }
+        if !placed { next.push(x) }
+        out = next
+    }
+    out
+}
+
 @expand(build_language_features)
 fn language_features_gen() {}
