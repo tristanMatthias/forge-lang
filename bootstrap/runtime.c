@@ -8178,6 +8178,19 @@ static const char** avra_rd_global_vals = NULL;
 static int64_t avra_rd_global_n = 0;
 static int64_t avra_rd_global_cap = 0;
 
+// (item canonical, annotation name) pairs. Discovery by ANNOTATION is a
+// DECLARATION of membership: `@language_feature fn defer_lang()` says what the
+// item IS, so nothing accidental can satisfy it. Inference from shape kept
+// over-selecting by exactly one — `ctx_items_with_suffix("_lang")` also found
+// `register_lang` (the registration helper), and selecting on return type also
+// finds `LanguageFeature_new` (the component's synthesized constructor). Each
+// name- or signature-shaped discriminator admits a different near-miss; a mark
+// admits none.
+static const char** avra_rd_annot_items = NULL;
+static const char** avra_rd_annot_names = NULL;
+static int64_t avra_rd_annot_n = 0;
+static int64_t avra_rd_annot_cap = 0;
+
 static const char** avra_rd_type_canonicals = NULL;
 static const char** avra_rd_type_kinds = NULL;
 static int64_t* avra_rd_type_field_starts = NULL;
@@ -8244,6 +8257,7 @@ void avra_rd_clear(void) {
     avra_rd_alias_n = 0;
     avra_rd_module_n = 0;
     avra_rd_global_n = 0;
+    avra_rd_annot_n = 0;
     avra_rd_type_n = 0;
     avra_rd_field_n = 0;
     // Keep capacity; future fill of similar size will reuse without
@@ -8317,6 +8331,22 @@ void avra_rd_add_global(const char* short_name, const char* canonical) {
     rd_strmap_add(&avra_rd_global_keys, &avra_rd_global_vals,
                   &avra_rd_global_n, &avra_rd_global_cap,
                   short_name, canonical);
+}
+
+void avra_rd_add_annotation(const char* item_canonical, const char* annot_name) {
+    rd_strmap_add(&avra_rd_annot_items, &avra_rd_annot_names,
+                  &avra_rd_annot_n, &avra_rd_annot_cap,
+                  item_canonical, annot_name);
+}
+
+int64_t avra_rd_annot_count(void) { return avra_rd_annot_n; }
+
+const char* avra_rd_annot_item_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_annot_n) ? avra_rd_annot_items[i] : "";
+}
+
+const char* avra_rd_annot_name_at(int64_t i) {
+    return (i >= 0 && i < avra_rd_annot_n) ? avra_rd_annot_names[i] : "";
 }
 
 // Enumeration over the globals bucket. No new storage — the keys/vals arrays

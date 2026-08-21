@@ -100,6 +100,35 @@ export fn ctx_items_with_suffix(ctx: ResolverCtx, suffix: string) -> List<string
 ///
 /// Returns [] outside a macro context (the stub below); the real answer arrives
 /// through the eval intercept.
+/// Every item carrying `@<annot_name>`, by canonical name.
+///
+/// Discovery by annotation DECLARES membership rather than inferring it, and
+/// that distinction is the whole point. Inference from shape kept over-selecting
+/// by exactly one, twice, on the same problem:
+///
+///   ctx_items_with_suffix(ctx, "_lang")   -> 71, not 70: also finds
+///                                            `register_lang`, the registration
+///                                            HELPER.
+///   selecting on return type              -> 71, not 70: also finds
+///                                            `LanguageFeature_new`, the
+///                                            constructor SYNTHESIZED for
+///                                            `export component LanguageFeature`.
+///
+/// Each name- or signature-shaped discriminator admits a DIFFERENT near-miss, and
+/// special-casing either by name would be the string-matching heuristic the repo
+/// forbids. A mark admits none: `@language_feature fn defer_lang()` says what the
+/// item IS, so nothing accidental can satisfy it.
+///
+/// The trade, stated because it is real: a mark can be FORGOTTEN on item N+1.
+/// That fails as a MISSING item — loud, and the thing itself does not work —
+/// rather than a wrong extra one, which is the strictly better failure direction.
+///
+/// Stub body like its siblings — the real answer comes from the eval intercept
+/// over the resolver-data layer; see the header note above.
+export fn ctx_items_with_annotation(ctx: ResolverCtx, annot_name: string) -> List<string> {
+    []
+}
+
 export fn ctx_modules_under(ctx: ResolverCtx, prefix: string) -> List<string> {
     []
 }

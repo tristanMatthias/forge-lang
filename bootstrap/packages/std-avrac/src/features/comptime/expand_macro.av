@@ -85,6 +85,7 @@ extern fn avra_rd_set_current_module(s: string)
 extern fn avra_rd_add_alias(short_name: string, canonical: string)
 extern fn avra_rd_add_module(canonical: string)
 extern fn avra_rd_add_global(short_name: string, canonical: string)
+extern fn avra_rd_add_annotation(item_canonical: string, annot_name: string)
 extern fn avra_rd_begin_type(canonical: string, kind: string) -> int
 extern fn avra_rd_add_type_field(type_id: int, field_name: string, field_type_canonical: string)
 
@@ -134,7 +135,17 @@ fn populate_type_fields(store: NodeStore, ids: List<StmtId>, mod_path: string) {
         // unwrap they'd never reach the .TypeDecl arm — the resolver-data
         // registry would then be missing the type, so ctx_lookup_type from
         // a @comptime macro (derive_walker's wrapper-list discovery) sees null.
-        register_type_decl(store, stmt_unwrap(store, store.stmts.get(id)), mod_path)
+        register_type_decl(store, store.stmts.get(id), mod_path)
+    }
+}
+
+/// The declared name of an annotated item, seen THROUGH any further annotation
+/// layers. Returns "" for a wrapper around something that is not a named decl.
+fn annotated_decl_name(store: NodeStore, s: Stmt) -> string {
+    match stmt_unwrap(store, s) {
+        .Function(name, _, _, _, _) -> name
+        .TypeDecl(name, _, _) -> name
+        _ -> ""
     }
 }
 
@@ -142,7 +153,23 @@ fn register_type_decl(store: NodeStore, stmt: Stmt, mod_path: string) {
     match stmt {
         .Module(name, body) -> {
             let child_path = qualify_or_keep(mod_path, name)
-            for id in body { register_type_decl(store, stmt_unwrap(store, store.stmts.get(id)), child_path) }
+            for id in body { register_type_decl(store, store.stmts.get(id), child_path) }
+        }
+        // Annotations are captured HERE, at the wrapper, because `stmt_unwrap`
+        // PEELS Annotated — by the time the inner decl is matched the marks are
+        // gone. That is why the two walk sites above no longer pre-unwrap.
+        //
+        // Annotations NEST (`Annotated(@doc, Annotated(@export, Function))`), so
+        // the name is read through `stmt_unwrap`; matching the immediate inner
+        // would silently drop every outer mark on a multiply-annotated decl.
+        .Annotated(annots, inner) -> {
+            let inner_stmt = store.stmts.get(inner)
+            let nm = annotated_decl_name(store, inner_stmt)
+            if nm != "" {
+                let canonical = qualify_or_keep(mod_path, nm)
+                for a in annots { avra_rd_add_annotation(canonical, a.name) }
+            }
+            register_type_decl(store, inner_stmt, mod_path)
         }
         .TypeDecl(name, _, fields) -> {
             let canonical = qualify_or_keep(mod_path, name)
