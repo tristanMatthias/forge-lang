@@ -2780,12 +2780,8 @@ fn named_tk_guard(tok: string) -> string {
     // keyword set grows — so this one is a CALL; text_is_word ships in the
     // generated import headers (gen_*_file.av). Executor twin: named_tok_matches.
     if tok == "WORD"     { return "text_is_word(st.cur().text)" }
-    // The one terminal that is NOT a `tk_to_grammar_kind` kind string: the field-name
-    // set `consume_field_name` accepts. Spelled inline as the Tk disjunction rather
-    // than as a call to `tk_is_field_name` because the generated file's import header
-    // (gen_parser_files.av) is fixed and a guard is emitted into FIRST chains where a
-    // bare comparison composes; the executor's `named_tok_matches` reads the shared
-    // predicate, and reserved_kw_field_test asserts the two stay the same set.
+    // The one terminal whose accepted set is not a `tk_to_grammar_kind` kind
+    // string: the field-name set `consume_field_name` accepts.
     // Calls the SHARED predicate rather than respelling it, exactly as WORD
     // does below. Both engines now read ONE definition (core/ast.av
     // `tk_is_field_name`), so the lockstep named_tok_matches documents is

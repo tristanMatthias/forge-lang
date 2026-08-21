@@ -1080,9 +1080,10 @@ fn list_has(xs: List<string>, s: string) -> bool {
 /// Takes the whole PState rather than a bare Token (t-47hc.33) because `^` is part of a
 /// sequence's FIRST — see tok_starts_seq. Every call site already passed `st.cur()`, so
 /// this is the same question with the state the newline gate needs in reach.
-/// Match a NAMED terminal against a token. Every terminal but one is a `kind`
-/// string straight out of `tk_to_grammar_kind` (real_lex.av); `FIELDNAME` is the
-/// exception, and it exists because that mapping is too COARSE to spell what is
+/// Match a NAMED terminal against a token. Most terminals are a `kind` string
+/// straight out of `tk_to_grammar_kind` (real_lex.av); TWO are not — `WORD`
+/// (below, any identifier-shaped token) and `FIELDNAME`, the only TOKEN-SET
+/// exception. It exists because that mapping is too COARSE to spell what is
 /// accepted after a `.` — the reserved-keyword token folds into `KW` along with every
 /// other keyword, so `IDENT` is narrower than `consume_field_name` and `KW` is
 /// vastly wider. `FIELDNAME` reads the shared `tk_is_field_name` (core/ast.av)
