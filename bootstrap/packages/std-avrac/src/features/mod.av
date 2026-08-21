@@ -5,49 +5,7 @@
 // (g2eo.1 directory-as-module). This file just imports and
 // registers their factory functions.
 
-use features.closures.{closures_lang}
-use features.enum_decl.{enum_lang}
-use features.extern_decl.{extern_lang}
-use features.fn_decl.{fn_lang, fn_type_lang}
-use features.generics.{generics_lang}
-use features.for_stmt.{for_lang, for_in_lang}
-use features.grammar.{grammar_block_lang, Grammar, feature_decl_grammar_fragments, BuildKind, avra_program_grammar, rules_reachable_from, str_in}
-use features.if_stmt.{if_lang}
-use features.impl_decl.{impl_decl_lang}
-use features.is_keyword.{is_keyword_lang}
-use features.in_operator.{in_operator_lang}
-use features.logical_op.{logical_op_lang}
-use features.pipe_op.{pipe_op_lang}
-use features.eq_chain.{eq_chain_lang}
-use features.unary_op.{unary_op_lang}
-use features.calls.{calls_lang}
-use features.templates.{templates_lang}
-use features.union_type.{union_type_lang}
-use features.annotations.{annotations_lang}
-use features.let_stmt.{let_lang, mut_lang, const_lang, let_destructure_lang}
-use features.list_comp.{list_comp_lang}
-use features.list_lit.{list_lit_lang, list_type_lang}
-use features.map_lit.{map_lit_lang}
-use features.table_lit.{table_lit_lang}
-use features.modules.{mod_lang, use_lang, qualified_ref_lang, export_lang}
-use features.null_safety.{null_coalesce_lang, optional_chain_lang, optional_method_call_lang, try_lang, catch_lang}
-use features.parallel_stmt.{parallel_lang}
-use features.spawn_expr.{spawn_lang}
-use features.channels.{channels_lang}
-use features.isolated_expr.{isolated_lang}
-use features.quote_expr.{quote_lang}
-use features.return_stmt.{return_lang}
-use features.select_stmt.{select_lang}
-use features.spec_test.{spec_lang, given_lang, then_lang}
-use features.struct_decl.{struct_lit_lang, field_access_lang, enum_ctor_lang, field_assign_lang, type_decl_lang, shape_lang, named_type_lang}
-use features.trait_decl.{trait_lang, dyn_type_lang}
-use features.tuples.{tuples_lang, tuple_index_lang, tuple_type_lang}
-use features.while_stmt.{while_lang}
-use features.with_expr.{with_expr_lang}
-use features.component_decl.{component_lang}
-use features.defer.{defer_lang, errdefer_lang}
-use features.break_continue.{break_lang, continue_lang}
-use features.match.{match_lang, when_lang}
+use features.grammar.{Grammar, feature_decl_grammar_fragments, BuildKind, avra_program_grammar, rules_reachable_from, str_in}
 use core.{noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt}
 use features.grammar.{Rule, build_rule_index, GrammarParse, BuilderBind, BuildKindRow, grammar_startup_fail}
 
@@ -134,9 +92,9 @@ export fn init_features(reg: Registry) -> List<BuilderBind> {
 /// the registry, grammar composition, docs, diagnostics, and editor
 /// surfaces fold over. Migrating a feature = writing its definition file
 /// and adding it here.
-export fn language_features() -> List<LanguageFeature> {
-    [defer_lang(), errdefer_lang(), match_lang(), when_lang(), return_lang(), while_lang(), if_lang(), for_lang(), for_in_lang(), fn_lang(), extern_lang(), generics_lang(), type_decl_lang(), shape_lang(), component_lang(), let_lang(), mut_lang(), const_lang(), let_destructure_lang(), break_lang(), continue_lang(), mod_lang(), use_lang(), qualified_ref_lang(), enum_lang(), trait_lang(), impl_decl_lang(), select_lang(), parallel_lang(), quote_lang(), closures_lang(), tuples_lang(), tuple_index_lang(), list_lit_lang(), list_comp_lang(), map_lit_lang(), table_lit_lang(), struct_lit_lang(), enum_ctor_lang(), field_access_lang(), with_expr_lang(), grammar_block_lang(), spawn_lang(), isolated_lang(), channels_lang(), field_assign_lang(), null_coalesce_lang(), optional_chain_lang(), optional_method_call_lang(), try_lang(), catch_lang(), calls_lang(), logical_op_lang(), pipe_op_lang(), eq_chain_lang(), is_keyword_lang(), in_operator_lang(), unary_op_lang(), spec_lang(), given_lang(), then_lang(), templates_lang(), annotations_lang(), export_lang(), union_type_lang(), fn_type_lang(), dyn_type_lang(), list_type_lang(), tuple_type_lang(), named_type_lang()]
-}
+// `language_features()` is GENERATED from the `@language_feature` marks by
+// build_language_features in regen.av — a SIBLING file, so the emitted fn
+// shares this module and needs no import.
 
 /// The composed builder manifest — every feature-supplied build lowering,
 /// in registration order. BOTH engines consume this one fold: the executor
