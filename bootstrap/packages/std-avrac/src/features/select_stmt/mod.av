@@ -9,7 +9,6 @@
 use core.{SelectArm}
 use typeck.{check_expr, check_stmt_ids, tc_enter, tc_exit, tc_bind}
 use features.{composed}
-use features.select_stmt.lowering.{select_builds}
 use features.grammar.{parse_grammar}
 
 /// Type-check hook for `select`. Each arm's channel expression is
@@ -77,7 +76,6 @@ inside that arm's body. Zero arms is legal: `select { }` blocks forever.
                   @expect("{", "expected `{` for select arm body")
                   @expect("}", "expected `}` to close select arm") -> MkSelectArm(b, ch, body)
             },
-        builders = select_builds(),
         snippet = r"select {\n    ${1:v} <- ${2:ch} -> {\n        ${3:body}\n    }\n}",
         stmt_tag = Stmt.Select(empty_arms),
         emit_stmt = select_emit_stmt,

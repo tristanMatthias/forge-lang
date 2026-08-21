@@ -2,7 +2,6 @@
 // at `features.eq_chain.{...}`. A syntax-only carrier: the chain lowers
 // to plain `Expr.Binary` nodes (the engine's fold_binary shape), so no
 // pass hooks ride this definition.
-use features.eq_chain.lowering.{eq_chain_builds}
 use features.grammar.{parse_grammar}
 
 /// `a == b` / `a != b` — the equality comparison tail (t-kd4y.3.5.7).
@@ -24,7 +23,6 @@ variant check and the `in` membership test at the same precedence.
         gram = grammar {
   eqchain_tail = ( op:("==" | "!=") r:bitor )+ -> mk_eqchain(op, r)
         },
-        builders = eq_chain_builds(),
         snippet = r"${1:a} == ${2:b}",
         gram_family = "expr",
     }

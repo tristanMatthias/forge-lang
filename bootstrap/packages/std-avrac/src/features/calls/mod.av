@@ -3,7 +3,6 @@
 // `GenericCall` / `Index` / `Slice` are core codegen/typeck nodes (call
 // emission, mono, and index lowering live in core passes), so no pass
 // hooks ride this definition — syntax + the lowerings alone.
-use features.calls.lowering.{calls_builds}
 use features.grammar.{parse_grammar}
 
 /// `expr(args)` / `f<T>(args)` / `expr[i]` / `expr[a..b]` — the postfix
@@ -72,7 +71,6 @@ sugar in method position: `xs.map(it * 2)`.
               | @try @when(base_callable) "<" ( ta:type_expr ( "," ta:type_expr )* )? ">" "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" -> MkGenericCallSuffix(ta, a)
   call_arg = @on(allow_dot_postfix) e:expression -> MkCallArg(e)
         },
-        builders = calls_builds(),
         snippet = r"${1:f}(${2:args})",
         gram_family = "expr",
     }

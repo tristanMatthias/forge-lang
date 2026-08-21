@@ -5,7 +5,6 @@
 // (which consumes the element type this feature establishes).
 
 use core.{ValueType, vtype_display}
-use features.channels.lowering.{channels_builds}
 use features.grammar.{parse_grammar}
 
 /// `channel<T>(cap)` — the definition carries the feature whole
@@ -29,7 +28,6 @@ closed-and-drained (spec Axis 18).
         gram = grammar {
   channel_expr = "channel" "<" elem:type_expr ">" "(" ( cap:expression )? ")" -> MkChannel(elem, cap)
         },
-        builders = channels_builds(),
         snippet = r"channel<${1:T}>(${2:cap})",
         expr_tag = Expr.ChannelNew(ValueType.Unknown, null),
         emit_expr = channel_emit_expr,

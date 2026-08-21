@@ -5,7 +5,6 @@
 // annotations (`@doc(...)` / `@module_doc(...)`), so this definition is
 // syntax + lowerings alone; every consumer reads Stmt.Annotated.
 use features.{composed}
-use features.annotations.lowering.{annotations_builds}
 use features.grammar.{parse_grammar}
 
 /// `@name(args?)`, the annotation-wrapper declaration, and the two
@@ -94,7 +93,6 @@ parses as nested `Stmt.Annotated` layers.
                    @expect(")", "expected expression", F0040) -> MkAnn(n, a)
   wrapped_inner  = fn_decl | type_decl | enum_decl | @try trait_decl | extern_decl | @try shape_decl | impl_decl | comp_header | @try use_decl | @try mod_decl | export_decl | doc_decl | annot_decl | letdes_decl | let_decl | mut_decl | const_decl | spec_decl | select_decl | parallel_decl | mdoc_decl | @try bare_comp_inst_raw | @try bare_comp_inst | statement
             },
-        builders = annotations_builds(),
         snippet = r"@${1:name}(${2:args})",
     }
     annotations_def

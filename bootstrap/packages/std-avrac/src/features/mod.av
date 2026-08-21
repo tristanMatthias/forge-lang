@@ -62,6 +62,17 @@ export component LanguageFeature {
     }
 }
 
+/// Attach a feature's builder manifest WITHOUT the feature naming it (t-y2i7.14).
+///
+/// The generated `language_features()` wraps every `X_lang()` in this, deriving
+/// `X_builds` from the lang fn's own canonical path — so no feature writes
+/// `builders = X_builds()` and no file imports the builds fn. The convention
+/// that makes the derivation total (`X_lang()` owns `X_builds()`) is enforced
+/// by core/tests/builders_convention_test.av.
+export fn with_builders(f: LanguageFeature, b: List<BuilderBind>) -> LanguageFeature {
+    f with { builders: b }
+}
+
 /// Register every built-in language feature with the compiler's
 /// dispatch registry. Called once during compiler init. EVERY feature is
 /// a `<name>_lang()` LanguageFeature definition now — the legacy

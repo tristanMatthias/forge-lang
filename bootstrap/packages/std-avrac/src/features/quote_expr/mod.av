@@ -12,7 +12,6 @@
 // flat at `features.quote_expr.{...}`.
 
 use core.{Expr, ExprId}
-use features.quote_expr.lowering.{quote_builds}
 use features.grammar.{parse_grammar}
 
 /// The `quote` expression family. THREE rules, because the three bodies are
@@ -89,7 +88,6 @@ pass ever sees a Quote or Splice node.
                  @expect("{", "expected `{` to open the quote body")
                  @expect("block_expr", "expected `{` to open the quote body") -> MkQuote(k, body)
         },
-        builders = quote_builds(),
         snippet = r"quote { ${1:body} }",
         expr_tag = Expr.Quote("expr", ExprId(0)),
         gram_family = "expr",

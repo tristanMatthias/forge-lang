@@ -3,7 +3,6 @@
 // only grammar.md — tables desugar to `Expr.ListLit` of `Expr.StructLit`
 // rows in the BUILDS, so the list/struct features carry the downstream
 // hooks and this definition is syntax + lowerings alone.
-use features.table_lit.lowering.{table_lit_builds}
 use features.grammar.{parse_grammar}
 
 /// `table [<Row>] { col | col … rows }` — the definition carries the
@@ -45,7 +44,6 @@ cells. A context-free `table { … }` gets its row type from the binding.
                @expect("{", "expected `{` to open table") -> MkTableHeader(rt, h)
   table_row  = @on(cell_mode) v:bitxor ( ^"|" ^@on(cell_mode) v:bitxor )* -> MkTableRow(v)
         },
-        builders = table_lit_builds(),
         snippet = r"table<${1:Row}> {\n    ${2:col} | ${3:col}\n    ${4:v} | ${5:v}\n}",
         gram_family = "expr",
     }

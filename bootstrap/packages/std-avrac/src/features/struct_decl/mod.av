@@ -10,7 +10,6 @@
 use codegen.{err_emit}
 use core.{vtype_struct_name, ExprId}
 use features.{composed}
-use features.struct_decl.lowering.{type_decl_builds, struct_lit_builds, enum_ctor_builds, field_assign_builds, field_access_builds, named_type_builds}
 use features.enum_decl.{emit_enum_ctor}
 use typeck.{tc_enum_find_by_variant}
 use typeck.{check_expr, check_expr_list, tc_er, tc_report, tc_struct_lit_vtype}
@@ -46,7 +45,6 @@ partial updates go through `with`).
   struct_lit_expr = n:IDENT "{" ( @onfail(bail) f:field_init )* "}" -> MkStructLit(n, f)
   field_init  = n:IDENT ( ":" @onfail(bail) v:expression )? ( "," )? -> MkFieldInit(n, v)
         },
-        builders = struct_lit_builds(),
         snippet = r"${1:Name} { ${2:field}: ${3:value} }",
         expr_tag = Expr.StructLit("", []),
         emit_expr = struct_lit_emit_expr,
@@ -84,7 +82,6 @@ upper-case receiver the same syntax reads as `Type.STATIC` /
   field_suffix = @peek(dot_plain_field) @when(dot_postfix_ok) "." n:FIELDNAME -> MkFieldAccess(n)
                | @fallback @when(dot_postfix_ok) "." @require n:FIELDNAME @expect("FIELDNAME", "expected field name after `.`", F0040) -> MkFieldAccess(n)
         },
-        builders = field_access_builds(),
         snippet = r"${1:obj}.${2:field}",
         expr_tag = Expr.FieldAccess(ExprId(0), ""),
         emit_expr = field_access_emit_expr,
@@ -112,7 +109,6 @@ export fn enum_ctor_lang() -> LanguageFeature {
                  @expect(")", "expected `)` after arguments") -> mk_enum_ctor(v, a)
   enum_ctor_suffix = @peek(dot_enum_ctor) @when(base_upper_ident) @when(dot_postfix_ok) "." n:FIELDNAME "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkEnumCtorSuffix(n, a)
         },
-        builders = enum_ctor_builds(),
         expr_tag = Expr.EnumCtor("", "", []),
         emit_expr = enum_ctor_emit_expr,
         resolve_expr = enum_ctor_resolve_expr,
@@ -155,7 +151,6 @@ Assignment is right-associative and yields the assigned value.
   assignment    = @onfail(bail) l:pipe ( "=" r:assignment )? -> mk_assign(l, r)
   equality      = base:bitor ( tail:eq_tail )? -> rebind_eq(base, tail)
         },
-        builders = field_assign_builds(),
         snippet = r"${1:target} = ${2:value}",
         expr_tag = Expr.FieldAssign(ExprId(0), "", ExprId(0)),
         emit_expr = field_assign_emit_expr,
@@ -222,7 +217,6 @@ optional `<T, U: Bound>` list.
                 // which is exactly the sharing this one rule already stands for.
                 @expect("type_expr", "expected field type") -> MkField(fname, ftype)
             },
-        builders = type_decl_builds(),
         snippet = r"type ${1:Name} = {\n    ${2:field}: ${3:Type},\n}",
     }
     type_decl_def
@@ -374,7 +368,6 @@ nullable, and `@pkg::mod::Name` addresses a package's type.
   qualified_type = "@" qname:IDENT ( @peek(double_colon) ":" ":" qname:IDENT )+ ( "<" qa:type_expr ( "," qa:type_expr )* ">" )? ( qopt:"?" )? -> MkQualified(qname, qa, qopt)
   named_type = name:IDENT ( "." name:IDENT )* ( "<" a:type_expr ( "," a:type_expr )* ">" )? ( opt:"?" )? -> MkNamed(name, a, opt)
         },
-        builders = named_type_builds(),
         gram_family = "type",
     }
     named_type_def

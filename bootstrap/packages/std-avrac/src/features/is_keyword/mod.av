@@ -2,7 +2,6 @@
 // surface flat at `features.is_keyword.{...}`.
 use core.{ExprId}
 use features.is_keyword.codegen.{emit_is_check}
-use features.is_keyword.lowering.{is_keyword_builds}
 use typeck.{check_expr, tc_er}
 use features.grammar.{parse_grammar}
 
@@ -27,7 +26,6 @@ precedence — one check per comparison.
   is_tail = "is" "." v:IDENT
             @expect(".", "expected `.Variant` after `is`") -> mk_is(v)
         },
-        builders = is_keyword_builds(),
         snippet = r"${1:value} is .${2:Variant}",
         expr_tag = Expr.IsCheck(ExprId(0), ""),
         emit_expr = emit_is_check,

@@ -2,7 +2,6 @@
 // at `features.logical_op.{...}`. A syntax-only carrier: `Expr.Logical` is
 // a core codegen/typeck node (short-circuit lowering lives in codegen),
 // so no pass hooks ride this definition — syntax + the lowering alone.
-use features.logical_op.lowering.{logical_op_builds}
 use features.grammar.{parse_grammar}
 
 /// `a && b` / `a || b` (and the keyword spellings `and` / `or`) — the
@@ -27,7 +26,6 @@ associate left: `a || b || c` is `(a || b) || c`.
   logic_or      = l:logic_and ( op:("||" | "or") r:logic_and )* -> fold_logical(l, op, r)
   logic_and     = l:equality ( op:("&&" | "and") r:equality )* -> fold_logical(l, op, r)
         },
-        builders = logical_op_builds(),
         snippet = r"${1:a} && ${2:b}",
         gram_family = "expr",
     }

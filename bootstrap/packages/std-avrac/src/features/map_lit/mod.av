@@ -3,7 +3,6 @@
 // is in scope without a self-import.
 use codegen.{err_emit}
 use core.{ValueType}
-use features.map_lit.lowering.{map_lit_builds}
 use typeck.{check_expr_list_types, tc_er}
 use features.grammar.{parse_grammar}
 
@@ -30,7 +29,6 @@ keys work like plain ones.
                  @expect(":", "expected `:` after map key")
                  @expect("}", "expected `}` after map") -> MkMapLit(k, v)
         },
-        builders = map_lit_builds(),
         snippet = r"{ ${1:key}: ${2:value} }",
         expr_tag = Expr.MapLit([]),
         emit_expr = map_lit_emit_expr,

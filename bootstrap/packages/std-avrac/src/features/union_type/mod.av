@@ -1,7 +1,6 @@
 // dir-as-module (g2eo.1): no `mod` decls — sibling .av files
 // (codegen.av) auto-load and surface flat at `features.union_type.{...}`.
 
-use features.union_type.lowering.{union_type_builds}
 use features.grammar.{parse_grammar}
 
 /// `A | B` ad-hoc union types (t-kd4y.3.5.10) — the definition carries the
@@ -23,7 +22,6 @@ Unions compose with every atom (`int | [string] | fn() -> bool?`) and
         gram = grammar {
   type_expr  = l:type_atom ( "|" r:type_atom )* -> TyUnion(l, r)
         },
-        builders = union_type_builds(),
         snippet = r"${1:A} | ${2:B}",
         gram_family = "type",
     }

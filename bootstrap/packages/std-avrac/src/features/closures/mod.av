@@ -2,7 +2,6 @@
 // auto-load as siblings, surface flat at `features.closures.{...}`.
 // `emit_lambda` and parser helpers are in scope without self-imports.
 use core.{ExprId}
-use features.closures.lowering.{closures_builds}
 use typeck.{check_expr, tc_bind_params, tc_check_signature_arity_top, tc_enter, tc_er, tc_exit, tc_first_unannotated_param, tc_param_types}
 use features.grammar.{parse_grammar}
 
@@ -45,7 +44,6 @@ the arrow and the mandatory tuple comma disambiguate.
                  @expect("IDENT", "expected parameter name")
                  @expect("type_expr", "expected parameter type after `:`") -> MkParam(pname, pt)
         },
-        builders = closures_builds(),
         snippet = r"(${1:x}) -> ${2:body}",
         expr_tag = Expr.Lambda([], ExprId(0)),
         emit_expr = emit_lambda,

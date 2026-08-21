@@ -40,7 +40,7 @@ export fn mk_grammar_block_abi(st: PState, vals: List<CapVal>) -> CapVal {
     CapVal.Node(mk_grammar_block(st, st.build_sp, vals[0]))
 }
 
-fn grammar_block_builds() -> List<BuilderBind> {
+export fn grammar_block_builds() -> List<BuilderBind> {
     bind_rows("features.grammar", [bind_row("MkGrammarBlock", BuildKind.Expr, 1, true, "mk_grammar_block_abi", mk_grammar_block_abi)])
 }
 
@@ -65,7 +65,6 @@ is exactly the quoted form with the quotes dropped.
         gram = grammar {
   grammar_expr = "grammar" "{" body:@rawbrace(grammar) "}" -> MkGrammarBlock(body)
         },
-        builders = grammar_block_builds(),
         expr_keyword = "grammar",
         gram_family = "expr",
     }

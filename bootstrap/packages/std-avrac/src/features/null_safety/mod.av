@@ -14,7 +14,6 @@
 // without explicit self-imports.
 use codegen.{err_emit}
 use core.{vtype_wrap_optional, vtype_is_optional, vtype_is_unknown, ExprId}
-use features.null_safety.lowering.{null_coalesce_builds, try_builds, catch_builds, optional_chain_builds, optional_method_call_builds}
 use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er, check_method_call}
 use features.grammar.{parse_grammar}
@@ -36,7 +35,6 @@ associate left and stop at the first non-null value: `a ?? b ?? c`.
         gram = grammar {
   null_coalesce = l:logic_or ( op:("??") r:logic_or )* -> fold_nullish(l, op, r)
         },
-        builders = null_coalesce_builds(),
         snippet = r"${1:value} ?? ${2:fallback}",
         expr_tag = Expr.NullCoalesce(ExprId(0), ExprId(0)),
         emit_expr = null_coalesce_emit_expr,
@@ -69,7 +67,6 @@ short-circuit at the first null receiver.
         gram = grammar {
   optchain_suffix = @peek(qdot_plain_field) "?." n:FIELDNAME -> MkOptChain(n)
         },
-        builders = optional_chain_builds(),
         snippet = r"${1:obj}?.${2:field}",
         expr_tag = Expr.OptionalChain(ExprId(0), ""),
         emit_expr = optional_chain_emit_expr,
@@ -101,7 +98,6 @@ the `it` pronoun sugar exactly as a plain method call does.
         gram = grammar {
   optcall_suffix = @peek(qdot_method_call) "?." n:FIELDNAME "(" @on(allow_it_sugar) ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkOptMethodCall(n, a)
         },
-        builders = optional_method_call_builds(),
         snippet = r"${1:obj}?.${2:method}(${3:args})",
         expr_tag = Expr.OptionalMethodCall(ExprId(0), "", []),
         emit_expr = optional_method_call_emit_expr,
@@ -133,7 +129,6 @@ Both continue the postfix chain: `x!.field` and `f()?.g()` compose.
   unwrap_suffix = @when(allow_dot_postfix) ^"!" -> MkForceUnwrap()
                 | @when(allow_dot_postfix) ^"?" -> MkTrySuffix()
         },
-        builders = try_builds(),
         snippet = r"${1:expr}?",
         expr_tag = Expr.Try(ExprId(0)),
         emit_expr = try_emit_expr,
@@ -168,7 +163,6 @@ expression is the recovery value.
                  @expect("{", "expected `{` after catch")
                  @expect("}", "expected `}` after catch body") -> MkCatchSuffix(c, b, body)
         },
-        builders = catch_builds(),
         snippet = r"${1:expr} catch { ${2:fallback} }",
         expr_tag = Expr.Catch(ExprId(0), "", ExprId(0), 0, 0),
         emit_expr = catch_emit_expr,

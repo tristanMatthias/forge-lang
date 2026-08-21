@@ -5,7 +5,6 @@
 // graph_build.av + dir_module.av auto-load as siblings, surface flat
 // at `features.modules.{...}`.
 use core.{Stmt, StmtId}
-use features.modules.lowering.{use_builds, qualified_ref_builds, export_builds}
 use features.{composed}
 use features.grammar.{parse_grammar}
 
@@ -56,7 +55,6 @@ may be named `defer`); the imported names themselves stay identifiers.
   mod_decl    = @try "mod" @cut @require mdname:WORD
                 @expect("WORD", "expected module name after `mod`") -> MkModule(mdname)
             },
-        builders = use_builds(),
         snippet = r"use ${1:path}.{${2:names}}",
         stmt_tag = Stmt.Use("", []),
         eval_stmt = use_eval,
@@ -112,7 +110,6 @@ form (`export let` compiles to module-local allocas).
   exportable_decl  = ei:exportable_inner -> MkStampAt(ei)
   exportable_inner = use_decl | mod_decl | shape_decl | enum_decl | type_decl | extern_decl | fn_decl | trait_decl | impl_decl | letdes_decl | let_decl | mut_decl | const_decl | select_decl | parallel_decl | spec_decl | comp_header
             },
-        builders = export_builds(),
         snippet = r"export ${1:declaration}",
     }
     export_def
@@ -144,7 +141,6 @@ annotation syntax — a qualified reference always carries `::`.
                    @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
                    @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
         },
-        builders = qualified_ref_builds(),
         gram_family = "expr",
     }
     qualified_ref_def

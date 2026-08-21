@@ -4,7 +4,6 @@
 // lowering (build_return) is feature-owned via the builder manifest
 // (t-kd4y.3); Stmt.Return / Stmt.ReturnEmpty codegen — return-slot stores,
 // DeferStack unwinding, RC releases — stays with the central emitters.
-use features.return_stmt.lowering.{return_builds}
 use features.grammar.{parse_grammar}
 
 /// `return ( value )?` — an absent same-line value is a bare
@@ -36,7 +35,6 @@ Every `return` runs the scope's pending `defer` / `errdefer` entries
 (LIFO) before the function actually exits.
 """,
         gram = grammar { return_stmt = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> build_return(e) },
-        builders = return_builds(),
         snippet = r"return ${1:value}",
         gram_family = "stmt",
     }

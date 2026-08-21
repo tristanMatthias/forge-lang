@@ -10,7 +10,6 @@
 // Phase D of forge-crafting-intepreters-nce6.
 
 use core.{ExprId}
-use features.isolated_expr.lowering.{isolated_builds}
 use typeck.{check_expr, tc_er}
 use features.grammar.{parse_grammar}
 
@@ -33,7 +32,6 @@ the parent, not a process-wide death.
                   @expect("{", "expected `{` after isolated")
                   @expect("block_expr", "expected `{` after isolated") -> MkIsolated(body)
         },
-        builders = isolated_builds(),
         snippet = r"isolated { ${1:body} }",
         expr_tag = Expr.Isolated(ExprId(0)),
         emit_expr = isolated_emit_expr,

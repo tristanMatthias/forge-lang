@@ -3,7 +3,6 @@
 // dir-as-module (g2eo.1): grammar.av + typeck.av + codegen.av + lowering/
 // auto-load as siblings, surface flat at `features.trait_decl.{...}`.
 use features.{composed}
-use features.trait_decl.lowering.{trait_builds, dyn_type_builds}
 use features.grammar.{parse_grammar}
 
 /// The `trait` declaration feature. Its rules compose through the decl
@@ -54,7 +53,6 @@ one without is a signature an `impl Name for T` block must supply.
                   @expect("(", "expected `(` after method name")
                   @expect(")", "expected `)` after method parameters") -> MkTraitMethod(tmname, tmparams, tmret, tmlb, tmbody)
             },
-        builders = trait_builds(),
         snippet = r"trait ${1:Name} { fn ${2:method}(self) }",
     }
     trait_def
@@ -75,7 +73,6 @@ dispatch where monomorphization cannot apply. `dyn Trait?` is nullable.
         gram = grammar {
   dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)
         },
-        builders = dyn_type_builds(),
         gram_family = "type",
     }
     dyn_type_def
