@@ -4313,9 +4313,25 @@ mode_check_core_layering() {
 }
 
 mode_check_feature_layout() {
-  local list_only=0
-  [ "${1:-}" = "--list" ] && list_only=1
-  local fd="$BOOTSTRAP_DIR/packages/std-avrac/src/features"
+  # --root <dir> scans a DIFFERENT features/ tree instead of the repo's own,
+  # exactly as --check-core-layering gained for the same reason (t-frix). This
+  # lint's own anti-vacuity probes PLANT into the live tree: one drops a stray
+  # file into features/tuples/, the other creates a whole resolvable MODULE at
+  # features/zz_unlisted_probe/. The suite runs shards IN PARALLEL and the
+  # resolver ENUMERATES directories, so a concurrent shard can observe a module
+  # that is about to vanish — and `rm -f`/`rm -rf` is the only cleanup (no
+  # `defer` in this shell-out style), so a crash mid-probe leaves the plant
+  # behind and the NEXT run fails the lint for real (t-9obn).
+  local list_only=0 fd=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --list) list_only=1 ;;
+      --root) shift; [ $# -gt 0 ] || die "check-feature-layout: --root needs a directory"; fd="$1" ;;
+      *) ;;
+    esac
+    shift
+  done
+  [ -n "$fd" ] || fd="$BOOTSTRAP_DIR/packages/std-avrac/src/features"
   [ -d "$fd" ] || die "check-feature-layout: features dir not found: $fd"
 
   # Canonical top-level filenames. `grammar.av` is NOT here and is no longer
