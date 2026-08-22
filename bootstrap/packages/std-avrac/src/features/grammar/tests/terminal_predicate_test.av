@@ -1,0 +1,60 @@
+// WHY: t-y2i7.8 slice 2. A named terminal whose accepted set spans SEVERAL Tk
+// variants was defined TWICE — once for each engine:
+//
+//   tk_to_grammar_kind (real_lex.av)  the EXECUTOR's view, a Tk -> kind-string map
+//   named_tk_guard     (emit.av)      the GENERATED parser's view, emitted TEXT
+//
+// FIELDNAME was fixed first (#1336). NUMBER and BOOL had the same shape:
+// real_lex mapped `.Number`/`.Float` -> "NUMBER" and `.Keyword(.True)`/
+// `.Keyword(.False)` -> "BOOL", while emit respelled each as a disjunction.
+// Both now read ONE shared predicate, so the set cannot drift between engines.
+//
+// The single-variant terminals (IDENT, STRING, TEMPLATE, EOF, DOC, MODDOC,
+// ERROR) are deliberately NOT covered here: `st.cur().tk == Tk.String` duplicates
+// no set, so there is nothing to drift and a guard would only pin spelling.
+use @std.avrac.features.grammar.{emit_rule_fn, avra_program_grammar}
+use @std.avrac.core.{Tk, KwId, tk_is_number_lit, tk_is_bool_lit}
+
+/// Every rule's emitted source, so the assertions sweep the whole parser rather
+/// than a rule named by hand — a terminal gains consumers over time.
+fn all_rules_src() -> string {
+    let g = avra_program_grammar()
+    mut out = ""
+    for gr in g.rules { out = out + emit_rule_fn(g, gr) }
+    out
+}
+
+/// Rules whose emitted source respells a set instead of calling its predicate.
+/// Returns NAMES so a failure says which rule regressed, not just a count.
+fn rules_respelling() -> List<string> {
+    let g = avra_program_grammar()
+    mut out: List<string> = []
+    for gr in g.rules {
+        let src = emit_rule_fn(g, gr)
+        if src.contains("st.cur().tk == Tk.Number || st.cur().tk == Tk.Float") { out.push(gr.name + ":NUMBER") }
+        if src.contains("tk_is_kw(st.cur().tk, KwId.True) || tk_is_kw(st.cur().tk, KwId.False)") { out.push(gr.name + ":BOOL") }
+    }
+    out
+}
+
+spec "t-y2i7.8: the set-valued terminals have ONE definition, not one per engine" {
+    then "the predicates ARE the sets the executor maps to those kinds" {
+        // The property both engines depend on. If these ever disagree with
+        // tk_to_grammar_kind, the two views have diverged again.
+        tk_is_number_lit(Tk.Number) && tk_is_number_lit(Tk.Float) &&
+        !tk_is_number_lit(Tk.String) &&
+        tk_is_bool_lit(Tk.Keyword(KwId.True)) && tk_is_bool_lit(Tk.Keyword(KwId.False)) &&
+        !tk_is_bool_lit(Tk.Keyword(KwId.If)) && !tk_is_bool_lit(Tk.Identifier)
+    }
+
+    then "the emitted parser CALLS them" {
+        // Anti-vacuity for the arm below: without a call present, "no respelling"
+        // would pass on a parser that had dropped the terminals entirely.
+        let src = all_rules_src()
+        src.contains("tk_is_number_lit(st.cur().tk)") && src.contains("tk_is_bool_lit(st.cur().tk)")
+    }
+
+    then "and no rule anywhere respells either set" {
+        rules_respelling().length == 0
+    }
+}

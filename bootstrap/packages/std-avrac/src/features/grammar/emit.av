@@ -2389,7 +2389,7 @@ export fn derived_import_lines_for(src: string, binds: List<BuildKindRow>, gramm
 /// parser calls free lives in features.grammar (engine helpers + _gb_
 /// adapters) — by construction of emit_call_build and the marshalling rows.
 fn core_fn_homes() -> List<string> {
-    ["pattern_optional_present", "pattern_optional_absent", "tk_is_kw", "tk_is_field_name"]
+    ["pattern_optional_present", "pattern_optional_absent", "tk_is_kw", "tk_is_field_name", "tk_is_number_lit", "tk_is_bool_lit"]
 }
 
 /// Types the engine module owns.
@@ -2787,9 +2787,9 @@ fn named_tk_guard(tok: string) -> string {
     // `tk_is_field_name`), so the lockstep named_tok_matches documents is
     // structural instead of a pairing two files have to remember.
     if tok == "FIELDNAME" { return "tk_is_field_name(st.cur().tk)" }
-    if tok == "NUMBER"   { return "(st.cur().tk == Tk.Number || st.cur().tk == Tk.Float)" }
+    if tok == "NUMBER"   { return "tk_is_number_lit(st.cur().tk)" }
     if tok == "STRING"   { return "st.cur().tk == Tk.String" }
-    if tok == "BOOL"     { return "(tk_is_kw(st.cur().tk, KwId.True) || tk_is_kw(st.cur().tk, KwId.False))" }
+    if tok == "BOOL"     { return "tk_is_bool_lit(st.cur().tk)" }
     if tok == "TEMPLATE" { return "st.cur().tk == Tk.Template" }
     if tok == "EOF"      { return "st.cur().tk == Tk.Eof" }
     if tok == "DOC"      { return "st.cur().tk == Tk.DocComment" }

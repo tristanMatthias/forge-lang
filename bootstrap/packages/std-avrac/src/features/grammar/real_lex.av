@@ -25,7 +25,7 @@
 // (`IDENT NUMBER STRING BOOL EOF`); every other token (keywords, operators,
 // punctuation) is matched by TEXT, so its kind only has to avoid colliding
 // with a named-terminal kind — `KW` for keywords, `PUNCT` for operators.
-use core.{Tk, tk_keyword_str}
+use core.{Tk, tk_keyword_str, tk_is_number_lit, tk_is_bool_lit}
 use parse.{Parser, parser_new_lex_only}
 use features.grammar.{Token}
 use diagnostics.{Diagnostic, error_def}
@@ -133,18 +133,7 @@ fn tk_is_keyword(tk: Tk) -> bool {
 fn tk_to_grammar_kind(tk: Tk) -> string {
     match tk {
         .Identifier -> "IDENT"
-        .Number     -> "NUMBER"
-        // `3.14` is `Tk.Float`; the demo lexer had no Float token, so the
-        // pattern/expr `num` builds split Int/Float on a `.` in the text — a
-        // convention preserved by keeping Float in the NUMBER kind (the lexeme
-        // still carries the dot).
-        .Float      -> "NUMBER"
         .String     -> "STRING"
-        // `true` / `false` are keywords in the real lexer but literal terminals
-        // in the grammars (`"true"`), matched by text; the BOOL kind is what
-        // `literal_node` reads to build `Expr.Bool`.
-        .Keyword(.True)     -> "BOOL"
-        .Keyword(.False)    -> "BOOL"
         .Eof        -> "EOF"
         .Error      -> "ERROR"
         // Interpolated / doc-comment tokens have no grammar terminal in the
@@ -153,6 +142,12 @@ fn tk_to_grammar_kind(tk: Tk) -> string {
         .Template       -> "TEMPLATE"
         .DocComment     -> "DOC"
         .ModDocComment  -> "MODDOC"
-        _ -> if tk_is_keyword(tk) { "KW" } else { "PUNCT" }
+        // NUMBER and BOOL are SETS, not single variants, so they read the
+        // shared predicates rather than listing their members here — the same
+        // definition `named_tk_guard` emits a call to. Listed in both places
+        // they drift, which is the FIELDNAME failure mode (t-y2i7.8).
+        _ -> if tk_is_number_lit(tk) { "NUMBER" }
+             else if tk_is_bool_lit(tk) { "BOOL" }
+             else if tk_is_keyword(tk) { "KW" } else { "PUNCT" }
     }
 }
