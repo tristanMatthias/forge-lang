@@ -4,12 +4,12 @@
 
 use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_expr_at}
 use @std.avrac.parse.{oracle_expr}
-use @std.avrac.core.{render_expr_id}
+use @std.avrac.core.{RuleName, render_expr_id}
 
 // The DSL's rendered expr for `src` under the production expression grammar, whose
 // `template_lit` rule owns the TEMPLATE token natively.
 fn dsl_expr(src: string) -> string {
-    let r = run_grammar_expr_at(avra_program_grammar(), "expression", src)
+    let r = run_grammar_expr_at(avra_program_grammar(), RuleName("expression"), src)
     if r.had_error { return "<dsl err>" }
     render_expr_id(r.store, r.root)
 }

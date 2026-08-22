@@ -21,7 +21,7 @@
 // Single-level generics fully exercise the generic mechanism.
 use @std.avrac.features.grammar.{avra_type_grammar, avra_program_grammar, run_grammar_type_at}
 use @std.avrac.parse.{pinned_parser}
-use @std.avrac.core.{render_type_id, type_expr_to_vtype}
+use @std.avrac.core.{RuleName, render_type_id, type_expr_to_vtype}
 
 // The type grammar is the SOURCE-OF-TRUTH `grammar { }` block dogfooded into
 // compiler src/ (avra_grammar.av avra_type_grammar(), ps3t.6.5.11) — mirroring
@@ -30,7 +30,7 @@ use @std.avrac.core.{render_type_id, type_expr_to_vtype}
 
 // The DSL-generated type parser's ValueType for `src`, rendered canonically.
 fn dsl_type(src: string) -> string {
-    let r = run_grammar_type_at(avra_program_grammar(), "type_expr", src)
+    let r = run_grammar_type_at(avra_program_grammar(), RuleName("type_expr"), src)
     if r.had_error { return "<dsl parse error>" }
     render_type_id(r.store, r.root)
 }
