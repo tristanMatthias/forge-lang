@@ -27,3 +27,13 @@ export type PatId = int
 /// Index into the ValueType arena.
 @opaque
 export type TypeId = int
+
+/// A grammar rule's name — the `start` argument of the executor seams.
+///
+/// t-y2i7.3 section 14. The seams took a bare `string`, so any string was a
+/// valid rule name and a rule name was interchangeable with any other string.
+/// It is OPTIONAL at the seam (`RuleName?`) rather than carrying a `""`
+/// sentinel: an empty rule name is a different thing from "no rule given", and
+/// conflating them is what broke the first attempt at this (312 grammar specs).
+/// `null` now means "use the grammar's first rule".
+export type RuleName = string
