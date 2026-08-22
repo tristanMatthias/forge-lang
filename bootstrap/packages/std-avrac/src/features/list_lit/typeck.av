@@ -1,6 +1,6 @@
 // WHY: type checking for list literals and list method calls.
 
-use core.{ExprId, ValueType, vtype_list_elem, vtype_pair_list, vtype_render_full}
+use core.{ExprId, ValueType, vtype_list_elem, vtype_pair_list, vtype_render_full, newtype_identity_conflict}
 use typeck.{TC, ExprResult, tc_er, tc_enter, tc_exit, tc_bind, check_expr, check_expr_list_types, tc_gate_unthreaded_lambda, tc_report, nested_layout_conflict}
 use diagnostics.{DiagCode}
 
@@ -38,6 +38,14 @@ export fn check_list_lit_with_expected(tc: TC, elements: List<ExprId>, expected_
     mut after = lr.tc
     mut i = 0
     while i < lr.types.length {
+        // Nominal identity, same shared authority as every other slot (t-5qi0):
+        // `List<RuleName> = ["bare"]` put an unwrapped value in a newtype
+        // element. The layout check below cannot see it — a newtype over
+        // `string` has the SAME layout as `string`, which is the whole point of
+        // the wrapper being a compile-time distinction.
+        if newtype_identity_conflict(lr.types[i], expected_elem) {
+            after = tc_report(after, DiagCode.TypeMismatch, "list element of type `${vtype_render_full(lr.types[i])}` expects `${vtype_render_full(expected_elem)}`")
+        }
         if nested_layout_conflict(after, lr.types[i], expected_elem) {
             after = tc_report(after, DiagCode.TypeMismatch, "list element of type `${vtype_render_full(lr.types[i])}` conflicts with expected `${vtype_render_full(expected_elem)}` (layout conflict)")
         }
