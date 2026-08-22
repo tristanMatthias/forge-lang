@@ -160,3 +160,39 @@ spec "slot-gate end to end: an occupied gate blocks, then admits" {
         held >= 0 && rc == 0 && !out.contains("waiting") && out.contains("ok")
     }
 }
+
+spec "slot-gate policy: HEADROOM makes the decision predictive (t-2fe6)" {
+    // THE DEFECT: the gate is REACTIVE — above the threshold it returns WITHOUT
+    // taking a slot, so on a healthy box it bounds nothing and several heavy
+    // compiles start inside one window. Measured on a full suite (per-process
+    // peaks, commands labelled), the top consumers are FIXTURE COMPILES, not
+    // shards: 4779 / 3515 / 3449 MB, all `bs2 compile /tmp/avra_*`. CI then
+    // loses ~8GB inside one 30s heartbeat and the runner evicts it (exit 143).
+    //
+    // `avra_compile_slot_gate` adds AVRA_SLOT_GATE_HEADROOM_MB to the threshold
+    // before asking, so the policy IS this arithmetic. Engagement itself was
+    // verified manually against a held slot, with a headroom-off control:
+    //   headroom ON  -> "[slot-gate] memory pressure (6936 MiB available <
+    //                    1000000 MiB): waiting for one of 1 compile slots"
+    //   headroom OFF -> no engagement
+    then "with no headroom, a box above the threshold does NOT wait" {
+        // Today's behaviour, and the default: 6GB avail against a 4GB threshold.
+        avra_slot_gate_should_wait(6 * 1024 * 1024, 4 * 1024 * 1024) == 0
+    }
+    then "the SAME box waits once headroom is reserved on top" {
+        // 6GB avail, 4GB threshold, 3GB headroom: the compile would leave the box
+        // under the threshold, so it waits BEFORE committing rather than after.
+        avra_slot_gate_should_wait(6 * 1024 * 1024, 4 * 1024 * 1024 + 3 * 1024 * 1024) == 1
+    }
+    then "headroom does not make a ROOMY box wait" {
+        // The throughput half, and why the default is 0: two prior tunings in
+        // this area were artefacts that HALVED CI wall-time. 14GB absorbs the
+        // same 4GB + 3GB and must still admit immediately.
+        avra_slot_gate_should_wait(14 * 1024 * 1024, 4 * 1024 * 1024 + 3 * 1024 * 1024) == 0
+    }
+    then "an unavailable reading still disables the wait, headroom or not" {
+        // avail <= 0 is the SAMPLER-UNAVAILABLE sentinel, never a real reading;
+        // failing OPEN on it is deliberate, so a blind gate cannot stall the box.
+        avra_slot_gate_should_wait(0 - 1, 4 * 1024 * 1024 + 3 * 1024 * 1024) == 0
+    }
+}
