@@ -2,7 +2,6 @@
 // surface flat at `features.in_operator.{...}`.
 use core.{ExprId}
 use features.in_operator.codegen.{emit_in_check}
-use features.in_operator.lowering.{in_operator_builds}
 use typeck.{check_expr, check_expr_list, tc_er}
 use features.grammar.{parse_grammar}
 
@@ -29,7 +28,6 @@ exclusive with `==` chains and `is` at the same precedence.
           | s:bitor @require ".." e:bitor
             @expect("..", "expected `..` in range expression after `in`") -> mk_inrange(s, e)
         },
-        builders = in_operator_builds(),
         snippet = r"${1:value} in ${2:collection}",
         expr_tag = Expr.InCheck(ExprId(0), []),
         emit_expr = emit_in_check,

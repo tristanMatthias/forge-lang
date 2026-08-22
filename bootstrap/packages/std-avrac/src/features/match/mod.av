@@ -9,7 +9,6 @@ use codegen.{err_emit, StmtResult, err_sr, Ctx, EmitValue, ok_emit, field_resolv
 use core.{Pattern, MatchArm, ParamEntry, Expr, Stmt, WhenArm, PatId, Variant, ValueType, FieldEntry, TypeArg, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types, type_short_name, vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding, VarBinding, variant_lookup, ExprId}
 use typeck.{check_expr, tc_er, EnumTypeReg, ExprResult, TC, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_exit, tc_gate_unthreaded_lambda, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use features.grammar.{parse_grammar, grammar_checked, Grammar}
-use features.match.lowering.{match_builds}
 
 // ── typed lowerings, home in the feature dir (t-47hc.8 dissolution /
 // t-kd4y.3 match flip) — pure over unwrapped values in lowering/mod.av;
@@ -227,7 +226,6 @@ desugars into ordinary arms.
         // explicitly by name, so this is validation/docs surface, never a
         // second composition.
         gram = composed([avra_pat_grammar(), avra_match_arm_grammar(), avra_match_stmt_grammar(), avra_match_table_grammar()]),
-        builders = match_builds(),
         snippet = r"match ${1:subject} { ${2:pattern} -> ${3:body} }",
         diags = [DiagSpec {
             code: "F9001",

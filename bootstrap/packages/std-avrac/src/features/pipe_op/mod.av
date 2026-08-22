@@ -2,7 +2,6 @@
 // at `features.pipe_op.{...}`. A syntax-only carrier: `|>` desugars to a
 // plain `Expr.Call` in the BUILD, so no pass hooks ride this definition —
 // the call machinery owns everything downstream.
-use features.pipe_op.lowering.{pipe_op_builds}
 use features.grammar.{parse_grammar}
 
 /// `a |> f` — the pipe operator (spec axis 28), desugared in the parser:
@@ -27,7 +26,6 @@ it positionally instead: `x |> clamp(_, 0, 9)` is `clamp(x, 0, 9)`.
   pipe          = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)
   pipe_arg      = @on(allow_it_sugar) logic_or
         },
-        builders = pipe_op_builds(),
         snippet = r"${1:value} |> ${2:f}",
         gram_family = "expr",
     }

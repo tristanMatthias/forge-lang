@@ -3,7 +3,6 @@
 // + check_list_lit are in scope without self-imports.
 use codegen.{err_emit}
 use typeck.{tc_er}
-use features.list_lit.lowering.{list_lit_builds, list_type_builds}
 use features.grammar.{parse_grammar}
 
 /// `[a, b, c]` list literals + the `[`-led comprehension — the definition
@@ -45,7 +44,6 @@ a common element type.
                  @expect("IDENT", "expected variable name after `for`")
                  @expect("in", "expected `in` after loop variable") -> MkListComp(b, v, c, f)
         },
-        builders = list_lit_builds(),
         snippet = r"[${1:a}, ${2:b}]",
         expr_tag = Expr.ListLit([]),
         emit_expr = list_lit_emit_expr,
@@ -90,7 +88,6 @@ export fn list_type_lang() -> LanguageFeature {
         gram = grammar {
   list_type  = "[" e:type_expr "]" -> TyList(e)
         },
-        builders = list_type_builds(),
         gram_family = "type",
     }
     list_type_def

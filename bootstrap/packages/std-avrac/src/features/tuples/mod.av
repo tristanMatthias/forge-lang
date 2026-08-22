@@ -12,7 +12,6 @@
 // surface flat at `features.tuples.{...}`.
 use core.{vtype_tuple_at, vtype_eq}
 use core.{ExprId}
-use features.tuples.lowering.{tuple_index_builds, tuple_type_builds}
 use resolve.{resolve_expr, resolve_expr_list_ids}
 use typeck.{check_expr, check_expr_list_types, tc_er, tc_report, tc_gate_unthreaded_lambda}
 use diagnostics.{DiagCode}
@@ -60,7 +59,6 @@ compile time.
         gram = grammar {
   tuple_suffix = @peek(dot_number) @when(dot_postfix_ok) "." t:NUMBER -> MkTupleIndex(t)
         },
-        builders = tuple_index_builds(),
         snippet = r"${1:tuple}.${2:0}",
         expr_tag = Expr.TupleIndex(ExprId(0), 0),
         emit_expr = emit_tuple_index,
@@ -129,7 +127,6 @@ export fn tuple_type_lang() -> LanguageFeature {
         gram = grammar {
   paren_type = "(" ( t:type_expr ( "," t:type_expr )* )? ")" -> TyParen(t)
         },
-        builders = tuple_type_builds(),
         gram_family = "type",
     }
     tuple_type_def

@@ -25,6 +25,7 @@
 //     top-level name must DECLARE it, which is why F4006 names ResolvedDecls
 //     alongside Stmt and List<Stmt>.
 use core.{Stmt, Expr, ValueType, TypeParamEntry, ParamEntry, ExprId}
+use features.comptime.{ctx_items_with_suffix}
 use features.comptime.{synth_expr_id, synth_stmt_ids, AnnotatedDecl, ResolverCtx,
                        ctx_items_with_annotation, ResolvedDecls, DeclSymbol, DeclKind,
                        MacroProvenance}
@@ -40,6 +41,43 @@ fn emitted(fn_stmt: Stmt) -> ResolvedDecls {
         macro_name: "build_language_features", target_canonical: "language_features_gen",
         target_source_span: Span { start: 0, end: 0, line: 0, col: 0, file: "" } }
     ResolvedDecls { decls, introduces, provenance }
+}
+
+/// `@std::avrac::features::struct_decl::struct_lit_lang`
+///   -> `@std::avrac::features::struct_decl::lowering::struct_lit_builds`
+///
+/// `ctx_items_with_annotation` answers CANONICAL PATHS (verified against the
+/// real tree, not a fixture — a module-less fixture returns bare names and would
+/// suggest this is impossible), so the feature's directory is already in hand
+/// and the builders fn is one rewrite away. Returns "" for a name that does not
+/// end `_lang`, so the caller can decline rather than guess.
+/// Membership by an explicit loop: the comptime evaluator has NO handler for
+/// `List.contains` — it reports "field access on non-struct value (kind=list,
+/// field=contains)" and the whole macro fails to emit, which surfaces as
+/// `undefined variable language_features` at every call site rather than as
+/// anything pointing here.
+@comptime
+fn str_in_list(xs: List<string>, needle: string) -> bool {
+    for x in xs { if x == needle { return true } }
+    false
+}
+
+@comptime
+fn builds_path_for(lang_path: string, nested: bool) -> string {
+    let suffix = "_lang"
+    if lang_path.length <= suffix.length { return "" }
+    if lang_path.substring(lang_path.length - suffix.length, lang_path.length) != suffix { return "" }
+    // Last `::` — split the owning module from the fn name.
+    mut cut = 0 - 1
+    mut i = 0
+    while i + 1 < lang_path.length {
+        if lang_path.substring(i, i + 2) == "::" { cut = i }
+        i = i + 1
+    }
+    if cut < 0 { return "" }
+    let owner = lang_path.substring(0, cut)
+    let base = lang_path.substring(cut + 2, lang_path.length - suffix.length)
+    if nested { owner + "::lowering::" + base + "_builds" } else { owner + "::" + base + "_builds" }
 }
 
 @comptime
@@ -63,9 +101,36 @@ export fn build_language_features(d: AnnotatedDecl, ctx: ResolverCtx) -> Resolve
 
     // SORTED: the emitted order reaches generated IR, so it must not depend on
     // discovery order.
+    // The builds fns that ACTUALLY EXIST. Not every feature has one — several
+    // rely on the `builders: List<BuilderBind> = []` default (extern_decl was
+    // the first to prove it, as an F3000 on a derived path nothing defines).
+    // Querying beats guessing: wrap only where the derived name is really there.
+    let have_builds = ctx_items_with_suffix(ctx, "_builds")
     mut calls: List<ExprId> = []
     for n in sort_strings(found) {
-        calls.push(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(n)), [])))
+        let lang = synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(n)), []))
+        // TWO LAYOUTS, both real: nearly every feature keeps its builds fn in
+        // `<dir>/lowering/`, but the grammar ENGINE keeps `grammar_block_builds`
+        // directly in `features/grammar/mod.av`. Try the common one, fall back
+        // to the owner module, and accept only a path that actually EXISTS —
+        // so a third layout fails loudly as a manifest defect rather than
+        // silently dropping a feature's builders.
+        mut bpath = builds_path_for(n, true)
+        if bpath != "" && !str_in_list(have_builds, bpath) { bpath = "" }
+        if bpath == "" {
+            let flat = builds_path_for(n, false)
+            if flat != "" && str_in_list(have_builds, flat) { bpath = flat }
+        }
+        if bpath == "" {
+            // A name that does not end `_lang` cannot have its builders derived.
+            // Emit it unwrapped rather than guessing — the convention guard
+            // (core/tests/builders_convention_test.av) is what keeps this
+            // branch unreachable in practice.
+            calls.push(lang)
+        } else {
+            let builds = synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident(bpath)), []))
+            calls.push(synth_expr_id(Expr.Call(synth_expr_id(Expr.Ident("with_builders")), [lang, builds])))
+        }
     }
     let body: List<Stmt> = [Stmt.Return(synth_expr_id(Expr.ListLit(calls)))]
     emitted(Stmt.Function("language_features", tp, ps, ret_ty, synth_stmt_ids(body)))

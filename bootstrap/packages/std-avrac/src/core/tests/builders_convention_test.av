@@ -1,80 +1,91 @@
-// WHY: t-y2i7.14. A feature's builders should not be passed by hand, and the
-// association that makes deriving it possible is a NAMING CONVENTION:
+// WHY: t-y2i7.14. No feature passes its own builders any more — the generated
+// `language_features()` wraps each `X_lang()` in `with_builders(X_lang(),
+// X_builds())`, deriving the builds fn from the lang fn's OWN canonical path
+// (features/regen.av `builds_path_for`).
 //
-//     export fn X_lang() -> LanguageFeature { … builders = X_builds() … }
+// That derivation is only safe while the naming holds. Slice 1 guarded it by
+// pairing each `builders = X_builds()` line against its `X_lang()`; slice 2
+// DELETED those lines, so that guard's premise is gone — the same way P7's
+// collapse invalidated kwid_lockstep_test.
 //
-// Across all 58 feature definitions that now holds 58/58 — but only after four
-// fns were renamed into it (impl_builds -> impl_decl_builds, qualified_builds ->
-// qualified_ref_builds, paren_type_builds -> tuple_type_builds, modules_builds ->
-// use_builds). Before those it held 54/58, and the four exceptions were the whole
-// reason the association looked underivable.
-//
-// The earlier reading — that builds fns are SHARED between features, so a name
-// cannot identify one — does not hold: there are 58 sites and 58 DISTINCT names.
-// What actually defeats directory-derivation is the opposite relationship, ONE
-// DIRECTORY hosting MANY features (null_safety declares 5, struct_decl 6), each
-// with its own builds fn. Keying on the lang fn, not the directory, is what works.
-//
-// This guard is what lets a generator derive the builders name from the lang fn
-// name instead of every feature spelling it out. Without it the convention is a
-// fact about today's tree rather than a rule, and the first feature to break it
-// breaks the derivation silently.
+// The invariant that matters now runs the other way: **no ORPHAN builds fn**.
+// A `*_builds` that no `*_lang` derives to is never attached to anything, and
+// nothing else complains — the feature simply registers with an empty manifest
+// and its rules fail at parse time, far from the cause. A lang fn with NO
+// builds fn is fine and expected (extern_decl relies on the `= []` default),
+// which is why this is one-directional.
 use @std.avrac.core.{avra_readdir, avra_selfhost_read_file}
 
 fn features_root() -> string { "packages/std-avrac/src/features" }
 
-/// `"<lang>|<builders>"` for every feature definition in the tree. Pairs by
-/// position: a `builders =` line belongs to the nearest `export fn X_lang()`
-/// above it, which is how the file is actually written.
-fn lang_builder_pairs() -> List<string> {
+/// `fn NAME(` declarations matching a suffix, from one file.
+fn fn_names_with_suffix(path: string, suffix: string) -> List<string> {
     mut out: List<string> = []
-    for entry in avra_readdir(features_root()) {
-        let src = avra_selfhost_read_file(features_root() + "/" + entry + "/mod.av")
-        if src == "" { continue }
-        mut cur = ""
-        for line in src.split("\n") {
-            let t = line.trim()
-            if t.starts_with("export fn ") && t.contains("_lang()") {
-                let rest = t.substring(10, t.length)
-                let at = rest.index_of("_lang()")
-                if at > 0 { cur = rest.substring(0, at) }
-                continue
-            }
-            let bat = t.index_of("builders = ")
-            if bat >= 0 && cur != "" {
-                let rest = t.substring(bat + 11, t.length)
-                let paren = rest.index_of("(")
-                if paren > 0 { out.push(cur + "|" + rest.substring(0, paren)) }
-                cur = ""
-            }
+    let src = avra_selfhost_read_file(path)
+    if src == "" { return out }
+    for line in src.split("\n") {
+        let t = line.trim()
+        mut rest = ""
+        if t.starts_with("export fn ") { rest = t.substring(10, t.length) }
+        else if t.starts_with("fn ") { rest = t.substring(3, t.length) }
+        if rest == "" { continue }
+        let paren = rest.index_of("(")
+        if paren <= 0 { continue }
+        let name = rest.substring(0, paren)
+        if name.length > suffix.length &&
+           name.substring(name.length - suffix.length, name.length) == suffix {
+            if !out.contains(name) { out.push(name) }
         }
     }
     out
 }
 
-/// Pairs whose builders fn is NOT named after its lang fn. Returns the pairs,
-/// so a failure names the offender instead of reporting a bare count.
-fn violations() -> List<string> {
+/// Every `*_builds` fn, paired with the feature directory that owns it.
+/// Both layouts are real: nearly all live in `<dir>/lowering/mod.av`, but the
+/// grammar engine keeps `grammar_block_builds` in `<dir>/mod.av`.
+fn builds_by_dir() -> List<string> {
     mut out: List<string> = []
-    for pair in lang_builder_pairs() {
-        let bar = pair.index_of("|")
-        let lang = pair.substring(0, bar)
-        let builds = pair.substring(bar + 1, pair.length)
-        if builds != lang + "_builds" { out.push(pair) }
+    for entry in avra_readdir(features_root()) {
+        let base = features_root() + "/" + entry
+        for n in fn_names_with_suffix(base + "/lowering/mod.av", "_builds") { out.push(entry + "|" + n) }
+        for n in fn_names_with_suffix(base + "/mod.av", "_builds") { out.push(entry + "|" + n) }
     }
     out
 }
 
-spec "t-y2i7.14: a feature's builders fn is named after its lang fn" {
-    then "the scan finds every feature definition — anti-vacuity" {
-        // 58 today. A FLOOR, not an equality: adding a feature must not fail
-        // this, but a scan that quietly stopped reading mod.av files must.
-        lang_builder_pairs().length >= 55
+/// `*_builds` fns with no `*_lang` in the same feature dir to derive them.
+fn orphans() -> List<string> {
+    mut out: List<string> = []
+    for pair in builds_by_dir() {
+        let bar = pair.index_of("|")
+        let dir = pair.substring(0, bar)
+        let builds = pair.substring(bar + 1, pair.length)
+        let stem = builds.substring(0, builds.length - 7)   // drop "_builds"
+        let langs = fn_names_with_suffix(features_root() + "/" + dir + "/mod.av", "_lang")
+        if !langs.contains(stem + "_lang") { out.push(pair) }
+    }
+    out
+}
+
+spec "t-y2i7.14: every builders fn is reachable by derivation from a lang fn" {
+    then "the scan finds the builds fns — anti-vacuity" {
+        // 58 today across both layouts. A FLOOR: adding a feature must not fail
+        // this, but a scan that stopped reading mod.av files must.
+        builds_by_dir().length >= 55
     }
 
-    then "every X_lang() uses X_builds() — no exceptions" {
-        // This is what makes the association DERIVABLE: a generator holding the
-        // lang fn name can construct the builders name with no exception table.
-        violations().length == 0
+    then "no ORPHAN builds fn — each one has an X_lang in its own feature dir" {
+        // An orphan is silently never attached: the generator derives from the
+        // LANG side, so a builds fn nothing points at is dead weight and its
+        // feature registers with an empty manifest.
+        orphans().length == 0
+    }
+
+    then "the derivation's own shape holds for a known pair" {
+        // grammar_block_lang -> grammar_block_builds, the FLAT layout, which is
+        // the one that regressed during slice 2 and cost the most to diagnose.
+        let langs = fn_names_with_suffix(features_root() + "/grammar/mod.av", "_lang")
+        let builds = fn_names_with_suffix(features_root() + "/grammar/mod.av", "_builds")
+        langs.contains("grammar_block_lang") && builds.contains("grammar_block_builds")
     }
 }

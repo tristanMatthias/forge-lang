@@ -11,7 +11,6 @@
 // (mono.av + grammar.av) auto-load and surface flat at
 // `features.generics.{...}`; the manifest row lives in lowering/.
 use features.{composed}
-use features.generics.lowering.{generics_builds}
 use features.grammar.{parse_grammar}
 
 /// Generic type parameters — the definition carries the shared `tparam`
@@ -38,7 +37,6 @@ the parameter (`T: Ord`); extra bounds go in a `where` clause.
   tparam      = tpn:IDENT ( ":" tpb:IDENT )?
                 @expect("IDENT", "expected trait bound after `:`") -> MkTypeParam(tpn, tpb)
             },
-        builders = generics_builds(),
         snippet = r"<${1:T}>",
     }
     generics_def

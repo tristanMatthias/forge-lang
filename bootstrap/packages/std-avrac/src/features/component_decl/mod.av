@@ -3,7 +3,6 @@
 // `features.component_decl.{...}`; the manifest rows live in lowering/
 // (t-kd4y.3.3.5).
 use features.{composed}
-use features.component_decl.lowering.{component_builds}
 use features.grammar.{parse_grammar}
 
 /// `component` — the definition carries the feature whole (t-kd4y.3.3.5):
@@ -183,7 +182,6 @@ component captures its instance body verbatim.
                   @expect(":", "expected `:` after field name")
                   @expect("type_expr", "expected field type") -> MkCompField(f, ty, init)
             },
-        builders = component_builds(),
         snippet = r"component ${1:Name} {\n    ${2:body}\n}",
     }
     component_def

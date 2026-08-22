@@ -4,7 +4,6 @@
 // dir-as-module (g2eo.1): codegen.av + parser.av auto-load as siblings,
 // surface flat at `features.spawn_expr.{...}`.
 use core.{ExprId}
-use features.spawn_expr.lowering.{spawn_builds}
 use typeck.{check_expr, tc_er}
 use features.grammar.{parse_grammar}
 
@@ -37,7 +36,6 @@ explicitly (spec Axis 18).
                  @expect("{", "expected `{` after spawn")
                  @expect("block_expr", "expected `{` after spawn") -> MkSpawn(body)
         },
-        builders = spawn_builds(),
         snippet = r"spawn { ${1:body} }",
         expr_tag = Expr.Spawn(ExprId(0)),
         emit_expr = spawn_emit_expr,

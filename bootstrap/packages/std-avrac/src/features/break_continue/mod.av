@@ -6,7 +6,6 @@
 // span-free manifest rows). Codegen stays with the central emitters
 // (codegen/mod.av's LoopStack branch targets), like return's does; there
 // is no per-tag hook to carry.
-use features.break_continue.lowering.{break_builds, continue_builds}
 use features.grammar.{parse_grammar}
 
 /// Zero-arg, span-FREE lowerings (the retired central forms were bare
@@ -26,7 +25,6 @@ error. Pending `defer` / `errdefer` entries for the scopes being exited
 run before control leaves.
 """,
         gram = grammar { break_stmt = "break" -> build_break() },
-        builders = break_builds(),
         snippet = r"break",
         gram_family = "stmt",
     }
@@ -45,7 +43,6 @@ increment for `for`). Using it outside a loop is a compile error.
 Scope-exit `defer` entries for the skipped remainder run first.
 """,
         gram = grammar { continue_stmt = "continue" -> build_continue() },
-        builders = continue_builds(),
         snippet = r"continue",
         gram_family = "stmt",
     }

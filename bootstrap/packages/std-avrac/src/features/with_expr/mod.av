@@ -2,7 +2,6 @@
 // flat at `features.with_expr.{...}`; the manifest row lives in lowering/.
 use core.{vtype_struct_name, ExprId}
 use features.struct_decl.{check_field_inits, check_struct_lit_fields}
-use features.with_expr.lowering.{with_expr_builds}
 use typeck.{check_expr, tc_er}
 use features.grammar.{parse_grammar}
 
@@ -25,7 +24,6 @@ completeness gate — that is the literal's job).
         gram = grammar {
   with_suffix = "with" @require "{" ( @onfail(bail) f:field_init )+ @require "}" @expect("{", "expected `{` after `with`") @expect("+", "expected field name") @expect("}", "expected `}` after struct fields") -> MkWithSuffix(f)
         },
-        builders = with_expr_builds(),
         snippet = r"${1:value} with { ${2:field}: ${3:new} }",
         expr_tag = Expr.With(ExprId(0), []),
         emit_expr = emit_with,

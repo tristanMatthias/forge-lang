@@ -18,7 +18,7 @@
 // with its oracle in features/grammar/tests/quote_expr_native_test.av.
 use @std.avrac.features.quote_expr.{quote_lang}
 use @std.avrac.features.quote_expr.lowering.{quote_builds}
-use @std.avrac.features.{feature_keywords, feature_gram, builder_validation_error}
+use @std.avrac.features.{with_builders, feature_keywords, feature_gram, builder_validation_error}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, BuildKind}
 
 fn has(xs: List<string>, s: string) -> bool {
@@ -99,6 +99,10 @@ spec "quote as a LanguageFeature" {
         central_build_kind("MkQuote") == null &&
         central_build_kind("MkQuoteType") == null &&
         central_build_kind("MkQuoteArm") == null &&
-        builder_validation_error(quote_lang()) == ""
+                // t-y2i7.14: a feature no longer NAMES its builders — the generated
+        // registry attaches them. So the definition alone validates empty, and
+        // the property under test is that THIS gram and THIS manifest agree;
+        // pairing them here states that, rather than duplicating any wiring.
+        builder_validation_error(with_builders(quote_lang(), quote_builds())) == ""
     }
 }

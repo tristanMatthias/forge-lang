@@ -5,7 +5,6 @@
 use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
 use eval.{ok_result, value_null}
 use typeck.{check_expr, tc_gate_unthreaded_lambda}
-use features.defer.lowering.{defer_builds, errdefer_builds}
 use list_ops.{list_push_copy}
 use features.grammar.{parse_grammar}
 
@@ -50,7 +49,6 @@ Defers run on EVERY exit path: normal return, fall-through, `break`,
 and error propagation via `?`.
 """,
         gram = grammar { defer_stmt = "defer" e:expression -> build_defer(e) },
-        builders = defer_builds(),
         snippet = r"defer ${1:cleanup()}",
         stmt_tag = Stmt.Defer(ExprId(0)),
         emit_stmt = (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->
@@ -82,7 +80,6 @@ reverses correctly on cleanup:
     errdefer free_buf(buf)     // only if a later step fails
 """,
         gram = grammar { errdefer_stmt = "errdefer" e:expression -> build_errdefer(e) },
-        builders = errdefer_builds(),
         snippet = r"errdefer ${1:rollback()}",
         stmt_tag = Stmt.Errdefer(ExprId(0)),
         emit_stmt = (ctx: Ctx, env: List<VarBinding>, s: Stmt) ->

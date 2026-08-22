@@ -6,7 +6,6 @@
 // dir-as-module (g2eo.1): codegen.av + grammar.av auto-load as siblings,
 // surface flat at `features.enum_decl.{...}`.
 use features.{composed}
-use features.enum_decl.lowering.{enum_builds}
 use features.grammar.{parse_grammar}
 
 @language_feature
@@ -52,7 +51,6 @@ Matching over an enum is exhaustive (spec Axis 4).
                 @expect("IDENT", "expected variant name")
                 @expect(")", "expected `)` after variant fields") -> MkEVariant(vname, vfields)
             },
-        builders = enum_builds(),
         snippet = r"enum ${1:Name} { ${2:Variant} }",
     }
     enum_def

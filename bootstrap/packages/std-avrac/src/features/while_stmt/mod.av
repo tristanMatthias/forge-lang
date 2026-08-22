@@ -7,7 +7,6 @@
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling (emit_while).
 use core.{vtype_render_full, vtype_eq, vtype_is_unknown}
 use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_true_branch}
-use features.while_stmt.lowering.{while_builds}
 use features.grammar.{parse_grammar}
 
 /// Type-check hook for `while`. The condition must be Bool (Int
@@ -72,7 +71,6 @@ present type inside the body.
         // satisfies the standalone check and keeps the composed emit
         // byte-identical to the spine-era rule.
         gram = grammar { while_stmt = "while" @onfail(bail) @off(allow_struct_lit) c:expression @require body:block @expect("{", "expected `{` after while condition", F0010) @expect("block", "expected `{` after while condition", F0010) -> build_while(c, body) },
-        builders = while_builds(),
         snippet = r"while ${1:cond} {\n    ${2:body}\n}",
         stmt_tag = Stmt.While(ExprId(0), StmtId(0)),
         emit_stmt = emit_while,

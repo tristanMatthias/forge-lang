@@ -18,7 +18,6 @@ use codegen.{err_sr}
 use typeck.{check_expr, check_stmt, tc_er, tc_report, tc_gate_unthreaded_lambda, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if, generic_args_layout_conflict}
 use features.grammar.{Grammar, grammar_checked, parse_grammar}
 use features.{composed}
-use features.if_stmt.lowering.{if_builds}
 
 /// The `if` STATEMENT rules — the plain form and its bind-fresh `if let`
 /// twin. The statement views compose this via the feature registry
@@ -155,7 +154,6 @@ form lives in the expression grammar, not this rule.
         // hands the whole thing to the statement views — the expression
         // views take the expression fragment on its own, by name.
         gram = composed([avra_if_stmt_grammar(), avra_iflet_expr_grammar(), avra_if_expr_grammar()]),
-        builders = if_builds(),
         snippet = r"if ${1:cond} {\n    ${2:body}\n}",
         expr_tag = Expr.IfExpr(ExprId(0), ExprId(0), ExprId(0)),
         stmt_tag = Stmt.If(ExprId(0), StmtId(0), null),

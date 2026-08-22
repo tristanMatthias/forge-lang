@@ -14,7 +14,6 @@
 // emit_for_in) are in scope without explicit self-imports.
 use core.{vtype_list_elem}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
-use features.for_stmt.lowering.{for_builds}
 use features.grammar.{parse_grammar}
 
 /// Type-check hook for the range form. Both bounds must be Int;
@@ -88,7 +87,6 @@ the next element with `continue`.
            | "for" v:IDENT @require "in" @off(allow_struct_lit) lo:expression @off(allow_struct_lit) ( ".." hi:expression )? body:block @expect("in", "expected `in` after loop variable") -> build_for(v, lo, hi, body)
   for_binding = lp:"(" ( names:IDENT ( @peek(comma_ident) "," names:IDENT )* ","? )? ")" -> MkForBinding(lp, names)
         },
-        builders = for_builds(),
         snippet = r"for ${1:x} in ${2:items} {\n    ${3:body}\n}",
         stmt_tag = Stmt.For("", ExprId(0), ExprId(0), StmtId(0)),
         emit_stmt = emit_for,

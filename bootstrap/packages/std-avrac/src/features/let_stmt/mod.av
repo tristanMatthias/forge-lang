@@ -7,7 +7,6 @@ use codegen.{ok_sr, err_sr}
 use core.{vtype_display}
 use diagnostics.{DiagCode}
 use features.{composed}
-use features.let_stmt.lowering.{let_builds}
 use features.tuples.{emit_let_destructure}
 use typeck.{check_expr, tc_report}
 use features.grammar.{parse_grammar}
@@ -59,7 +58,6 @@ initializer is null. `let (a, b) = pair` destructures a tuple by position.
                 @expect(")", "expected `)` after destructure names")
                 @expect("=", "expected `=` after destructure pattern") -> MkDestructure(n, init)
             },
-        builders = let_builds(),
         snippet = r"let ${1:name} = ${2:value}",
     }
     let_def

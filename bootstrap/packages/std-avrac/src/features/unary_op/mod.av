@@ -1,7 +1,6 @@
 // dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
 // at `features.unary_op.{...}`. A syntax-only carrier: `Expr.Unary` is a
 // core codegen/typeck node, so no pass hooks ride this definition.
-use features.unary_op.lowering.{unary_op_builds}
 use features.grammar.{parse_grammar}
 
 /// `!x` / `-x` / `not x` / `~x` — the prefix unary operators
@@ -28,7 +27,6 @@ bitwise NOT on an Int. Prefix operators nest right: `!!x` is `!(!x)`.
   unary_prefix = op:("!" | "-" | "not") operand:unary -> Unary(op, operand)
                | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
         },
-        builders = unary_op_builds(),
         snippet = r"!${1:value}",
         gram_family = "expr",
     }

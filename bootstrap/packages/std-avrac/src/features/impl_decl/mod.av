@@ -1,7 +1,6 @@
 // dir-as-module (g2eo.1): grammar.av + lowering/ auto-load as siblings,
 // surface flat at `features.impl_decl.{...}`
 use features.{composed}
-use features.impl_decl.lowering.{impl_decl_builds}
 use features.grammar.{parse_grammar}
 
 /// The `impl` block feature. Owns the `impl` keyword (both inherent —
@@ -73,7 +72,6 @@ Multiple blocks for one type are allowed and merge at link time.
                   @expect("{", "expected `{` for method body")
                   @expect("}", "expected `}` after method body") -> MkMethod(imname, imparams, imret, imbody)
             },
-        builders = impl_decl_builds(),
         snippet = r"impl ${1:Type} {\n    ${2:body}\n}",
     }
     impl_def

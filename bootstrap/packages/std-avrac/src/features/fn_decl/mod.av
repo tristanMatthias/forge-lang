@@ -3,7 +3,6 @@
 // is in scope without a self-import); the manifest rows live in lowering/
 // (t-kd4y.3.3.1).
 use features.{composed}
-use features.fn_decl.lowering.{fn_builds, fn_type_builds}
 use features.grammar.{parse_grammar}
 
 /// `fn` — the definition carries the feature whole (t-kd4y.3.3.1): syntax,
@@ -88,7 +87,6 @@ An absent return type means the function returns nothing (`Void`).
                 @expect(")", "expected `)` after parameters")
                 @expect("type_expr", "expected return type after `->`") -> MkExtern(ename, eparams, eret)
             },
-        builders = fn_builds(),
         snippet = r"fn ${1:name}(${2:params}) {\n    ${3:body}\n}",
     }
     fn_def
@@ -109,7 +107,6 @@ optional (`fn` alone is the under-determined function type).
         gram = grammar {
   fn_type    = "fn" ( lp:"(" ( p:type_expr ( "," p:type_expr )* )? ")" )? ( "->" r:type_expr )? -> MkFn(lp, p, r)
         },
-        builders = fn_type_builds(),
         gram_family = "type",
     }
     fn_type_def
