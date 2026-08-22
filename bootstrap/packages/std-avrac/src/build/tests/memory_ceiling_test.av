@@ -126,15 +126,51 @@ spec "the F4014 report separates in-phase growth from what preceded it" {
         out.contains("in-phase growth: +") && !out.contains("memory ACCUMULATED")
     }
     then "a phase that did NOT consume the memory says so" {
-        // Ceiling just above the ~52 MiB start-up baseline, so the trip lands
-        // early in the parse: the phase adds single-digit MiB of a total that is
-        // mostly start-up. That is the accumulation shape in miniature — the
-        // same reading as a shard that grew across 200 files and blamed the
-        // 201st.
-        // Derived, not a literal: "a few MiB above whatever this host's
-        // start-up costs". See startup_baseline_mb.
-        let out = check_with_mem_limit(string(startup_baseline_mb() + 4), BIG_FILE)
-        out.contains("memory ACCUMULATED") && out.contains("not what consumed it")
+        // The trip must land early in a PHASE, so the phase adds a small
+        // fraction of a total that is mostly start-up. That is the accumulation
+        // shape in miniature — the same reading as a shard that grew across 200
+        // files and blamed the 201st.
+        //
+        // The window is SEARCHED, not fixed, because a fixed one is host-bound
+        // twice over. A literal 60 broke first (macOS starts ~18 MiB, where the
+        // parse then adds the majority). Deriving `baseline + 4` fixed that and
+        // broke on CI the other way: the runtime prints this note only when a
+        // phase was stamped before the trip (`phase_start_kb > 0`, runtime.c),
+        // and whether 4 MiB of growth lands before or after the first stamp is
+        // a property of the host, not of the code under test. When it lands in
+        // start-up there is no phase, no growth line, and no note — and the
+        // spec read that as the note being broken. It gated four PRs and the
+        // seed train while passing locally.
+        //
+        // So: widen until the trip actually lands inside a phase. The bound
+        // keeps the reading honest — the note requires `grew * 2 < rss`, and
+        // with `rss ~ base + step` and `grew ~ step` that holds while
+        // `step < base`, so searching past `base / 2` would be asking for a
+        // window where the phase legitimately IS the memory.
+        // Two ways a fixed window misses, and they want OPPOSITE corrections,
+        // which is why the search runs over a RANGE rather than growing:
+        //   too narrow -> the trip lands in start-up, no phase is stamped, and
+        //                 the runtime prints no growth line at all
+        //   too wide   -> the phase really did consume the bulk, so `grew * 2 <
+        //                 rss` is false and the note correctly stays silent
+        // The premise sits between them, at a host-dependent offset. Measured
+        // here at base=18 MiB: +2..+16 produce the note, +32 does not.
+        //
+        // Searching for the regime and then asserting the conclusion is not
+        // vacuous — if the note were deleted, mis-stamped, or its arithmetic
+        // inverted, NO window would produce it and this fails. The complement
+        // is pinned by the sibling spec above, which holds the note SILENT at a
+        // ceiling of 150 where the phase genuinely is the memory.
+        let base = startup_baseline_mb()
+        mut step = 2
+        mut found = false
+        mut out = ""
+        while step < base && !found {
+            out = check_with_mem_limit(string(base + step), BIG_FILE)
+            found = out.contains("in-phase growth: +") && out.contains("memory ACCUMULATED")
+            step = step * 2
+        }
+        found && out.contains("not what consumed it")
     }
     then "the help no longer asserts the phase is where the memory went" {
         // The old help said exactly that, which is the misattribution this work
