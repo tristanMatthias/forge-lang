@@ -37,7 +37,12 @@ fn onc_check(slug: string, body: string) -> string {
         + "fn takes_opt(r: RuleName?) -> string { \"ok\" }\n"
         + "fn main() -> int {\n    ${body}\n    0\n}\n"
     let _ = avra_selfhost_write_file(path, src)
-    avra_shell_exec("cd '${root}' && ./build/bs2 check '${path}' 2>&1")
+    // Remove the probe before returning: 18 specs x one file each is 18 files
+    // left in /tmp per run, and this repo already carries a reclaim mechanism
+    // for exactly that litter (diagnose.sh --prune-tmp-scratch).
+    let out = avra_shell_exec("cd '${root}' && ./build/bs2 check '${path}' 2>&1")
+    let _ = avra_shell_exec("rm -f '${path}'")
+    out
 }
 
 /// A bare underlying value in this slot must be REJECTED.
