@@ -1287,7 +1287,7 @@ fn run_grammar_expr_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
     run_grammar_expr_src_at(grammar, toks, store, src, null)
 }
 
-/// Shared core. `start` names the entry rule; "" means `rules[0]`, which is
+/// Shared core. `start` names the entry rule; `null` means `rules[0]`, which is
 /// exactly what every existing caller got, so the default path is unchanged.
 fn run_grammar_expr_src_at(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string, start: RuleName?) -> RunResult {
     mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
@@ -1334,7 +1334,7 @@ fn run_grammar_stmt_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
     run_grammar_stmt_src_at(grammar, toks, store, src, null)
 }
 
-/// Shared core; `start` == "" means `rules[0]`, the unchanged caller path.
+/// Shared core; a `null` `start` means `rules[0]`, the unchanged caller path.
 fn run_grammar_stmt_src_at(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string, start: RuleName?) -> StmtRunResult {
     mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     if grammar.rules.length == 0 {
@@ -1398,7 +1398,7 @@ fn run_grammar_type_src(grammar: Grammar, toks: List<Token>, store: NodeStore, s
     run_grammar_type_src_at(grammar, toks, store, src, null)
 }
 
-/// Shared core; `start` == "" means `rules[0]`, the unchanged caller path.
+/// Shared core; a `null` `start` means `rules[0]`, the unchanged caller path.
 fn run_grammar_type_src_at(grammar: Grammar, toks: List<Token>, store: NodeStore, src: string, start: RuleName?) -> TypeRunResult {
     mut st = PState { toks, pos: 0, store, src, diags: [], had_error: false, postfix_base: ExprId(0), postfix_sp_start: 0, modes: default_expr_modes(), file: "", gensym_seq: 0, postfix_step_base: ExprId(0), postfix_step_sp: 0, host: null, tok_edits: [], table_cols: [], diag_code: "", abort_prop: false, lex_diags: [], first_pos: 0, build_sp: 0 - 1 }
     if grammar.rules.length == 0 {

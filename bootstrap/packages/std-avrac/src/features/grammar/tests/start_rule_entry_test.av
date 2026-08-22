@@ -17,10 +17,10 @@
 // sound and mechanical; if they fail, P2c needs a different shape and this
 // file says which inputs diverge.
 
-use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_expr, run_grammar_expr_at}
-use @std.avrac.features.grammar.{run_grammar_stmt, run_grammar_stmt_at}
+use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_expr_at}
+use @std.avrac.features.grammar.{run_grammar_stmt_at}
 use @std.avrac.features.grammar.{avra_type_grammar, run_grammar_type, run_grammar_type_at}
-use @std.avrac.parse.{oracle_expr}
+use @std.avrac.parse.{oracle_expr, oracle_stmt}
 use @std.avrac.core.{RuleName, render_expr_id, render_stmt_id, render_type_id}
 
 /// The ORACLE. This compared against the expr VIEW until P2c(c) deleted the
@@ -80,10 +80,21 @@ spec "P2c gate: full grammar + named start == the family view entry" {
 
 // ── STATEMENT entry ──────────────────────────────────────────────────────────
 
+/// The ORACLE side, matching what `via_view` does for expressions above.
+///
+/// Both halves called `_at(..., "statement")` until now, so `s_agree` compared a
+/// path WITH ITSELF and could not fail. That collapsed when P2c(c) deleted the
+/// family views this file was written to compare against; the giveaway was
+/// `run_grammar_stmt` still being imported with zero uses.
+///
+/// The default entry is NOT the counterpart: `avra_program_grammar().rules[0]`
+/// is `program`, not `statement`, so `run_grammar_stmt` enters somewhere else
+/// entirely and diverges by design (measured: 4 of these specs fail that way).
+/// The hand parser is the right oracle, and the stronger one — the views were
+/// built from this same grammar, so view-vs-full only ever cross-checked
+/// composition.
 fn s_via_view(src: string) -> string {
-    let r = run_grammar_stmt_at(avra_program_grammar(), RuleName("statement"), src)
-    if r.had_error { return "<err>" }
-    render_stmt_id(r.store, r.root)
+    oracle_stmt(src) ?? "<err>"
 }
 
 fn s_via_full(src: string) -> string {
