@@ -14,7 +14,7 @@
 // let/mut/const, if, for follow in later slices.
 use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_stmt_at}
 use @std.avrac.parse.{oracle_stmt}
-use @std.avrac.core.{render_stmt_id}
+use @std.avrac.core.{RuleName, render_stmt_id}
 
 // The statement grammar is the SOURCE-OF-TRUTH `grammar { }` block dogfooded
 // into compiler src/ (avra_grammar.av avra_program_grammar(), ps3t.6.5.11) — the
@@ -24,7 +24,7 @@ use @std.avrac.core.{render_stmt_id}
 
 // The DSL-generated statement parser's tree for `src`, rendered canonically.
 fn dsl_stmt(src: string) -> string {
-    let r = run_grammar_stmt_at(avra_program_grammar(), "statement", src)
+    let r = run_grammar_stmt_at(avra_program_grammar(), RuleName("statement"), src)
     // A diagnostic-bearing (error-tolerant partial) parse is a distinct
     // outcome — surface it so a recovered tree can't spuriously match the
     // hand-written parser's clean tree in the differential comparison.

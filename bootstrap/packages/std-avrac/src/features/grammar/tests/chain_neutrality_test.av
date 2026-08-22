@@ -24,10 +24,10 @@
 // interpreter over the real production grammar.
 
 use @std.avrac.features.grammar.{avra_program_grammar, run_grammar_expr_at}
-use @std.avrac.core.{render_expr_id}
+use @std.avrac.core.{RuleName, render_expr_id}
 
 fn r(src: string) -> string {
-    let out = run_grammar_expr_at(avra_program_grammar(), "expression", src)
+    let out = run_grammar_expr_at(avra_program_grammar(), RuleName("expression"), src)
     render_expr_id(out.store, out.root)
 }
 

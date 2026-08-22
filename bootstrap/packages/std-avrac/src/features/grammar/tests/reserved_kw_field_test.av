@@ -33,10 +33,10 @@
 // the tree that comes out.
 
 use @std.avrac.features.grammar.{new_pstate, lookahead_ok, emit_rule_fn, Grammar, avra_program_grammar, run_grammar_expr_at}
-use @std.avrac.core.{render_expr_id, tk_is_field_name, Tk}
+use @std.avrac.core.{RuleName, render_expr_id, tk_is_field_name, Tk}
 
 fn r(src: string) -> string {
-    let out = run_grammar_expr_at(avra_program_grammar(), "expression", src)
+    let out = run_grammar_expr_at(avra_program_grammar(), RuleName("expression"), src)
     render_expr_id(out.store, out.root)
 }
 
