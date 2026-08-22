@@ -63,7 +63,11 @@ spec "a local optional struct/newtype unwraps to its resolved inner" {
         // was a live instance of it. Comparing against `Tag(42)` still proves
         // the value round-trips through the optional; it just says so in the
         // type the unwrap actually produces.
-        let t: Tag? = 42
+        // The initialiser is `Tag(42)`, not a bare `42`: an optional newtype
+        // slot enforces its wrapper exactly as the required form does (t-5qi0).
+        // This line was itself a live instance of that leak — the same shape
+        // the comment above records for `==` under t-tzt0, one position over.
+        let t: Tag? = Tag(42)
         (t!) == Tag(42)
     }
 }

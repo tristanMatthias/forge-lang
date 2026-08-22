@@ -2793,7 +2793,11 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     // is false for `Optional(Newtype)` — so `let x: RuleName? = "bare"` bound
     // clean while the required form was rejected.
     if newtype_identity_conflict(r.ty, declared_ty) {
-        let msg = "cannot assign `${vtype_render_full(r.ty)}` to `${vtype_render_full(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
+        // The constructor hint names the NEWTYPE, not the slot: for a `Tag?`
+        // slot the fix is `Tag(value)`, and rendering the slot type here
+        // produced the nonexistent `Tag?(value)`. Only visible once optional
+        // slots started reaching this branch at all (t-5qi0).
+        let msg = "cannot assign `${vtype_render_full(r.ty)}` to `${vtype_render_full(declared_ty)}` — use `${vtype_display(vtype_strip_optional(declared_ty))}(value)` constructor"
         return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
     }
     if is_const && !is_const_expr(tc.nodes, init) {
