@@ -2,7 +2,7 @@
 // Also handles .length on strings and lists (property access is routed here).
 // Shared by struct_decl, with_expr, and null_safety features.
 
-use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_optional, vtype_assignable, vtype_render_full, type_param_has, vtype_is_value_scalar}
+use core.{Expr, FieldEntry, FieldInit, ValueType, vtype_eq, vtype_is_list, vtype_is_optional, vtype_assignable, vtype_render_full, type_param_has, vtype_is_value_scalar, newtype_identity_conflict}
 use typeck.{TC, ExprResult, tc_er, tc_report, check_expr, struct_type_lookup, tc_specialize_field_ty, resolve_vtype, generic_args_layout_conflict, collection_into_value_scalar_slot, enum_type_has}
 use diagnostics.{DiagCode}
 
@@ -223,6 +223,13 @@ export fn check_one_field_ty(tc: TC, receiver_ty: ValueType, name: string, field
     mut acc = tc
     let cross_str = vtype_is_string_like(fty) != vtype_is_string_like(value_ty)
     if vtype_is_scalar(fty) && vtype_is_scalar(value_ty) && cross_str && !vtype_assignable(value_ty, fty) {
+        acc = tc_report(acc, DiagCode.TypeMismatch, "field `${field}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(value_ty)}`")
+    }
+    // Nominal identity, via the ONE shared authority (t-5qi0). Struct fields
+    // leaked this in BOTH forms — `a: RuleName` accepted a bare `string` just as
+    // `a: RuleName?` did — because every check above is a LAYOUT check and none
+    // of them asks whether the wrapper is present.
+    if newtype_identity_conflict(value_ty, fty) {
         acc = tc_report(acc, DiagCode.TypeMismatch, "field `${field}` of `${name}` expects `${vtype_render_full(fty)}`, got `${vtype_render_full(value_ty)}`")
     }
     if generic_args_layout_conflict(acc, value_ty, fty) {

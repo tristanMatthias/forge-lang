@@ -1241,6 +1241,35 @@ export fn vtype_assignable(src: ValueType, dst: ValueType) -> bool {
     }
 }
 
+/// THE single authority on newtype NOMINAL identity: true iff `actual` is going
+/// into a slot whose declared type is a newtype, without the wrapper.
+///
+/// WHY THIS IS ONE PREDICATE (t-5qi0). Enforcement used to be a property of the
+/// POSITION rather than of the type: the call-argument path tested
+/// `param_ty is .Newtype` inline, `check_one_field_ty` composed three unrelated
+/// layout checks, and the let / return paths each did their own thing. So the
+/// SAME newtype was enforced in some slots and not others — measured across 8
+/// positions, 5 leaked, including struct fields in their REQUIRED form. A
+/// declaration that reads as enforced but is not is worse than no newtype at
+/// all, and adding a fourth ad-hoc check per site would have deepened the split
+/// instead of closing it.
+///
+/// Two exemptions, both legitimate rather than pragmatic:
+///   - `null` types as `void` and satisfies any optional slot
+///   - `.Unknown` is the unresolved-inference sentinel, never a conflict
+///
+/// The value is stripped only when the SLOT is optional, so a `T?` going into a
+/// required `T` still conflicts.
+export fn newtype_identity_conflict(actual: ValueType, expected: ValueType) -> bool {
+    let want = vtype_strip_optional(expected)
+    if !(want is .Newtype) { return false }
+    let got = if vtype_is_optional(expected) { vtype_strip_optional(actual) } else { actual }
+    if got is .Unknown { return false }
+    if vtype_is_optional(expected) && got is .Void { return false }
+    if vtype_eq(want, got) { return false }
+    !vtype_assignable(got, want)
+}
+
 /// `Unknown` is treated as a wildcard on either side (at the top
 /// level OR nested inside any container shape). Mirrors the shape
 /// dispatch in `vtype_eq` but tolerates Unknown leaves.

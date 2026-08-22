@@ -1,6 +1,6 @@
 // WHY: type checking for map method calls + map-literal value-type checking.
 
-use core.{ExprId, ValueType, vtype_render_full, vtype_is_unknown}
+use core.{ExprId, ValueType, vtype_render_full, vtype_is_unknown, newtype_identity_conflict}
 use typeck.{TC, ExprResult, tc_er, check_expr_list_types, tc_gate_unthreaded_lambda, tc_report, nested_layout_conflict}
 use diagnostics.{DiagCode}
 
@@ -71,6 +71,12 @@ export fn check_map_values_against(tc: TC, types: List<ValueType>, expected_valu
     mut after = tc
     mut i = 1
     while i < types.length {
+        // Nominal identity, same shared authority as every other slot (t-5qi0).
+        // A newtype and its underlying type share a layout, so the check below
+        // is structurally unable to see a missing wrapper.
+        if newtype_identity_conflict(types[i], expected_value) {
+            after = tc_report(after, DiagCode.TypeMismatch, "map value of type `${vtype_render_full(types[i])}` expects `${vtype_render_full(expected_value)}`")
+        }
         if nested_layout_conflict(after, types[i], expected_value) {
             after = tc_report(after, DiagCode.TypeMismatch, "map value of type `${vtype_render_full(types[i])}` conflicts with expected `${vtype_render_full(expected_value)}` (layout conflict)")
         }

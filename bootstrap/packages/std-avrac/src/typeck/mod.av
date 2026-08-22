@@ -3,7 +3,7 @@
 // via DiagnosticBag. GATES compilation — type errors stop the
 // compile pipeline before codegen runs. Per spec Axis 20.
 
-use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, vtype_underlying_value_scalar, vtype_newtype_underlying, vtype_newtype_name, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, FORCE_UNWRAP_FN}
+use core.{BinOp, Expr, FieldInit, FieldEntry, MatchArm, ParamEntry, SelectArm, Stmt, TypeArg, TypeParamEntry, ValueType, Variant, WhenArm, binop_is_comparison, binop_is_ordering, binop_is_arithmetic, binop_str, field_list_has, field_vtype_of, filter_fields_only, filter_fields_without, stmt_unwrap, type_param_has, vtype_display, vtype_enum_name, vtype_eq, vtype_assignable, vtype_fn_ret, vtype_fn_params, vtype_is_fn, vtype_is_list, vtype_is_unknown, vtype_list_elem, vtype_map_key, vtype_map_value, vtype_tuple_elems, vtype_render_full, vtype_struct_name, vtype_strip_optional, vtype_is_optional, vtype_is_value_scalar, vtype_underlying_value_scalar, vtype_newtype_underlying, vtype_newtype_name, stmt_diverges, is_gensym_name, vtype_struct, vtype_subst_params, vtype_type_args, vtype_nominal_name, newtype_identity_conflict, FORCE_UNWRAP_FN}
 use core.{NodeStore, StmtId, ExprId}
 use diagnostics.{Confidence, DiagCode, DiagnosticBag, MacroFnOrigin, Span, bag_has_errors, bag_merge, bag_merge_unseen, bag_new, bag_report, diag_error, diag_warning, diag_with_cause, diag_with_confidence, macro_origin_lookup, span_at, span_dummy, span_new}
 use core.{Registry, avra_stmt_tag, avra_expr_tag}
@@ -2788,7 +2788,11 @@ fn check_binding(tc: TC, name: string, ty_vt: ValueType, init: Expr, is_const: b
     // Box { val: 9 }`) is rejected centrally in `check_expr_expected` — the
     // `check_expr_expected(init, pre_declared)` call above already reported it
     // into `r.tc`, covering returns too (not just this binding site).
-    if declared_ty is .Newtype && !(r.ty is .Newtype) && !(r.ty is .Unknown) {
+    // Same shared authority as the parameter and struct-field positions
+    // (t-5qi0). The hand-rolled form here was `declared_ty is .Newtype`, which
+    // is false for `Optional(Newtype)` — so `let x: RuleName? = "bare"` bound
+    // clean while the required form was rejected.
+    if newtype_identity_conflict(r.ty, declared_ty) {
         let msg = "cannot assign `${vtype_render_full(r.ty)}` to `${vtype_render_full(declared_ty)}` — use `${vtype_display(declared_ty)}(value)` constructor"
         return bind_decl(tc_report(r.tc, DiagCode.TypeMismatch, msg), name, declared_ty, is_mut)
     }
@@ -3490,29 +3494,14 @@ fn tc_check_newtype_args(tc: TC, fn_name: string, tp: List<TypeParamEntry>, para
         cur = tc_at_operand(cur, args[i], fb_line, fb_col)
         let param_ty = resolve_vtype(cur, p.vtype)
         let arg_ty = check_expr(cur, cur.nodes.exprs.get(args[i])).ty
-        // An OPTIONAL newtype param (`RuleName?`) enforces the wrapper exactly as the
-        // required form does (t-5qi0). `param_ty is .Newtype` alone is false for
-        // `Optional(Newtype)`, so the whole gate used to be skipped and every `RuleName?`
-        // slot silently accepted a bare `string` — the auto-widen in
-        // `check_expr_expected` strips the optional and threads the inner type into a
-        // path guarded only by `ptr_nominal_conflict`, which exempts newtype-vs-its-own-
-        // underlying by design. That left the optional form with NO enforcement at all,
-        // which is why the RuleName pilot measured zero safety at 19 call sites.
-        //
-        // The arg is stripped ONLY when the param is optional. For a required param
-        // `param_core == param_ty`, so the comparison below is byte-identical to the
-        // original and passing a `T?` into a `T` still reports.
-        let param_core = vtype_strip_optional(param_ty)
-        if param_core is .Newtype {
-            let arg_core = if vtype_is_optional(param_ty) { vtype_strip_optional(arg_ty) } else { arg_ty }
-            // `null` types as `void` and satisfies ANY optional slot — the one arg an
-            // optional param must keep accepting. (`ptr_nominal_conflict` exempts `void`
-            // for the same reason; it is the dominant artifact there too.)
-            let null_ok = vtype_is_optional(param_ty) && arg_core is .Void
-            if !null_ok && !vtype_eq(param_core, arg_core) && !vtype_assignable(arg_core, param_core) && !(arg_core is .Unknown) {
-                let msg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
-                cur = tc_report(cur, DiagCode.TypeMismatch, msg)
-            }
+        // Nominal identity is decided by ONE predicate shared by every
+        // position (core: newtype_identity_conflict) rather than re-derived
+        // here. The per-position split is precisely what let `RuleName?`
+        // params, struct fields, and collection elements each enforce a
+        // different subset of the same rule. See t-5qi0.
+        if newtype_identity_conflict(arg_ty, param_ty) {
+            let msg = "`${fn_name}` parameter `${p.name}` expects `${vtype_render_full(param_ty)}`, got `${vtype_render_full(arg_ty)}`"
+            cur = tc_report(cur, DiagCode.TypeMismatch, msg)
         }
         // A layout-incompatible argument: a generic-arg conflict (`want(Box { val:
         // 9 })` for `want(b: Box<string>)` — vtype_eq ignores generic args), an int
