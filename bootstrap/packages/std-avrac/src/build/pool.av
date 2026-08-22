@@ -74,22 +74,56 @@ fn workers_has_idle(ws: List<Worker>) -> bool {
 // inference and nothing more. Three separate investigations of the same hang
 // stalled on exactly that gap. `Worker.started_idx` already indexes the slug
 // list, so the names cost nothing to carry.
-fn workers_active_slugs(ws: List<Worker>, slugs: List<string>) -> string {
+/// The unit's identity RECOVERED FROM ITS COMMAND, for the pools that carry no
+/// slug list.
+///
+/// Every pooled command redirects to a per-unit log — `… > "<dir>/<slug>.log"
+/// 2>&1` — so the log's basename IS the slug, already in the string we hold.
+/// That is why this reads the log path rather than guessing at the command's
+/// shape: it is the one token guaranteed to name the unit.
+///
+/// Returns "" when the command has no `.log` redirect; the caller falls back to
+/// the index rather than inventing a name.
+fn cmd_unit_name(cmd: string) -> string {
+    let at = cmd.index_of(".log")
+    if at <= 0 { return "" }
+    mut start = 0
+    mut i = 0
+    while i < at {
+        let c = cmd.substring(i, i + 1)
+        if c == "/" { start = i + 1 }
+        i = i + 1
+    }
+    if start >= at { return "" }
+    cmd.substring(start, at)
+}
+
+/// The units currently IN FLIGHT, named (t-2fe6).
+///
+/// NAMES, NOT INDICES — the whole point. `[pool] 113/150 done, 3 in flight` says
+/// a run wedged but not WHICH units wedged, and a killed run flushes no
+/// per-shard output at all, so the heartbeat is the only progress signal.
+///
+/// The first cut fell back to the bare command INDEX whenever the slug list was
+/// empty — and the pools that actually WEDGE pass `[]` (`pool_run` and
+/// `pool_run_resource_admitted` both call `pool_run_core` with no slugs), so the
+/// naming never fired on the paths that needed it. Two consecutive evictions on
+/// #1338 reported `[#25, #23, #24, #18]`, which identifies a unit only if you
+/// can reconstruct the dispatch order. Recovering the name from the COMMAND
+/// fixes every caller at once and needs no signature change upstream.
+fn workers_active_slugs(ws: List<Worker>, slugs: List<string>, commands: List<string>) -> string {
     mut out = ""
     mut i = 0
     while i < ws.length {
         if ws[i].handle >= 0 {
             let idx = ws[i].started_idx
-            // Slugs are optional on the bare entry points (pool_run_admitted
-            // passes []), so fall back to the command INDEX rather than a
-            // placeholder — "#7" still identifies the unit, "?" does not.
-            //
             // An EMPTY slug counts as unavailable, not as a name: the list
             // length can be right while an entry is "", and that would render
             // `in flight [, ]` — silently defeating the identification this
             // whole line exists to provide.
-            let named = idx >= 0 && idx < slugs.length && slugs[idx] != ""
-            let name = if named { slugs[idx] } else { "#" + string(idx) }
+            let slugged = idx >= 0 && idx < slugs.length && slugs[idx] != ""
+            let derived = if slugged { "" } else if idx >= 0 && idx < commands.length { cmd_unit_name(commands[idx]) } else { "" }
+            let name = if slugged { slugs[idx] } else if derived != "" { derived } else { "#" + string(idx) }
             out = if out == "" { name } else { out + ", " + name }
         }
         i = i + 1
@@ -286,7 +320,7 @@ fn pool_run_core(commands: List<string>, slugs: List<string>, marker_dir: string
             // is what was true AT THE KILL, and admission may not have run for
             // a while if the pool is saturated.
             let snap = sampler()
-            let inflight = workers_active_slugs(workers, slugs)
+            let inflight = workers_active_slugs(workers, slugs, commands)
             eprintln("[pool] " + string(completed) + "/" + string(total) +
                      " done, " + string(workers_active(workers)) + " in flight [" + inflight +
                      "], avail " + string(snap.available_mb) + "MB, " +

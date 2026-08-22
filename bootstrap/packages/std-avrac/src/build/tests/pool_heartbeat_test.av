@@ -45,7 +45,14 @@ spec "pool: a time-based heartbeat survives a killed run" {
         // heartbeat is the only progress signal on a hang. Without names it
         // supports an inference and nothing more; three investigations of one
         // hang stalled on exactly that. Driven through the SLUG-bearing entry
-        // point, because that is the one the test runner uses.
+        // point.
+        //
+        // CORRECTION (t-2fe6): this arm used to claim the slug-bearing entry
+        // point "is the one the test runner uses". IT IS NOT. The pools that
+        // actually wedge call `pool_run_core` with NO slugs, so this arm alone
+        // proved naming worked on a path production never takes — and two
+        // consecutive evictions duly reported `[#25, #23, #24, #18]`. The
+        // slugless arm below is the one that covers production.
         let src = "/tmp/avra_pool_beat_named.av"
         let _ = avra_shell_exec("cat > '" + src + "' <<'AVEOF'\n" +
             "use @std.avrac.build.{pool_run_with_progress}\n" +
@@ -101,5 +108,57 @@ spec "pool: a time-based heartbeat survives a killed run" {
         let out = avra_shell_exec("./build/bs2 run '" + src + "' 2>&1")
         let _ = avra_shell_exec("rm -f '" + src + "'")
         !out.contains("[pool]") && out.contains("rc=0")
+    }
+}
+
+spec "pool: the SLUGLESS entry points name their units too (t-2fe6)" {
+    then "a command with a log redirect is named from the log, not numbered" {
+        // THE REGRESSION THIS EXISTS FOR: `pool_run` and
+        // `pool_run_resource_admitted` — the entry points the real pools use —
+        // pass NO slugs, so the heartbeat fell back to the command index. Two
+        // runner evictions on #1338 reported `[#25, #23, #24, #18]`, which
+        // names a unit only if you can reconstruct the dispatch order.
+        //
+        // Every pooled command redirects to a per-unit log, so the log's
+        // basename is the slug and is already in the string the pool holds.
+        let src = "/tmp/avra_pool_beat_slugless.av"
+        let _ = avra_shell_exec("mkdir -p /tmp/avra_beat_logs")
+        let _ = avra_shell_exec("cat > '" + src + "' <<'AVEOF'\n" +
+            "use @std.avrac.build.{pool_run_admitted}\n" +
+            "use @std.avrac.resources.{governor_for}\n" +
+            "fn main() {\n" +
+            "    let gov = governor_for(2, 100, 0, 100000)\n" +
+            "    let rc = pool_run_admitted([\n" +
+            "        \"sleep 1 > /tmp/avra_beat_logs/alpha_unit.log 2>&1\",\n" +
+            "        \"sleep 1 > /tmp/avra_beat_logs/beta_unit.log 2>&1\",\n" +
+            "        \"sleep 1 > /tmp/avra_beat_logs/gamma_unit.log 2>&1\",\n" +
+            "        \"sleep 1 > /tmp/avra_beat_logs/delta_unit.log 2>&1\"\n" +
+            "    ], gov, () -> 100000)\n" +
+            "    println(\"rc=\" + string(rc))\n" +
+            "}\n" +
+            "AVEOF")
+        let out = avra_shell_exec("AVRA_POOL_BEAT_MS=200 ./build/bs2 run '" + src + "' 2>&1")
+        let _ = avra_shell_exec("rm -rf '" + src + "' /tmp/avra_beat_logs")
+        // A NAME, and specifically NOT the bare-index fallback: asserting only
+        // the name would still pass if some units numbered and others named.
+        out.contains("_unit") && !out.contains("in flight [#") && out.contains("rc=0")
+    }
+
+    then "a command with NO log redirect still falls back to the index" {
+        // The fallback must survive: a name that cannot be recovered is
+        // reported as "#N", never as an empty slot or a guess.
+        let src = "/tmp/avra_pool_beat_nolog.av"
+        let _ = avra_shell_exec("cat > '" + src + "' <<'AVEOF'\n" +
+            "use @std.avrac.build.{pool_run_admitted}\n" +
+            "use @std.avrac.resources.{governor_for}\n" +
+            "fn main() {\n" +
+            "    let gov = governor_for(2, 100, 0, 100000)\n" +
+            "    let rc = pool_run_admitted([\"sleep 1\", \"sleep 1\"], gov, () -> 100000)\n" +
+            "    println(\"rc=\" + string(rc))\n" +
+            "}\n" +
+            "AVEOF")
+        let out = avra_shell_exec("AVRA_POOL_BEAT_MS=200 ./build/bs2 run '" + src + "' 2>&1")
+        let _ = avra_shell_exec("rm -f '" + src + "'")
+        out.contains("in flight [#") && out.contains("rc=0")
     }
 }
