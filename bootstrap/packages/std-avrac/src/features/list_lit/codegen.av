@@ -158,11 +158,15 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
         // scalar paths keep their single-compare loop at no cost.
         "contains" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            // `vtype_is_str`, NOT `is .Str`: a `List<RuleName>` holds strings and must
-            // compare BY VALUE. The bare variant check picked the IDENTITY helper
-            // for every newtype element, so membership answered false for equal
-            // strings at different addresses — the same class as t-xpi0, where
-            // `contains` compared strings by identity.
+            // `vtype_is_str_repr`, NOT `is .Str` and NOT `vtype_is_str`: a
+            // `List<RuleName>` holds strings and must compare BY VALUE. The bare
+            // variant check picked the IDENTITY helper for every newtype element,
+            // so membership answered false for equal strings at different
+            // addresses — the same class as t-xpi0.
+            //
+            // `vtype_is_str` is the IDENTITY question and stays false for a
+            // newtype; only the `_repr` form peels the wrapper. Using the wrong
+            // one here silently restores the bug.
             let fname = if vtype_is_str_repr(vtype_list_elem(list_ty)) { "avra_array_contains_str" } else { "avra_array_contains" }
             return ok_emit(ctx.call(fname, [list_val, arg_r.value]), .Int)
         }

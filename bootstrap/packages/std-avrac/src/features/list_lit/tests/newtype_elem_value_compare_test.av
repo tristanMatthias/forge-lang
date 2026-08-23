@@ -10,7 +10,12 @@
 //
 // A newtype is layout-transparent by spec Axis 1 — it is a compile-time
 // distinction with no runtime representation change — so representation
-// dispatch must see through it. `vtype_is_str` is that predicate and now does.
+// dispatch must see through it. `vtype_is_str_repr` is that predicate.
+//
+// `vtype_is_str` is the separate IDENTITY question and deliberately does NOT
+// see through the wrapper: METHOD DISPATCH shares it, and making it transparent
+// routes a newtype to the string methods, at which point its own `.raw()`
+// ceases to exist and the whole @std build fails.
 //
 // Found by typing the compiler's own build names: `is_central_build` is a
 // membership test over a `List<BuildName>`, so every build read as non-central
