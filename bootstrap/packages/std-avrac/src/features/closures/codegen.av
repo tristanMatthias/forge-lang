@@ -819,7 +819,27 @@ fn fill_closure_captures(ctx: Ctx, val_arr: ptr, closure_val: ptr, start_idx: in
 /// alloca-load step and dispatches straight through.
 export fn emit_indirect_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<ExprId>, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_indirect_call_value(ctx, env, fn_i64, args)?
-    ok_emit(r.value, ret_ty)
+    // CANONICALISE, don't merely relabel (t-21gy). `avra_closure_call_N` is
+    // declared `i64 (i64, ...)`, so the value coming back is an i64 whatever the
+    // callee really returns — and an Avra `bool` lowers to **i1**, whose upper 63
+    // bits the ABI leaves UNDEFINED. Relabelling the raw i64 as `.Bool` left an
+    // EmitValue claiming one type while carrying another, and the branch emitter
+    // then tested all 64 bits (`icmp ne i64 %r, 0`), so a `false` return with any
+    // garbage above bit 0 read as TRUE.
+    //
+    // That is not theoretical: it is the whole of t-21gy. A terminal table whose
+    // rows held `matches: fn(Tk) -> bool` classified every token as the FIRST row
+    // (its always-false predicate reading true), so number literals lexed as
+    // identifiers and the built compiler rejected `let xs = [1, 2, 3]` with
+    // ``undefined variable `1```. It reproduced on every Linux gate and on no
+    // macOS run, because AArch64 happens to leave those bits clean and x86-64 has
+    // no such obligation — which is exactly what makes a relabel-only bug survive
+    // local testing.
+    //
+    // `cast_to` narrows through the declared type (Bool -> i1 takes bit 0, the
+    // ABI-correct location), the same remedy the `.raw()` newtype unwrap uses for
+    // the identical relabel-vs-convert hazard.
+    ok_emit(ctx.cast_to(r.value, ret_ty), ret_ty)
 }
 
 /// Variant of `emit_closure_call` for callers that already have
@@ -827,7 +847,10 @@ export fn emit_indirect_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr,
 /// Saves a load and types the result for the caller.
 export fn emit_closure_call_typed(ctx: Ctx, env: List<VarBinding>, fn_i64: ptr, args: List<ExprId>, num_captures: int, ret_ty: ValueType) -> Result<EmitValue, string> {
     let r = emit_closure_call(ctx, env, fn_i64, args, num_captures)?
-    ok_emit(r.value, ret_ty)
+    // Same canonicalisation as emit_indirect_call_typed, for the same reason:
+    // emit_closure_call builds its call-site fn_type with an i64 RETURN, so a
+    // bool-returning callee's i1 arrives widened with undefined upper bits.
+    ok_emit(ctx.cast_to(r.value, ret_ty), ret_ty)
 }
 
 /// Indirect call against an i64-shaped closure value when the
