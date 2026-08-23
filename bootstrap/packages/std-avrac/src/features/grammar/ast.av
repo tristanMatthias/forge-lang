@@ -1052,19 +1052,20 @@ fn tr_any(tk: Tk) -> bool { true }
 /// guard, which is why their `guard` is empty and the emitter falls back to
 /// comparing `st.cur().kind`.
 export fn terminal_rules() -> List<TerminalRule> {
-    [
-        TerminalRule { name: "IDENT",     guard: "st.cur().tk == Tk.Identifier",     matches: tr_ident },
-        TerminalRule { name: "WORD",      guard: "text_is_word(st.cur().text)",      matches: tr_never },
-        TerminalRule { name: "FIELDNAME", guard: "tk_is_field_name(st.cur().tk)",    matches: tr_never },
-        TerminalRule { name: "NUMBER",    guard: "tk_is_number_lit(st.cur().tk)",    matches: tk_is_number_lit },
-        TerminalRule { name: "STRING",    guard: "st.cur().tk == Tk.String",         matches: tr_string },
-        TerminalRule { name: "BOOL",      guard: "tk_is_bool_lit(st.cur().tk)",      matches: tk_is_bool_lit },
-        TerminalRule { name: "TEMPLATE",  guard: "st.cur().tk == Tk.Template",       matches: tr_template },
-        TerminalRule { name: "EOF",       guard: "st.cur().tk == Tk.Eof",            matches: tr_eof },
-        TerminalRule { name: "DOC",       guard: "st.cur().tk == Tk.DocComment",     matches: tr_doc },
-        TerminalRule { name: "MODDOC",    guard: "st.cur().tk == Tk.ModDocComment",  matches: tr_moddoc },
-        TerminalRule { name: "ERROR",     guard: "st.cur().tk == Tk.Error",          matches: tr_error }
-    ]
+    table<TerminalRule> {
+        name        | guard                                  | matches
+        "IDENT"     | "st.cur().tk == Tk.Identifier"         | tr_ident
+        "WORD"      | "text_is_word(st.cur().text)"          | tr_never
+        "FIELDNAME" | "tk_is_field_name(st.cur().tk)"        | tr_never
+        "NUMBER"    | "tk_is_number_lit(st.cur().tk)"        | tk_is_number_lit
+        "STRING"    | "st.cur().tk == Tk.String"             | tr_string
+        "BOOL"      | "tk_is_bool_lit(st.cur().tk)"          | tk_is_bool_lit
+        "TEMPLATE"  | "st.cur().tk == Tk.Template"           | tr_template
+        "EOF"       | "st.cur().tk == Tk.Eof"                | tr_eof
+        "DOC"       | "st.cur().tk == Tk.DocComment"         | tr_doc
+        "MODDOC"    | "st.cur().tk == Tk.ModDocComment"      | tr_moddoc
+        "ERROR"     | "st.cur().tk == Tk.Error"              | tr_error
+    }
 }
 
 /// The emitted guard for a terminal, or "" when it has none.
