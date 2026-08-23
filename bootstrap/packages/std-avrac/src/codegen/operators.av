@@ -1,7 +1,7 @@
 // WHY: codegen for operators — binary, unary, logical, float.
 
-use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str, vtype_is_unsigned_int, vtype_is_signed_narrow_int, vtype_is_optional, vtype_strip_optional}
-use codegen.{Ctx, EmitValue, ok_emit, err_emit}
+use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_newtype_underlying, vtype_struct_name, vtype_eq, vtype_enum_name, vtype_is_str, vtype_is_unsigned_int, vtype_is_signed_narrow_int, vtype_is_optional, vtype_strip_optional}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit, cg_newtype_vtype_lookup}
 use core.{avra_covmap_next_decision_id}
 use codegen.{emit_concat, emit_str_eq, emit_str_cmp}
 use codegen.{is_null_literal}
@@ -63,6 +63,22 @@ fn str_binop_supported(op: BinOp) -> bool {
     }
 }
 
+
+/// Is `t` laid out as a string — including a newtype whose Newtype KIND was
+/// erased to `.Struct(name)` on the way across a module boundary?
+///
+/// `vtype_is_str` cannot answer that: it is the IDENTITY question, and core has
+/// no access to the newtype registry anyway. Codegen does, so the nominal name
+/// is resolved here. Keeping the two questions apart matters — making
+/// `vtype_is_str` itself transparent routes METHOD DISPATCH to the string
+/// methods, at which point a newtype's own `.raw()` ceases to exist.
+fn cg_is_str_repr(ctx: Ctx, t: ValueType) -> bool {
+    if vtype_is_str(vtype_newtype_underlying(t)) { return true }
+    let n = vtype_struct_name(t)
+    if n == "" { return false }
+    vtype_is_str(vtype_newtype_underlying(cg_newtype_vtype_lookup(ctx.newtypes, n)))
+}
+
 export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, right: Expr) -> Result<EmitValue, string> {
     let left_result = ctx.emit(env, left)?
     mut lhs = left_result.value
@@ -112,7 +128,22 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
     }
 
     let null_cmp = is_null_literal(left) || is_null_literal(right)
-    let is_str = vtype_is_str(left_result.ty) || vtype_is_str(right_result.ty)
+    // REPRESENTATION, and it has to survive KIND ERASURE.
+    //
+    // A newtype over `string` is laid out as a string (spec Axis 1: a
+    // compile-time distinction, no runtime representation change), so `==`
+    // between two of them must compare BY VALUE. `vtype_is_str` answers only
+    // for a literal `.Str`, and an IMPORTED newtype does not even arrive as
+    // `.Newtype`: nominal identity is kind-agnostic, so it reaches codegen as
+    // `.Struct("RuleName")` and only the registry can tell it from a real
+    // struct. Without this the comparison fell to `icmp eq ptr`.
+    //
+    // Reproduced in six lines — a newtype declared LOCALLY compared fine, which
+    // is why every small probe missed it:
+    //     use @std.avrac.core.{RuleName}
+    //     RuleName("expression") == mk("expr", "ession")   -> false
+    //     ...raw() == ...raw()                             -> true
+    let is_str = cg_is_str_repr(ctx, left_result.ty) || cg_is_str_repr(ctx, right_result.ty)
     let is_float = vtype_eq(left_result.ty, .Float) || vtype_eq(right_result.ty, .Float)
 
     // Guard the string ops (concat `+`, `==`/`!=`, ordering) against two shapes

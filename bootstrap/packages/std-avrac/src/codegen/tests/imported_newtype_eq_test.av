@@ -1,0 +1,56 @@
+// `==` / `!=` between two newtype-over-string values compares BY VALUE even when
+// the newtype is IMPORTED from another module.
+//
+// A newtype is layout-transparent (spec Axis 1: a compile-time distinction, no
+// runtime representation change), so two of them holding the same text are
+// equal. They were not:
+//
+//     use @std.avrac.core.{RuleName}
+//     RuleName("expression") == mk("expr", "ession")   -> false   (icmp eq ptr)
+//     ...raw() == ...raw()                             -> true
+//
+// WHY IT HID FOR SO LONG: a newtype declared in the SAME FILE compares
+// correctly, because it still carries its `.Newtype` kind. Crossing a module
+// boundary erases the kind to `.Struct(name)` — nominal identity is
+// kind-agnostic, so only the registry distinguishes it from a real struct — and
+// the equality dispatch then saw a struct and emitted a POINTER compare. Every
+// obvious probe declares the type locally and passes.
+//
+// The needle is always built at RUNTIME (`mk("expr", "ession")`) so it cannot
+// share an address with the literal; comparing two identical literals passes
+// either way because they are interned.
+//
+// Found via the compiler's own manifest validation: build names cross exactly
+// this boundary, so every one compared unequal and 274 defects were reported
+// across 58 features, in both directions for the same name.
+
+use @std.avrac.core.{RuleName, ModulePath}
+
+type LocalName = string
+type Holder = { r: RuleName }
+
+fn mkr(a: string, b: string) -> RuleName { RuleName(a + b) }
+fn mkm(a: string, b: string) -> ModulePath { ModulePath(a + b) }
+fn mkl(a: string, b: string) -> LocalName { LocalName(a + b) }
+
+spec "an imported newtype compares by value, not by address" {
+    then "equal text compares EQUAL — the regression" {
+        RuleName("expression") == mkr("expr", "ession")
+    }
+    then "different text still compares unequal" {
+        RuleName("expression") != mkr("other", "thing")
+    }
+    then "a second imported newtype behaves the same" {
+        ModulePath("features.if_stmt") == mkm("features.", "if_stmt")
+    }
+    then "read out of a struct field, where the compiler's own case lives" {
+        let h = Holder { r: RuleName("statement") }
+        h.r == mkr("state", "ment")
+    }
+    then "CONTROL — a LOCALLY declared newtype was always fine and still is" {
+        LocalName("x") == mkl("x", "")
+    }
+    then "CONTROL — plain strings are untouched" {
+        ("a" + "b") == "ab" && ("a" + "b") != "ac"
+    }
+}
