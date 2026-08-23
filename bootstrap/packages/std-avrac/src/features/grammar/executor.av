@@ -3946,6 +3946,12 @@ export fn tok_starts_expr_leaf(tok: Token) -> bool {
     t == "~" || t == "!" || t == "-" || t == "not" || t == "@" || t == "." ||
     t == "(" || t == "[" || t == "{" ||
     t == "match" || t == "if" || t == "spawn" || t == "channel" || t == "isolated" || t == "when" || t == "quote" ||
+    // `table` is listed by TEXT alongside the other keyword-led expression
+    // starters. It used to be covered by the `kind == "IDENT"` test above, and
+    // reserving the word (t-y2i7.17) moved it to kind "KW" — which silently
+    // stopped `(x) -> table<Row> { … }` from parsing, because paren_lambda_ahead
+    // asks this helper whether the body starts an expression.
+    t == "table" ||
     t == "null" || t == "none"
 }
 
