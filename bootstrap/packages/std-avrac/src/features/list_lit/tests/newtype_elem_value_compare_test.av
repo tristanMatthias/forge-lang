@@ -1,0 +1,60 @@
+// `List<T>.contains` / `.index_of` compare BY VALUE when `T` is a newtype over
+// `string`, not by pointer identity.
+//
+// The dispatch asked `vtype_list_elem(list_ty) is .Str`, which is false for a
+// newtype, so every newtype element got the IDENTITY helper
+// (`avra_array_contains`) instead of `avra_array_contains_str`. Membership then
+// answered false for equal strings at different addresses — true only for a
+// literal that happened to be interned to the same pointer, which is why it
+// survived: the obvious test uses the same literal twice and passes.
+//
+// A newtype is layout-transparent by spec Axis 1 — it is a compile-time
+// distinction with no runtime representation change — so representation
+// dispatch must see through it. `vtype_is_str_repr` is that predicate.
+//
+// `vtype_is_str` is the separate IDENTITY question and deliberately does NOT
+// see through the wrapper: METHOD DISPATCH shares it, and making it transparent
+// routes a newtype to the string methods, at which point its own `.raw()`
+// ceases to exist and the whole @std build fails.
+//
+// Found by typing the compiler's own build names: `is_central_build` is a
+// membership test over a `List<BuildName>`, so every build read as non-central
+// and manifest validation reported 274 defects across 58 features at once.
+// Same class as t-xpi0, where `contains` compared strings by identity.
+//
+// Every probe builds its needle at RUNTIME (`mk("al", "pha")`) so it cannot
+// share a pointer with the list's literal. With the bug, all four fail.
+
+type Slug = string
+type Wrapped = Slug
+
+fn mk(a: string, b: string) -> Slug { Slug(a + b) }
+
+spec "a newtype-over-string list element compares by value" {
+    then "contains finds a runtime-built needle" {
+        let xs: List<Slug> = [Slug("alpha"), Slug("beta")]
+        xs.contains(mk("al", "pha"))
+    }
+    then "contains still reports absence correctly" {
+        let xs: List<Slug> = [Slug("alpha"), Slug("beta")]
+        !xs.contains(mk("gam", "ma"))
+    }
+    then "index_of returns the right position, not -1" {
+        let xs: List<Slug> = [Slug("alpha"), Slug("beta")]
+        xs.index_of(mk("be", "ta")) == 1
+    }
+    then "a newtype OVER a newtype is transparent too" {
+        let xs: List<Wrapped> = [Wrapped(Slug("alpha")), Wrapped(Slug("beta"))]
+        xs.contains(Wrapped(mk("al", "pha")))
+    }
+    then "CONTROL — a plain string list is unchanged" {
+        let ys: List<string> = ["alpha", "beta"]
+        ys.contains("al" + "pha") && ys.index_of("be" + "ta") == 1
+    }
+    then "CONTROL — a non-string newtype list still compares scalars" {
+        let ns: List<Count> = [Count(1), Count(2)]
+        ns.contains(Count(2)) && !ns.contains(Count(9))
+    }
+}
+
+type Count = int
