@@ -90,6 +90,7 @@ pass ever sees a Quote or Splice node.
         },
         snippet = r"quote { ${1:body} }",
         expr_tag = Expr.Quote("expr", ExprId(0)),
+        contextual = ["arm", "stmt", "stmts", "decl"],
         gram_family = "expr",
     }
     quote_def
