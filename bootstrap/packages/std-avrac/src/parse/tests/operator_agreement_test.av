@@ -1,0 +1,55 @@
+// t-y2i7.8 deliverable (2): the operator SPELLING SET must agree with the grammar.
+//
+// The sibling of keyword_agreement_test, and a stricter one. Keywords need two
+// documented exemptions (12 reserved-future words the table declares and no
+// feature owns; 13 contextual words a grammar matches as literal TEXT without
+// them being lexed as keywords). Operators need NONE: the grammar declares 38
+// non-word literals and `operator_rules()` has 38 rows, and the two sets are
+// EQUAL. So this pins a bijection rather than a bounded difference.
+//
+// WHY IT MATTERS: `operator_rules()` is the source the maximal-munch scanner is
+// GENERATED from (parse/emit_lex.av). A spelling in the table that no rule uses
+// is a token the lexer can produce and the parser can never accept; a spelling in
+// a rule that the table lacks is a rule that can never match. Neither is visible
+// from either side alone.
+
+use @std.avrac.parse.{operator_rules}
+use @std.avrac.features.{all_grammar_operators}
+
+spec "the operator set agrees with the grammar (t-y2i7.8)" {
+    given "the central table and every grammar literal" {
+        let declared = all_grammar_operators()
+
+        then "the sources are non-empty — anti-vacuity" {
+            declared.length > 0 && operator_rules().length > 0
+        }
+
+        then "every central operator is USED by some rule" {
+            // A row nothing references is a token the lexer emits and no rule can
+            // consume.
+            mut orphans = 0
+            for r in operator_rules() {
+                if !declared.contains(r.spelling) { orphans = orphans + 1 }
+            }
+            orphans == 0
+        }
+
+        then "every operator a rule uses is IN the table" {
+            // The reverse: a literal no row declares is a rule that can never
+            // match, because the scanner will never produce that token.
+            mut missing = 0
+            for d in declared {
+                mut found = false
+                for r in operator_rules() { if r.spelling == d { found = true } }
+                if !found { missing = missing + 1 }
+            }
+            missing == 0
+        }
+
+        then "and the two sets are the SAME SIZE — no duplicate hiding a gap" {
+            // Both directions above pass on a pair of sets that agree elementwise
+            // but differ in multiplicity. Equal counts closes that.
+            declared.length == operator_rules().length
+        }
+    }
+}

@@ -162,6 +162,31 @@ fn fold_builders(feats: List<LanguageFeature>) -> List<BuilderBind> {
 /// COST: re-runs every feature factory (each re-parses its gram). That is the same
 /// cost `init_features` exists to pay once, so do NOT call this on a hot path — it
 /// is here for the keyword-agreement check, which runs once.
+/// Every operator/punctuation spelling the GRAMMAR declares — the non-word literal
+/// terminals, the complement of `all_feature_keywords`.
+///
+/// UNIONS THE FEATURES WITH THE SPINE, and that is not optional. The operator
+/// PRECEDENCE FOLD LADDER lives in the engine core grammar, not in any feature
+/// fragment, so a features-only walk reports 29 of 38 and shows `& << <= >> >= / *
+/// ^ %` as undeclared — every arithmetic and comparison operator. Measured; it is
+/// the reason this fn is not simply the mirror of all_feature_keywords, which is
+/// features-only and correct because keywords ARE feature-owned.
+export fn all_grammar_operators() -> List<string> {
+    mut out: List<string> = []
+    for f in language_features() {
+        for t in grammar_literals(feature_gram(f)) {
+            if !text_is_word(t) && !out.contains(t) { out.push(t) }
+        }
+    }
+    // The SPINE too: the operator precedence fold ladder lives in the engine
+    // core grammar, not in any feature fragment, so features alone miss every
+    // arithmetic/comparison operator.
+    for t in grammar_literals(avra_program_grammar()) {
+        if !text_is_word(t) && !out.contains(t) { out.push(t) }
+    }
+    out
+}
+
 export fn all_feature_keywords() -> List<string> {
     mut out: List<string> = []
     for f in language_features() {
