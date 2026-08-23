@@ -1,0 +1,117 @@
+// t-y2i7.8 deliverable (3): the keyword SPELLING SET is stated twice, and until
+// now nothing checked the two agreed.
+//
+//   a feature's grammar declares the SPELLING — `"if"` is a word literal in
+//     if_stmt's rules
+//   keyword_rules() declares SPELLING -> KwId — `"if" | Tk.Keyword(KwId.If)`
+//
+// Only the SPELLING half is duplicated. The KwId half is genuinely central —
+// KwId is a central enum and nothing in a feature's grammar names it — so this
+// is NOT "derive keyword_rules from the features": deriving the KwId from the
+// spelling would mean inventing it by naming convention, the brittle-heuristic
+// class the project bans. The honest fix is the one the terminal table uses
+// (#1357): keep the central binding, make the AGREEMENT enforced.
+//
+// kwid_lockstep_test already pins KwId <-> keyword_rules, both directions. This
+// file pins the missing edge: keyword_rules <-> the feature grammars. Without it
+// a keyword can exist on one side and not the other and nothing notices.
+//
+// MEASURED at the time of writing: features declare 60 word literals, the table
+// has 59 rows, and the two differ in both directions for reasons that are
+// legitimate and asserted below.
+
+use @std.avrac.parse.{keyword_rules}
+use @std.avrac.features.{all_feature_keywords}
+use @std.avrac.core.{Tk, KwId}
+
+/// A row is RESERVED-FUTURE if its token is the catch-all reserved id. Those are
+/// owned by no feature — that is what reserving a word means — so they are the
+/// one legitimate class of central-only row.
+/// MATCHES OUT THE PAYLOAD — it does NOT write `tk == Tk.Keyword(KwId.Reserved)`.
+/// That comparison is a trap (t-vcb1): `emit_enum_tag_cmp` compares the enum TAG
+/// and never reads the payload, so every `Tk.Keyword(...)` would test equal to
+/// every other and this predicate would answer TRUE for all 59 rows — exempting
+/// the entire table and making the spec below pass unconditionally. Measured, not
+/// assumed: the first cut did exactly that and a deliberately-planted bogus
+/// keyword sailed through 4/4.
+///
+/// `KwId` carries no payload, so comparing the ids themselves is sound.
+fn is_reserved(tk: Tk) -> bool {
+    match tk {
+        .Keyword(id) -> id == KwId.Reserved
+        _ -> false
+    }
+}
+
+spec "the keyword set agrees with what the features declare (t-y2i7.8)" {
+    given "the central table and the features' own grammars" {
+        let declared = all_feature_keywords()
+
+        then "the sources are non-empty — anti-vacuity" {
+            // Both sides are computed, and either returning nothing would make
+            // every assertion below pass while checking nothing.
+            declared.length > 0 && keyword_rules().length > 0
+        }
+
+        then "every non-reserved keyword is DECLARED by some feature" {
+            // The real claim. A central keyword no feature's grammar spells is
+            // either dead or a feature that forgot to declare its own syntax.
+            mut orphans = 0
+            for r in keyword_rules() {
+                if !is_reserved(r.tk) && !declared.contains(r.spelling) { orphans = orphans + 1 }
+            }
+            orphans == 0
+        }
+
+        then "the ONLY central-only rows are the reserved-future words" {
+            // Pins the exemption itself, so it cannot quietly widen: if a row
+            // stops being derivable, it must be because it became reserved, not
+            // because someone added an exception.
+            mut central_only = 0
+            mut reserved_only = 0
+            for r in keyword_rules() {
+                if !declared.contains(r.spelling) {
+                    central_only = central_only + 1
+                    if is_reserved(r.tk) { reserved_only = reserved_only + 1 }
+                }
+            }
+            central_only == reserved_only && central_only > 0
+        }
+
+        then "no feature declares a RESERVED word as its own syntax" {
+            // The reserved-future words are reserved precisely so no feature uses
+            // them. Without this, a feature could declare `"async"` and the
+            // orphan check above would SKIP it — is_reserved short-circuits before
+            // the membership test, so a reserved row is never compared either way.
+            mut used = 0
+            for r in keyword_rules() {
+                if is_reserved(r.tk) && declared.contains(r.spelling) { used = used + 1 }
+            }
+            used == 0
+        }
+
+        then "the feature-only words are EXACTLY the known contextual ones" {
+            // The other direction is legitimately non-empty: a grammar can match a
+            // word as literal TEXT without it being a lexed keyword. But an upper
+            // BOUND is nearly vacuous — the measured set is 13 and a drift to 24
+            // would pass unnoticed — so the set is pinned exactly. A feature adding
+            // a contextual word turns this red on purpose: someone confirms it was
+            // meant, and adds it here.
+            let allow = ["config", "children", "body", "implements", "grammar", "_",
+                         "table", "arm", "stmt", "stmts", "decl", "without", "only"]
+            mut unexpected = 0
+            for d in declared {
+                mut central = false
+                for r in keyword_rules() { if r.spelling == d { central = true } }
+                if !central && !allow.contains(d) { unexpected = unexpected + 1 }
+            }
+            mut stale = 0
+            for a in allow {
+                mut still_declared = false
+                for d in declared { if d == a { still_declared = true } }
+                if !still_declared { stale = stale + 1 }
+            }
+            unexpected == 0 && stale == 0
+        }
+    }
+}
