@@ -5,7 +5,7 @@
 // parser's closure — so the F4012 import-closure invariant holds by
 // construction; the feature's passes/hooks stay in ../mod.av.
 
-use core.{Stmt, ExprId}
+use core.{ModulePath, Stmt, ExprId}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, BuildKind}
 
 /// Run `e` when the enclosing scope exits (`defer` / `errdefer`).
@@ -20,8 +20,8 @@ export fn build_errdefer_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn defer_builds() -> List<BuilderBind> {
-    bind_rows("features.defer.lowering", [bind_row("build_defer", BuildKind.Stmt, 1, false, "build_defer_abi", build_defer_abi)])
+    bind_rows(ModulePath("features.defer.lowering"), [bind_row("build_defer", BuildKind.Stmt, 1, false, "build_defer_abi", build_defer_abi)])
 }
 export fn errdefer_builds() -> List<BuilderBind> {
-    bind_rows("features.defer.lowering", [bind_row("build_errdefer", BuildKind.Stmt, 1, false, "build_errdefer_abi", build_errdefer_abi)])
+    bind_rows(ModulePath("features.defer.lowering"), [bind_row("build_errdefer", BuildKind.Stmt, 1, false, "build_errdefer_abi", build_errdefer_abi)])
 }

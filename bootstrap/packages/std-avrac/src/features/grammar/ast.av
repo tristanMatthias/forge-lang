@@ -35,7 +35,7 @@
 /// arena-accumulation source (Batch A). A narrow row (not BuilderBind)
 /// because that type carries executor values (PState/CapVal) this AST hub
 /// must not depend on.
-export type BuildKindRow = { name: string, kind: BuildKind, spanned: bool, arity: int, module: string, export_name: string }
+export type BuildKindRow = { name: string, kind: BuildKind, spanned: bool, arity: int, module: ModulePath?, export_name: string }
 
 export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr, builder_kinds: List<BuildKindRow> }
 

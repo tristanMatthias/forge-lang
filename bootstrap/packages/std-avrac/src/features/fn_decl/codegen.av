@@ -897,10 +897,6 @@ export fn emit_int_to_string(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>
     if ename != "" {
         return err_emit("enum `${ename}` cannot be converted to string — define `fn display(self) -> string` on `${ename}` (see Display dispatch)")
     }
-    if vtype_is_newtype(r.ty) {
-        let inner = vtype_newtype_inner(r.ty)
-        return emit_value_to_string(ctx, r.value, inner)
-    }
     if r.ty is .Union {
         return err_emit("cannot convert union type to string directly — use `match` to extract the value first")
     }
@@ -913,6 +909,19 @@ export fn emit_int_to_string(ctx: Ctx, env: List<VarBinding>, args: List<ExprId>
 /// A `T?` routes through `emit_optional_to_string` (mutually recursive), so
 /// nested optionals like `int??` display correctly at every depth.
 fn emit_value_to_string(ctx: Ctx, val: ptr, ty: ValueType) -> Result<EmitValue, string> {
+    // A newtype displays as its UNDERLYING value, at ANY depth. This unwrap
+    // used to sit only in `emit_int_to_string`, the public entry, so it fired
+    // for a top-level `MP` but never for one reached through another layer:
+    // `emit_optional_to_string` strips `MP?` to `MP` and re-enters HERE, where
+    // nothing recognised it, so it fell through to the integer path and
+    // printed the string POINTER as a decimal (`${some_mp}` -> 4335581486).
+    // The doc comment below already called this "the single dispatch shared by
+    // the public emitter, the newtype path, and the optional present branch" —
+    // it just was not true of the newtype half until now. Recursing here makes
+    // every composition work: `MP?`, `MP??`, a newtype over a newtype.
+    if vtype_is_newtype(ty) {
+        return emit_value_to_string(ctx, val, vtype_newtype_inner(ty))
+    }
     if vtype_is_optional(ty) {
         return emit_optional_to_string(ctx, EmitValue { value: val, ty: ty })
     }

@@ -1,0 +1,56 @@
+// A newtype displays as its UNDERLYING value at ANY depth, not just at the top.
+//
+// `emit_value_to_string` documents itself as "THE value-level string converter
+// — the single dispatch shared by the public `string()` emitter, the newtype
+// path, and the optional present branch". It had no newtype arm. The unwrap sat
+// one level up in `emit_int_to_string`, the public entry, so it fired for a
+// bare `MP` and never for one reached through another layer:
+// `emit_optional_to_string` strips `MP?` to `MP` and re-enters the shared
+// dispatch, which did not recognise it and fell through to the INTEGER path —
+// printing the string pointer as a decimal.
+//
+//     let m: MP? = MP("x")
+//     "${m}"   ->   4335581486        (the pointer, not "x")
+//
+// It is a display bug with a design consequence, which is why it is pinned:
+// t-y2i7.3's ModulePath sweep wanted the honest `ModulePath?` shape, and this
+// forced an empty-string sentinel instead — a workaround for a compiler defect,
+// in a ticket whose whole subject is removing stringly-typed sentinels.
+//
+// Fixed by recursing in the SHARED dispatch, so every composition works rather
+// than one hand-picked depth.
+
+type MP = string
+type Wrapped = MP
+type Count = int
+
+spec "a newtype displays as its underlying value at every depth" {
+    then "top level — the case that already worked" {
+        let a: MP = MP("top")
+        "${a}" == "top"
+    }
+    then "inside an optional — the pointer-printing regression" {
+        let b: MP? = MP("inner")
+        "${b}" == "inner"
+    }
+    then "an absent optional newtype still reads `none`" {
+        let c: MP? = null
+        "${c}" == "none"
+    }
+    then "an optional newtype over int, not just over string" {
+        let d: Count? = Count(42)
+        "${d}" == "42"
+    }
+    then "a newtype OVER a newtype unwraps all the way" {
+        let e: Wrapped = Wrapped(MP("double"))
+        "${e}" == "double"
+    }
+    then "a plain optional is unaffected — the fix is newtype-scoped" {
+        let f: string? = "plain"
+        "${f}" == "plain"
+    }
+    then "`string()` agrees with interpolation on the optional newtype" {
+        let g: MP? = MP("via_string")
+        string(g) == "via_string"
+    }
+}

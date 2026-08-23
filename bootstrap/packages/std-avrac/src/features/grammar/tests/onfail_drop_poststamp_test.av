@@ -15,13 +15,14 @@
 // These specs pin both halves — the deferral must not swallow a real violation,
 // and a correct fragment must survive stamping.
 use @std.avrac.features.spec_test.{spec_lang}
+use @std.avrac.core.{ModulePath}
 use @std.avrac.features.{feature_gram}
 use @std.avrac.features.grammar.{parse_grammar, grammar_checked, grammar_with_builder_kinds, builder_kind_rows, validate_grammar_kinds, rule_result_kind, rule_result_kind_known, Grammar, BuilderBind, PState, CapVal, BuildKind}
 
 fn nil_build(st: PState, vals: List<CapVal>) -> CapVal { CapVal.Nil }
 
 fn bind(name: string, kind: BuildKind, arity: int) -> BuilderBind {
-    BuilderBind { name: name, kind: kind, arity: arity, spanned: false, module: "t", export_name: "t", build: nil_build }
+    BuilderBind { name: name, kind: kind, arity: arity, spanned: false, module: ModulePath("t"), export_name: "t", build: nil_build }
 }
 
 /// A drop whose repetition references a rule built by `MkToy` — a name NO

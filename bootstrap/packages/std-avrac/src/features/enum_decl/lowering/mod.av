@@ -3,7 +3,7 @@
 // (t-kd4y.3 Batch A). Only features.grammar + core are imported, so the
 // F4012 import-closure invariant holds by construction.
 
-use core.{Stmt, Variant}
+use core.{ModulePath, Stmt, Variant}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_tok_text, capval_to_tparam_list, capval_to_var_list, capval_to_field_list, BuildKind}
 
 /// `enum Name ( < tparam* > )? { variant* }` (`MkEnumDecl`, arity 3 — the
@@ -19,6 +19,6 @@ export fn evariant_build(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn enum_builds() -> List<BuilderBind> {
-    bind_rows("features.enum_decl.lowering", [bind_row("MkEnumDecl", BuildKind.Stmt, 3, false, "enum_decl_build", enum_decl_build),
+    bind_rows(ModulePath("features.enum_decl.lowering"), [bind_row("MkEnumDecl", BuildKind.Stmt, 3, false, "enum_decl_build", enum_decl_build),
      bind_row("MkEVariant", BuildKind.Variant, 2, false, "evariant_build", evariant_build)])
 }

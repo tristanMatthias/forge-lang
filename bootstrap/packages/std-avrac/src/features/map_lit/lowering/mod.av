@@ -1,7 +1,7 @@
 // The map feature's LOWERING (t-kd4y.3.5.4): `{ k: v, … }`. One spanned
 // row, anchored at the `{` byte. Imports ONLY features.grammar + core
 // (F4012).
-use core.{Expr, ExprId, byte_span}
+use core.{ModulePath, Expr, ExprId, byte_span}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_node_list, BuildKind}
 
 /// `{ "k": v, … }` map literal. `Expr.MapLit`'s payload is a FLAT id
@@ -26,5 +26,5 @@ export fn mk_map_lit_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn map_lit_builds() -> List<BuilderBind> {
-    bind_rows("features.map_lit.lowering", [bind_row("MkMapLit", BuildKind.Expr, 2, true, "mk_map_lit_abi", mk_map_lit_abi)])
+    bind_rows(ModulePath("features.map_lit.lowering"), [bind_row("MkMapLit", BuildKind.Expr, 2, true, "mk_map_lit_abi", mk_map_lit_abi)])
 }

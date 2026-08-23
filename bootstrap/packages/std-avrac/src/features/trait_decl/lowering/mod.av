@@ -16,7 +16,7 @@
 // the features whose rules spell them — impl (t-kd4y.3.3.4) and component
 // (t-kd4y.3.3.5) — not to `trait` on the strength of their names.
 
-use core.{Stmt, type_expr_to_vtype, TypeExpr, TypeParamEntry, ValueType}
+use core.{ModulePath, Stmt, type_expr_to_vtype, TypeExpr, TypeParamEntry, ValueType}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_tok_text, capval_present, capval_to_stmt_list, capval_to_pentry_list, capval_to_texpr, BuildKind}
 
 /// `trait Name { member* }` (`MkTraitDecl`).
@@ -50,7 +50,7 @@ export fn trait_method_build(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// ALL of the trait feature's rows — one list per feature.
 export fn trait_builds() -> List<BuilderBind> {
-    bind_rows("features.trait_decl.lowering", [bind_row("MkTraitDecl", BuildKind.Stmt, 2, false, "trait_decl_build", trait_decl_build),
+    bind_rows(ModulePath("features.trait_decl.lowering"), [bind_row("MkTraitDecl", BuildKind.Stmt, 2, false, "trait_decl_build", trait_decl_build),
      bind_row("MkAssocType", BuildKind.Stmt, 1, false, "assoc_type_build", assoc_type_build),
      bind_row("MkTraitMethod", BuildKind.Stmt, 5, false, "trait_method_build", trait_method_build)])
 }
@@ -75,5 +75,5 @@ export fn ty_dyn_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// tests now spell the production arity — a name split central/feature by
 /// ARITY would trip the validator's shadow rule.
 export fn dyn_type_builds() -> List<BuilderBind> {
-    bind_rows("features.trait_decl.lowering", [bind_row("TyDyn", BuildKind.Type, 2, false, "ty_dyn_abi", ty_dyn_abi)])
+    bind_rows(ModulePath("features.trait_decl.lowering"), [bind_row("TyDyn", BuildKind.Type, 2, false, "ty_dyn_abi", ty_dyn_abi)])
 }

@@ -3,7 +3,7 @@
 // the F4012 import-closure invariant). The `tparam` rule lives in
 // ../grammar.av and is shared by every generic decl keyword — the fragment
 // stays in the decl-fragment registry; this row is its one lowering.
-use core.{TypeParamEntry}
+use core.{ModulePath, TypeParamEntry}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_tok_text, BuildKind}
 
 /// `name ( ":" bound )?` — ONE generic type parameter (the `MkTypeParam`
@@ -22,5 +22,5 @@ export fn mk_type_param_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// The generics feature's one row — span-free (a `TypeParamEntry` value,
 /// no node).
 export fn generics_builds() -> List<BuilderBind> {
-    bind_rows("features.generics.lowering", [bind_row("MkTypeParam", BuildKind.Tparam, 2, false, "mk_type_param_abi", mk_type_param_abi)])
+    bind_rows(ModulePath("features.generics.lowering"), [bind_row("MkTypeParam", BuildKind.Tparam, 2, false, "mk_type_param_abi", mk_type_param_abi)])
 }

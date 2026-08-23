@@ -12,7 +12,7 @@ use features.grammar.{rule_first_expect_msg, gated_ref_of}
 use features.grammar.{grammar_has_gate, rule_first_is_ident, rule_first_literal}
 use features.grammar.{rule_result_kind, gprim_ref_name, BuildKindRow}
 // The field-name acceptance set (t-47hc.33.1).
-use core.{tk_is_field_name, RuleName}
+use core.{tk_is_field_name, RuleName, ModulePath}
 use core.{SelectArm}
 use core.{CompConfig, CompConfigPair, ChildrenSlot, body_declares_token_stream, vtype_struct}
 use features.grammar.{code_at, is_ident_start_code}
@@ -564,7 +564,7 @@ export type BuilderBind = {
     // encode. Only kinds "stmt" and "expr" may set this (validated at
     // registry build, features/lang.av).
     spanned: bool,
-    module: string,
+    module: ModulePath?,
     export_name: string,
     build: fn(PState, List<CapVal>) -> CapVal,
 }
@@ -578,11 +578,11 @@ export type BuilderBind = {
 /// `module` is stamped by `bind_rows`, so a lowering module names its module
 /// path exactly once, not once per row.
 export fn bind_row(name: string, kind: BuildKind, arity: int, spanned: bool, export_name: string, build: fn(PState, List<CapVal>) -> CapVal) -> BuilderBind {
-    BuilderBind { name: name, kind: kind, arity: arity, spanned: spanned, module: "", export_name: export_name, build: build }
+    BuilderBind { name: name, kind: kind, arity: arity, spanned: spanned, module: null, export_name: export_name, build: build }
 }
 
 /// A lowering module's whole manifest: its module path stamped across its rows.
-export fn bind_rows(module: string, rows: List<BuilderBind>) -> List<BuilderBind> {
+export fn bind_rows(module: ModulePath, rows: List<BuilderBind>) -> List<BuilderBind> {
     mut out: List<BuilderBind> = []
     for r in rows { out.push(r with { module: module }) }
     out

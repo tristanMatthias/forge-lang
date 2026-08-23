@@ -12,7 +12,7 @@
 // live here now, mk_when included (t-kd4y.3.5.2 — the when feature's
 // expression core, beside its one other caller mk_when_stmt_abi).
 
-use core.{Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, ValueType, byte_span, byte_span_none, pattern_optional_present, pattern_optional_absent}
+use core.{ModulePath, Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, ValueType, byte_span, byte_span_none, pattern_optional_present, pattern_optional_absent}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_pat_val, capval_present, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list, capval_tok_list, capval_tok_text, capval_to_pat_list, capval_to_node_list, param_entries_from_toks, capval_to_when_arm_list, BuildKind}
 
 export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
@@ -364,7 +364,7 @@ export fn mk_match_expr_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// touches no rule text); `spanned` marks the rows whose builds read
 /// st.build_sp.
 export fn match_builds() -> List<BuilderBind> {
-    bind_rows("features.match.lowering", [bind_row("build_when_arm", BuildKind.Warm, 2, false, "build_when_arm_abi", build_when_arm_abi),
+    bind_rows(ModulePath("features.match.lowering"), [bind_row("build_when_arm", BuildKind.Warm, 2, false, "build_when_arm_abi", build_when_arm_abi),
      bind_row("build_when_default", BuildKind.Warm, 1, false, "build_when_default_abi", build_when_default_abi),
      bind_row("build_arm", BuildKind.Arm, 3, false, "build_arm_abi", build_arm_abi),
      bind_row("build_match", BuildKind.Stmt, 2, false, "build_match_abi", build_match_abi),
