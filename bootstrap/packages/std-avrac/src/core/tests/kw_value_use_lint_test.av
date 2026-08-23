@@ -36,11 +36,26 @@ fn linted_files() -> List<string> {
     ]
 }
 
-/// A line CONSTRUCTS a keyword token if it returns one, binds one, or stores one
-/// in a record field. Anything else that mentions one is passing it onward.
+/// A line CONSTRUCTS a keyword token if it returns one, binds one, or DECLARES one
+/// as table data. Anything else that mentions one is passing it onward.
+///
+/// Declaring covers BOTH row syntaxes, because the lexical tables have been written
+/// each way: a struct-literal field (`tk: Tk.Keyword(KwId.And)`) and a `table` cell
+/// (`"and" | Tk.Keyword(KwId.And)`). Only the first was recognised until the tables
+/// became table literals, at which point every declaration row read as a violation.
+/// A declaration is not the hazard t-vcb1 is about — nothing compares it, it IS the
+/// definition of the token.
 fn is_construction(line: string) -> bool {
     let t = line.trim()
-    t.starts_with("return ") || t.starts_with("let ") || t.starts_with("mut ") || line.contains("tk: Tk.Keyword(")
+    t.starts_with("return ") || t.starts_with("let ") || t.starts_with("mut ")
+        || line.contains("tk: Tk.Keyword(") || is_table_cell(line)
+}
+
+/// A `table` literal cell: the mention sits to the RIGHT of a column separator.
+fn is_table_cell(line: string) -> bool {
+    let bar = line.index_of("|")
+    let m = line.index_of("Tk.Keyword(")
+    bar >= 0 && m > bar
 }
 
 /// True when the mention sits inside a comment — LEADING or TRAILING. Checking

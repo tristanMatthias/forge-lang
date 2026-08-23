@@ -50,57 +50,58 @@ export type OpMatch = { tk: Tk, len: int, spelling: string }
 /// moment a rule here disagrees with `lex_dump`, and asserts the count so a
 /// dropped or stray rule can't slip through.
 export fn operator_rules() -> List<LitRule> {
-    [
+    table<LitRule> {
+        spelling | tk
         // ── `-` family ──
-        LitRule { spelling: "->", tk: Tk.Arrow },
-        LitRule { spelling: "-",  tk: Tk.Minus },
+        "->"     | Tk.Arrow
+        "-"      | Tk.Minus
         // ── `.` family ──
-        LitRule { spelling: "..", tk: Tk.DotDot },
-        LitRule { spelling: ".",  tk: Tk.Dot },
+        ".."     | Tk.DotDot
+        "."      | Tk.Dot
         // ── `?` family ──
-        LitRule { spelling: "??", tk: Tk.QuestionQuestion },
-        LitRule { spelling: "?.", tk: Tk.QuestionDot },
-        LitRule { spelling: "?",  tk: Tk.Question },
+        "??"     | Tk.QuestionQuestion
+        "?."     | Tk.QuestionDot
+        "?"      | Tk.Question
         // ── `&` family ──
-        LitRule { spelling: "&&", tk: Tk.AmpAmp },
-        LitRule { spelling: "&",  tk: Tk.Amp },
+        "&&"     | Tk.AmpAmp
+        "&"      | Tk.Amp
         // ── `|` family ──
-        LitRule { spelling: "||", tk: Tk.PipePipe },
-        LitRule { spelling: "|>", tk: Tk.PipeGt },
-        LitRule { spelling: "|",  tk: Tk.Pipe },
+        "||"     | Tk.PipePipe
+        "|>"     | Tk.PipeGt
+        "|"      | Tk.Pipe
         // ── `!` family ──
-        LitRule { spelling: "!=", tk: Tk.BangEqual },
-        LitRule { spelling: "!",  tk: Tk.Bang },
+        "!="     | Tk.BangEqual
+        "!"      | Tk.Bang
         // ── `=` family ──
-        LitRule { spelling: "==", tk: Tk.EqualEqual },
-        LitRule { spelling: "=",  tk: Tk.Equal },
+        "=="     | Tk.EqualEqual
+        "="      | Tk.Equal
         // ── `<` family ──
-        LitRule { spelling: "<<", tk: Tk.Shl },
-        LitRule { spelling: "<=", tk: Tk.LessEqual },
-        LitRule { spelling: "<-", tk: Tk.LeftArrow },
-        LitRule { spelling: "<",  tk: Tk.Less },
+        "<<"     | Tk.Shl
+        "<="     | Tk.LessEqual
+        "<-"     | Tk.LeftArrow
+        "<"      | Tk.Less
         // ── `>` family ──
-        LitRule { spelling: ">>", tk: Tk.Shr },
-        LitRule { spelling: ">=", tk: Tk.GreaterEqual },
-        LitRule { spelling: ">",  tk: Tk.Greater },
+        ">>"     | Tk.Shr
+        ">="     | Tk.GreaterEqual
+        ">"      | Tk.Greater
         // ── `/` (bare division only; the `//`/`/*` comment leads open modes) ──
-        LitRule { spelling: "/",  tk: Tk.Slash },
+        "/"      | Tk.Slash
         // ── single-character punctuation with NO compound form ──
-        LitRule { spelling: ",",  tk: Tk.Comma },
-        LitRule { spelling: "(",  tk: Tk.LeftParen },
-        LitRule { spelling: ")",  tk: Tk.RightParen },
-        LitRule { spelling: "{",  tk: Tk.LeftBrace },
-        LitRule { spelling: "}",  tk: Tk.RightBrace },
-        LitRule { spelling: "[",  tk: Tk.LeftBracket },
-        LitRule { spelling: "]",  tk: Tk.RightBracket },
-        LitRule { spelling: "+",  tk: Tk.Plus },
-        LitRule { spelling: "*",  tk: Tk.Star },
-        LitRule { spelling: ":",  tk: Tk.Colon },
-        LitRule { spelling: "@",  tk: Tk.At },
-        LitRule { spelling: "^",  tk: Tk.Caret },
-        LitRule { spelling: "~",  tk: Tk.Tilde },
-        LitRule { spelling: "%",  tk: Tk.Percent },
-    ]
+        ","      | Tk.Comma
+        "("      | Tk.LeftParen
+        ")"      | Tk.RightParen
+        "{"      | Tk.LeftBrace
+        "}"      | Tk.RightBrace
+        "["      | Tk.LeftBracket
+        "]"      | Tk.RightBracket
+        "+"      | Tk.Plus
+        "*"      | Tk.Star
+        ":"      | Tk.Colon
+        "@"      | Tk.At
+        "^"      | Tk.Caret
+        "~"      | Tk.Tilde
+        "%"      | Tk.Percent
+    }
 }
 
 /// The exact rule count `operator_rules` must have — a truncation/stray-entry
@@ -122,68 +123,69 @@ export const OPERATOR_RULE_COUNT = 38
 /// p_keyword_kind — token_table_test.av lexes every spelling through lex_dump and
 /// asserts the count, so a dropped or renamed keyword fails the suite.
 export fn keyword_rules() -> List<LitRule> {
-    [
-        LitRule { spelling: "and",      tk: Tk.Keyword(KwId.And) },
-        LitRule { spelling: "catch",    tk: Tk.Keyword(KwId.Catch) },
-        LitRule { spelling: "channel",  tk: Tk.Keyword(KwId.Channel) },
-        LitRule { spelling: "const",    tk: Tk.Keyword(KwId.Const) },
-        LitRule { spelling: "else",     tk: Tk.Keyword(KwId.Else) },
-        LitRule { spelling: "errdefer", tk: Tk.Keyword(KwId.Errdefer) },
-        LitRule { spelling: "false",    tk: Tk.Keyword(KwId.False) },
-        LitRule { spelling: "fn",       tk: Tk.Keyword(KwId.Fn) },
-        LitRule { spelling: "if",       tk: Tk.Keyword(KwId.If) },
-        LitRule { spelling: "let",      tk: Tk.Keyword(KwId.Let) },
-        LitRule { spelling: "mut",      tk: Tk.Keyword(KwId.Mut) },
-        LitRule { spelling: "not",      tk: Tk.Keyword(KwId.Not) },
-        LitRule { spelling: "null",     tk: Tk.Keyword(KwId.Null) },
-        LitRule { spelling: "none",     tk: Tk.Keyword(KwId.None) },
-        LitRule { spelling: "or",       tk: Tk.Keyword(KwId.Or) },
-        LitRule { spelling: "return",   tk: Tk.Keyword(KwId.Return) },
-        LitRule { spelling: "true",     tk: Tk.Keyword(KwId.True) },
-        LitRule { spelling: "for",      tk: Tk.Keyword(KwId.For) },
-        LitRule { spelling: "in",       tk: Tk.Keyword(KwId.In) },
-        LitRule { spelling: "where",    tk: Tk.Keyword(KwId.Where) },
-        LitRule { spelling: "while",    tk: Tk.Keyword(KwId.While) },
-        LitRule { spelling: "type",     tk: Tk.Keyword(KwId.Type) },
-        LitRule { spelling: "enum",     tk: Tk.Keyword(KwId.Enum) },
-        LitRule { spelling: "match",    tk: Tk.Keyword(KwId.Match) },
-        LitRule { spelling: "export",   tk: Tk.Keyword(KwId.Export) },
-        LitRule { spelling: "use",      tk: Tk.Keyword(KwId.Use) },
-        LitRule { spelling: "mod",      tk: Tk.Keyword(KwId.Mod) },
-        LitRule { spelling: "impl",     tk: Tk.Keyword(KwId.Impl) },
-        LitRule { spelling: "extern",   tk: Tk.Keyword(KwId.Extern) },
-        LitRule { spelling: "break",    tk: Tk.Keyword(KwId.Break) },
-        LitRule { spelling: "continue", tk: Tk.Keyword(KwId.Continue) },
-        LitRule { spelling: "defer",    tk: Tk.Keyword(KwId.Defer) },
-        LitRule { spelling: "dyn",      tk: Tk.Keyword(KwId.Dyn) },
-        LitRule { spelling: "trait",    tk: Tk.Keyword(KwId.Trait) },
-        LitRule { spelling: "with",     tk: Tk.Keyword(KwId.With) },
-        LitRule { spelling: "when",     tk: Tk.Keyword(KwId.When) },
-        LitRule { spelling: "is",       tk: Tk.Keyword(KwId.Is) },
-        LitRule { spelling: "spec",     tk: Tk.Keyword(KwId.Spec) },
-        LitRule { spelling: "given",    tk: Tk.Keyword(KwId.Given) },
-        LitRule { spelling: "then",     tk: Tk.Keyword(KwId.Then) },
-        LitRule { spelling: "select",   tk: Tk.Keyword(KwId.Select) },
-        LitRule { spelling: "shape",    tk: Tk.Keyword(KwId.Shape) },
-        LitRule { spelling: "component", tk: Tk.Keyword(KwId.Component) },
-        LitRule { spelling: "parallel", tk: Tk.Keyword(KwId.Parallel) },
-        LitRule { spelling: "spawn",    tk: Tk.Keyword(KwId.Spawn) },
-        LitRule { spelling: "isolated", tk: Tk.Keyword(KwId.Isolated) },
-        LitRule { spelling: "quote",    tk: Tk.Keyword(KwId.Quote) },
+    table<LitRule> {
+        spelling    | tk
+        "and"       | Tk.Keyword(KwId.And)
+        "catch"     | Tk.Keyword(KwId.Catch)
+        "channel"   | Tk.Keyword(KwId.Channel)
+        "const"     | Tk.Keyword(KwId.Const)
+        "else"      | Tk.Keyword(KwId.Else)
+        "errdefer"  | Tk.Keyword(KwId.Errdefer)
+        "false"     | Tk.Keyword(KwId.False)
+        "fn"        | Tk.Keyword(KwId.Fn)
+        "if"        | Tk.Keyword(KwId.If)
+        "let"       | Tk.Keyword(KwId.Let)
+        "mut"       | Tk.Keyword(KwId.Mut)
+        "not"       | Tk.Keyword(KwId.Not)
+        "null"      | Tk.Keyword(KwId.Null)
+        "none"      | Tk.Keyword(KwId.None)
+        "or"        | Tk.Keyword(KwId.Or)
+        "return"    | Tk.Keyword(KwId.Return)
+        "true"      | Tk.Keyword(KwId.True)
+        "for"       | Tk.Keyword(KwId.For)
+        "in"        | Tk.Keyword(KwId.In)
+        "where"     | Tk.Keyword(KwId.Where)
+        "while"     | Tk.Keyword(KwId.While)
+        "type"      | Tk.Keyword(KwId.Type)
+        "enum"      | Tk.Keyword(KwId.Enum)
+        "match"     | Tk.Keyword(KwId.Match)
+        "export"    | Tk.Keyword(KwId.Export)
+        "use"       | Tk.Keyword(KwId.Use)
+        "mod"       | Tk.Keyword(KwId.Mod)
+        "impl"      | Tk.Keyword(KwId.Impl)
+        "extern"    | Tk.Keyword(KwId.Extern)
+        "break"     | Tk.Keyword(KwId.Break)
+        "continue"  | Tk.Keyword(KwId.Continue)
+        "defer"     | Tk.Keyword(KwId.Defer)
+        "dyn"       | Tk.Keyword(KwId.Dyn)
+        "trait"     | Tk.Keyword(KwId.Trait)
+        "with"      | Tk.Keyword(KwId.With)
+        "when"      | Tk.Keyword(KwId.When)
+        "is"        | Tk.Keyword(KwId.Is)
+        "spec"      | Tk.Keyword(KwId.Spec)
+        "given"     | Tk.Keyword(KwId.Given)
+        "then"      | Tk.Keyword(KwId.Then)
+        "select"    | Tk.Keyword(KwId.Select)
+        "shape"     | Tk.Keyword(KwId.Shape)
+        "component" | Tk.Keyword(KwId.Component)
+        "parallel"  | Tk.Keyword(KwId.Parallel)
+        "spawn"     | Tk.Keyword(KwId.Spawn)
+        "isolated"  | Tk.Keyword(KwId.Isolated)
+        "quote"     | Tk.Keyword(KwId.Quote)
         // Reserved future keywords — all collapse to Tk.KwReserved.
-        LitRule { spelling: "async",    tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "await",    tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "yield",    tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "move",     tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "ref",      tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "unsafe",   tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "macro",    tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "systems",  tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "bare",     tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "hardware", tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "owned",    tk: Tk.Keyword(KwId.Reserved) },
-        LitRule { spelling: "borrow",   tk: Tk.Keyword(KwId.Reserved) },
-    ]
+        "async"     | Tk.Keyword(KwId.Reserved)
+        "await"     | Tk.Keyword(KwId.Reserved)
+        "yield"     | Tk.Keyword(KwId.Reserved)
+        "move"      | Tk.Keyword(KwId.Reserved)
+        "ref"       | Tk.Keyword(KwId.Reserved)
+        "unsafe"    | Tk.Keyword(KwId.Reserved)
+        "macro"     | Tk.Keyword(KwId.Reserved)
+        "systems"   | Tk.Keyword(KwId.Reserved)
+        "bare"      | Tk.Keyword(KwId.Reserved)
+        "hardware"  | Tk.Keyword(KwId.Reserved)
+        "owned"     | Tk.Keyword(KwId.Reserved)
+        "borrow"    | Tk.Keyword(KwId.Reserved)
+    }
 }
 
 /// The exact keyword count `keyword_rules` must have (token_table_test.av guard).
@@ -209,13 +211,14 @@ export type CharRun = { name: string, pred: string, sep: string }
 /// the identifier CONTINUATION run (no separator) and the number-family digit runs
 /// (decimal/hex/binary/octal, each allowing the `_` group separator).
 export fn char_run_rules() -> List<CharRun> {
-    [
-        CharRun { name: "ident", pred: "cc_is_ident_cont",   sep: "" },
-        CharRun { name: "dec",   pred: "cc_is_digit",        sep: "UNDERSCORE" },
-        CharRun { name: "hex",   pred: "cc_is_hex_digit",    sep: "UNDERSCORE" },
-        CharRun { name: "bin",   pred: "cc_is_binary_digit", sep: "UNDERSCORE" },
-        CharRun { name: "oct",   pred: "cc_is_octal_digit",  sep: "UNDERSCORE" },
-    ]
+    table<CharRun> {
+        name    | pred                 | sep
+        "ident" | "cc_is_ident_cont"   | ""
+        "dec"   | "cc_is_digit"        | "UNDERSCORE"
+        "hex"   | "cc_is_hex_digit"    | "UNDERSCORE"
+        "bin"   | "cc_is_binary_digit" | "UNDERSCORE"
+        "oct"   | "cc_is_octal_digit"  | "UNDERSCORE"
+    }
 }
 
 // A DELIMITED run is the complement of a char-class run: instead of scanning WHILE a
@@ -232,9 +235,10 @@ export type DelimRun = { name: string, term: string }
 /// source of truth: the to-end-of-line verbatim runs — the `///`/`//!` doc-comment body
 /// and the `//` line-comment body, both scanning to the next LF (newline-free runs).
 export fn delim_run_rules() -> List<DelimRun> {
-    [
-        DelimRun { name: "to_eol", term: "LF" },
-    ]
+    table<DelimRun> {
+        name     | term
+        "to_eol" | "LF"
+    }
 }
 
 /// t-bw9s / lexer flip — the STRING-BODY runs.
@@ -302,13 +306,14 @@ export type EscapeRule = { lead: string, text_src: string, code: int }
 /// which is the duplication that mattered. Their POLICIES still differ and should — a
 /// string passes an unknown escape through verbatim, a char literal rejects it.
 export fn escape_rules() -> List<EscapeRule> {
-    [
-        EscapeRule { code: 10, lead: "LOWER_N",   text_src: "\\n" },
-        EscapeRule { code: 9, lead: "LOWER_T",   text_src: "\\t" },
-        EscapeRule { code: 13, lead: "LOWER_R",   text_src: "\\r" },
-        EscapeRule { code: 0, lead: "DIGIT_0",   text_src: "\\0" },
-        EscapeRule { code: 92, lead: "BACKSLASH", text_src: "\\\\" },
-    ]
+    table<EscapeRule> {
+        code | lead        | text_src
+        10   | "LOWER_N"   | "\\n"
+        9    | "LOWER_T"   | "\\t"
+        13   | "LOWER_R"   | "\\r"
+        0    | "DIGIT_0"   | "\\0"
+        92   | "BACKSLASH" | "\\\\"
+    }
 }
 
 export type StrRun = { name: string, close: string, escape: bool, interp_a: string, interp_b: string, stop_nl: bool, close_rep: int }
@@ -316,18 +321,19 @@ export type StrRun = { name: string, close: string, escape: bool, interp_a: stri
 /// The string-body runs, compiled to `scan_<name>(src, start) -> int` by
 /// parse/emit_lex.av. Single source of truth for what interrupts a string body.
 export fn str_run_rules() -> List<StrRun> {
-    [
-        StrRun { name: "dq_body",     close: "DQUOTE",   escape: true,  interp_a: "DOLLAR", interp_b: "LBRACE", stop_nl: false, close_rep: 1 },
+    table<StrRun> {
+        name          | close      | escape | interp_a | interp_b | stop_nl | close_rep
+        "dq_body"     | "DQUOTE"   | true   | "DOLLAR" | "LBRACE" | false   | 1
         // A backtick template is VERBATIM in the production lexer: no escapes, no interp.
-        StrRun { name: "tmpl_body",   close: "BACKTICK", escape: false, interp_a: "",       interp_b: "",       stop_nl: false, close_rep: 1 },
+        "tmpl_body"   | "BACKTICK" | false  | ""       | ""       | false   | 1
         // A single-line raw string STOPS AT A NEWLINE — `stop_nl`. The triple-quoted raw
         // form is the separate rule below; it spans newlines by definition.
-        StrRun { name: "raw_body",    close: "DQUOTE",   escape: false, interp_a: "",       interp_b: "",       stop_nl: true,  close_rep: 1 },
+        "raw_body"    | "DQUOTE"   | false  | ""       | ""       | true    | 1
         // `"""…"""` — same escape/interpolation rules as `"…"`, closed by THREE quotes.
-        StrRun { name: "ml_body",     close: "DQUOTE",   escape: true,  interp_a: "DOLLAR", interp_b: "LBRACE", stop_nl: false, close_rep: 3 },
+        "ml_body"     | "DQUOTE"   | true   | "DOLLAR" | "LBRACE" | false   | 3
         // `r"""…"""` — triple-quoted AND raw.
-        StrRun { name: "raw_ml_body", close: "DQUOTE",   escape: false, interp_a: "",       interp_b: "",       stop_nl: false, close_rep: 3 },
-    ]
+        "raw_ml_body" | "DQUOTE"   | false  | ""       | ""       | false   | 3
+    }
 }
 
 /// t-bw9s / lexer flip — the NESTING runs.
@@ -371,18 +377,18 @@ export type InterpRun = {
 /// the opening `${`; the returned end is AFTER the balancing `}`, or EOF if it never
 /// balances — the NestRun convention, since there is nothing useful at the stop byte.
 export fn interp_run_rules() -> List<InterpRun> {
-    [
-        InterpRun { name: "interp_region", open_a: "DOLLAR", open_b: "LBRACE", close: "RBRACE",
-                    depth_open: "LBRACE", skip_strings: true, raw_prefix: "LOWER_R",
-                    char_delim: "SQUOTE", tmpl_delim: "BACKTICK" },
-    ]
+    table<InterpRun> {
+        name            | open_a   | open_b   | close    | depth_open | skip_strings | raw_prefix | char_delim | tmpl_delim
+        "interp_region" | "DOLLAR" | "LBRACE" | "RBRACE" | "LBRACE"   | true         | "LOWER_R"  | "SQUOTE"   | "BACKTICK"
+    }
 }
 
 /// The nesting runs, compiled to `scan_<name>(src, start) -> int`. The returned end is
 /// AFTER the balancing close (inclusive), because unlike the other runs there is nothing
 /// useful for the caller to inspect at the stop byte — an unbalanced comment runs to EOF.
 export fn nest_run_rules() -> List<NestRun> {
-    [
-        NestRun { name: "block_comment", open_a: "SLASH", open_b: "STAR", close_a: "STAR", close_b: "SLASH" },
-    ]
+    table<NestRun> {
+        name            | open_a  | open_b | close_a | close_b
+        "block_comment" | "SLASH" | "STAR" | "STAR"  | "SLASH"
+    }
 }
