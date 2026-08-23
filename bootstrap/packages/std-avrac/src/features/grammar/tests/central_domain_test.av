@@ -13,10 +13,10 @@
 // (external state not in the fixture-cache key); opt out of failure caching
 // so a repaired lint re-probes instead of replaying a stale `: FAIL`.
 
-use @std.avrac.core.{avra_shell_exec_status}
-use @std.avrac.features.grammar.{engine_core_builds, unflipped_builds, central_tableless_builds, central_build_kind, str_in}
+use @std.avrac.core.{BuildName, avra_shell_exec_status}
+use @std.avrac.features.grammar.{engine_core_builds, unflipped_builds, central_tableless_builds, central_build_kind, str_in, build_in}
 
-fn dup_free(xs: List<string>) -> bool {
+fn dup_free(xs: List<BuildName>) -> bool {
     mut i = 0
     while i < xs.length {
         mut j = i + 1
@@ -29,8 +29,8 @@ fn dup_free(xs: List<string>) -> bool {
     true
 }
 
-fn disjoint(a: List<string>, b: List<string>) -> bool {
-    for x in a { if str_in(b, x) { return false } }
+fn disjoint(a: List<BuildName>, b: List<BuildName>) -> bool {
+    for x in a { if build_in(b, x) { return false } }
     true
 }
 
@@ -48,10 +48,10 @@ spec "t-kd4y.3.1: the purity ledger classifies the central surface exactly" {
         // here (and in the lint) — no stale countdown entries.
         mut ok = true
         for n in engine_core_builds() {
-            if central_build_kind(n) == null && !str_in(central_tableless_builds(), n) { ok = false }
+            if central_build_kind(n) == null && !build_in(central_tableless_builds(), n) { ok = false }
         }
         for n in unflipped_builds() {
-            if central_build_kind(n) == null && !str_in(central_tableless_builds(), n) { ok = false }
+            if central_build_kind(n) == null && !build_in(central_tableless_builds(), n) { ok = false }
         }
         ok
     }

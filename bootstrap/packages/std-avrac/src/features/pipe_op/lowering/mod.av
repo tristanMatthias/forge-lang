@@ -1,7 +1,7 @@
 // The pipe operator's LOWERING (t-kd4y.3.5.7): one spanned row
 // (`fold_pipe`) — the `|>` desugar into plain calls. Imports ONLY
 // features.grammar + core (F4012).
-use core.{ModulePath, Expr, ExprId, byte_span}
+use core.{BuildName, ModulePath, Expr, ExprId, byte_span}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_nodes, BuildKind}
 
 /// Left-fold `l ( "|>" r )*` into the pipe desugar — the retired hand
@@ -64,5 +64,5 @@ export fn fold_pipe_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn pipe_op_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.pipe_op.lowering"), [bind_row("fold_pipe", BuildKind.Expr, 2, true, "fold_pipe_abi", fold_pipe_abi)])
+    bind_rows(ModulePath("features.pipe_op.lowering"), [bind_row(BuildName("fold_pipe"), BuildKind.Expr, 2, true, "fold_pipe_abi", fold_pipe_abi)])
 }

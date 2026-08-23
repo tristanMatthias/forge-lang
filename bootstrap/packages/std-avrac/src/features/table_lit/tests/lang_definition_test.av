@@ -8,6 +8,7 @@ use @std.avrac.features.table_lit.{table_lit_lang}
 use @std.avrac.features.{feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
 use @std.avrac.parse.{oracle_expr}
+use @std.avrac.core.{BuildName}
 
 spec "table family as a LanguageFeature" {
     then "title, docs, and editor snippet are carried" {
@@ -35,9 +36,9 @@ spec "table family as a LanguageFeature" {
         tl == "expr/1/spanned/mk_table_lit_abi/features.table_lit.lowering"
             && th == "expr/2/flat/mk_table_header_abi/features.table_lit.lowering"
             && tr == "expr/1/flat/mk_table_row_abi/features.table_lit.lowering"
-            && central_build_kind("MkTableLit") == null
-            && central_build_kind("MkTableHeader") == null
-            && central_build_kind("MkTableRow") == null
+            && central_build_kind(BuildName("MkTableLit")) == null
+            && central_build_kind(BuildName("MkTableHeader")) == null
+            && central_build_kind(BuildName("MkTableRow")) == null
     }
 }
 

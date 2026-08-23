@@ -1,7 +1,7 @@
 // The union-type feature's LOWERING (t-kd4y.3.5.10): the type ladder's
 // entry rule `type_expr` folds `A | B | C` left-associatively. Imports
 // ONLY features.grammar + core (the F4012 import-closure invariant).
-use core.{ModulePath, TypeExpr}
+use core.{BuildName, ModulePath, TypeExpr}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_texpr, capval_to_texpr_list, BuildKind}
 
 /// The union FOLD (the `TyUnion` build's core): zero tail atoms pass the
@@ -19,5 +19,5 @@ export fn ty_union_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn union_type_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.union_type.lowering"), [bind_row("TyUnion", BuildKind.Type, 2, false, "ty_union_abi", ty_union_abi)])
+    bind_rows(ModulePath("features.union_type.lowering"), [bind_row(BuildName("TyUnion"), BuildKind.Type, 2, false, "ty_union_abi", ty_union_abi)])
 }

@@ -39,7 +39,7 @@
 // two-cycle bridge — the pinned seed must expand them to build a src that
 // uses them).
 
-use core.{NodeStore, Stmt, Expr, StmtId, ExprId, ValueType, ParamEntry, TypeParamEntry, FieldInit, Annotation, stmt_unwrap, rewrap_annotations}
+use core.{BuildName, NodeStore, Stmt, Expr, StmtId, ExprId, ValueType, ParamEntry, TypeParamEntry, FieldInit, Annotation, stmt_unwrap, rewrap_annotations}
 use features.grammar.{parse_grammar, grammar_build_refs, central_build_kind, BuildRef}
 
 /// One module-local fn signature, indexed for build-name resolution.
@@ -323,7 +323,10 @@ fn typed_targets(refs: List<BuildRef>, sigs: List<FnSig>) -> List<FnSig> {
     for r in refs {
         if central_build_kind(r.name) != null { continue }
         for sig in sigs {
-            if sig.name != r.name { continue }
+            // A typed build fn is IDENTIFIED BY its name matching the build's,
+            // so the fn name is read AS a BuildName here — explicit now, rather
+            // than implicit in both happening to be `string`.
+            if BuildName(sig.name) != r.name { continue }
             if !sig_supported(sig) { continue }
             if r.argc != sig.params.length { continue }
             mut seen = false
@@ -497,7 +500,14 @@ export fn adapter_name(build_name: string) -> string {
 /// read off the signature and the expansion site instead.
 fn bind_literal(store: NodeStore, sig: FnSig, mod_path: string) -> ExprId {
     let fields: List<FieldInit> = [
-        FieldInit { name: "name", value_id: str_lit(store, sig.name) },
+        // `name` is a `BuildName` now, so the synthesized literal CONSTRUCTS one
+        // — a bare string is rejected by the struct-field identity gate exactly
+        // as a hand-written row would be. Same treatment as `module` below, and
+        // it keeps synthesized rows on the same footing as hand-authored ones.
+        FieldInit { name: "name", value_id: store.exprs.add_leaf(Expr.Call(
+            store.exprs.add_leaf(Expr.Ident("BuildName")),
+            [str_lit(store, sig.name)]
+        )) },
         FieldInit { name: "kind", value_id: kind_lit(store, sig.ret) },
         FieldInit { name: "arity", value_id: store.exprs.add_leaf(Expr.Number("${sig.params.length}")) },
         // Synthesized builders are span-free: the span never appears in a

@@ -8,6 +8,7 @@
 use @std.avrac.features.struct_decl.{type_decl_lang, shape_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+use @std.avrac.core.{BuildName}
 
 spec "type/shape family as LanguageFeatures" {
     then "the keywords derive from type_decl_lang's declared grammar" {
@@ -57,9 +58,9 @@ spec "type/shape family as LanguageFeatures" {
         td == "stmt/6/flat/mk_type_decl_any_abi/features.struct_decl.lowering"
             && sd == "stmt/2/flat/mk_shape_decl_abi/features.struct_decl.lowering"
             && fd == "field/2/flat/mk_field_abi/features.struct_decl.lowering"
-            && central_build_kind("MkTypeDeclAny") == null
-            && central_build_kind("MkShapeDecl") == null
-            && central_build_kind("MkField") == null
+            && central_build_kind(BuildName("MkTypeDeclAny")) == null
+            && central_build_kind(BuildName("MkShapeDecl")) == null
+            && central_build_kind(BuildName("MkField")) == null
     }
     then "the retired convenience builds are GONE — no row, no central kind" {
         mut retired_rows = 0
@@ -67,8 +68,8 @@ spec "type/shape family as LanguageFeatures" {
             if b.name == "MkTypeDecl" || b.name == "MkTypeAlias" || b.name == "MkTypeRHS" { retired_rows = retired_rows + 1 }
         }
         retired_rows == 0
-            && central_build_kind("MkTypeDecl") == null
-            && central_build_kind("MkTypeAlias") == null
-            && central_build_kind("MkTypeRHS") == null
+            && central_build_kind(BuildName("MkTypeDecl")) == null
+            && central_build_kind(BuildName("MkTypeAlias")) == null
+            && central_build_kind(BuildName("MkTypeRHS")) == null
     }
 }

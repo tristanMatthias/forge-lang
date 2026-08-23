@@ -12,7 +12,7 @@
 // live here now, mk_when included (t-kd4y.3.5.2 — the when feature's
 // expression core, beside its one other caller mk_when_stmt_abi).
 
-use core.{ModulePath, Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, ValueType, byte_span, byte_span_none, pattern_optional_present, pattern_optional_absent}
+use core.{BuildName, ModulePath, Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, ValueType, byte_span, byte_span_none, pattern_optional_present, pattern_optional_absent}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_pat_val, capval_present, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list, capval_tok_list, capval_tok_text, capval_to_pat_list, capval_to_node_list, param_entries_from_toks, capval_to_when_arm_list, BuildKind}
 
 export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
@@ -364,23 +364,23 @@ export fn mk_match_expr_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// touches no rule text); `spanned` marks the rows whose builds read
 /// st.build_sp.
 export fn match_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.match.lowering"), [bind_row("build_when_arm", BuildKind.Warm, 2, false, "build_when_arm_abi", build_when_arm_abi),
-     bind_row("build_when_default", BuildKind.Warm, 1, false, "build_when_default_abi", build_when_default_abi),
-     bind_row("build_arm", BuildKind.Arm, 3, false, "build_arm_abi", build_arm_abi),
-     bind_row("build_match", BuildKind.Stmt, 2, false, "build_match_abi", build_match_abi),
-     bind_row("MkWhenStmt", BuildKind.Stmt, 1, true, "mk_when_stmt_abi", mk_when_stmt_abi),
-     bind_row("MkArmReturn", BuildKind.Expr, 1, true, "mk_arm_return_abi", mk_arm_return_abi),
-     bind_row("MkMatchExpr", BuildKind.Expr, 2, true, "mk_match_expr_abi", mk_match_expr_abi),
-     bind_row("MkWhen", BuildKind.Expr, 1, true, "mk_when_abi", mk_when_abi),
-     bind_row("MkMatchTable", BuildKind.Stmt, 4, false, "mk_match_table_abi", mk_match_table_abi),
-     bind_row("MkMatchTableExpr", BuildKind.Expr, 4, true, "mk_match_table_expr_abi", mk_match_table_expr_abi),
-     bind_row("OrMaybe", BuildKind.Pat, 2, false, "or_maybe_abi", or_maybe_abi),
-     bind_row("IdentPat", BuildKind.Pat, 2, false, "ident_pat_abi", ident_pat_abi),
-     bind_row("MkVariant", BuildKind.Pat, 3, false, "mk_variant_abi", mk_variant_abi),
-     bind_row("PatBool", BuildKind.Pat, 1, false, "pat_bool_abi", pat_bool_abi),
-     bind_row("PatStr", BuildKind.Pat, 1, false, "pat_str_abi", pat_str_abi),
-     bind_row("PatNum", BuildKind.Pat, 1, false, "pat_num_abi", pat_num_abi),
-     bind_row("PatNegNum", BuildKind.Pat, 1, false, "pat_neg_num_abi", pat_neg_num_abi),
-     bind_row("OptPresent", BuildKind.Pat, 1, false, "opt_present_abi", opt_present_abi),
-     bind_row("OptAbsent", BuildKind.Pat, 0, false, "opt_absent_abi", opt_absent_abi)])
+    bind_rows(ModulePath("features.match.lowering"), [bind_row(BuildName("build_when_arm"), BuildKind.Warm, 2, false, "build_when_arm_abi", build_when_arm_abi),
+     bind_row(BuildName("build_when_default"), BuildKind.Warm, 1, false, "build_when_default_abi", build_when_default_abi),
+     bind_row(BuildName("build_arm"), BuildKind.Arm, 3, false, "build_arm_abi", build_arm_abi),
+     bind_row(BuildName("build_match"), BuildKind.Stmt, 2, false, "build_match_abi", build_match_abi),
+     bind_row(BuildName("MkWhenStmt"), BuildKind.Stmt, 1, true, "mk_when_stmt_abi", mk_when_stmt_abi),
+     bind_row(BuildName("MkArmReturn"), BuildKind.Expr, 1, true, "mk_arm_return_abi", mk_arm_return_abi),
+     bind_row(BuildName("MkMatchExpr"), BuildKind.Expr, 2, true, "mk_match_expr_abi", mk_match_expr_abi),
+     bind_row(BuildName("MkWhen"), BuildKind.Expr, 1, true, "mk_when_abi", mk_when_abi),
+     bind_row(BuildName("MkMatchTable"), BuildKind.Stmt, 4, false, "mk_match_table_abi", mk_match_table_abi),
+     bind_row(BuildName("MkMatchTableExpr"), BuildKind.Expr, 4, true, "mk_match_table_expr_abi", mk_match_table_expr_abi),
+     bind_row(BuildName("OrMaybe"), BuildKind.Pat, 2, false, "or_maybe_abi", or_maybe_abi),
+     bind_row(BuildName("IdentPat"), BuildKind.Pat, 2, false, "ident_pat_abi", ident_pat_abi),
+     bind_row(BuildName("MkVariant"), BuildKind.Pat, 3, false, "mk_variant_abi", mk_variant_abi),
+     bind_row(BuildName("PatBool"), BuildKind.Pat, 1, false, "pat_bool_abi", pat_bool_abi),
+     bind_row(BuildName("PatStr"), BuildKind.Pat, 1, false, "pat_str_abi", pat_str_abi),
+     bind_row(BuildName("PatNum"), BuildKind.Pat, 1, false, "pat_num_abi", pat_num_abi),
+     bind_row(BuildName("PatNegNum"), BuildKind.Pat, 1, false, "pat_neg_num_abi", pat_neg_num_abi),
+     bind_row(BuildName("OptPresent"), BuildKind.Pat, 1, false, "opt_present_abi", opt_present_abi),
+     bind_row(BuildName("OptAbsent"), BuildKind.Pat, 0, false, "opt_absent_abi", opt_absent_abi)])
 }

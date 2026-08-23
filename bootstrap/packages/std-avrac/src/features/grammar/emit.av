@@ -546,7 +546,7 @@ fn emit_fold_build(g: Grammar, build: GBuild, seed_label: string, inner: GSeq) -
 /// emit `let sp_start = st.cur().pos` at fn entry (emit_fold / emit_single_branch);
 /// fold_binary (→Pratt, sp_start captured in the loop) and the span-free
 /// fold_postfix / mk_is / etc. are excluded.
-fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
+fn build_uses_sp_start(g: Grammar, name: BuildName, arity: int) -> bool {
     // Manifest names answer from the STAMPED rows via the one (name, arity)
     // lookup, so the sp_start prelude and the emit_call_build call it feeds
     // always agree on which row's `spanned` applies. Reading the grammar
@@ -554,8 +554,8 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
     // allocation-flat.
     let row = manifest_row(g.builder_kinds, name, arity)
     if row != null { return row!.spanned }
-    name == "fold_postfix_with" ||
-        name == "MkExprBlock" ||
+    name == BuildName("fold_postfix_with") ||
+        name == BuildName("MkExprBlock") ||
         // `( a, b, … )` tuple spans sp_start = the `(` byte (t-47hc paren prep, DORMANT) —
         // its owning rule enters at `(`, like MkListLit's at `[`.
         // `( … ) -> body` untyped lambda spans sp_start = the `(` byte (t-47hc paren prep,
@@ -584,15 +584,15 @@ fn build_uses_sp_start(g: Grammar, name: string, arity: int) -> bool {
         // A `with { … }` suffix spans sp_start = the `with` byte (t-47hc.17): its owning
         // with_suffix rule enters there, and rebind_with reads the partial node's `.hi`
         // to stamp each rebuilt `With` in a chained `a with { } with { }`.
-        name == "MkSplice" ||
-        name == "MkSpliceStruct" ||
+        name == BuildName("MkSplice") ||
+        name == BuildName("MkSpliceStruct") ||
         // A prefix WRAPPER's inner declaration carries its OWN position, stamped from
         // the byte where the inner starts — the hand captures it right after consuming
         // the prefix. The build is the identity plus that side-table write, so its
         // owning rule must begin exactly at the inner declaration.
         // (MkTaggedTemplate and MkModuleDoc left this predicate with their
         // families, t-kd4y.3.5.9 — their manifest rows declare `spanned`.)
-        name == "MkStampAt"
+        name == BuildName("MkStampAt")
 }
 
 /// The GBuild-level predicate for whether a rule's build threads sp_start.
@@ -2532,7 +2532,7 @@ fn join_sorted(names: List<string>) -> string {
 /// import derived into the module header (derived_import_lines_for), then the
 /// central arms. Scalar captures are their CapVal vars; a `_list` suffix
 /// names an accumulated arg (only call_suffix's, which takes the whole list).
-fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> string {
+fn emit_call_build(g: Grammar, seq: GSeq, name: BuildName, args: List<string>) -> string {
     let row = manifest_row(g.builder_kinds, name, args.length)
     if row != null {
         let b = row!
@@ -2707,10 +2707,10 @@ fn emit_call_build(g: Grammar, seq: GSeq, name: string, args: List<string>) -> s
 fn arg3(args: List<string>) -> string { "${args[0]}, ${args[1]}, ${args[2]}" }
 fn arg2(args: List<string>) -> string { "${args[0]}, ${args[1]}" }
 
-fn build_fn(name: string) -> string {
-    if name == "fold_binary" { return "fold_binary_expr" }
-    if name == "fold_postfix" { return "fold_postfix_expr" }
-    name
+fn build_fn(name: BuildName) -> string {
+    if name == BuildName("fold_binary") { return "fold_binary_expr" }
+    if name == BuildName("fold_postfix") { return "fold_postfix_expr" }
+    name.raw()
 }
 
 

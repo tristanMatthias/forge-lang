@@ -2,7 +2,7 @@
 // (`mk_is`) — the discardable partial stays span-free; only the rebound
 // final (rebind_eq, features/struct_decl) reaches the tree with a span.
 // Imports ONLY features.grammar + core (F4012).
-use core.{ModulePath, Expr, ExprId}
+use core.{BuildName, ModulePath, Expr, ExprId}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_tok_text, BuildKind}
 
 /// `is .Variant` → `Expr.IsCheck(MISSING, name)` (retargeted by rebind_eq).
@@ -15,5 +15,5 @@ export fn mk_is_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn is_keyword_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.is_keyword.lowering"), [bind_row("mk_is", BuildKind.Expr, 1, false, "mk_is_abi", mk_is_abi)])
+    bind_rows(ModulePath("features.is_keyword.lowering"), [bind_row(BuildName("mk_is"), BuildKind.Expr, 1, false, "mk_is_abi", mk_is_abi)])
 }

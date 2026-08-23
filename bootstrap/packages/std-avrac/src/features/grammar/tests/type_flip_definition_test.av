@@ -7,9 +7,9 @@
 // spine's splice_type).
 use @std.avrac.features.{feature_builders}
 use @std.avrac.features.grammar.{avra_type_grammar, central_build_kind, run_dsl_type_at, BuildKind}
-use @std.avrac.core.{TypeExpr}
+use @std.avrac.core.{BuildName, TypeExpr}
 
-fn row_of(name: string) -> string {
+fn row_of(name: BuildName) -> string {
     for b in feature_builders() {
         if b.name == name {
             return "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
@@ -18,7 +18,7 @@ fn row_of(name: string) -> string {
     ""
 }
 
-fn rows_named(name: string) -> int {
+fn rows_named(name: BuildName) -> int {
     mut n = 0
     for b in feature_builders() { if b.name == name { n = n + 1 } }
     n
@@ -26,25 +26,25 @@ fn rows_named(name: string) -> int {
 
 spec "type families as feature-owned rows (t-kd4y.3.5.10)" {
     then "the seven rows ride their owners' manifests, exactly" {
-        row_of("TyUnion") == "type/2/flat/ty_union_abi/features.union_type.lowering"
-            && row_of("MkNamed") == "type/3/flat/mk_named_type_abi/features.struct_decl.lowering"
-            && row_of("MkQualified") == "type/3/flat/mk_qualified_type_abi/features.struct_decl.lowering"
-            && row_of("MkFn") == "type/3/flat/mk_fn_type_abi/features.fn_decl.lowering"
-            && row_of("TyDyn") == "type/2/flat/ty_dyn_abi/features.trait_decl.lowering"
-            && row_of("TyList") == "type/1/flat/ty_list_abi/features.list_lit.lowering"
-            && row_of("TyParen") == "type/1/flat/ty_paren_abi/features.tuples.lowering"
+        row_of(BuildName("TyUnion")) == "type/2/flat/ty_union_abi/features.union_type.lowering"
+            && row_of(BuildName("MkNamed")) == "type/3/flat/mk_named_type_abi/features.struct_decl.lowering"
+            && row_of(BuildName("MkQualified")) == "type/3/flat/mk_qualified_type_abi/features.struct_decl.lowering"
+            && row_of(BuildName("MkFn")) == "type/3/flat/mk_fn_type_abi/features.fn_decl.lowering"
+            && row_of(BuildName("TyDyn")) == "type/2/flat/ty_dyn_abi/features.trait_decl.lowering"
+            && row_of(BuildName("TyList")) == "type/1/flat/ty_list_abi/features.list_lit.lowering"
+            && row_of(BuildName("TyParen")) == "type/1/flat/ty_paren_abi/features.tuples.lowering"
     }
     then "each name has exactly ONE row and NO central kind — the flip is total, not shadowed" {
-        rows_named("TyUnion") == 1 && central_build_kind("TyUnion") == null
-            && rows_named("MkNamed") == 1 && central_build_kind("MkNamed") == null
-            && rows_named("MkQualified") == 1 && central_build_kind("MkQualified") == null
-            && rows_named("MkFn") == 1 && central_build_kind("MkFn") == null
-            && rows_named("TyDyn") == 1 && central_build_kind("TyDyn") == null
-            && rows_named("TyList") == 1 && central_build_kind("TyList") == null
-            && rows_named("TyParen") == 1 && central_build_kind("TyParen") == null
+        rows_named(BuildName("TyUnion")) == 1 && central_build_kind(BuildName("TyUnion")) == null
+            && rows_named(BuildName("MkNamed")) == 1 && central_build_kind(BuildName("MkNamed")) == null
+            && rows_named(BuildName("MkQualified")) == 1 && central_build_kind(BuildName("MkQualified")) == null
+            && rows_named(BuildName("MkFn")) == 1 && central_build_kind(BuildName("MkFn")) == null
+            && rows_named(BuildName("TyDyn")) == 1 && central_build_kind(BuildName("TyDyn")) == null
+            && rows_named(BuildName("TyList")) == 1 && central_build_kind(BuildName("TyList")) == null
+            && rows_named(BuildName("TyParen")) == 1 && central_build_kind(BuildName("TyParen")) == null
     }
     then "the quote-body splice stays ENGINE — central kind kept, no feature row" {
-        rows_named("MkSpliceType") == 0 && central_build_kind("MkSpliceType") == BuildKind.Type
+        rows_named(BuildName("MkSpliceType")) == 0 && central_build_kind(BuildName("MkSpliceType")) == BuildKind.Type
     }
     then "the composed type view DEFINES every family rule (structural, not rendered text)" {
         mut te = false

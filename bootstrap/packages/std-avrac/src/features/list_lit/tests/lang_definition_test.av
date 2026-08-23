@@ -9,6 +9,7 @@ use @std.avrac.features.map_lit.{map_lit_lang}
 use @std.avrac.features.{feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
 use @std.avrac.parse.{oracle_expr}
+use @std.avrac.core.{BuildName}
 
 spec "collections as LanguageFeatures" {
     then "titles, docs, and editor snippets are carried" {
@@ -56,9 +57,9 @@ spec "collections as LanguageFeatures" {
         ll == "expr/1/spanned/mk_list_lit_abi/features.list_lit.lowering"
             && lc == "expr/4/spanned/mk_list_comp_abi/features.list_lit.lowering"
             && ml == "expr/2/spanned/mk_map_lit_abi/features.map_lit.lowering"
-            && central_build_kind("MkListLit") == null
-            && central_build_kind("MkListComp") == null
-            && central_build_kind("MkMapLit") == null
+            && central_build_kind(BuildName("MkListLit")) == null
+            && central_build_kind(BuildName("MkListComp")) == null
+            && central_build_kind(BuildName("MkMapLit")) == null
     }
 }
 

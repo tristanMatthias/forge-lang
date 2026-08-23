@@ -35,7 +35,7 @@
 /// arena-accumulation source (Batch A). A narrow row (not BuilderBind)
 /// because that type carries executor values (PState/CapVal) this AST hub
 /// must not depend on.
-export type BuildKindRow = { name: string, kind: BuildKind, spanned: bool, arity: int, module: ModulePath?, export_name: string }
+export type BuildKindRow = { name: BuildName, kind: BuildKind, spanned: bool, arity: int, module: ModulePath?, export_name: string }
 
 export type Grammar = { name: string, rules: List<Rule>, rule_idx: ptr, builder_kinds: List<BuildKindRow> }
 
@@ -178,7 +178,7 @@ fn node_literals(acc: List<string>, node: GNode) -> List<string> {
 /// (for diagnostics), the build name, and its argument count. The unit
 /// `grammar_build_refs` collects and builder validation (features/lang.av
 /// register_lang) checks resolution against — t-kd4y.3.
-export type BuildRef = { rule: string, name: string, argc: int }
+export type BuildRef = { rule: string, name: BuildName, argc: int }
 
 /// Every `.Call` build reference anywhere in `g`, in declaration order,
 /// duplicates kept (one per referencing sequence). The sibling of
@@ -642,8 +642,8 @@ export enum GPrim {
 ///                dispatches on `name` (helper vocabulary vs node ctor).
 export enum GBuild {
     None
-    Var(name: string)
-    Call(name: string, args: List<string>)
+    Var(name: BuildName)
+    Call(name: BuildName, args: List<string>)
 }
 
 /// Error annotations lifted from Nystrom's by-hand `synchronize()` into
@@ -1008,7 +1008,7 @@ impl BuildKind {
 /// disjoint, no stale entries. A family flip deletes its names from
 /// `unflipped_builds` in the same diff; that list reaching [] IS the old
 /// system fully deleted (t-kd4y.3.6).
-export fn engine_core_builds() -> List<string> {
+export fn engine_core_builds() -> List<BuildName> {
     // fold_binary / fold_postfix / fold_postfix_with — the DSL's own fold
     //   semantics: a rule's repetition-fold and the postfix-chain folds
     //   execute THROUGH these, like `*` or `@try`. The operator/suffix
@@ -1065,10 +1065,10 @@ export fn engine_core_builds() -> List<string> {
     //   dispatch skeleton itself (the fold_postfix_with rationale).
     //   MkPlainName is `name_or_splice`'s non-splice half: same rule, same
     //   home.
-    ["fold_binary", "fold_postfix", "fold_postfix_with", "Block", "ExprStmt", "MkPrimaryFail",
-     "MkStampAt", "MkNone", "field_suffix", "index_suffix", "call_suffix", "MkExprBlock",
-     "MkDocAnnotated", "MkAnnotated",
-     "MkSplice", "MkSpliceStruct", "MkSpliceArm", "MkSpliceName", "MkSpliceType", "MkPlainName"]
+    [BuildName("fold_binary"), BuildName("fold_postfix"), BuildName("fold_postfix_with"), BuildName("Block"), BuildName("ExprStmt"), BuildName("MkPrimaryFail"),
+     BuildName("MkStampAt"), BuildName("MkNone"), BuildName("field_suffix"), BuildName("index_suffix"), BuildName("call_suffix"), BuildName("MkExprBlock"),
+     BuildName("MkDocAnnotated"), BuildName("MkAnnotated"),
+     BuildName("MkSplice"), BuildName("MkSpliceStruct"), BuildName("MkSpliceArm"), BuildName("MkSpliceName"), BuildName("MkSpliceType"), BuildName("MkPlainName")]
 }
 
 /// Every FEATURE-OWNED central build still awaiting its flip. EMPTY since
@@ -1077,7 +1077,7 @@ export fn engine_core_builds() -> List<string> {
 /// is declared engine-core above with a per-name rationale. A name added
 /// here is a regression against the everything-is-a-feature ruling; the
 /// domain lint holds central == engine-core exactly.
-export fn unflipped_builds() -> List<string> {
+export fn unflipped_builds() -> List<BuildName> {
     []
 }
 
@@ -1085,11 +1085,11 @@ export fn unflipped_builds() -> List<string> {
 /// kind flows through the lenient analysis default. They classify in the
 /// ledger like every other central name; the domain lint expects exactly
 /// this set to be ledgered-but-tableless.
-export fn central_tableless_builds() -> List<string> {
-    ["MkAnnotated", "MkNone", "MkStampAt"]
+export fn central_tableless_builds() -> List<BuildName> {
+    [BuildName("MkAnnotated"), BuildName("MkNone"), BuildName("MkStampAt")]
 }
 
-export fn central_build_kind(bn: string) -> BuildKind? {
+export fn central_build_kind(bn: BuildName) -> BuildKind? {
     match bn {
         "fold_binary" or "fold_postfix_with" or "fold_postfix"
             or "MkExprBlock"
@@ -1130,7 +1130,7 @@ export fn central_build_kind(bn: string) -> BuildKind? {
 /// stamped manifest rows? `build_kind_with` answers the lenient "expr" default
 /// for a name it cannot place, which is indistinguishable from a genuine expr
 /// build; kind-dependent VALIDATION needs the exact question (t-kd4y.3.2.5).
-export fn build_kind_resolves(rows: List<BuildKindRow>, bn: string, arity: int) -> bool {
+export fn build_kind_resolves(rows: List<BuildKindRow>, bn: BuildName, arity: int) -> bool {
     if central_build_kind(bn) != null { return true }
     manifest_row(rows, bn, arity) != null
 }
@@ -1208,7 +1208,7 @@ export fn seq_kind_known(g: Grammar, seq: GSeq, visited: List<string>) -> bool {
     }
 }
 
-export fn build_kind_with(rows: List<BuildKindRow>, bn: string, arity: int) -> BuildKind {
+export fn build_kind_with(rows: List<BuildKindRow>, bn: BuildName, arity: int) -> BuildKind {
     let k = central_build_kind(bn)
     if k != null { return k! }
     let r = manifest_row(rows, bn, arity)
@@ -1222,14 +1222,14 @@ export fn build_kind_with(rows: List<BuildKindRow>, bn: string, arity: int) -> B
 /// key exists in exactly one place. A name may carry rows at several arities
 /// (MkEnumDecl's generic/plain pair was the design case); matching by name
 /// alone would answer every call from whichever row folded first.
-export fn manifest_row(rows: List<BuildKindRow>, name: string, arity: int) -> BuildKindRow? {
+export fn manifest_row(rows: List<BuildKindRow>, name: BuildName, arity: int) -> BuildKindRow? {
     for r in rows { if r.name == name && r.arity == arity { return r } }
     null
 }
 
 /// The manifest-free view — callers with no composed grammar in hand
 /// (validation preambles, specs pinning the central table alone).
-export fn build_kind(bn: string) -> BuildKind {
+export fn build_kind(bn: BuildName) -> BuildKind {
     let empty: List<BuildKindRow> = []
     build_kind_with(empty, bn, 0)
 }
@@ -1252,6 +1252,17 @@ fn build_is_none(build: GBuild) -> bool { match build { .None -> true  _ -> fals
 // emitter works across Expr / Stmt / Pattern / Type node kinds. Determined
 // from the rule's build (apply_build's target), crossing pass-throughs. ──
 
+
+/// Membership over BUILD names. A sibling of `str_in` rather than a widening of
+/// it: of `str_in`'s eight callers exactly ONE passes build names, and the other
+/// seven pass rule names, labels and visited-sets that are plain strings.
+/// Making `str_in` generic to serve one caller would drag the other seven along
+/// for no gain.
+export fn build_in(xs: List<BuildName>, b: BuildName) -> bool {
+    if b == BuildName("") { return false }
+    for x in xs { if x == b { return true } }
+    false
+}
 
 export fn str_in(xs: List<string>, s: string) -> bool {
     if s == "" { return false }

@@ -14,7 +14,7 @@
 // threading st.build_sp would record a SrcPos the interpreter does not —
 // the divergence `agree_pos` catches.
 
-use core.{ModulePath, Stmt, Expr, ExprId, StmtId, build_if_let_expr, build_if_let_stmt, byte_span, byte_span_none}
+use core.{BuildName, ModulePath, Stmt, Expr, ExprId, StmtId, build_if_let_expr, build_if_let_stmt, byte_span, byte_span_none}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_stmt, capval_to_stmt_opt, capval_tok_text, mk_stamp_stmt_at, BuildKind}
 
 export fn build_if(c: ExprId, t: StmtId, e: StmtId?) -> Stmt { Stmt.If(c, t, e) }
@@ -116,8 +116,8 @@ export fn mk_if_expr_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn if_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.if_stmt.lowering"), [bind_row("MkIfExpr", BuildKind.Expr, 3, true, "mk_if_expr_abi", mk_if_expr_abi),
-     bind_row("build_if", BuildKind.Stmt, 3, true, "build_if_abi", build_if_abi),
-     bind_row("MkIfLet", BuildKind.Expr, 5, false, "mk_if_let_abi", mk_if_let_abi),
-     bind_row("MkIfLetStmt", BuildKind.Stmt, 5, false, "mk_if_let_stmt_abi", mk_if_let_stmt_abi)])
+    bind_rows(ModulePath("features.if_stmt.lowering"), [bind_row(BuildName("MkIfExpr"), BuildKind.Expr, 3, true, "mk_if_expr_abi", mk_if_expr_abi),
+     bind_row(BuildName("build_if"), BuildKind.Stmt, 3, true, "build_if_abi", build_if_abi),
+     bind_row(BuildName("MkIfLet"), BuildKind.Expr, 5, false, "mk_if_let_abi", mk_if_let_abi),
+     bind_row(BuildName("MkIfLetStmt"), BuildKind.Stmt, 5, false, "mk_if_let_stmt_abi", mk_if_let_stmt_abi)])
 }

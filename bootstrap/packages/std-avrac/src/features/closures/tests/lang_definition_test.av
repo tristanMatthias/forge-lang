@@ -11,6 +11,7 @@ use @std.avrac.features.tuples.{tuples_lang}
 use @std.avrac.features.{feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
 use @std.avrac.parse.{oracle_expr}
+use @std.avrac.core.{BuildName}
 
 spec "paren family as LanguageFeatures" {
     then "titles, docs, and editor snippets are carried" {
@@ -48,11 +49,11 @@ spec "paren family as LanguageFeatures" {
             && tf == "expr/2/spanned/mk_tuple_fr_abi/features.closures.lowering"
             && ge == "expr/1/spanned/mk_group_or_empty_abi/features.closures.lowering"
             && pa == "pentry/2/flat/mk_param_abi/features.closures.lowering"
-            && central_build_kind("MkLambdaTyped") == null
-            && central_build_kind("MkLambda") == null
-            && central_build_kind("MkTupleFR") == null
-            && central_build_kind("MkGroupOrEmpty") == null
-            && central_build_kind("MkParam") == null
+            && central_build_kind(BuildName("MkLambdaTyped")) == null
+            && central_build_kind(BuildName("MkLambda")) == null
+            && central_build_kind(BuildName("MkTupleFR")) == null
+            && central_build_kind(BuildName("MkGroupOrEmpty")) == null
+            && central_build_kind(BuildName("MkParam")) == null
     }
     then "the retired engine builds are GONE — no manifest row, no central kind" {
         mut dead_rows = 0
@@ -60,8 +61,8 @@ spec "paren family as LanguageFeatures" {
             if b.name == "Grouping" || b.name == "MkTuple" { dead_rows = dead_rows + 1 }
         }
         dead_rows == 0
-            && central_build_kind("Grouping") == null
-            && central_build_kind("MkTuple") == null
+            && central_build_kind(BuildName("Grouping")) == null
+            && central_build_kind(BuildName("MkTuple")) == null
     }
 }
 

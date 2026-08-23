@@ -2,7 +2,7 @@
 // halves of the node model can name them: arena.av (the id-keyed stores)
 // and ast.av (container structs and, as the B-final flip proceeds,
 // variant payloads carry id fields). ids.av imports nothing, so ast.av
-// gaining `use core.{ExprId, ...}` introduces no core-file cycle — the
+// gaining `use core.{BuildName, ExprId, ...}` introduces no core-file cycle — the
 // same reason AnyNode lives in ast.av rather than arena.av.
 //
 // Typed ids are OPAQUE HANDLES (compare / look up, never inspect):
@@ -57,7 +57,29 @@ export type ModulePath = string
 /// `LanguageFeature` gives itself, and the key every manifest defect is grouped
 /// under.
 ///
-/// t-y2i7.3 section 14, the last of the identifier newtypes. It was a bare
-/// `string`, so a feature name, a build name, a rule name and a module path
-/// were one type and interchangeable by accident.
+/// t-y2i7.3 section 14. It was a bare `string`, so a feature name, a build
+/// name, a rule name and a module path were one type and interchangeable by
+/// accident.
 export type FeatureName = string
+
+/// A build's name — `MkIfExpr`: the label a grammar sequence attaches to the
+/// lowering that constructs its AST node.
+///
+/// It was a bare `string` on BOTH sides of a seam that only ever agreed by
+/// convention: the grammar writes `-> MkIfExpr` as DSL text, the feature's
+/// manifest writes `bind_row(BuildName("MkIfExpr"), …)` as an Avra literal, and
+/// nothing typed the correspondence.
+export type BuildName = string
+
+/// A build name displays as the string it wraps.
+///
+/// Needed because typeck asks for a `display` method whenever an IMPORTED
+/// newtype is interpolated: it arrives with its Newtype kind erased to
+/// `.Struct(name)`, and typeck does not consult the registry that would tell it
+/// apart from a real struct. Codegen already unwraps newtypes for display on
+/// its own (#1345); teaching typeck the same is a separate change. This impl is
+/// explicit, costs nothing, and stays correct either way.
+impl BuildName {
+    fn display(self) -> string { self.raw() }
+}
+

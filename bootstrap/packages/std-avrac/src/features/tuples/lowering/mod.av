@@ -3,7 +3,7 @@
 // (postfix_step_node reads the frozen step base), NOT st.build_sp — the
 // row is FLAT and the chain loop's snap owns the span. Imports ONLY
 // features.grammar + core (F4012).
-use core.{ModulePath, Expr, ExprId, TypeExpr}
+use core.{BuildName, ModulePath, Expr, ExprId, TypeExpr}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_tok_text, postfix_step_node, capval_to_texpr_list, BuildKind}
 
 /// `expr.0` — tuple index (t-47hc.33 form 4). The hand takes the NUMBER lexeme and
@@ -19,7 +19,7 @@ export fn mk_tuple_index_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// tuple_index_lang's row (its `tuple_suffix` rule spells it).
 export fn tuple_index_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.tuples.lowering"), [bind_row("MkTupleIndex", BuildKind.Expr, 1, false, "mk_tuple_index_abi", mk_tuple_index_abi)])
+    bind_rows(ModulePath("features.tuples.lowering"), [bind_row(BuildName("MkTupleIndex"), BuildKind.Expr, 1, false, "mk_tuple_index_abi", mk_tuple_index_abi)])
 }
 
 /// A parenthesised type — the `TyParen` build's core (t-kd4y.3.5.10).
@@ -36,5 +36,5 @@ export fn ty_paren_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn tuple_type_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.tuples.lowering"), [bind_row("TyParen", BuildKind.Type, 1, false, "ty_paren_abi", ty_paren_abi)])
+    bind_rows(ModulePath("features.tuples.lowering"), [bind_row(BuildName("TyParen"), BuildKind.Type, 1, false, "ty_paren_abi", ty_paren_abi)])
 }

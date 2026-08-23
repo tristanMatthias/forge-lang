@@ -14,7 +14,7 @@
 // reading st.build_sp themselves, so the span decision stays one
 // expression per node and the adapters are the only st.build_sp readers.
 
-use core.{ModulePath, Expr, MatchArm, NodeRef, byte_span, byte_span_none, type_expr_to_vtype}
+use core.{BuildName, ModulePath, Expr, MatchArm, NodeRef, byte_span, byte_span_none, type_expr_to_vtype}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_expr, capval_to_pat, capval_to_texpr, capval_tok_pos, capval_tok_text, BuildKind}
 
 /// Grammar-native `quote arm { pat (if guard)? -> body ,? }` (t-bwjg slice 4b).
@@ -132,7 +132,7 @@ export fn mk_quote_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// touches no rule text); every one is `spanned`, because every quote node
 /// is stamped from the `quote` keyword.
 export fn quote_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.quote_expr.lowering"), [bind_row("MkQuote", BuildKind.Expr, 2, true, "mk_quote_abi", mk_quote_abi),
-     bind_row("MkQuoteType", BuildKind.Expr, 2, true, "mk_quote_type_abi", mk_quote_type_abi),
-     bind_row("MkQuoteArm", BuildKind.Expr, 4, true, "mk_quote_arm_abi", mk_quote_arm_abi)])
+    bind_rows(ModulePath("features.quote_expr.lowering"), [bind_row(BuildName("MkQuote"), BuildKind.Expr, 2, true, "mk_quote_abi", mk_quote_abi),
+     bind_row(BuildName("MkQuoteType"), BuildKind.Expr, 2, true, "mk_quote_type_abi", mk_quote_type_abi),
+     bind_row(BuildName("MkQuoteArm"), BuildKind.Expr, 4, true, "mk_quote_arm_abi", mk_quote_arm_abi)])
 }

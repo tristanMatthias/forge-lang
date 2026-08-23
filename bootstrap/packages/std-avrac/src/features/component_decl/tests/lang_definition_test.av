@@ -6,6 +6,7 @@
 use @std.avrac.features.component_decl.{component_lang}
 use @std.avrac.features.{feature_keywords, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+use @std.avrac.core.{BuildName}
 
 spec "component as a LanguageFeature" {
     then "the keyword derives from the declared grammar" {
@@ -83,18 +84,18 @@ spec "component as a LanguageFeature" {
         // was eleven for a while (MkComponentParenDef + MkRawComponentBlock
         // missing), which left a stale central arm for either invisible to
         // the guard its title promises. Raised in review of #1275.
-        central_build_kind("MkComponentDef") == null
-            && central_build_kind("MkComponentParenDef") == null
-            && central_build_kind("MkComponentBlock") == null
-            && central_build_kind("MkRawComponentBlock") == null
-            && central_build_kind("MkCompConfig") == null
-            && central_build_kind("MkCompConfigPair") == null
-            && central_build_kind("MkChildrenSlot") == null
-            && central_build_kind("MkCompConfigList") == null
-            && central_build_kind("MkChildrenSlotList") == null
-            && central_build_kind("MkTraitList") == null
-            && central_build_kind("MkCompBodyMarker") == null
-            && central_build_kind("MkMethodShorthand") == null
-            && central_build_kind("MkCompField") == null
+        central_build_kind(BuildName("MkComponentDef")) == null
+            && central_build_kind(BuildName("MkComponentParenDef")) == null
+            && central_build_kind(BuildName("MkComponentBlock")) == null
+            && central_build_kind(BuildName("MkRawComponentBlock")) == null
+            && central_build_kind(BuildName("MkCompConfig")) == null
+            && central_build_kind(BuildName("MkCompConfigPair")) == null
+            && central_build_kind(BuildName("MkChildrenSlot")) == null
+            && central_build_kind(BuildName("MkCompConfigList")) == null
+            && central_build_kind(BuildName("MkChildrenSlotList")) == null
+            && central_build_kind(BuildName("MkTraitList")) == null
+            && central_build_kind(BuildName("MkCompBodyMarker")) == null
+            && central_build_kind(BuildName("MkMethodShorthand")) == null
+            && central_build_kind(BuildName("MkCompField")) == null
     }
 }

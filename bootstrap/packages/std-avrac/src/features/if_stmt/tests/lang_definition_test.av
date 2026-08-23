@@ -11,6 +11,7 @@
 use @std.avrac.features.if_stmt.{if_lang, avra_if_stmt_grammar, avra_iflet_expr_grammar}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, grammar_build_refs, Grammar}
+use @std.avrac.core.{BuildName}
 
 spec "if as a LanguageFeature" {
     then "the keywords derive from the declared grammar" {
@@ -129,7 +130,7 @@ spec "if let is feature-owned — rules and lowerings both" {
         // classify centrally — the two dispatchers consult in opposite orders,
         // so a shadow would split the engines. builder_validation_error
         // rejects it at registry build; this pins the deletion itself.
-        central_build_kind("MkIfLet") == null && central_build_kind("MkIfLetStmt") == null
+        central_build_kind(BuildName("MkIfLet")) == null && central_build_kind(BuildName("MkIfLetStmt")) == null
     }
     then "each rule references ITS OWN builder — a swapped pair fails HERE" {
         // The two if-let rules differ only in `block`/`block_expr`,
