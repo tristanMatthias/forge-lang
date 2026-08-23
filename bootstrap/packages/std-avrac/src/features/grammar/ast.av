@@ -1025,10 +1025,32 @@ impl BuildKind {
 ///
 /// ORDER IS SIGNIFICANT for `matches`: the first row that answers wins, so the
 /// specific terminals (NUMBER, BOOL) must precede the catch-alls (KW, PUNCT).
+///
+/// FIELDS:
+///   `guard`   the text the EMITTER writes into the generated parser
+///   `matches` how the EXECUTOR decides, for the same terminal
+/// One row owns both halves, so the two engines cannot say different things
+/// about the same name — the drift #1336 and #1338 each fixed one terminal at
+/// a time. (Doc comments are not legal on struct fields, hence this block.)
 export type TerminalRule = {
     name: string,
-    guard: string
+    guard: string,
+    matches: fn(Tk) -> bool
 }
+
+// The per-terminal predicates. Named fns rather than lambdas because a row is
+// DATA — `terminal_rules()` is a table literal, and a table cell holds a value.
+// `tr_never` is the EMITTER-ONLY marker: WORD tests the token's TEXT and
+// FIELDNAME is reached through the executor's own fall-through, so neither may
+// ever claim a token here.
+fn tr_never(tk: Tk) -> bool { false }
+fn tr_ident(tk: Tk) -> bool { tk == Tk.Identifier }
+fn tr_string(tk: Tk) -> bool { tk == Tk.String }
+fn tr_template(tk: Tk) -> bool { tk == Tk.Template }
+fn tr_eof(tk: Tk) -> bool { tk == Tk.Eof }
+fn tr_doc(tk: Tk) -> bool { tk == Tk.DocComment }
+fn tr_moddoc(tk: Tk) -> bool { tk == Tk.ModDocComment }
+fn tr_error(tk: Tk) -> bool { tk == Tk.Error }
 
 
 /// The terminal set, declared once.
@@ -1043,28 +1065,21 @@ export type TerminalRule = {
 /// comparing `st.cur().kind`.
 export fn terminal_rules() -> List<TerminalRule> {
     table<TerminalRule> {
-        name        | guard
-        "IDENT"     | "st.cur().tk == Tk.Identifier"
-        "WORD"      | "text_is_word(st.cur().text)"
-        "FIELDNAME" | "tk_is_field_name(st.cur().tk)"
-        "NUMBER"    | "tk_is_number_lit(st.cur().tk)"
-        "STRING"    | "st.cur().tk == Tk.String"
-        "BOOL"      | "tk_is_bool_lit(st.cur().tk)"
-        "TEMPLATE"  | "st.cur().tk == Tk.Template"
-        "EOF"       | "st.cur().tk == Tk.Eof"
-        "DOC"       | "st.cur().tk == Tk.DocComment"
-        "MODDOC"    | "st.cur().tk == Tk.ModDocComment"
-        "ERROR"     | "st.cur().tk == Tk.Error"
+        name        | guard                                  | matches
+        "IDENT"     | "st.cur().tk == Tk.Identifier"         | tr_ident
+        "WORD"      | "text_is_word(st.cur().text)"          | tr_never
+        "FIELDNAME" | "tk_is_field_name(st.cur().tk)"        | tr_never
+        "NUMBER"    | "tk_is_number_lit(st.cur().tk)"        | tk_is_number_lit
+        "STRING"    | "st.cur().tk == Tk.String"             | tr_string
+        "BOOL"      | "tk_is_bool_lit(st.cur().tk)"          | tk_is_bool_lit
+        "TEMPLATE"  | "st.cur().tk == Tk.Template"           | tr_template
+        "EOF"       | "st.cur().tk == Tk.Eof"                | tr_eof
+        "DOC"       | "st.cur().tk == Tk.DocComment"         | tr_doc
+        "MODDOC"    | "st.cur().tk == Tk.ModDocComment"      | tr_moddoc
+        "ERROR"     | "st.cur().tk == Tk.Error"              | tr_error
     }
 }
 
-/// The names the EXECUTOR's classifier can produce (real_lex
-/// `tk_to_grammar_kind`), declared here so the two views can be checked against
-/// each other. KW and PUNCT are executor-only catch-alls with no emitted guard;
-/// WORD and FIELDNAME are emitter-only, so they are absent from this list.
-export fn executor_terminal_names() -> List<string> {
-    ["IDENT", "STRING", "EOF", "ERROR", "TEMPLATE", "DOC", "MODDOC", "NUMBER", "BOOL", "KW", "PUNCT"]
-}
 
 /// The emitted guard for a terminal, or "" when it has none.
 export fn terminal_guard(name: string) -> string {
