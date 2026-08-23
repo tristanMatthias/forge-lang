@@ -149,6 +149,29 @@ fn fold_builders(feats: List<LanguageFeature>) -> List<BuilderBind> {
 /// compositions (caught by the disjointness specs at the Batch A modules
 /// conversion). Rule-disjointness is guarded by `fragment_rule_conflicts`
 /// in the specs.
+/// Every keyword the FEATURES themselves declare — the identifier-shaped literal
+/// terminals across all their grammars (`"defer"` yes, `"+"` no).
+///
+/// UNFILTERED, unlike `feature_grammar_fragments()` directly below, which drops any
+/// feature whose `gram_family` is empty. `match` serves both the statement and
+/// expression seams, so it declares no single family and vanishes from that list —
+/// which made an earlier measurement report `match`/`when` as undeclared while
+/// features/match/mod.av plainly spells `"match"`. Anything asking "what do the
+/// features say the keywords are" must come through here.
+///
+/// COST: re-runs every feature factory (each re-parses its gram). That is the same
+/// cost `init_features` exists to pay once, so do NOT call this on a hot path — it
+/// is here for the keyword-agreement check, which runs once.
+export fn all_feature_keywords() -> List<string> {
+    mut out: List<string> = []
+    for f in language_features() {
+        for k in feature_keywords(f) {
+            if !out.contains(k) { out.push(k) }
+        }
+    }
+    out
+}
+
 export fn feature_grammar_fragments() -> List<Grammar> {
     mut all: List<Grammar> = []
     for f in language_features() {
