@@ -57,19 +57,19 @@ spec "component as a LanguageFeature" {
         for b in feature_builders() {
             let row = "${b.name}/${b.kind}/${string(b.arity)}"
             mut expect = ""
-            if b.name == "MkComponentDef" { expect = "MkComponentDef/stmt/6" }
-            if b.name == "MkComponentParenDef" { expect = "MkComponentParenDef/stmt/5" }
-            if b.name == "MkComponentBlock" { expect = "MkComponentBlock/stmt/4" }
-            if b.name == "MkRawComponentBlock" { expect = "MkRawComponentBlock/stmt/3" }
-            if b.name == "MkMethodShorthand" { expect = "MkMethodShorthand/stmt/2" }
-            if b.name == "MkCompField" { expect = "MkCompField/stmt/3" }
-            if b.name == "MkCompBodyMarker" { expect = "MkCompBodyMarker/tok/1" }
-            if b.name == "MkTraitList" { expect = "MkTraitList/toks/1" }
-            if b.name == "MkCompConfig" { expect = "MkCompConfig/ccfg/3" }
-            if b.name == "MkCompConfigPair" { expect = "MkCompConfigPair/cpair/2" }
-            if b.name == "MkCompConfigList" { expect = "MkCompConfigList/ccfgs/1" }
-            if b.name == "MkChildrenSlot" { expect = "MkChildrenSlot/cslot/2" }
-            if b.name == "MkChildrenSlotList" { expect = "MkChildrenSlotList/cslots/1" }
+            if b.name == BuildName("MkComponentDef") { expect = "MkComponentDef/stmt/6" }
+            if b.name == BuildName("MkComponentParenDef") { expect = "MkComponentParenDef/stmt/5" }
+            if b.name == BuildName("MkComponentBlock") { expect = "MkComponentBlock/stmt/4" }
+            if b.name == BuildName("MkRawComponentBlock") { expect = "MkRawComponentBlock/stmt/3" }
+            if b.name == BuildName("MkMethodShorthand") { expect = "MkMethodShorthand/stmt/2" }
+            if b.name == BuildName("MkCompField") { expect = "MkCompField/stmt/3" }
+            if b.name == BuildName("MkCompBodyMarker") { expect = "MkCompBodyMarker/tok/1" }
+            if b.name == BuildName("MkTraitList") { expect = "MkTraitList/toks/1" }
+            if b.name == BuildName("MkCompConfig") { expect = "MkCompConfig/ccfg/3" }
+            if b.name == BuildName("MkCompConfigPair") { expect = "MkCompConfigPair/cpair/2" }
+            if b.name == BuildName("MkCompConfigList") { expect = "MkCompConfigList/ccfgs/1" }
+            if b.name == BuildName("MkChildrenSlot") { expect = "MkChildrenSlot/cslot/2" }
+            if b.name == BuildName("MkChildrenSlotList") { expect = "MkChildrenSlotList/cslots/1" }
             if expect != "" {
                 rows = rows + 1
                 if row != expect { clean = false }

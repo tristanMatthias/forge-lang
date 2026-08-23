@@ -35,7 +35,7 @@ spec "parallel as a LanguageFeature" {
     then "MkParallel rides the manifest and NOTHING is left central" {
         mut row = ""
         for b in feature_builders() {
-            if b.name == "MkParallel" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}" }
+            if b.name == BuildName("MkParallel") { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}" }
         }
         row == "stmt/1/flat/parallel_build/features.parallel_stmt.lowering"
             && central_build_kind(BuildName("MkParallel")) == null

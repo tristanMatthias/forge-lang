@@ -51,9 +51,9 @@ spec "type/shape family as LanguageFeatures" {
         mut fd = ""
         for b in feature_builders() {
             let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
-            if b.name == "MkTypeDeclAny" { td = row }
-            if b.name == "MkShapeDecl" { sd = row }
-            if b.name == "MkField" { fd = row }
+            if b.name == BuildName("MkTypeDeclAny") { td = row }
+            if b.name == BuildName("MkShapeDecl") { sd = row }
+            if b.name == BuildName("MkField") { fd = row }
         }
         td == "stmt/6/flat/mk_type_decl_any_abi/features.struct_decl.lowering"
             && sd == "stmt/2/flat/mk_shape_decl_abi/features.struct_decl.lowering"
@@ -65,7 +65,7 @@ spec "type/shape family as LanguageFeatures" {
     then "the retired convenience builds are GONE — no row, no central kind" {
         mut retired_rows = 0
         for b in feature_builders() {
-            if b.name == "MkTypeDecl" || b.name == "MkTypeAlias" || b.name == "MkTypeRHS" { retired_rows = retired_rows + 1 }
+            if b.name == BuildName("MkTypeDecl") || b.name == BuildName("MkTypeAlias") || b.name == BuildName("MkTypeRHS") { retired_rows = retired_rows + 1 }
         }
         retired_rows == 0
             && central_build_kind(BuildName("MkTypeDecl")) == null

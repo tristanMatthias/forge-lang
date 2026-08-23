@@ -62,10 +62,10 @@ spec "let family as LanguageFeatures" {
         mut db = ""
         for b in feature_builders() {
             let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
-            if b.name == "MkLetBinding" { lb = row }
-            if b.name == "MkMutBinding" { mb = row }
-            if b.name == "MkConstBinding" { cb = row }
-            if b.name == "MkDestructure" { db = row }
+            if b.name == BuildName("MkLetBinding") { lb = row }
+            if b.name == BuildName("MkMutBinding") { mb = row }
+            if b.name == BuildName("MkConstBinding") { cb = row }
+            if b.name == BuildName("MkDestructure") { db = row }
         }
         lb == "stmt/6/flat/mk_let_binding_abi/features.let_stmt.lowering"
             && mb == "stmt/5/flat/mk_mut_binding_abi/features.let_stmt.lowering"
@@ -79,7 +79,7 @@ spec "let family as LanguageFeatures" {
     then "the convenience trio is GONE — no manifest row, no central kind" {
         mut trio_rows = 0
         for b in feature_builders() {
-            if b.name == "MkLet" || b.name == "MkMut" || b.name == "MkConst" { trio_rows = trio_rows + 1 }
+            if b.name == BuildName("MkLet") || b.name == BuildName("MkMut") || b.name == BuildName("MkConst") { trio_rows = trio_rows + 1 }
         }
         trio_rows == 0
             && central_build_kind(BuildName("MkLet")) == null

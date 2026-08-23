@@ -32,12 +32,12 @@ spec "ident-led family as LanguageFeatures" {
         mut gb = ""
         for b in feature_builders() {
             let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.module}"
-            if b.name == "MkStructLit" { sl = row }
-            if b.name == "MkFieldInit" { fi = row }
-            if b.name == "mk_enum_ctor" { ec = row }
-            if b.name == "MkWithSuffix" { ws = row }
-            if b.name == "MkQualExpr" { qe = row }
-            if b.name == "MkGrammarBlock" { gb = row }
+            if b.name == BuildName("MkStructLit") { sl = row }
+            if b.name == BuildName("MkFieldInit") { fi = row }
+            if b.name == BuildName("mk_enum_ctor") { ec = row }
+            if b.name == BuildName("MkWithSuffix") { ws = row }
+            if b.name == BuildName("MkQualExpr") { qe = row }
+            if b.name == BuildName("MkGrammarBlock") { gb = row }
         }
         sl == "expr/2/spanned/features.struct_decl.lowering"
             && fi == "finit/2/flat/features.struct_decl.lowering"

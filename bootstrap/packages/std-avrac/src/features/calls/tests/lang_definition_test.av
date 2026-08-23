@@ -52,10 +52,10 @@ spec "postfix families as LanguageFeatures" {
     then "the twelve rows ride the manifest and NOTHING is left central" {
         mut owners = ""
         for b in feature_builders() {
-            if b.name == "MkTrySuffix" || b.name == "MkForceUnwrap" || b.name == "MkCatchSuffix"
-                || b.name == "MkOptChain" || b.name == "MkOptMethodCall" || b.name == "MkTupleIndex"
-                || b.name == "MkFieldAccess" || b.name == "MkEnumCtorSuffix" || b.name == "MkIndexSuffix"
-                || b.name == "MkCallSuffix" || b.name == "MkGenericCallSuffix" || b.name == "MkCallArg" {
+            if b.name == BuildName("MkTrySuffix") || b.name == BuildName("MkForceUnwrap") || b.name == BuildName("MkCatchSuffix")
+                || b.name == BuildName("MkOptChain") || b.name == BuildName("MkOptMethodCall") || b.name == BuildName("MkTupleIndex")
+                || b.name == BuildName("MkFieldAccess") || b.name == BuildName("MkEnumCtorSuffix") || b.name == BuildName("MkIndexSuffix")
+                || b.name == BuildName("MkCallSuffix") || b.name == BuildName("MkGenericCallSuffix") || b.name == BuildName("MkCallArg") {
                 owners = owners + "${b.name}=${b.module}/${if b.spanned { "sp" } else { "flat" }} "
             }
         }

@@ -50,9 +50,9 @@ spec "collections as LanguageFeatures" {
         mut ml = ""
         for b in feature_builders() {
             let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
-            if b.name == "MkListLit" { ll = row }
-            if b.name == "MkListComp" { lc = row }
-            if b.name == "MkMapLit" { ml = row }
+            if b.name == BuildName("MkListLit") { ll = row }
+            if b.name == BuildName("MkListComp") { lc = row }
+            if b.name == BuildName("MkMapLit") { ml = row }
         }
         ll == "expr/1/spanned/mk_list_lit_abi/features.list_lit.lowering"
             && lc == "expr/4/spanned/mk_list_comp_abi/features.list_lit.lowering"

@@ -10,6 +10,7 @@ use @std.avrac.features.trait_decl.lowering.{trait_builds}
 use @std.avrac.features.{with_builders, feature_keywords, feature_gram, feature_builders, builder_validation_error}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, rule_index_of}
 use @std.avrac.list_ops.{list_contains_str}
+use @std.avrac.core.{BuildName}
 
 spec "trait as a LanguageFeature" {
     then "title, docs, and editor snippet are carried" {
@@ -50,7 +51,7 @@ spec "trait as a LanguageFeature" {
         // engines — the retired central arms stamped nothing.
         mut rows = ""
         for b in feature_builders() {
-            if b.name == "MkTraitDecl" || b.name == "MkAssocType" || b.name == "MkTraitMethod" {
+            if b.name == BuildName("MkTraitDecl") || b.name == BuildName("MkAssocType") || b.name == BuildName("MkTraitMethod") {
                 rows = rows + "${b.name}=${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.module}.${b.export_name} "
             }
         }

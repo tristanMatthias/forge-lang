@@ -19,7 +19,7 @@ spec "templates as a LanguageFeature" {
     then "both rows ride the manifest and NOTHING is left central" {
         mut owners = ""
         for b in feature_builders() {
-            if b.name == "MkTemplate" || b.name == "MkTaggedTemplate" {
+            if b.name == BuildName("MkTemplate") || b.name == BuildName("MkTaggedTemplate") {
                 owners = owners + "${b.name}=${b.module}/${if b.spanned { "sp" } else { "flat" }} "
             }
         }

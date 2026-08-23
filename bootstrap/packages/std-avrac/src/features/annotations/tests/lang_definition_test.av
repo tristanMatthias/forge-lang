@@ -35,8 +35,8 @@ spec "annotation + export wrappers as LanguageFeatures" {
     then "the four rows ride the manifest and NOTHING flipped is left central" {
         mut owners = ""
         for b in feature_builders() {
-            if b.name == "MkAnn" || b.name == "MkAnnotatedArgs" || b.name == "MkModuleDoc"
-                || b.name == "MkExport" {
+            if b.name == BuildName("MkAnn") || b.name == BuildName("MkAnnotatedArgs") || b.name == BuildName("MkModuleDoc")
+                || b.name == BuildName("MkExport") {
                 owners = owners + "${b.name}=${b.module}/${b.kind}/${if b.spanned { "sp" } else { "flat" }} "
             }
         }

@@ -29,9 +29,9 @@ spec "table family as a LanguageFeature" {
         mut tr = ""
         for b in feature_builders() {
             let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
-            if b.name == "MkTableLit" { tl = row }
-            if b.name == "MkTableHeader" { th = row }
-            if b.name == "MkTableRow" { tr = row }
+            if b.name == BuildName("MkTableLit") { tl = row }
+            if b.name == BuildName("MkTableHeader") { th = row }
+            if b.name == BuildName("MkTableRow") { tr = row }
         }
         tl == "expr/1/spanned/mk_table_lit_abi/features.table_lit.lowering"
             && th == "expr/2/flat/mk_table_header_abi/features.table_lit.lowering"

@@ -8,6 +8,7 @@
 use @std.avrac.features.for_stmt.{for_lang, for_in_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, grammar_build_refs, Grammar}
+use @std.avrac.core.{BuildName}
 
 spec "for as a LanguageFeature (every build its gram references is feature-owned)" {
     then "the keywords derive from the declared grammar" {
@@ -56,7 +57,7 @@ spec "for as a LanguageFeature (every build its gram references is feature-owned
         // own pos inside mk_for_destructure, not from the span protocol.
         mut rows = ""
         for b in feature_builders() {
-            if b.name == "build_for" || b.name == "MkForDestructure" || b.name == "MkForBinding" {
+            if b.name == BuildName("build_for") || b.name == BuildName("MkForDestructure") || b.name == BuildName("MkForBinding") {
                 rows = "${rows}${b.name}=${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name} "
             }
         }

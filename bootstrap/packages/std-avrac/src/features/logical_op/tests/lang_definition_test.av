@@ -41,10 +41,10 @@ spec "operator families as LanguageFeatures" {
     then "the ten rows ride the manifest and NOTHING is left central" {
         mut owners = ""
         for b in feature_builders() {
-            if b.name == "fold_logical" || b.name == "fold_pipe" || b.name == "fold_nullish"
-                || b.name == "mk_eqchain" || b.name == "Unary" || b.name == "mk_assign"
-                || b.name == "rebind_eq" || b.name == "mk_is" || b.name == "mk_inlist"
-                || b.name == "mk_inrange" {
+            if b.name == BuildName("fold_logical") || b.name == BuildName("fold_pipe") || b.name == BuildName("fold_nullish")
+                || b.name == BuildName("mk_eqchain") || b.name == BuildName("Unary") || b.name == BuildName("mk_assign")
+                || b.name == BuildName("rebind_eq") || b.name == BuildName("mk_is") || b.name == BuildName("mk_inlist")
+                || b.name == BuildName("mk_inrange") {
                 owners = owners + "${b.name}=${b.module}/${if b.spanned { "sp" } else { "flat" }} "
             }
         }
