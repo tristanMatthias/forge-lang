@@ -5,7 +5,7 @@
 // parser's closure — so the F4012 import-closure invariant holds by
 // construction; the feature's passes/hooks stay in ../mod.av.
 
-use core.{ModulePath, Stmt}
+use core.{BuildName, ModulePath, Stmt}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, BuildKind}
 
 export fn build_break() -> Stmt { Stmt.Break }
@@ -19,8 +19,8 @@ export fn build_continue_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn break_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.break_continue.lowering"), [bind_row("build_break", BuildKind.Stmt, 0, false, "build_break_abi", build_break_abi)])
+    bind_rows(ModulePath("features.break_continue.lowering"), [bind_row(BuildName("build_break"), BuildKind.Stmt, 0, false, "build_break_abi", build_break_abi)])
 }
 export fn continue_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.break_continue.lowering"), [bind_row("build_continue", BuildKind.Stmt, 0, false, "build_continue_abi", build_continue_abi)])
+    bind_rows(ModulePath("features.break_continue.lowering"), [bind_row(BuildName("build_continue"), BuildKind.Stmt, 0, false, "build_continue_abi", build_continue_abi)])
 }

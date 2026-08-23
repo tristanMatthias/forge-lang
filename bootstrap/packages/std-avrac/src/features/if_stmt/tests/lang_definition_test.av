@@ -11,6 +11,7 @@
 use @std.avrac.features.if_stmt.{if_lang, avra_if_stmt_grammar, avra_iflet_expr_grammar}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, grammar_build_refs, Grammar}
+use @std.avrac.core.{BuildName}
 
 spec "if as a LanguageFeature" {
     then "the keywords derive from the declared grammar" {
@@ -46,14 +47,14 @@ spec "if as a LanguageFeature" {
             for r in g.rules { if r.name == "if_stmt" { has_rule = true } }
             mut has_ref = false
             for br in grammar_build_refs(g) {
-                if br.name == "build_if" && br.argc == 3 { has_ref = true }
+                if br.name == BuildName("build_if") && br.argc == 3 { has_ref = true }
             }
             if !has_rule || !has_ref { ok = false }
         }
         ok
     }
     then "build_if rides the manifest as a SPANNED stmt row" {
-        row_of("build_if") == "stmt/3/spanned/build_if_abi"
+        row_of(BuildName("build_if")) == "stmt/3/spanned/build_if_abi"
     }
 }
 
@@ -66,7 +67,7 @@ spec "if as a LanguageFeature" {
 // expression views can take it without the statement rules). The spine keeps
 // only the `@peek(if_let)`-gated REFERENCE — which is what makes `if_expr`
 // still reach the form.
-fn row_of(name: string) -> string {
+fn row_of(name: BuildName) -> string {
     for b in feature_builders() {
         if b.name == name { return "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
     }
@@ -121,15 +122,15 @@ fn rule_expects(g: Grammar, rule: string) -> string {
 
 spec "if let is feature-owned — rules and lowerings both" {
     then "both if-let builds ride the manifest, span-free, at arity 5" {
-        row_of("MkIfLet") == "expr/5/flat/mk_if_let_abi"
-            && row_of("MkIfLetStmt") == "stmt/5/flat/mk_if_let_stmt_abi"
+        row_of(BuildName("MkIfLet")) == "expr/5/flat/mk_if_let_abi"
+            && row_of(BuildName("MkIfLetStmt")) == "stmt/5/flat/mk_if_let_stmt_abi"
     }
     then "neither name is an engine central build any more" {
         // The flip's other half: a name the manifest supplies must NOT also
         // classify centrally — the two dispatchers consult in opposite orders,
         // so a shadow would split the engines. builder_validation_error
         // rejects it at registry build; this pins the deletion itself.
-        central_build_kind("MkIfLet") == null && central_build_kind("MkIfLetStmt") == null
+        central_build_kind(BuildName("MkIfLet")) == null && central_build_kind(BuildName("MkIfLetStmt")) == null
     }
     then "each rule references ITS OWN builder — a swapped pair fails HERE" {
         // The two if-let rules differ only in `block`/`block_expr`,

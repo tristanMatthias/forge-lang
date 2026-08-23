@@ -6,6 +6,7 @@
 use @std.avrac.features.defer.{defer_lang, errdefer_lang}
 use @std.avrac.features.{feature_keywords, feature_gram}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, grammar_build_refs}
+use @std.avrac.core.{BuildName}
 
 spec "defer as a LanguageFeature" {
     then "keywords derive from the declared grammar" {
@@ -47,10 +48,10 @@ spec "defer as a LanguageFeature" {
         for r in feature_gram(defer_lang()).rules { if r.name == "defer_stmt" { has_defer = true } }
         for r in feature_gram(errdefer_lang()).rules { if r.name == "errdefer_stmt" { has_errdefer = true } }
         for br in grammar_build_refs(feature_gram(defer_lang())) {
-            if br.name == "build_defer" && br.argc == 1 { ref_defer = true }
+            if br.name == BuildName("build_defer") && br.argc == 1 { ref_defer = true }
         }
         for br in grammar_build_refs(feature_gram(errdefer_lang())) {
-            if br.name == "build_errdefer" && br.argc == 1 { ref_errdefer = true }
+            if br.name == BuildName("build_errdefer") && br.argc == 1 { ref_errdefer = true }
         }
         // ...and both survive composition into the whole-program grammar.
         let prod = avra_program_grammar()
@@ -63,8 +64,8 @@ spec "defer as a LanguageFeature" {
             if r.name == "errdefer_stmt" { prod_errdefer = true }
         }
         for br in grammar_build_refs(prod) {
-            if br.name == "build_defer" && br.argc == 1 { prod_ref_defer = true }
-            if br.name == "build_errdefer" && br.argc == 1 { prod_ref_errdefer = true }
+            if br.name == BuildName("build_defer") && br.argc == 1 { prod_ref_defer = true }
+            if br.name == BuildName("build_errdefer") && br.argc == 1 { prod_ref_errdefer = true }
         }
         has_defer && has_errdefer && ref_defer && ref_errdefer
             && prod_defer && prod_errdefer && prod_ref_defer && prod_ref_errdefer

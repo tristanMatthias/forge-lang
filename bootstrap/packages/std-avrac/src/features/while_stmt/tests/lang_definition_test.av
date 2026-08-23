@@ -9,6 +9,7 @@
 use @std.avrac.features.while_stmt.{while_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, grammar_build_refs}
+use @std.avrac.core.{BuildName}
 
 spec "while as a LanguageFeature" {
     then "the keyword derives from the declared grammar" {
@@ -41,7 +42,7 @@ spec "while as a LanguageFeature" {
             }
             mut ref_build_while = false
             for br in grammar_build_refs(g) {
-                if br.name == "build_while" && br.argc == 2 { ref_build_while = true }
+                if br.name == BuildName("build_while") && br.argc == 2 { ref_build_while = true }
             }
             if !has_while_stmt || !ref_build_while { ok = false }
         }
@@ -57,7 +58,7 @@ spec "while as a LanguageFeature" {
         // the interpreter path stays span-free. The typed fn never sees it.
         mut row = ""
         for b in feature_builders() {
-            if b.name == "build_while" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
+            if b.name == BuildName("build_while") { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
         }
         row == "stmt/2/spanned/build_while_abi"
     }

@@ -9,6 +9,7 @@ use @std.avrac.features.let_stmt.{let_lang, mut_lang, const_lang, let_destructur
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
 use @std.avrac.parse.{oracle_decl}
+use @std.avrac.core.{BuildName}
 
 spec "let family as LanguageFeatures" {
     then "the keywords derive from let_lang's declared grammar" {
@@ -61,29 +62,29 @@ spec "let family as LanguageFeatures" {
         mut db = ""
         for b in feature_builders() {
             let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
-            if b.name == "MkLetBinding" { lb = row }
-            if b.name == "MkMutBinding" { mb = row }
-            if b.name == "MkConstBinding" { cb = row }
-            if b.name == "MkDestructure" { db = row }
+            if b.name == BuildName("MkLetBinding") { lb = row }
+            if b.name == BuildName("MkMutBinding") { mb = row }
+            if b.name == BuildName("MkConstBinding") { cb = row }
+            if b.name == BuildName("MkDestructure") { db = row }
         }
         lb == "stmt/6/flat/mk_let_binding_abi/features.let_stmt.lowering"
             && mb == "stmt/5/flat/mk_mut_binding_abi/features.let_stmt.lowering"
             && cb == "stmt/3/flat/mk_const_binding_abi/features.let_stmt.lowering"
             && db == "stmt/2/flat/mk_let_destructure_abi/features.let_stmt.lowering"
-            && central_build_kind("MkLetBinding") == null
-            && central_build_kind("MkMutBinding") == null
-            && central_build_kind("MkConstBinding") == null
-            && central_build_kind("MkDestructure") == null
+            && central_build_kind(BuildName("MkLetBinding")) == null
+            && central_build_kind(BuildName("MkMutBinding")) == null
+            && central_build_kind(BuildName("MkConstBinding")) == null
+            && central_build_kind(BuildName("MkDestructure")) == null
     }
     then "the convenience trio is GONE — no manifest row, no central kind" {
         mut trio_rows = 0
         for b in feature_builders() {
-            if b.name == "MkLet" || b.name == "MkMut" || b.name == "MkConst" { trio_rows = trio_rows + 1 }
+            if b.name == BuildName("MkLet") || b.name == BuildName("MkMut") || b.name == BuildName("MkConst") { trio_rows = trio_rows + 1 }
         }
         trio_rows == 0
-            && central_build_kind("MkLet") == null
-            && central_build_kind("MkMut") == null
-            && central_build_kind("MkConst") == null
+            && central_build_kind(BuildName("MkLet")) == null
+            && central_build_kind(BuildName("MkMut")) == null
+            && central_build_kind(BuildName("MkConst")) == null
     }
 }
 

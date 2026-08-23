@@ -12,6 +12,7 @@ use @std.avrac.features.unary_op.{unary_op_lang}
 use @std.avrac.features.{feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, BuildKind}
 use @std.avrac.parse.{oracle_expr}
+use @std.avrac.core.{BuildName}
 
 spec "operator families as LanguageFeatures" {
     then "the four new carriers have title, docs, and snippets" {
@@ -40,10 +41,10 @@ spec "operator families as LanguageFeatures" {
     then "the ten rows ride the manifest and NOTHING is left central" {
         mut owners = ""
         for b in feature_builders() {
-            if b.name == "fold_logical" || b.name == "fold_pipe" || b.name == "fold_nullish"
-                || b.name == "mk_eqchain" || b.name == "Unary" || b.name == "mk_assign"
-                || b.name == "rebind_eq" || b.name == "mk_is" || b.name == "mk_inlist"
-                || b.name == "mk_inrange" {
+            if b.name == BuildName("fold_logical") || b.name == BuildName("fold_pipe") || b.name == BuildName("fold_nullish")
+                || b.name == BuildName("mk_eqchain") || b.name == BuildName("Unary") || b.name == BuildName("mk_assign")
+                || b.name == BuildName("rebind_eq") || b.name == BuildName("mk_is") || b.name == BuildName("mk_inlist")
+                || b.name == BuildName("mk_inrange") {
                 owners = owners + "${b.name}=${b.module}/${if b.spanned { "sp" } else { "flat" }} "
             }
         }
@@ -57,22 +58,22 @@ spec "operator families as LanguageFeatures" {
             && owners.contains("mk_is=features.is_keyword.lowering/flat")
             && owners.contains("mk_inlist=features.in_operator.lowering/flat")
             && owners.contains("mk_inrange=features.in_operator.lowering/flat")
-            && central_build_kind("fold_logical") == null
-            && central_build_kind("fold_pipe") == null
-            && central_build_kind("fold_nullish") == null
-            && central_build_kind("mk_eqchain") == null
-            && central_build_kind("Unary") == null
-            && central_build_kind("mk_assign") == null
-            && central_build_kind("rebind_eq") == null
-            && central_build_kind("mk_is") == null
-            && central_build_kind("mk_inlist") == null
-            && central_build_kind("mk_inrange") == null
-            && central_build_kind("fold_with") == null
+            && central_build_kind(BuildName("fold_logical")) == null
+            && central_build_kind(BuildName("fold_pipe")) == null
+            && central_build_kind(BuildName("fold_nullish")) == null
+            && central_build_kind(BuildName("mk_eqchain")) == null
+            && central_build_kind(BuildName("Unary")) == null
+            && central_build_kind(BuildName("mk_assign")) == null
+            && central_build_kind(BuildName("rebind_eq")) == null
+            && central_build_kind(BuildName("mk_is")) == null
+            && central_build_kind(BuildName("mk_inlist")) == null
+            && central_build_kind(BuildName("mk_inrange")) == null
+            && central_build_kind(BuildName("fold_with")) == null
     }
     then "the engine keeps the fold machinery" {
-        central_build_kind("fold_binary") == BuildKind.Expr
-            && central_build_kind("fold_postfix") == BuildKind.Expr
-            && central_build_kind("fold_postfix_with") == BuildKind.Expr
+        central_build_kind(BuildName("fold_binary")) == BuildKind.Expr
+            && central_build_kind(BuildName("fold_postfix")) == BuildKind.Expr
+            && central_build_kind(BuildName("fold_postfix_with")) == BuildKind.Expr
     }
 }
 

@@ -11,6 +11,7 @@ use @std.avrac.features.tuples.{tuples_lang}
 use @std.avrac.features.{feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
 use @std.avrac.parse.{oracle_expr}
+use @std.avrac.core.{BuildName}
 
 spec "paren family as LanguageFeatures" {
     then "titles, docs, and editor snippets are carried" {
@@ -37,31 +38,31 @@ spec "paren family as LanguageFeatures" {
         mut pa = ""
         for b in feature_builders() {
             let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
-            if b.name == "MkLambdaTyped" { lt = row }
-            if b.name == "MkLambda" { la = row }
-            if b.name == "MkTupleFR" { tf = row }
-            if b.name == "MkGroupOrEmpty" { ge = row }
-            if b.name == "MkParam" { pa = row }
+            if b.name == BuildName("MkLambdaTyped") { lt = row }
+            if b.name == BuildName("MkLambda") { la = row }
+            if b.name == BuildName("MkTupleFR") { tf = row }
+            if b.name == BuildName("MkGroupOrEmpty") { ge = row }
+            if b.name == BuildName("MkParam") { pa = row }
         }
         lt == "expr/2/spanned/mk_lambda_typed_abi/features.closures.lowering"
             && la == "expr/2/spanned/mk_lambda_abi/features.closures.lowering"
             && tf == "expr/2/spanned/mk_tuple_fr_abi/features.closures.lowering"
             && ge == "expr/1/spanned/mk_group_or_empty_abi/features.closures.lowering"
             && pa == "pentry/2/flat/mk_param_abi/features.closures.lowering"
-            && central_build_kind("MkLambdaTyped") == null
-            && central_build_kind("MkLambda") == null
-            && central_build_kind("MkTupleFR") == null
-            && central_build_kind("MkGroupOrEmpty") == null
-            && central_build_kind("MkParam") == null
+            && central_build_kind(BuildName("MkLambdaTyped")) == null
+            && central_build_kind(BuildName("MkLambda")) == null
+            && central_build_kind(BuildName("MkTupleFR")) == null
+            && central_build_kind(BuildName("MkGroupOrEmpty")) == null
+            && central_build_kind(BuildName("MkParam")) == null
     }
     then "the retired engine builds are GONE — no manifest row, no central kind" {
         mut dead_rows = 0
         for b in feature_builders() {
-            if b.name == "Grouping" || b.name == "MkTuple" { dead_rows = dead_rows + 1 }
+            if b.name == BuildName("Grouping") || b.name == BuildName("MkTuple") { dead_rows = dead_rows + 1 }
         }
         dead_rows == 0
-            && central_build_kind("Grouping") == null
-            && central_build_kind("MkTuple") == null
+            && central_build_kind(BuildName("Grouping")) == null
+            && central_build_kind(BuildName("MkTuple")) == null
     }
 }
 

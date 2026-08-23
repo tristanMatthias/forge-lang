@@ -11,6 +11,7 @@ use @std.avrac.features.extern_decl.{extern_lang}
 use @std.avrac.features.generics.{generics_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+use @std.avrac.core.{BuildName}
 
 spec "fn family as LanguageFeatures" {
     then "the keywords derive from the declared grammars" {
@@ -70,19 +71,19 @@ spec "fn family as LanguageFeatures" {
         mut tp = ""
         for b in feature_builders() {
             let row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
-            if b.name == "MkFnDecl" { fd = row }
-            if b.name == "MkWhereParam" { wp = row }
-            if b.name == "MkExtern" { ex = row }
-            if b.name == "MkTypeParam" { tp = row }
+            if b.name == BuildName("MkFnDecl") { fd = row }
+            if b.name == BuildName("MkWhereParam") { wp = row }
+            if b.name == BuildName("MkExtern") { ex = row }
+            if b.name == BuildName("MkTypeParam") { tp = row }
         }
         fd == "stmt/6/flat/mk_fn_decl_abi/features.fn_decl.lowering"
             && wp == "tparam/2/flat/mk_where_param_abi/features.fn_decl.lowering"
             && ex == "stmt/3/flat/mk_extern_fn_abi/features.fn_decl.lowering"
             && tp == "tparam/2/flat/mk_type_param_abi/features.generics.lowering"
-            && central_build_kind("MkFnDecl") == null
-            && central_build_kind("MkWhereParam") == null
-            && central_build_kind("MkExtern") == null
-            && central_build_kind("MkTypeParam") == null
+            && central_build_kind(BuildName("MkFnDecl")) == null
+            && central_build_kind(BuildName("MkWhereParam")) == null
+            && central_build_kind(BuildName("MkExtern")) == null
+            && central_build_kind(BuildName("MkTypeParam")) == null
     }
     then "MkParam is closures-owned — the `param` rule left the shared base (t-kd4y.3.5.3)" {
         // Ownership follows the referencing rule: closures' own gram is the
@@ -93,13 +94,13 @@ spec "fn family as LanguageFeatures" {
         mut param_row = ""
         mut param_rows = 0
         for b in feature_builders() {
-            if b.name == "MkParam" {
+            if b.name == BuildName("MkParam") {
                 param_rows = param_rows + 1
                 param_row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}"
             }
         }
         param_rows == 1
             && param_row == "pentry/2/flat/mk_param_abi/features.closures.lowering"
-            && central_build_kind("MkParam") == null
+            && central_build_kind(BuildName("MkParam")) == null
     }
 }

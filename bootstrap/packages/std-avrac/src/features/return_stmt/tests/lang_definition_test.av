@@ -6,6 +6,7 @@
 use @std.avrac.features.return_stmt.{return_lang}
 use @std.avrac.features.{feature_keywords, feature_gram}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, grammar_build_refs}
+use @std.avrac.core.{BuildName}
 
 spec "return as a LanguageFeature" {
     then "the keyword derives from the declared grammar" {
@@ -40,7 +41,7 @@ spec "return as a LanguageFeature" {
             }
             mut ref_build_return = false
             for br in grammar_build_refs(g) {
-                if br.name == "build_return" && br.argc == 1 { ref_build_return = true }
+                if br.name == BuildName("build_return") && br.argc == 1 { ref_build_return = true }
             }
             if !has_return_stmt || !ref_build_return { ok = false }
         }

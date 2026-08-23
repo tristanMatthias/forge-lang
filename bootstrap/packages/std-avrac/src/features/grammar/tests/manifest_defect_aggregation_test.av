@@ -14,7 +14,7 @@
 
 use @std.avrac.features.{manifest_defects_for, render_manifest_defect, render_manifest_defects, FeatureDefect, ManifestDefect}
 use @std.avrac.features.grammar.{parse_grammar, grammar_checked, BuilderBind, bind_row, PState, CapVal, Grammar, BuildKind}
-use @std.avrac.core.{FeatureName}
+use @std.avrac.core.{BuildName, FeatureName}
 
 fn toy_gram(src: string) -> Grammar { grammar_checked(parse_grammar(src)) }
 
@@ -22,7 +22,7 @@ fn noop_abi(st: PState, vals: List<CapVal>) -> CapVal { CapVal.Nil }
 
 /// A manifest row that no rule references — the orphan case.
 fn orphan_rows() -> List<BuilderBind> {
-    [bind_row("MkNeverReferenced", BuildKind.Expr, 1, false, "noop_abi", noop_abi)]
+    [bind_row(BuildName("MkNeverReferenced"), BuildKind.Expr, 1, false, "noop_abi", noop_abi)]
 }
 
 spec "manifest defects are DATA, not a first-error string" {

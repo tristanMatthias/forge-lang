@@ -12,8 +12,9 @@ use @std.avrac.features.modules.{export_lang}
 use @std.avrac.features.{feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, central_tableless_builds, engine_core_builds, BuildKind}
 use @std.avrac.parse.{oracle_decl}
+use @std.avrac.core.{BuildName}
 
-fn str_has(xs: List<string>, s: string) -> bool {
+fn str_has(xs: List<BuildName>, s: BuildName) -> bool {
     for x in xs { if x == s { return true } }
     false
 }
@@ -34,8 +35,8 @@ spec "annotation + export wrappers as LanguageFeatures" {
     then "the four rows ride the manifest and NOTHING flipped is left central" {
         mut owners = ""
         for b in feature_builders() {
-            if b.name == "MkAnn" || b.name == "MkAnnotatedArgs" || b.name == "MkModuleDoc"
-                || b.name == "MkExport" {
+            if b.name == BuildName("MkAnn") || b.name == BuildName("MkAnnotatedArgs") || b.name == BuildName("MkModuleDoc")
+                || b.name == BuildName("MkExport") {
                 owners = owners + "${b.name}=${b.module}/${b.kind}/${if b.spanned { "sp" } else { "flat" }} "
             }
         }
@@ -43,20 +44,20 @@ spec "annotation + export wrappers as LanguageFeatures" {
             && owners.contains("MkAnnotatedArgs=features.annotations.lowering/stmt/flat")
             && owners.contains("MkModuleDoc=features.annotations.lowering/stmt/sp")
             && owners.contains("MkExport=features.modules.lowering/stmt/flat")
-            && central_build_kind("MkAnn") == null
-            && central_build_kind("MkAnnotatedArgs") == null
-            && central_build_kind("MkModuleDoc") == null
-            && central_build_kind("MkExport") == null
+            && central_build_kind(BuildName("MkAnn")) == null
+            && central_build_kind(BuildName("MkAnnotatedArgs")) == null
+            && central_build_kind(BuildName("MkModuleDoc")) == null
+            && central_build_kind(BuildName("MkExport")) == null
     }
     then "the two stay-centrals classify exactly as the doctrine says" {
         // MkDocAnnotated: engine-central WITH a kind row (two features'
         // rules spell it). MkAnnotated: engine-core AND tableless (toy
         // vocabulary; no production rule).
-        central_build_kind("MkDocAnnotated") == BuildKind.Stmt
-            && str_has(engine_core_builds(), "MkDocAnnotated")
-            && str_has(engine_core_builds(), "MkAnnotated")
-            && str_has(central_tableless_builds(), "MkAnnotated")
-            && !str_has(feature_builders().map((b) -> b.name), "MkDocAnnotated")
+        central_build_kind(BuildName("MkDocAnnotated")) == BuildKind.Stmt
+            && str_has(engine_core_builds(), BuildName("MkDocAnnotated"))
+            && str_has(engine_core_builds(), BuildName("MkAnnotated"))
+            && str_has(central_tableless_builds(), BuildName("MkAnnotated"))
+            && !str_has(feature_builders().map((b) -> b.name), BuildName("MkDocAnnotated"))
     }
 }
 

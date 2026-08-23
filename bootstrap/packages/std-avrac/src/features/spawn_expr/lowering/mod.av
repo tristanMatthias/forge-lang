@@ -2,7 +2,7 @@
 // features.grammar + core (the F4012 import-closure invariant). One
 // `spanned` expr row: the rule-entry byte arrives as st.build_sp, -1 on
 // the interpreter path exactly as the retired central arm's `0 - 1`.
-use core.{ModulePath, Expr, byte_span, byte_span_none}
+use core.{BuildName, ModulePath, Expr, byte_span, byte_span_none}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, BuildKind}
 
 /// Grammar-native `spawn { ... }`, preserving the retired hand parser's
@@ -20,5 +20,5 @@ export fn mk_spawn_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn spawn_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.spawn_expr.lowering"), [bind_row("MkSpawn", BuildKind.Expr, 1, true, "mk_spawn_abi", mk_spawn_abi)])
+    bind_rows(ModulePath("features.spawn_expr.lowering"), [bind_row(BuildName("MkSpawn"), BuildKind.Expr, 1, true, "mk_spawn_abi", mk_spawn_abi)])
 }

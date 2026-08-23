@@ -6,6 +6,7 @@ use @std.avrac.features.templates.{templates_lang}
 use @std.avrac.features.{feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
 use @std.avrac.parse.{oracle_expr}
+use @std.avrac.core.{BuildName}
 
 spec "templates as a LanguageFeature" {
     then "the carrier has surface metadata and its rules reach the composed view" {
@@ -18,14 +19,14 @@ spec "templates as a LanguageFeature" {
     then "both rows ride the manifest and NOTHING is left central" {
         mut owners = ""
         for b in feature_builders() {
-            if b.name == "MkTemplate" || b.name == "MkTaggedTemplate" {
+            if b.name == BuildName("MkTemplate") || b.name == BuildName("MkTaggedTemplate") {
                 owners = owners + "${b.name}=${b.module}/${if b.spanned { "sp" } else { "flat" }} "
             }
         }
         owners.contains("MkTemplate=features.templates.lowering/flat")
             && owners.contains("MkTaggedTemplate=features.templates.lowering/sp")
-            && central_build_kind("MkTemplate") == null
-            && central_build_kind("MkTaggedTemplate") == null
+            && central_build_kind(BuildName("MkTemplate")) == null
+            && central_build_kind(BuildName("MkTaggedTemplate")) == null
     }
 }
 

@@ -7,6 +7,7 @@
 use @std.avrac.features.parallel_stmt.{parallel_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
+use @std.avrac.core.{BuildName}
 
 spec "parallel as a LanguageFeature" {
     then "the keyword derives from the declared grammar" {
@@ -34,9 +35,9 @@ spec "parallel as a LanguageFeature" {
     then "MkParallel rides the manifest and NOTHING is left central" {
         mut row = ""
         for b in feature_builders() {
-            if b.name == "MkParallel" { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}" }
+            if b.name == BuildName("MkParallel") { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}" }
         }
         row == "stmt/1/flat/parallel_build/features.parallel_stmt.lowering"
-            && central_build_kind("MkParallel") == null
+            && central_build_kind(BuildName("MkParallel")) == null
     }
 }

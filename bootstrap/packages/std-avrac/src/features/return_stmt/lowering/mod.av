@@ -5,7 +5,7 @@
 // parser's closure — so the F4012 import-closure invariant holds by
 // construction; the feature's passes/hooks stay in ../mod.av.
 
-use core.{ModulePath, Stmt, ExprId}
+use core.{BuildName, ModulePath, Stmt, ExprId}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr_opt, BuildKind}
 
 export fn build_return(e: ExprId?) -> Stmt {
@@ -17,5 +17,5 @@ export fn build_return_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn return_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.return_stmt.lowering"), [bind_row("build_return", BuildKind.Stmt, 1, false, "build_return_abi", build_return_abi)])
+    bind_rows(ModulePath("features.return_stmt.lowering"), [bind_row(BuildName("build_return"), BuildKind.Stmt, 1, false, "build_return_abi", build_return_abi)])
 }

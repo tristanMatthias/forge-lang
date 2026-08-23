@@ -10,8 +10,9 @@
 // here with a rationale, the same ratchet engine_core_builds carries.
 
 use @std.avrac.features.{feature_grammar_fragments}
-use @std.avrac.features.grammar.{avra_program_grammar, grammar_build_refs, engine_core_builds, str_in, Grammar}
+use @std.avrac.features.grammar.{avra_program_grammar, grammar_build_refs, engine_core_builds, str_in, Grammar, build_in}
 use @std.avrac.features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_grammar, avra_match_table_grammar}
+use @std.avrac.core.{BuildName}
 
 /// Every rule name a FEATURE fragment defines. The four family registries +
 /// the decl registry all ride feature_grammar_fragments; match's standalone
@@ -82,7 +83,7 @@ spec "t-kd4y.3.6: the spine is engine mechanism only" {
         let engine = engine_rule_names()
         mut ok = true
         for br in grammar_build_refs(avra_program_grammar()) {
-            if str_in(engine, br.rule) && !str_in(engine_core_builds(), br.name) { ok = false }
+            if str_in(engine, br.rule) && !build_in(engine_core_builds(), br.name) { ok = false }
         }
         ok
     }

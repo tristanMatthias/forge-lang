@@ -18,17 +18,17 @@
 use @std.avrac.features.grammar.{grammar_build_refs, derived_import_lines_for, builder_kind_rows, grammar_checked, parse_grammar, Grammar, BuilderBind, PState, CapVal, BuildKind}
 use @std.avrac.features.grammar.{grammar_with_builder_kinds, emit_parser_source, call_with_build_sp, new_pstate}
 use @std.avrac.features.{builder_validation_error_for, feature_builders}
-use @std.avrac.core.{FeatureName, ModulePath, ExprId}
+use @std.avrac.core.{BuildName, FeatureName, ModulePath, ExprId}
 
 /// ABI-shaped no-op — never invoked; these specs exercise validation and
 /// derivation, not execution (slice B's live pair covers that).
 fn nil_build(st: PState, vals: List<CapVal>) -> CapVal { CapVal.Nil }
 
-fn bind(name: string, kind: BuildKind, arity: int, module: ModulePath, export_name: string) -> BuilderBind {
+fn bind(name: BuildName, kind: BuildKind, arity: int, module: ModulePath, export_name: string) -> BuilderBind {
     BuilderBind { name: name, kind: kind, arity: arity, spanned: false, module: module, export_name: export_name, build: nil_build }
 }
 
-fn bind_spanned(name: string, kind: BuildKind, arity: int, module: ModulePath, export_name: string) -> BuilderBind {
+fn bind_spanned(name: BuildName, kind: BuildKind, arity: int, module: ModulePath, export_name: string) -> BuilderBind {
     BuilderBind { name: name, kind: kind, arity: arity, spanned: true, module: module, export_name: export_name, build: nil_build }
 }
 
@@ -51,8 +51,8 @@ fn toy_gram() -> Grammar {
 
 fn toy_binds() -> List<BuilderBind> {
     [
-        bind("Phantom", BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
-        bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+        bind(BuildName("Phantom"), BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
+        bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
     ]
 }
 
@@ -73,15 +73,15 @@ spec "t-kd4y.3: grammar_build_refs collects every build reference" {
     then "each `-> Name(args)` yields (rule, name, argc), in declaration order" {
         let refs = grammar_build_refs(toy_gram())
         refs.length == 2
-            && refs[0].rule == "top" && refs[0].name == "Phantom" && refs[0].argc == 1
-            && refs[1].rule == "leaf" && refs[1].name == "Zed" && refs[1].argc == 0
+            && refs[0].rule == "top" && refs[0].name == BuildName("Phantom") && refs[0].argc == 1
+            && refs[1].rule == "leaf" && refs[1].name == BuildName("Zed") && refs[1].argc == 0
     }
     then "alternation branches each contribute their build" {
         let g = grammar {
             top = "atok" -> Alpha() | "btok" -> Beta()
         }
         let refs = grammar_build_refs(grammar_checked(g))
-        refs.length == 2 && refs[0].name == "Alpha" && refs[1].name == "Beta"
+        refs.length == 2 && refs[0].name == BuildName("Alpha") && refs[1].name == BuildName("Beta")
     }
 }
 
@@ -98,14 +98,14 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             && err.contains("resolves to no builder")
     }
     then "an orphan builder (supplied, never referenced) is rejected" {
-        let orphan = [bind("Phantom", BuildKind.Expr, 0, ModulePath("features.toy"), "phantom_build")]
+        let orphan = [bind(BuildName("Phantom"), BuildKind.Expr, 0, ModulePath("features.toy"), "phantom_build")]
         let err = builder_validation_error_for(FeatureName("toy"), central_gram(), orphan)
         err.contains("Phantom") && err.contains("no rule")
     }
     then "an arity drift between rule and builder is rejected" {
         let drifted = [
-            bind("Phantom", BuildKind.Expr, 2, ModulePath("features.toy"), "phantom_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind(BuildName("Phantom"), BuildKind.Expr, 2, ModulePath("features.toy"), "phantom_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
         let err = builder_validation_error_for(FeatureName("toy"), toy_gram(), drifted)
         // t-kd4y.3 Batch A: (name, arity) is the dispatch key everywhere, so
@@ -123,8 +123,8 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             leaf = z:"ztok" -> Phantom(z)
         }
         let pair = [
-            bind("Phantom", BuildKind.Expr, 2, ModulePath("features.toy"), "phantom_pair_build"),
-            bind("Phantom", BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
+            bind(BuildName("Phantom"), BuildKind.Expr, 2, ModulePath("features.toy"), "phantom_pair_build"),
+            bind(BuildName("Phantom"), BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
         ]
         builder_validation_error_for(FeatureName("toy"), grammar_checked(g), pair) == ""
     }
@@ -139,9 +139,9 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             leaf = "ztok" -> Zed()
         }
         let spanny = [
-            BuilderBind { name: "Spanny", kind: BuildKind.Variant, arity: 1, spanned: true,
+            BuilderBind { name: BuildName("Spanny"), kind: BuildKind.Variant, arity: 1, spanned: true,
                           module: ModulePath("features.toy"), export_name: "spanny_build", build: nil_build },
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
         let err = builder_validation_error_for(FeatureName("toy"), grammar_checked(g), spanny)
         err.contains("Spanny") && err.contains("spanned") && err.contains("span protocol")
@@ -158,8 +158,8 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             leaf = "ztok" -> Zed()
         }
         let shadow = [
-            bind("Block", BuildKind.Expr, 1, ModulePath("features.toy"), "block_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind(BuildName("Block"), BuildKind.Expr, 1, ModulePath("features.toy"), "block_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
         let err = builder_validation_error_for(FeatureName("toy"), grammar_checked(g), shadow)
         err.contains("Block") && err.contains("shadows")
@@ -178,8 +178,8 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             leaf = "ztok" -> Zed()
         }
         let shadow = [
-            bind("Block", BuildKind.Stmt, 1, ModulePath("features.toy"), "block_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind(BuildName("Block"), BuildKind.Stmt, 1, ModulePath("features.toy"), "block_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
         let err = builder_validation_error_for(FeatureName("toy"), grammar_checked(g), shadow)
         err.contains("Block") && err.contains("shadows") && err.contains("central")
@@ -196,8 +196,8 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             leaf = "ztok" -> Zed()
         }
         let shadow = [
-            bind("MkNone", BuildKind.Expr, 0, ModulePath("features.toy"), "none_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind(BuildName("MkNone"), BuildKind.Expr, 0, ModulePath("features.toy"), "none_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
         let err = builder_validation_error_for(FeatureName("toy"), grammar_checked(g), shadow)
         err.contains("MkNone") && err.contains("shadows") && err.contains("central")
@@ -207,9 +207,9 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
 spec "t-kd4y.3: generated import headers derive from the manifest" {
     then "called foreign builders group per owning module; uncalled ones stay out" {
         let binds = [
-            bind("Phantom", BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
-            bind("Unused", BuildKind.Expr, 0, ModulePath("features.other"), "unused_build"),
+            bind(BuildName("Phantom"), BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind(BuildName("Unused"), BuildKind.Expr, 0, ModulePath("features.other"), "unused_build"),
         ]
         let src = "fn parse_toy(st: PState) -> CapVal {\n    phantom_build(st, [a])\n    zed_build(st, [])\n}\n"
         // The kind-row projection is what emission threads (g.builder_kinds)
@@ -219,8 +219,8 @@ spec "t-kd4y.3: generated import headers derive from the manifest" {
     }
     then "two owning modules derive two lines" {
         let binds = [
-            bind("Phantom", BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.other"), "zed_build"),
+            bind(BuildName("Phantom"), BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.other"), "zed_build"),
         ]
         let src = "fn parse_toy(st: PState) -> CapVal {\n    phantom_build(st, [a])\n    zed_build(st, [])\n}\n"
         derived_import_lines_for(src, builder_kind_rows(binds), "features.grammar", "core")
@@ -258,8 +258,8 @@ spec "t-kd4y.3: defer resolves through the manifest — the flip's registration 
         mut d = ""
         mut ed = ""
         for b in binds {
-            if b.name == "build_defer" { d = "${b.kind}/${string(b.arity)}/${b.export_name}" }
-            if b.name == "build_errdefer" { ed = "${b.kind}/${string(b.arity)}/${b.export_name}" }
+            if b.name == BuildName("build_defer") { d = "${b.kind}/${string(b.arity)}/${b.export_name}" }
+            if b.name == BuildName("build_errdefer") { ed = "${b.kind}/${string(b.arity)}/${b.export_name}" }
         }
         d == "stmt/1/build_defer_abi" && ed == "stmt/1/build_errdefer_abi"
     }
@@ -291,12 +291,12 @@ spec "t-kd4y.3 Batch B: the expression-span row — `spanned` on an expr-kind bi
         // placement); anything else has no span protocol and stays a
         // startup error.
         let ok = [
-            bind_spanned("Phantom", BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind_spanned(BuildName("Phantom"), BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
         let bad = [
-            bind_spanned("Phantom", BuildKind.Variant, 1, ModulePath("features.toy"), "phantom_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind_spanned(BuildName("Phantom"), BuildKind.Variant, 1, ModulePath("features.toy"), "phantom_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
         builder_validation_error_for(FeatureName("toy"), toy_gram(), ok) == "" &&
             builder_validation_error_for(FeatureName("toy"), toy_gram(), bad).contains("span protocol")
@@ -308,8 +308,8 @@ spec "t-kd4y.3 Batch B: the expression-span row — `spanned` on an expr-kind bi
         // so its builds read the -1 default (byte_span_none), the same
         // deliberate span-free behavior its central sp_start arms encode.
         let rows = builder_kind_rows([
-            bind_spanned("Phantom", BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind_spanned(BuildName("Phantom"), BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ])
         let src = emit_parser_source(grammar_with_builder_kinds(toy_gram(), rows))
         src.contains("call_with_build_sp(st, sp_start, phantom_build, [") &&
@@ -321,8 +321,8 @@ spec "t-kd4y.3 Batch B: the expression-span row — `spanned` on an expr-kind bi
         // and a stmt row whose span belongs to an INTERIOR node (MkWhenStmt's
         // shape) is now expressible at all.
         let rows = builder_kind_rows([
-            bind_spanned("Phantom", BuildKind.Stmt, 1, ModulePath("features.toy"), "phantom_build"),
-            bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
+            bind_spanned(BuildName("Phantom"), BuildKind.Stmt, 1, ModulePath("features.toy"), "phantom_build"),
+            bind(BuildName("Zed"), BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ])
         let src = emit_parser_source(grammar_with_builder_kinds(toy_gram(), rows))
         src.contains("call_with_build_sp(st, sp_start, phantom_build, [") &&

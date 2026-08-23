@@ -9,8 +9,9 @@ use @std.avrac.features.impl_decl.{impl_decl_lang}
 use @std.avrac.features.impl_decl.lowering.{impl_decl_builds}
 use @std.avrac.features.{with_builders, feature_keywords, feature_gram, feature_builders, builder_validation_error}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
+use @std.avrac.core.{BuildName}
 
-fn manifest_row_desc(name: string) -> string {
+fn manifest_row_desc(name: BuildName) -> string {
     mut row = ""
     for b in feature_builders() {
         if b.name == name { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.module}.${b.export_name}" }
@@ -41,17 +42,17 @@ spec "impl as a LanguageFeature" {
         builder_validation_error(with_builders(impl_decl_lang(), impl_decl_builds())) == ""
     }
     then "MkImpl, MkMethod and MkAssocTypeDef ride the manifest, owned by the feature" {
-        manifest_row_desc("MkImpl") == "stmt/3/flat/features.impl_decl.lowering.impl_build" &&
-            manifest_row_desc("MkMethod") == "stmt/4/flat/features.impl_decl.lowering.method_build" &&
-            manifest_row_desc("MkAssocTypeDef") == "stmt/2/flat/features.impl_decl.lowering.mk_assoc_type_def_abi"
+        manifest_row_desc(BuildName("MkImpl")) == "stmt/3/flat/features.impl_decl.lowering.impl_build" &&
+            manifest_row_desc(BuildName("MkMethod")) == "stmt/4/flat/features.impl_decl.lowering.method_build" &&
+            manifest_row_desc(BuildName("MkAssocTypeDef")) == "stmt/2/flat/features.impl_decl.lowering.mk_assoc_type_def_abi"
     }
     then "the engine carries no impl classification any more" {
         // The purity-ledger half of the flip: a central row left behind would
         // mean the interpreter lowered through the engine while the generated
         // parser called the feature adapter. MkAssocTypeDef joined the flip
         // in t-kd4y.3.7 (the last unflipped feature-owned build).
-        central_build_kind("MkImpl") == null && central_build_kind("MkMethod") == null
-            && central_build_kind("MkAssocTypeDef") == null
+        central_build_kind(BuildName("MkImpl")) == null && central_build_kind(BuildName("MkMethod")) == null
+            && central_build_kind(BuildName("MkAssocTypeDef")) == null
     }
     then "the declared rules reach the whole-program view from the feature file" {
         let own = render_grammar(feature_gram(impl_decl_lang()))

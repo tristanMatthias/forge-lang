@@ -7,9 +7,9 @@
 // twice. t-kd4y prototype: defer + match first; the rest migrates only
 // after the user ratifies the shape.
 
-use core.{FeatureName, Registry}
+use core.{FeatureName, BuildName, Registry}
 use features.grammar.{grammar_literals, grammar_checked, grammar_startup_fail, compose_fragments, Grammar, GrammarParse, text_is_word}
-use features.grammar.{grammar_build_refs, central_build_kind, central_tableless_builds, str_in, BuilderBind, BuildKind}
+use features.grammar.{grammar_build_refs, central_build_kind, central_tableless_builds, str_in, build_in, BuilderBind, BuildKind}
 use list_ops.{list_dedup_str}
 
 /// Register a LanguageFeature's hooks into the dispatch registry — the
@@ -234,11 +234,11 @@ export fn manifest_defects_for(fname: FeatureName, gram: Grammar, builders: List
 /// loop (t-kd4y.3.5.8), and in the shadow loop it let a feature SUPPLY a
 /// builder named MkNone — which the manifest-first consult order in both
 /// engines would silently prefer over the engine arm.
-fn is_central_build(name: string) -> bool {
-    central_build_kind(name) != null || str_in(central_tableless_builds(), name)
+fn is_central_build(name: BuildName) -> bool {
+    central_build_kind(name) != null || build_in(central_tableless_builds(), name)
 }
 
-fn supplies(builders: List<BuilderBind>, name: string) -> bool {
+fn supplies(builders: List<BuilderBind>, name: BuildName) -> bool {
     for b in builders { if b.name == name { return true } }
     false
 }

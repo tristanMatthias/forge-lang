@@ -16,7 +16,7 @@
 // enforces (a supplied builder no rule in its gram references is a startup
 // failure).
 
-use core.{ModulePath, ParamEntry, Stmt, StmtId, TypeParamEntry, ValueType, byte_span_none, method_mangled_name, type_expr_to_vtype, vtype_from_name}
+use core.{BuildName, ModulePath, ParamEntry, Stmt, StmtId, TypeParamEntry, ValueType, byte_span_none, method_mangled_name, type_expr_to_vtype, vtype_from_name}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_present, capval_to_pentry_list, capval_to_stmt_list, capval_to_texpr, capval_tok_text, BuildKind}
 
 /// `fn name ( params? ) ( "->" ret )? { body }` — one impl method, built with
@@ -87,7 +87,7 @@ export fn mk_assoc_type_def_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// The impl feature's rows — bound under the EXISTING `Mk` names, so the
 /// gram text is untouched by the flip (the row name IS the gram ref).
 export fn impl_decl_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.impl_decl.lowering"), [bind_row("MkImpl", BuildKind.Stmt, 3, false, "impl_build", impl_build),
-     bind_row("MkMethod", BuildKind.Stmt, 4, false, "method_build", method_build),
-     bind_row("MkAssocTypeDef", BuildKind.Stmt, 2, false, "mk_assoc_type_def_abi", mk_assoc_type_def_abi)])
+    bind_rows(ModulePath("features.impl_decl.lowering"), [bind_row(BuildName("MkImpl"), BuildKind.Stmt, 3, false, "impl_build", impl_build),
+     bind_row(BuildName("MkMethod"), BuildKind.Stmt, 4, false, "method_build", method_build),
+     bind_row(BuildName("MkAssocTypeDef"), BuildKind.Stmt, 2, false, "mk_assoc_type_def_abi", mk_assoc_type_def_abi)])
 }

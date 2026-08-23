@@ -11,7 +11,7 @@
 // touches no rule text. Their cores came verbatim from executor.av; only
 // the sp_start ARGUMENT became the `spanned` protocol's st.build_sp.
 
-use core.{ModulePath, Expr, ExprId, SrcPos, Stmt, StmtId, Tk, ValueType}
+use core.{BuildName, ModulePath, Expr, ExprId, SrcPos, Stmt, StmtId, Tk, ValueType}
 use features.grammar.{Token, PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_tok_list, capval_tok_text, mk_stamp_stmt_at, param_entries_from_toks, BuildKind}
 
 /// The process-wide gensym counter behind the destructure loop's temp name.
@@ -105,7 +105,7 @@ export fn mk_for_destructure_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// branch; the Mk-named pair covers the tuple-destructure branch under the
 /// names its gram already spells.
 export fn for_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.for_stmt.lowering"), [bind_row("build_for", BuildKind.Stmt, 4, true, "build_for_abi", build_for_abi),
-     bind_row("MkForBinding", BuildKind.Toks, 2, false, "mk_for_binding_abi", mk_for_binding_abi),
-     bind_row("MkForDestructure", BuildKind.Stmt, 3, true, "mk_for_destructure_abi", mk_for_destructure_abi)])
+    bind_rows(ModulePath("features.for_stmt.lowering"), [bind_row(BuildName("build_for"), BuildKind.Stmt, 4, true, "build_for_abi", build_for_abi),
+     bind_row(BuildName("MkForBinding"), BuildKind.Toks, 2, false, "mk_for_binding_abi", mk_for_binding_abi),
+     bind_row(BuildName("MkForDestructure"), BuildKind.Stmt, 3, true, "mk_for_destructure_abi", mk_for_destructure_abi)])
 }
