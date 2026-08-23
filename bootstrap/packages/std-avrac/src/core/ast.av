@@ -3099,57 +3099,107 @@ export fn tk_is_bool_lit(tk: Tk) -> bool {
 /// through to "". Kept as a wildcard rather than an explicit arm so a NEW id
 /// added without a spelling also lands on "" instead of failing to compile in a
 /// map that cannot answer for it.
-export fn kwid_keyword_str(id: KwId) -> string {
-    match id {
-        .And -> "kw_and"
-        .Break -> "kw_break"
-        .Catch -> "kw_catch"
-        .Channel -> "kw_channel"
-        .Const -> "kw_const"
-        .Continue -> "kw_continue"
-        .Defer -> "kw_defer"
-        .Else -> "kw_else"
-        .Errdefer -> "kw_errdefer"
-        .Enum -> "kw_enum"
-        .Export -> "kw_export"
-        .Extern -> "kw_extern"
-        .False -> "kw_false"
-        .Fn -> "kw_fn"
-        .For -> "kw_for"
-        .Given -> "kw_given"
-        .If -> "kw_if"
-        .Impl -> "kw_impl"
-        .In -> "kw_in"
-        .Is -> "kw_is"
-        .Let -> "kw_let"
-        .Match -> "kw_match"
-        .Mod -> "kw_mod"
-        .Mut -> "kw_mut"
-        .Not -> "kw_not"
-        .Null -> "kw_null"
-        .None -> "kw_none"
-        .Or -> "kw_or"
-        .Parallel -> "kw_parallel"
-        .Return -> "kw_return"
-        .Spawn -> "kw_spawn"
-        .Isolated -> "kw_isolated"
-        .Select -> "kw_select"
-        .Shape -> "kw_shape"
-        .Spec -> "kw_spec"
-        .Then -> "kw_then"
-        .Trait -> "kw_trait"
-        .True -> "kw_true"
-        .Type -> "kw_type"
-        .Use -> "kw_use"
-        .Where -> "kw_where"
-        .While -> "kw_while"
-        .With -> "kw_with"
-        .Component -> "kw_component"
-        .Dyn -> "kw_dyn"
-        .When -> "kw_when"
-        .Quote -> "kw_quote"
-        _ -> ""
+/// THE keyword list. One row per keyword, and the SPELLING is the only fact —
+/// everything else about a keyword is a restatement of it and is DERIVED below:
+///
+///   the KwId variant name   capitalize(spelling)        `if` -> If
+///   kwid_name               "Kw" + capitalize(spelling) `if` -> KwIf
+///   kwid_keyword_str        "kw_" + spelling            `if` -> kw_if
+///
+/// That is not an assumption. It was MEASURED across all 47 non-reserved
+/// keywords before this table replaced the three hand-written 52-line match
+/// ladders that used to state each fact separately: zero deviations, in either
+/// helper, for every keyword. Those ladders were four places to edit when adding
+/// one keyword, three of which could only ever repeat the spelling.
+///
+/// RESERVED words are deliberately absent. Twelve spellings share the single
+/// `KwId.Reserved` id, so `id -> spelling` is not a function for them; they live
+/// in `reserved_spellings()` (parse/token_table.av) and have no derived name.
+export type KwRow = { id: KwId, spelling: string }
+
+export fn kw_rows() -> List<KwRow> {
+    table<KwRow> {
+        id        | spelling
+        KwId.And       | "and"
+        KwId.Catch     | "catch"
+        KwId.Channel   | "channel"
+        KwId.Const     | "const"
+        KwId.Else      | "else"
+        KwId.Errdefer  | "errdefer"
+        KwId.False     | "false"
+        KwId.Fn        | "fn"
+        KwId.If        | "if"
+        KwId.Let       | "let"
+        KwId.Mut       | "mut"
+        KwId.Not       | "not"
+        KwId.Null      | "null"
+        KwId.None      | "none"
+        KwId.Or        | "or"
+        KwId.Return    | "return"
+        KwId.True      | "true"
+        KwId.For       | "for"
+        KwId.In        | "in"
+        KwId.Where     | "where"
+        KwId.While     | "while"
+        KwId.Type      | "type"
+        KwId.Enum      | "enum"
+        KwId.Match     | "match"
+        KwId.Export    | "export"
+        KwId.Use       | "use"
+        KwId.Mod       | "mod"
+        KwId.Impl      | "impl"
+        KwId.Extern    | "extern"
+        KwId.Break     | "break"
+        KwId.Continue  | "continue"
+        KwId.Defer     | "defer"
+        KwId.Dyn       | "dyn"
+        KwId.Trait     | "trait"
+        KwId.With      | "with"
+        KwId.When      | "when"
+        KwId.Is        | "is"
+        KwId.Spec      | "spec"
+        KwId.Given     | "given"
+        KwId.Then      | "then"
+        KwId.Select    | "select"
+        KwId.Shape     | "shape"
+        KwId.Component | "component"
+        KwId.Parallel  | "parallel"
+        KwId.Spawn     | "spawn"
+        KwId.Isolated  | "isolated"
+        KwId.Quote     | "quote"
     }
+}
+
+/// The spelling a keyword id is written as. "" for Reserved (twelve spellings
+/// share it, so there is no single answer) and for anything unlisted.
+export fn kwid_spelling(id: KwId) -> string {
+    for r in kw_rows() { if r.id == id { return r.spelling } }
+    ""
+}
+
+/// Uppercase the first byte. Keyword spellings are ASCII lowercase words by
+/// construction, so a byte-wise map is exact here.
+fn kw_cap(s: string) -> string {
+    if s.length == 0 { return "" }
+    let rest = s.substring(1, s.length)
+    let up = match s.substring(0, 1) {
+        "a" -> "A"  "b" -> "B"  "c" -> "C"  "d" -> "D"  "e" -> "E"
+        "f" -> "F"  "g" -> "G"  "h" -> "H"  "i" -> "I"  "j" -> "J"
+        "k" -> "K"  "l" -> "L"  "m" -> "M"  "n" -> "N"  "o" -> "O"
+        "p" -> "P"  "q" -> "Q"  "r" -> "R"  "s" -> "S"  "t" -> "T"
+        "u" -> "U"  "v" -> "V"  "w" -> "W"  "x" -> "X"  "y" -> "Y"
+        "z" -> "Z"  _ -> s.substring(0, 1)
+    }
+    up + rest
+}
+
+export fn kwid_keyword_str(id: KwId) -> string {
+    // DERIVED from kw_rows(). Was a 52-line match ladder restating "kw_" + the
+    // spelling for all 47 keywords. Reserved has no spelling, so "" — the same
+    // answer the ladder's catch-all gave.
+    let sp = kwid_spelling(id)
+    if sp == "" { return "" }
+    "kw_" + sp
 }
 
 /// Render a `Tk` as the SOURCE EXPRESSION that reconstructs it — "Tk.Identifier",
@@ -3210,56 +3260,12 @@ export fn tk_keyword_str(tk: Tk) -> string {
 /// deliberately match the legacy `Tk.Kw*` names so lex_dump output is unchanged
 /// while both representations coexist through Phase A.
 export fn kwid_name(id: KwId) -> string {
-    match id {
-        .And -> "KwAnd"
-        .Break -> "KwBreak"
-        .Catch -> "KwCatch"
-        .Channel -> "KwChannel"
-        .Component -> "KwComponent"
-        .Const -> "KwConst"
-        .Continue -> "KwContinue"
-        .Defer -> "KwDefer"
-        .Dyn -> "KwDyn"
-        .Else -> "KwElse"
-        .Enum -> "KwEnum"
-        .Errdefer -> "KwErrdefer"
-        .Export -> "KwExport"
-        .Extern -> "KwExtern"
-        .False -> "KwFalse"
-        .Fn -> "KwFn"
-        .For -> "KwFor"
-        .Given -> "KwGiven"
-        .If -> "KwIf"
-        .Impl -> "KwImpl"
-        .In -> "KwIn"
-        .Is -> "KwIs"
-        .Isolated -> "KwIsolated"
-        .Let -> "KwLet"
-        .Match -> "KwMatch"
-        .Mod -> "KwMod"
-        .Mut -> "KwMut"
-        .None -> "KwNone"
-        .Not -> "KwNot"
-        .Null -> "KwNull"
-        .Or -> "KwOr"
-        .Parallel -> "KwParallel"
-        .Quote -> "KwQuote"
-        .Reserved -> "KwReserved"
-        .Return -> "KwReturn"
-        .Select -> "KwSelect"
-        .Shape -> "KwShape"
-        .Spawn -> "KwSpawn"
-        .Spec -> "KwSpec"
-        .Then -> "KwThen"
-        .Trait -> "KwTrait"
-        .True -> "KwTrue"
-        .Type -> "KwType"
-        .Use -> "KwUse"
-        .When -> "KwWhen"
-        .Where -> "KwWhere"
-        .While -> "KwWhile"
-        .With -> "KwWith"
-    }
+    // DERIVED from kw_rows(). Was a 52-line match ladder restating
+    // "Kw" + capitalize(spelling). Reserved keeps its explicit name: twelve
+    // spellings share that id, so there is nothing to capitalize.
+    let sp = kwid_spelling(id)
+    if sp == "" { return "KwReserved" }
+    "Kw" + kw_cap(sp)
 }
 
 export fn tk_name(tk: Tk) -> string {

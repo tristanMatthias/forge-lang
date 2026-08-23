@@ -19,7 +19,7 @@
 // only for human readability. token_table_test.av proves every rule is faithful to
 // the hand lexer (each spelling lexes to exactly its declared token) THROUGH the
 // same `lex_dump` oracle the byte-scanner uses.
-use core.{KwId, Tk}
+use core.{KwId, Tk, kw_rows}
 
 /// One fixed-spelling terminal: the exact source text `spelling` lexes to token
 /// kind `tk`. The declarative `">>" = Tk.Shr` binding. `spelling` is pure ASCII
@@ -122,70 +122,44 @@ export const OPERATOR_RULE_COUNT = 38
 /// trie handles that naturally (many terminals, one tk). Kept in lockstep with
 /// p_keyword_kind — token_table_test.av lexes every spelling through lex_dump and
 /// asserts the count, so a dropped or renamed keyword fails the suite.
+/// The RESERVED-FUTURE spellings. Twelve words the lexer recognises so they
+/// cannot be used as identifiers, all mapping to the single `KwId.Reserved`.
+/// They stay listed here rather than in core's `kw_rows()` because that table is
+/// keyed `id -> spelling`, and twelve spellings sharing one id is not a function.
+/// They are also the one class no feature owns — reserving a word means exactly
+/// that — which is why `keyword_agreement_test` exempts them and nothing else.
+export fn reserved_spellings() -> List<string> {
+    [
+        "async",
+        "await",
+        "yield",
+        "move",
+        "ref",
+        "unsafe",
+        "macro",
+        "systems",
+        "bare",
+        "hardware",
+        "owned",
+        "borrow"
+    ]
+}
+
+/// DERIVED, not declared. Every keyword row is `spelling -> Tk.Keyword(id)`, and
+/// core's `kw_rows()` already states that pairing as the single source it also
+/// derives `kwid_name` and `kwid_keyword_str` from. Listing them again here was
+/// a second declaration of the same 47 facts, free to drift from the first.
+///
+/// Adding a keyword is now: one row in `kw_rows()` (core/ast.av) plus its
+/// `KwId` variant. This function, both name helpers, and the generated keyword
+/// scanner all follow. `keyword_agreement_test` pins the result against what the
+/// feature grammars declare, so a keyword that exists here and nowhere else — or
+/// vice versa — is a red test rather than a silent misfire.
 export fn keyword_rules() -> List<LitRule> {
-    table<LitRule> {
-        spelling    | tk
-        "and"       | Tk.Keyword(KwId.And)
-        "catch"     | Tk.Keyword(KwId.Catch)
-        "channel"   | Tk.Keyword(KwId.Channel)
-        "const"     | Tk.Keyword(KwId.Const)
-        "else"      | Tk.Keyword(KwId.Else)
-        "errdefer"  | Tk.Keyword(KwId.Errdefer)
-        "false"     | Tk.Keyword(KwId.False)
-        "fn"        | Tk.Keyword(KwId.Fn)
-        "if"        | Tk.Keyword(KwId.If)
-        "let"       | Tk.Keyword(KwId.Let)
-        "mut"       | Tk.Keyword(KwId.Mut)
-        "not"       | Tk.Keyword(KwId.Not)
-        "null"      | Tk.Keyword(KwId.Null)
-        "none"      | Tk.Keyword(KwId.None)
-        "or"        | Tk.Keyword(KwId.Or)
-        "return"    | Tk.Keyword(KwId.Return)
-        "true"      | Tk.Keyword(KwId.True)
-        "for"       | Tk.Keyword(KwId.For)
-        "in"        | Tk.Keyword(KwId.In)
-        "where"     | Tk.Keyword(KwId.Where)
-        "while"     | Tk.Keyword(KwId.While)
-        "type"      | Tk.Keyword(KwId.Type)
-        "enum"      | Tk.Keyword(KwId.Enum)
-        "match"     | Tk.Keyword(KwId.Match)
-        "export"    | Tk.Keyword(KwId.Export)
-        "use"       | Tk.Keyword(KwId.Use)
-        "mod"       | Tk.Keyword(KwId.Mod)
-        "impl"      | Tk.Keyword(KwId.Impl)
-        "extern"    | Tk.Keyword(KwId.Extern)
-        "break"     | Tk.Keyword(KwId.Break)
-        "continue"  | Tk.Keyword(KwId.Continue)
-        "defer"     | Tk.Keyword(KwId.Defer)
-        "dyn"       | Tk.Keyword(KwId.Dyn)
-        "trait"     | Tk.Keyword(KwId.Trait)
-        "with"      | Tk.Keyword(KwId.With)
-        "when"      | Tk.Keyword(KwId.When)
-        "is"        | Tk.Keyword(KwId.Is)
-        "spec"      | Tk.Keyword(KwId.Spec)
-        "given"     | Tk.Keyword(KwId.Given)
-        "then"      | Tk.Keyword(KwId.Then)
-        "select"    | Tk.Keyword(KwId.Select)
-        "shape"     | Tk.Keyword(KwId.Shape)
-        "component" | Tk.Keyword(KwId.Component)
-        "parallel"  | Tk.Keyword(KwId.Parallel)
-        "spawn"     | Tk.Keyword(KwId.Spawn)
-        "isolated"  | Tk.Keyword(KwId.Isolated)
-        "quote"     | Tk.Keyword(KwId.Quote)
-        // Reserved future keywords — all collapse to Tk.KwReserved.
-        "async"     | Tk.Keyword(KwId.Reserved)
-        "await"     | Tk.Keyword(KwId.Reserved)
-        "yield"     | Tk.Keyword(KwId.Reserved)
-        "move"      | Tk.Keyword(KwId.Reserved)
-        "ref"       | Tk.Keyword(KwId.Reserved)
-        "unsafe"    | Tk.Keyword(KwId.Reserved)
-        "macro"     | Tk.Keyword(KwId.Reserved)
-        "systems"   | Tk.Keyword(KwId.Reserved)
-        "bare"      | Tk.Keyword(KwId.Reserved)
-        "hardware"  | Tk.Keyword(KwId.Reserved)
-        "owned"     | Tk.Keyword(KwId.Reserved)
-        "borrow"    | Tk.Keyword(KwId.Reserved)
-    }
+    mut out: List<LitRule> = []
+    for r in kw_rows() { out.push(LitRule { spelling: r.spelling, tk: Tk.Keyword(r.id) }) }
+    for sp in reserved_spellings() { out.push(LitRule { spelling: sp, tk: Tk.Keyword(KwId.Reserved) }) }
+    out
 }
 
 /// The exact keyword count `keyword_rules` must have (token_table_test.av guard).

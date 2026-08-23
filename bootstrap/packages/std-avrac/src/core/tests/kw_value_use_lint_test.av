@@ -88,18 +88,28 @@ fn value_use_sites() -> List<string> {
 
 spec "t-vcb1: a payload keyword is never handed onward where `==` would decide" {
     then "the lint reads real sources — anti-vacuity" {
-        // Without this the arm below passes on an unreadable path list, which is
-        // how a source lint rots into a no-op.
-        // Counts OCCURRENCES, not files: token_table.av alone carries 59 keyword
-        // rows, so a threshold on occurrences degrades loudly if the table moves
-        // or a path goes stale, where a file count would sit at 1 and look fine.
+        // TWO checks, because one occurrence threshold is no longer enough.
+        //
+        // This used to assert `total > 50`, reasoning that token_table.av alone
+        // carried 59 keyword rows so the count would degrade loudly if the table
+        // moved. It did exactly that, and correctly: keyword_rules() is now
+        // DERIVED from core's kw_rows(), so those 59 literal constructions are
+        // gone and 7 remain tree-wide. The number dropped because the hazard
+        // sites really went away — not because the lint stopped reading.
+        //
+        // So: every path must still yield real source (catches a stale path,
+        // which a low occurrence floor alone would hide), AND some construction
+        // must still exist (catches the constructor vanishing entirely).
         mut total = 0
+        mut unreadable = 0
         for path in linted_files() {
-            for line in avra_selfhost_read_file(path).split("\n") {
+            let src = avra_selfhost_read_file(path)
+            if src.length < 100 { unreadable = unreadable + 1 }
+            for line in src.split("\n") {
                 if line.contains("Tk.Keyword(KwId.") { total = total + 1 }
             }
         }
-        total > 50
+        unreadable == 0 && total > 3
     }
 
     then "no non-test source passes a constructed Tk.Keyword onward" {
