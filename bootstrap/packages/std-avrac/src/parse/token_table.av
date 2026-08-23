@@ -19,7 +19,7 @@
 // only for human readability. token_table_test.av proves every rule is faithful to
 // the hand lexer (each spelling lexes to exactly its declared token) THROUGH the
 // same `lex_dump` oracle the byte-scanner uses.
-use core.{KwId, Tk, kw_rows}
+use core.{KwId, Tk, OpId, kw_rows, op_rows}
 
 /// One fixed-spelling terminal: the exact source text `spelling` lexes to token
 /// kind `tk`. The declarative `">>" = Tk.Shr` binding. `spelling` is pure ASCII
@@ -49,59 +49,18 @@ export type OpMatch = { tk: Tk, len: int, spelling: string }
 /// Kept in lockstep with the hand lexer's arms — token_table_test.av fails the
 /// moment a rule here disagrees with `lex_dump`, and asserts the count so a
 /// dropped or stray rule can't slip through.
+/// DERIVED, not declared. Every operator row is `spelling -> Tk.<variant>`, and core's
+/// `op_rows()` already states that pairing as the single source `opid_spelling` and
+/// `tk_name` also read. Listing the 38 pairs again here was a second declaration free to
+/// drift from the first — the same duplication `keyword_rules()` shed.
+///
+/// The `tk` a row carries is still the BARE variant (`Tk.Comma`), not `Tk.Op(OpId.Comma)`:
+/// Phase A only introduces the collapsed token, and nothing constructs it until the seed
+/// train advances (t-y2i7.15).
 export fn operator_rules() -> List<LitRule> {
-    table<LitRule> {
-        spelling | tk
-        // ── `-` family ──
-        "->"     | Tk.Arrow
-        "-"      | Tk.Minus
-        // ── `.` family ──
-        ".."     | Tk.DotDot
-        "."      | Tk.Dot
-        // ── `?` family ──
-        "??"     | Tk.QuestionQuestion
-        "?."     | Tk.QuestionDot
-        "?"      | Tk.Question
-        // ── `&` family ──
-        "&&"     | Tk.AmpAmp
-        "&"      | Tk.Amp
-        // ── `|` family ──
-        "||"     | Tk.PipePipe
-        "|>"     | Tk.PipeGt
-        "|"      | Tk.Pipe
-        // ── `!` family ──
-        "!="     | Tk.BangEqual
-        "!"      | Tk.Bang
-        // ── `=` family ──
-        "=="     | Tk.EqualEqual
-        "="      | Tk.Equal
-        // ── `<` family ──
-        "<<"     | Tk.Shl
-        "<="     | Tk.LessEqual
-        "<-"     | Tk.LeftArrow
-        "<"      | Tk.Less
-        // ── `>` family ──
-        ">>"     | Tk.Shr
-        ">="     | Tk.GreaterEqual
-        ">"      | Tk.Greater
-        // ── `/` (bare division only; the `//`/`/*` comment leads open modes) ──
-        "/"      | Tk.Slash
-        // ── single-character punctuation with NO compound form ──
-        ","      | Tk.Comma
-        "("      | Tk.LeftParen
-        ")"      | Tk.RightParen
-        "{"      | Tk.LeftBrace
-        "}"      | Tk.RightBrace
-        "["      | Tk.LeftBracket
-        "]"      | Tk.RightBracket
-        "+"      | Tk.Plus
-        "*"      | Tk.Star
-        ":"      | Tk.Colon
-        "@"      | Tk.At
-        "^"      | Tk.Caret
-        "~"      | Tk.Tilde
-        "%"      | Tk.Percent
-    }
+    mut out: List<LitRule> = []
+    for r in op_rows() { out.push(LitRule { spelling: r.spelling, tk: r.tk }) }
+    out
 }
 
 /// The exact rule count `operator_rules` must have — a truncation/stray-entry
