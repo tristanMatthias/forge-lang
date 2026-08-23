@@ -19,7 +19,7 @@
 // with a per-spec log (the repo's exit-status idiom) — never `|| true` or a
 // parsed `rc=$?`.
 
-use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_getpid}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_selfhost_write_file, avra_getpid}
 
 extern fn avra_slot_gate_threshold_for(total_kb: int) -> int
 extern fn avra_slot_gate_should_wait(avail_kb: int, threshold_kb: int) -> int
@@ -227,12 +227,37 @@ spec "the slot gate is re-entrant — a child of a slot-holder does not queue" {
         rc != 0
     }
     then "the SAME setup completes when the process is marked as already holding one" {
-        // The deadlock, fixed: the child sees the inherited marker and proceeds
-        // instead of queueing for a slot its parent will never release.
+        // The BYPASS branch in isolation. On its own this is NOT a guard for the
+        // fix — it injects the marker by hand, so it would pass even if nothing
+        // ever SET it. The nested spec below is what covers that half.
         let dir = "${slot_dir()}_reentry_fix"
         let fd = hold_slot0(dir)
         let rc = check_gated_rc("999999", dir, "AVRA_SLOT_HELD=1 AVRA_COMPILE_SLOT_WIDTH=1 ", "10", "/dev/null")
         let _ = avra_flock_unlock(fd)
+        rc == 0
+    }
+
+    then "a REAL slot-holder's child completes — the deadlock itself, end to end" {
+        // The one that actually guards the fix. Nothing is injected: a parent
+        // `bs2` takes the only slot under forced pressure, then shells out to a
+        // child `bs2`. The child must see the marker its PARENT set and proceed.
+        //
+        // Without the setenv calls this is the CI hang in miniature — the parent
+        // holds the slot, the child queues for it, the parent cannot exit until
+        // the child returns, and `timeout` reaps the pair.
+        let dir = "${slot_dir()}_nested"
+        let _ = avra_shell_exec("mkdir -p '${dir}'")
+        let fixture = "/tmp/avra_slot_nested_${string(avra_getpid())}.av"
+        let child_cmd = "./build/bs2 check '${SMALL_FILE}'"
+        let src = "use @std.avrac.core.{avra_shell_exec_status}\n"
+            + "fn main() -> int {\n"
+            + "    avra_shell_exec_status(\"${child_cmd}\")\n"
+            + "}\n"
+        let _ = avra_selfhost_write_file(fixture, src)
+        let rc = avra_shell_exec_status(
+            "AVRA_SLOT_GATE_MB=999999 AVRA_COMPILE_SLOT_WIDTH=1 AVRA_COMPILE_SLOT_DIR='${dir}' "
+            + "timeout 60 ./build/bs2 run '${fixture}' > /dev/null 2>&1")
+        let _ = avra_shell_exec("rm -f '${fixture}'")
         rc == 0
     }
 }
