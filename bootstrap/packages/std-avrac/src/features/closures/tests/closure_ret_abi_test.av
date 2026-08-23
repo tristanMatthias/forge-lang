@@ -1,0 +1,77 @@
+// t-21gy: a fn VALUE whose callee returns `bool` must be read as i1, not i64.
+//
+// `avra_closure_call_N` (runtime.c) is declared `i64 (i64, ...)` and dispatches
+// every target through `int64_t (*)(int64_t, …)`, so the value coming back is an
+// i64 whatever the callee actually returns. An Avra `bool` lowers to **i1**, and
+// the ABI leaves an i1 return's upper 63 bits UNDEFINED. The typed seams used to
+// relabel that raw i64 as `.Bool` without converting it, so the branch emitter
+// tested all 64 bits and a `false` return with garbage above bit 0 read as TRUE.
+//
+// WHY THIS TEST INSPECTS IR RATHER THAN BEHAVIOUR: the defect does not reproduce
+// on AArch64, which happens to leave those bits clean. A runtime assertion here
+// would pass with OR without the fix on a macOS dev box — vacuous exactly where
+// it is needed. The emitted IR is the same on every platform, so that is what is
+// pinned: the call result must be narrowed (`trunc i64 … to i1`) and must NOT be
+// branched on as a full i64.
+//
+// The bug this caught: a terminal table whose rows held `matches: fn(Tk) -> bool`
+// classified every token as the FIRST row, because that row's always-false
+// predicate read true. Number literals lexed as identifiers and the built
+// compiler rejected `let xs = [1, 2, 3]` with ``undefined variable `1```.
+
+use @std.avrac.core.{ avra_shell_exec, avra_getpid }
+
+fn fixture_ir() -> string {
+    let dir = "build/t21gy_${string(avra_getpid())}"
+    let src = "${dir}/probe.av"
+    let _ = avra_shell_exec("mkdir -p '${dir}'")
+    let _w = avra_shell_exec("cat > '${src}' <<'AVEOF'\n"
+        + "type Row = { name: string, matches: fn(int) -> bool }\n"
+        + "fn never_m(n: int) -> bool { false }\n"
+        + "fn is_six(n: int) -> bool { n == 6 }\n"
+        + "fn rows() -> List<Row> {\n"
+        + "    [ Row { name: \"no\", matches: never_m }, Row { name: \"yes\", matches: is_six } ]\n"
+        + "}\n"
+        + "fn pick(n: int) -> string {\n"
+        + "    for r in rows() { if r.matches(n) { return r.name } }\n"
+        + "    \"none\"\n"
+        + "}\n"
+        + "fn main() { println(pick(6)) }\n"
+        + "AVEOF")
+    let _c = avra_shell_exec("./build/bs2 compile '${src}' 2>&1")
+    let ir = avra_shell_exec("cat '${src}.ll' 2>/dev/null")
+    let _rm = avra_shell_exec("rm -rf '${dir}'")
+    ir
+}
+
+spec "t-21gy: a bool-returning fn value is read as i1, not i64" {
+    given "a struct field typed `fn(int) -> bool`, called through the field" {
+        let ir = fixture_ir()
+
+        then "the fixture really produced a closure call — anti-vacuity" {
+            // Without this the two assertions below pass on an empty string,
+            // which is what a broken fixture path produces.
+            ir.contains("avra_closure_call_")
+        }
+
+        then "the closure-call result itself is NARROWED, not some other value" {
+            // A bare `ir.contains("trunc i64")` is NOT discriminating — the IR
+            // holds truncs for unrelated reasons and it passes with the defect
+            // present (measured). Check the line immediately after the closure
+            // call instead, which is where the narrowing has to land.
+            mut narrowed = false
+            mut prev_was_call = false
+            for line in ir.split("\n") {
+                if prev_was_call && line.contains("trunc i64") { narrowed = true }
+                prev_was_call = line.contains("avra_closure_call_")
+            }
+            narrowed
+        }
+
+        then "and the branch is NOT taken on the full i64" {
+            // The defect's signature: `icmp ne i64 %r, 0` on a closure-call
+            // result. Bit 0 carries the bool; bits 1-63 are undefined.
+            !ir.contains("%if_cond = icmp ne i64")
+        }
+    }
+}
