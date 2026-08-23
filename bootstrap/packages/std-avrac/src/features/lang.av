@@ -7,7 +7,7 @@
 // twice. t-kd4y prototype: defer + match first; the rest migrates only
 // after the user ratifies the shape.
 
-use core.{Registry}
+use core.{FeatureName, Registry}
 use features.grammar.{grammar_literals, grammar_checked, grammar_startup_fail, compose_fragments, Grammar, GrammarParse, text_is_word}
 use features.grammar.{grammar_build_refs, central_build_kind, central_tableless_builds, str_in, BuilderBind, BuildKind}
 use list_ops.{list_dedup_str}
@@ -75,7 +75,7 @@ export enum ManifestDefect {
 /// A defect plus the feature that owns it. Kept separate from the defect so
 /// the same defect type can be reported for any feature without re-threading
 /// the name through every constructor.
-export type FeatureDefect = { feature: string, defect: ManifestDefect }
+export type FeatureDefect = { feature: FeatureName, defect: ManifestDefect }
 
 /// Render one defect. The ONLY place manifest-defect prose lives, so wording
 /// changes cannot drift between the six cases.
@@ -115,7 +115,11 @@ export fn render_manifest_defect(fd: FeatureDefect) -> string {
 ///      the central arm. Migrating a central lowering means DELETING its
 ///      central arms (the t-47hc.8 flip playbook), never shadowing them.
 export fn builder_validation_error(f: LanguageFeature) -> string {
-    builder_validation_error_for(f.name, feature_gram(f), f.builders)
+    // `f.name` is the generic COMPONENT instance name — a `string` owned by the
+    // component system, which must not learn about features (core stays feature-
+    // agnostic). This call is where it becomes a FEATURE name, so the conversion
+    // is explicit here rather than pushed down into core.
+    builder_validation_error_for(FeatureName(f.name), feature_gram(f), f.builders)
 }
 
 /// Every manifest defect across EVERY feature, in registration order.
@@ -128,7 +132,7 @@ export fn builder_validation_error(f: LanguageFeature) -> string {
 export fn all_manifest_defects(feats: List<LanguageFeature>) -> List<FeatureDefect> {
     mut out: List<FeatureDefect> = []
     for f in feats {
-        for d in manifest_defects_for(f.name, feature_gram(f), f.builders) { out.push(d) }
+        for d in manifest_defects_for(FeatureName(f.name), feature_gram(f), f.builders) { out.push(d) }
     }
     out
 }
@@ -144,7 +148,7 @@ export fn render_manifest_defects(ds: List<FeatureDefect>) -> string {
 /// How many DISTINCT features the defects span — the number that tells you
 /// whether this is one bad feature or a systemic break.
 fn distinct_feature_count(ds: List<FeatureDefect>) -> int {
-    mut seen: List<string> = []
+    mut seen: List<FeatureName> = []
     for d in ds {
         mut have = false
         for s in seen { if s == d.feature { have = true } }
@@ -156,7 +160,7 @@ fn distinct_feature_count(ds: List<FeatureDefect>) -> int {
 /// The value-level core of the validation, so the specs can feed toy grams
 /// and manifests directly — a test shard cannot instantiate the component
 /// cross-package, but it can build these values.
-export fn builder_validation_error_for(fname: string, gram: Grammar, builders: List<BuilderBind>) -> string {
+export fn builder_validation_error_for(fname: FeatureName, gram: Grammar, builders: List<BuilderBind>) -> string {
     let ds = manifest_defects_for(fname, gram, builders)
     if ds.length == 0 { return "" }
     render_manifest_defect(ds[0])
@@ -169,7 +173,7 @@ export fn builder_validation_error_for(fname: string, gram: Grammar, builders: L
 /// Collecting instead of early-returning is the point: `register_lang` used
 /// to hard-fail on the first bad feature, so a tree with three broken
 /// manifests took three full startup cycles to diagnose.
-export fn manifest_defects_for(fname: string, gram: Grammar, builders: List<BuilderBind>) -> List<FeatureDefect> {
+export fn manifest_defects_for(fname: FeatureName, gram: Grammar, builders: List<BuilderBind>) -> List<FeatureDefect> {
     let refs = grammar_build_refs(gram)
     mut out: List<FeatureDefect> = []
 
