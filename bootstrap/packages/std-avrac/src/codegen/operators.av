@@ -325,7 +325,13 @@ fn emit_optional_eq(ctx: Ctx, lhs: ptr, rhs: ptr, l_opt: bool, r_opt: bool, inne
 /// value and the remaining reference types by pointer identity (both an
 /// integer icmp).
 fn emit_inner_eq_i1(ctx: Ctx, lv: ptr, rv: ptr, inner: ValueType) -> Result<ptr, string> {
-    if vtype_is_str(inner) {
+    // `cg_is_str_repr`, not `vtype_is_str`: the inner may be an IMPORTED newtype
+    // over `string`, which arrives with its Newtype kind erased to
+    // `.Struct(name)`. The identity-only check misses it and the present-vs-
+    // present branch then falls through to an integer compare on two distinct
+    // boxes — so `RuleName? == RuleName?` answered false for equal text.
+    // Measured: opt_eq=false while the non-optional form already answered true.
+    if cg_is_str_repr(ctx, inner) {
         // avra_streq = strcmp==0 with a first-byte fast-reject (returns i64 1/0).
         let eq_result = ctx.call("avra_streq", [ctx.to_ptr(lv, "opteq_ls"), ctx.to_ptr(rv, "opteq_rs")])
         return .Ok(ctx.ne(eq_result, ctx.i64(0), "opteq_streq"))

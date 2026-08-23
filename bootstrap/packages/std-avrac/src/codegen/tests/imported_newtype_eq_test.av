@@ -50,6 +50,28 @@ spec "an imported newtype compares by value, not by address" {
     then "CONTROL — a LOCALLY declared newtype was always fine and still is" {
         LocalName("x") == mkl("x", "")
     }
+    then "an OPTIONAL imported newtype compares by value too" {
+        // A separate path with its own identity-only check, which the first fix
+        // did not touch: two present optionals live in DISTINCT boxes, so
+        // falling through to an integer compare answered false for equal text.
+        // This is not hypothetical — ModulePath is declared optional on
+        // BuilderBind, so merged code was affected.
+        let x: RuleName? = RuleName("expression")
+        x == mkr("expr", "ession")
+    }
+    then "an optional imported newtype reports difference correctly" {
+        let x: RuleName? = RuleName("expression")
+        x != mkr("other", "thing")
+    }
+    then "`none` versus a present value is still unequal, and none == null holds" {
+        let n: RuleName? = null
+        let x: RuleName? = RuleName("expression")
+        n != x && n == null
+    }
+    then "a second optional imported newtype behaves the same" {
+        let m: ModulePath? = ModulePath("features.if_stmt")
+        m == mkm("features.", "if_stmt")
+    }
     then "CONTROL — plain strings are untouched" {
         ("a" + "b") == "ab" && ("a" + "b") != "ac"
     }
