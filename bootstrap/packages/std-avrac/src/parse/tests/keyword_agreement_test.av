@@ -109,12 +109,23 @@ spec "the keyword set agrees with what the features declare (t-y2i7.8)" {
                 for r in keyword_rules() { if r.spelling == d { central = true } }
                 if !central && !ctx.contains(d) { gap = gap + 1 }
             }
-            // KNOWN GAP, tracked rather than tolerated: `grammar {…}` and
-            // `table {…}` start a construct from nothing exactly as `defer` does,
-            // so they SHOULD reserve and do not. Reserving them needs #1362 first
-            // — a field name must accept any keyword, or all 553 `.grammar`
-            // accesses break. This becomes `gap == 0` when they land.
-            gap == 2
+            // KNOWN GAP, tracked rather than tolerated — exactly one word.
+            //
+            // `table {…}` starts a construct from nothing exactly as `defer`
+            // does, so it SHOULD reserve and does not. MEASURED why it cannot
+            // yet: making it a keyword breaks the very rule that spells it. The
+            // built compiler then fails to parse `table<Row> {…}` at all — its
+            // FIRST gate no longer admits the token — and since token_table.av
+            // is itself written with table literals, the compiler stops
+            // compiling its own source. Reserving it needs the expression
+            // dispatch to admit a keyword-led branch first.
+            //
+            // `grammar` is NOT in this gap: it is genuinely contextual and now
+            // declares itself so. Reserving it would make `.grammar` a parse
+            // error at all 553 sites, because an ACTIVE keyword is not a legal
+            // field name (reserved_kw_field_test pins that — only RESERVED-but-
+            // inactive words like `ref`/`owned` are).
+            gap == 1
         }
     }
 }
