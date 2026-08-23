@@ -130,22 +130,27 @@ fn tk_is_keyword(tk: Tk) -> bool {
 /// NAMED-terminal kinds (`IDENT NUMBER STRING BOOL EOF`) are semantically
 /// load-bearing; keyword/operator tokens are matched by their `text`, so their
 /// kind just has to be non-`IDENT` (keywords) or otherwise distinct.
-fn tk_to_grammar_kind(tk: Tk) -> string {
+export fn tk_to_grammar_kind(tk: Tk) -> string {
+    // A match on a Tk enum is the right tool here, and it stays. What used to be
+    // wrong is that the NAMES it produces were also spelled out independently in
+    // emit.av's guard ladder, with nothing checking the two agreed — that drift
+    // is what #1336 and #1338 each fixed one terminal at a time.
+    //
+    // The names are now declared once in `terminal_rules()` (ast.av) and
+    // AGREEMENT IS ENFORCED by terminal_table_test, rather than the two sides
+    // sharing a runtime table. Sharing the table itself was tried and reverted:
+    // it put a per-token function-pointer dispatch on this path, and the
+    // window-built compiler on Linux then failed to classify number literals at
+    // all (`undefined variable \`1\`` on `let xs = [1, 2, 3]`) while macOS was
+    // fine. Not worth a cross-platform hazard on the lexer's hot path.
     match tk {
         .Identifier -> "IDENT"
         .String     -> "STRING"
         .Eof        -> "EOF"
         .Error      -> "ERROR"
-        // Interpolated / doc-comment tokens have no grammar terminal in the
-        // DSL surface (ps3t.6.7 lexer-mode territory); give them distinct
-        // non-matching kinds so they fail terminal matching, error-tolerant.
         .Template       -> "TEMPLATE"
         .DocComment     -> "DOC"
         .ModDocComment  -> "MODDOC"
-        // NUMBER and BOOL are SETS, not single variants, so they read the
-        // shared predicates rather than listing their members here — the same
-        // definition `named_tk_guard` emits a call to. Listed in both places
-        // they drift, which is the FIELDNAME failure mode (t-y2i7.8).
         _ -> if tk_is_number_lit(tk) { "NUMBER" }
              else if tk_is_bool_lit(tk) { "BOOL" }
              else if tk_is_keyword(tk) { "KW" } else { "PUNCT" }

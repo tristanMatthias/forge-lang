@@ -1,0 +1,93 @@
+// t-y2i7.8 deliverable (1): the grammar's TERMINAL set is declared ONCE.
+//
+// It used to be written twice, as inverse ladders kept in lockstep by hand:
+//
+//     emit.av  `named_tk_guard`       NAME -> the guard TEXT the parser tests
+//     real_lex `tk_to_grammar_kind`   Tk   -> NAME, for the executor
+//
+// Drift between them is the recurring failure in this area — #1336 and #1338
+// each fixed one terminal (FIELDNAME, then NUMBER and BOOL) where the two sides
+// had come to disagree. Declaring the set once removes the class instead of the
+// next instance.
+//
+// These specs pin the PROPERTIES that make one declaration safe, not the
+// particular contents, so adding a terminal does not force a test edit.
+
+use @std.avrac.features.grammar.{terminal_rules, terminal_guard, executor_terminal_names, tk_to_grammar_kind}
+use @std.avrac.core.{Tk, KwId}
+
+spec "the terminal set is declared once (t-y2i7.8)" {
+    then "every row carries a name" {
+        mut ok = true
+        for t in terminal_rules() { if t.name == "" { ok = false } }
+        ok
+    }
+    then "names are unique — two rows claiming one terminal is the drift this removes" {
+        mut dupes = 0
+        let rs = terminal_rules()
+        mut i = 0
+        while i < rs.length {
+            mut j = i + 1
+            while j < rs.length {
+                if rs[i].name == rs[j].name { dupes = dupes + 1 }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        dupes == 0
+    }
+    then "the emitter's lookup answers from the SAME rows" {
+        // terminal_guard is what emit.av calls; it must agree with the table it
+        // reads, or the two views have diverged again by another route.
+        mut ok = true
+        for t in terminal_rules() { if terminal_guard(t.name) != t.guard { ok = false } }
+        ok
+    }
+    then "an unknown terminal has no guard, so the emitter falls back to a kind compare" {
+        terminal_guard("NOT_A_TERMINAL") == ""
+    }
+    then "every name the EXECUTOR can produce is declared" {
+        // This is the agreement check that replaces the two hand-kept ladders.
+        // The classifier is driven for real — not re-described — so a name it
+        // starts producing without a matching declaration turns this red.
+        let declared = terminal_rules()
+        mut missing = 0
+        for n in executor_terminal_names() {
+            if n == "KW" || n == "PUNCT" { continue }   // catch-alls, no emitted guard
+            mut found = false
+            for t in declared { if t.name == n { found = true } }
+            if !found { missing = missing + 1 }
+        }
+        missing == 0
+    }
+    then "the real classifier answers with declared names" {
+        // Drives `tk_to_grammar_kind` itself over the tokens whose
+        // classification has actually drifted before (#1336, #1338).
+        let names = executor_terminal_names()
+        mut bad = 0
+        for tk in [Tk.Identifier, Tk.Number, Tk.String, Tk.Eof, Tk.Error,
+                   Tk.Template, Tk.DocComment, Tk.ModDocComment,
+                   Tk.Keyword(KwId.True), Tk.Keyword(KwId.False)] {
+            mut found = false
+            for n in names { if n == tk_to_grammar_kind(tk) { found = true } }
+            if !found { bad = bad + 1 }
+        }
+        bad == 0
+    }
+    then "literals classify as literals, not as keywords" {
+        // The exact drift #1338 fixed: a number or bool token falling through
+        // to the KW catch-all. Both sides must call them NUMBER and BOOL.
+        tk_to_grammar_kind(Tk.Number) == "NUMBER"
+            && tk_to_grammar_kind(Tk.Keyword(KwId.True)) == "BOOL"
+            && tk_to_grammar_kind(Tk.Keyword(KwId.False)) == "BOOL"
+    }
+    then "EMITTER-ONLY rows are never produced by the classifier" {
+        // WORD tests the token TEXT and FIELDNAME is reached through the
+        // executor's own fall-through; neither is a classifier answer.
+        mut ok = true
+        for n in executor_terminal_names() {
+            if n == "WORD" || n == "FIELDNAME" { ok = false }
+        }
+        ok
+    }
+}

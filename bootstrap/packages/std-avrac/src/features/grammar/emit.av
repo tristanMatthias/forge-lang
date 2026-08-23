@@ -1,6 +1,6 @@
 // WHY: ps3t.6.5.11 — the code-generation face of the generator. Where
 
-use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
+use features.grammar.{terminal_guard, Grammar, Rule, GNode, GSeq, GItem, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
 // t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
 // The local wrappers below delegate to it so the two engines cannot drift.
 use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, rule_owns_recovery}
@@ -2785,26 +2785,14 @@ fn tk_guard(text: string) -> string {
 /// (safe when inlined into a larger `||` FIRST chain). Any kind outside the known
 /// vocabulary keeps the `.kind` string compare (defensive; the set is closed).
 fn named_tk_guard(tok: string) -> string {
-    if tok == "IDENT"    { return "st.cur().tk == Tk.Identifier" }
-    // WORD (ident-or-keyword, t-kd4y.1): no closed Tk disjunction exists — the
-    // keyword set grows — so this one is a CALL; text_is_word ships in the
-    // generated import headers (gen_*_file.av). Executor twin: named_tok_matches.
-    if tok == "WORD"     { return "text_is_word(st.cur().text)" }
-    // The one terminal whose accepted set is not a `tk_to_grammar_kind` kind
-    // string: the field-name set `consume_field_name` accepts.
-    // Calls the SHARED predicate rather than respelling it, exactly as WORD
-    // does below. Both engines now read ONE definition (core/ast.av
-    // `tk_is_field_name`), so the lockstep named_tok_matches documents is
-    // structural instead of a pairing two files have to remember.
-    if tok == "FIELDNAME" { return "tk_is_field_name(st.cur().tk)" }
-    if tok == "NUMBER"   { return "tk_is_number_lit(st.cur().tk)" }
-    if tok == "STRING"   { return "st.cur().tk == Tk.String" }
-    if tok == "BOOL"     { return "tk_is_bool_lit(st.cur().tk)" }
-    if tok == "TEMPLATE" { return "st.cur().tk == Tk.Template" }
-    if tok == "EOF"      { return "st.cur().tk == Tk.Eof" }
-    if tok == "DOC"      { return "st.cur().tk == Tk.DocComment" }
-    if tok == "MODDOC"   { return "st.cur().tk == Tk.ModDocComment" }
-    if tok == "ERROR"    { return "st.cur().tk == Tk.Error" }
+    // The terminal set is DECLARED once (ast.av `terminal_rules`), not respelled
+    // here. This used to be an 11-arm ladder that had to stay in lockstep with
+    // `tk_to_grammar_kind` on the executor side — the two are inverse views of
+    // one table, and drift between them is what #1336 and #1338 fixed one
+    // terminal at a time. An empty guard means the terminal has no emitted test
+    // and falls back to comparing the token's kind.
+    let g = terminal_guard(tok)
+    if g != "" { return g }
     "st.cur().kind == \"${tok}\""
 }
 
