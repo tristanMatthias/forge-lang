@@ -2,7 +2,7 @@
 // halves of the node model can name them: arena.av (the id-keyed stores)
 // and ast.av (container structs and, as the B-final flip proceeds,
 // variant payloads carry id fields). ids.av imports nothing, so ast.av
-// gaining `use core.{ExprId, ...}` introduces no core-file cycle — the
+// gaining `use core.{BuildName, ExprId, ...}` introduces no core-file cycle — the
 // same reason AnyNode lives in ast.av rather than arena.av.
 //
 // Typed ids are OPAQUE HANDLES (compare / look up, never inspect):
@@ -52,3 +52,26 @@ export type RuleName = string
 /// tests interpolate this field directly. Measured, not assumed — a required
 /// newtype interpolates as its underlying string.
 export type ModulePath = string
+
+/// A build's name — `MkIfExpr`: the label a grammar sequence attaches to the
+/// lowering that constructs its AST node.
+///
+/// t-y2i7.3 section 14. It was a bare `string` on BOTH sides of a seam that
+/// only ever agreed by convention: the grammar writes `-> MkIfExpr` as DSL
+/// text, the feature's manifest writes `bind_row(BuildName("MkIfExpr"), …)` as an Avra
+/// literal, and nothing typed the correspondence. A build name was also
+/// interchangeable with a rule name and a module path.
+export type BuildName = string
+
+/// A build name displays as the string it wraps.
+///
+/// Without this, `${a_build_name}` is rejected: typeck asks for a `display`
+/// method because an IMPORTED newtype reaches it with its Newtype kind erased
+/// to `.Struct(name)` — nominal identity is kind-agnostic, so only the registry
+/// distinguishes it from a real struct, and typeck does not consult it there.
+/// Making the compiler unwrap newtypes for display on its own is a separate
+/// change; this impl is explicit and costs nothing.
+impl BuildName {
+    fn display(self) -> string { self.raw() }
+}
+

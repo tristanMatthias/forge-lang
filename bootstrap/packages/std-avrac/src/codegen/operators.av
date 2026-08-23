@@ -1,9 +1,9 @@
 // WHY: codegen for operators — binary, unary, logical, float.
 
-use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_eq, vtype_enum_name, vtype_is_str, vtype_is_unsigned_int, vtype_is_signed_narrow_int, vtype_is_optional, vtype_strip_optional}
+use core.{Expr, VarBinding, ValueType, BinOp, UnOp, LogicOp, vtype_is_str_repr, vtype_struct_name, vtype_eq, vtype_enum_name, vtype_is_str, vtype_is_unsigned_int, vtype_is_signed_narrow_int, vtype_is_optional, vtype_strip_optional}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit}
 use core.{avra_covmap_next_decision_id}
-use codegen.{emit_concat, emit_str_eq, emit_str_cmp}
+use codegen.{emit_concat, emit_str_eq, emit_str_cmp, cg_newtype_vtype_lookup}
 use codegen.{is_null_literal}
 use codegen.{optional_repr_tagged, emit_optional_unwrap, emit_optional_is_none, emit_cond_truthy}
 use features.enum_decl.{emit_enum_tag_cmp}
@@ -63,6 +63,18 @@ fn str_binop_supported(op: BinOp) -> bool {
     }
 }
 
+
+/// Is `t` REPRESENTED as a string, including a newtype whose Newtype kind was
+/// ERASED to `.Struct(name)` by crossing a module boundary? `vtype_is_str_repr`
+/// alone cannot answer that — core has no registry access — so codegen resolves
+/// the nominal name here.
+fn cg_is_str_repr(ctx: Ctx, t: ValueType) -> bool {
+    if vtype_is_str_repr(t) { return true }
+    let n = vtype_struct_name(t)
+    if n == "" { return false }
+    vtype_is_str_repr(cg_newtype_vtype_lookup(ctx.newtypes, n))
+}
+
 export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, right: Expr) -> Result<EmitValue, string> {
     let left_result = ctx.emit(env, left)?
     mut lhs = left_result.value
@@ -112,7 +124,20 @@ export fn emit_binary(ctx: Ctx, env: List<VarBinding>, left: Expr, op: BinOp, ri
     }
 
     let null_cmp = is_null_literal(left) || is_null_literal(right)
-    let is_str = vtype_is_str(left_result.ty) || vtype_is_str(right_result.ty)
+    // REPRESENTATION, not identity — and it must survive KIND ERASURE.
+    //
+    // `vtype_is_str_repr` peels a `.Newtype`, but an IMPORTED newtype arrives
+    // as `.Struct(name)`: nominal identity is kind-agnostic, so a parser-default
+    // `Struct("BuildName")` and a resolved `Newtype("BuildName")` are the same
+    // type and only the registry tells them apart. Without the registry step,
+    // two equal imported newtype values fall to `icmp_eq` on POINTERS.
+    //
+    // Measured, not theorised: 143 pairs of identical build names compared
+    // `false` while their `.raw()` strings compared `true`, which took the
+    // compiler's own manifest validation down with 274 defects. A newtype
+    // declared LOCALLY kept its kind and worked, which is why the obvious probe
+    // missed it.
+    let is_str = cg_is_str_repr(ctx, left_result.ty) || cg_is_str_repr(ctx, right_result.ty)
     let is_float = vtype_eq(left_result.ty, .Float) || vtype_eq(right_result.ty, .Float)
 
     // Guard the string ops (concat `+`, `==`/`!=`, ordering) against two shapes

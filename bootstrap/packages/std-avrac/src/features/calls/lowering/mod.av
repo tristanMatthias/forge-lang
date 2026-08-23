@@ -7,7 +7,7 @@
 // application is an ENGINE service (features.grammar.apply_it_sugar,
 // which composes the features.closures helpers beside the mode flag it
 // reads), so this module imports ONLY features.grammar + core (F4012).
-use core.{ModulePath, Expr, ExprId, TypeExpr, ValueType, type_expr_to_vtype}
+use core.{BuildName, ModulePath, Expr, ExprId, TypeExpr, ValueType, type_expr_to_vtype}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, apply_it_sugar, capval_present, capval_to_expr, capval_to_node_list, capval_to_texpr_list, postfix_step_node, BuildKind}
 
 /// ONE call argument, reproducing parse_arg_list_ids_inner's `it` sugar: under
@@ -78,8 +78,8 @@ export fn mk_index_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// spells engine-core MkNone — the absent-optional marshalling value — and
 /// needs no row here.) All flat: every core is chain-threaded.
 export fn calls_builds() -> List<BuilderBind> {
-    bind_rows(ModulePath("features.calls.lowering"), [bind_row("MkCallSuffix", BuildKind.Expr, 1, false, "mk_call_suffix_abi", mk_call_suffix_abi),
-     bind_row("MkGenericCallSuffix", BuildKind.Expr, 2, false, "mk_generic_call_suffix_abi", mk_generic_call_suffix_abi),
-     bind_row("MkCallArg", BuildKind.Expr, 1, false, "mk_call_arg_abi", mk_call_arg_abi),
-     bind_row("MkIndexSuffix", BuildKind.Expr, 2, false, "mk_index_suffix_abi", mk_index_suffix_abi)])
+    bind_rows(ModulePath("features.calls.lowering"), [bind_row(BuildName("MkCallSuffix"), BuildKind.Expr, 1, false, "mk_call_suffix_abi", mk_call_suffix_abi),
+     bind_row(BuildName("MkGenericCallSuffix"), BuildKind.Expr, 2, false, "mk_generic_call_suffix_abi", mk_generic_call_suffix_abi),
+     bind_row(BuildName("MkCallArg"), BuildKind.Expr, 1, false, "mk_call_arg_abi", mk_call_arg_abi),
+     bind_row(BuildName("MkIndexSuffix"), BuildKind.Expr, 2, false, "mk_index_suffix_abi", mk_index_suffix_abi)])
 }
