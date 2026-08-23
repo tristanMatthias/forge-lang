@@ -11,7 +11,7 @@
 // touches no rule text. Their cores came verbatim from executor.av; only
 // the sp_start ARGUMENT became the `spanned` protocol's st.build_sp.
 
-use core.{BuildName, ModulePath, Expr, ExprId, SrcPos, Stmt, StmtId, Tk, ValueType}
+use core.{BuildName, ModulePath, Expr, ExprId, SrcPos, Stmt, StmtId, Tk, ValueType, tk_is_op, OpId}
 use features.grammar.{Token, PState, CapVal, BuilderBind, bind_row, bind_rows, capval_stmt_val, capval_to_expr, capval_to_expr_opt, capval_to_stmt, capval_tok_list, capval_tok_text, mk_stamp_stmt_at, param_entries_from_toks, BuildKind}
 
 /// The process-wide gensym counter behind the destructure loop's temp name.
@@ -46,7 +46,7 @@ export fn build_for_abi(st: PState, vals: List<CapVal>) -> CapVal {
 export fn mk_for_binding(lp_cv: CapVal, names_cv: CapVal) -> CapVal {
     let lp = match lp_cv {
         .Tok(t) -> t
-        _ -> Token { kind: "PUNCT", text: "(", pos: 0, tk: Tk.LeftParen }
+        _ -> Token { kind: "PUNCT", text: "(", pos: 0, tk: Tk.Op(OpId.LeftParen) }
     }
     mut packed: List<Token> = [Token {
         kind: "IDENT",

@@ -11,7 +11,7 @@
 
 // dir-as-module (g2eo.1): lexer.av auto-loads as a sibling, surfaces
 // flat at `parse.{...}`.
-use core.{Expr, Stmt, BinOp, stmt_unwrap, Tk, TypeExpr, FieldInit}
+use core.{Expr, Stmt, BinOp, stmt_unwrap, Tk, TypeExpr, FieldInit, tk_is_op, OpId}
 use core.{Registry, registry_new}
 use core.{gensym_name, FORCE_UNWRAP_FN, type_short_name, tk_is_field_name, tk_is_kw}
 use core.{NodeStore, StoreMark, new_node_store, build_line_index, store_with_lines}
@@ -677,7 +677,7 @@ fn parser_ctor(source: string, file: string, store: NodeStore, feats: Registry) 
 /// exact — is what actually discriminates.
 fn is_sync_stop(tk: Tk) -> bool {
     match tk {
-        .RightBrace -> true
+        .Op(.RightBrace) -> true
         .Keyword(id) -> id in [KwId.Fn, KwId.Let, KwId.Const, KwId.Mut, KwId.Type, KwId.Enum, KwId.Impl, KwId.If, KwId.While, KwId.For, KwId.Match, KwId.Return, KwId.Extern, KwId.Trait, KwId.Defer, KwId.Spec, KwId.Given, KwId.Then, KwId.Select]
         _ -> false
     }
@@ -774,9 +774,9 @@ impl Parser {
     fn parse_statement_list_ids(self, stop_at_right_brace: int) -> Result<StmtListIds, string> {
         mut ids: List<StmtId> = []
         while true {
-            if stop_at_right_brace && self.check(Tk.RightBrace) { return .Ok(StmtListIds { ids: ids }) }
+            if stop_at_right_brace && self.check_op(OpId.RightBrace) { return .Ok(StmtListIds { ids: ids }) }
             if self.check(Tk.Eof) { return .Ok(StmtListIds { ids: ids }) }
-            if !stop_at_right_brace && self.check(Tk.RightBrace) {
+            if !stop_at_right_brace && self.check_op(OpId.RightBrace) {
                 self.report(DiagCode.MismatchedBrace, "unexpected `}`")
                 self.advance()
                 continue
@@ -1163,7 +1163,7 @@ impl Parser {
     /// names in this form, so re-parsing a shipped `@comptime` body must
     /// accept it — in expression position (→ `QualifiedIdent`) and type
     /// position (→ `Named`) alike. `::` lexes as two `Colon` tokens.
-    /// Precondition: current token is `Tk.At`.
+    /// Precondition: current token is `Tk.Op(OpId.At)`.
     // The `::` separator is STRICT: two ADJACENT colons (adjacency is
     // confirmed against the raw source, bounds-guarded for input
     // truncated at a lone `:`), each followed by an identifier segment —
@@ -1179,7 +1179,7 @@ impl Parser {
         mut name = "@" + self.current_lexeme
         self.advance()  // consume first segment
         mut segments = 0
-        while self.check(Tk.Colon) && self.current_start + 1 < self.source_len && self.char_at(self.current_start + 1) == ":" {
+        while self.check_op(OpId.Colon) && self.current_start + 1 < self.source_len && self.char_at(self.current_start + 1) == ":" {
             self.advance()  // first `:`
             self.advance()  // second `:`
             if !self.check(Tk.Identifier) {
@@ -1207,6 +1207,14 @@ impl Parser {
     /// answers true for EVERY keyword, not just `fn`.
     fn check_kw(self, id: KwId) -> bool {
         tk_is_kw(self.current_kind, id)
+    }
+
+    /// The operator-aware sibling of `check`, for exactly the reason `check_kw`
+    /// exists: `check` compares whole `Tk` values with `==`, and once the token
+    /// carries a payload that compares the TAG ALONE — every operator would
+    /// answer true (t-vcb1).
+    fn check_op(self, id: OpId) -> bool {
+        tk_is_op(self.current_kind, id)
     }
 
     fn peek_after_ident_is_colon(self) -> bool {
@@ -1309,10 +1317,10 @@ impl Parser {
     // and `impl`/`trait`-header angle skipping) and never disturbs a real `>>`
     // shift operator, which is parsed outside any angle-bracket context.
     fn maybe_split_shr(self) {
-        if self.current_kind == Tk.Shr {
+        if tk_is_op(self.current_kind, OpId.Shr) {
             self.current = self.current - 1
             self.column = self.column - 1
-            self.current_kind = Tk.Greater
+            self.current_kind = Tk.Op(OpId.Greater)
             self.current_lexeme = ">"
         }
     }
@@ -1398,7 +1406,7 @@ impl Parser {
             }
             if !dsl.had_error {
                 while self.current_start < dsl.stop_byte && !self.check(Tk.Eof) {
-                    // Nested-generic close: the DSL splits a `>>` (Tk.Shr) into two
+                    // Nested-generic close: the DSL splits a `>>` (Tk.Op(OpId.Shr)) into two
                     // `>`, consuming ONE to close the inner generic and leaving the
                     // second for the CALLER's own `>` (the channel /
                     // generic-type-args parser). stop_byte then lands BETWEEN the two
@@ -1407,7 +1415,7 @@ impl Parser {
                     // next token (`channel<GenOpt<int>>()` → "expected `>`"). Split it
                     // so only the first `>` is consumed — mirrors maybe_split_shr and
                     // the DSL executor's own split (ps3t.6.5.10).
-                    if self.current_kind == Tk.Shr && self.current_start + 1 == dsl.stop_byte {
+                    if tk_is_op(self.current_kind, OpId.Shr) && self.current_start + 1 == dsl.stop_byte {
                         self.maybe_split_shr()
                     }
                     self.advance_token()
@@ -1428,10 +1436,10 @@ impl Parser {
 
     fn parse_type_expr_list(self) -> Result<List<TypeExpr>, string> {
         mut out: List<TypeExpr> = []
-        while !self.check(Tk.RightParen) && !self.check(Tk.Eof) {
+        while !self.check_op(OpId.RightParen) && !self.check(Tk.Eof) {
             let ty = self.parse_type_expr("expected type")?
             out.push(ty)
-            if self.check(Tk.Comma) { self.advance() }
+            if self.check_op(OpId.Comma) { self.advance() }
         }
         .Ok(out)
     }
@@ -1440,9 +1448,9 @@ impl Parser {
         self.advance()
         mut args: List<TypeExpr> = []
         mut first = true
-        while !self.check(Tk.Greater) && !self.check(Tk.Eof) {
+        while !self.check_op(OpId.Greater) && !self.check(Tk.Eof) {
             if !first {
-                if self.check(Tk.Comma) { self.advance() }
+                if self.check_op(OpId.Comma) { self.advance() }
             }
             first = false
             let ty = self.parse_type_expr("expected generic type argument")?
@@ -1451,7 +1459,7 @@ impl Parser {
             // a single `>` so this list closes and the rest stays for the parent.
             self.maybe_split_shr()
         }
-        if self.check(Tk.Greater) { self.advance() }
+        if self.check_op(OpId.Greater) { self.advance() }
         .Ok(args)
     }
 

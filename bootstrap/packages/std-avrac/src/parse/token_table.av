@@ -1,7 +1,7 @@
 // WHY: t-47hc.2 (Phase 1) — the DECLARATIVE operator/punctuation lexical grammar.
 // This is the concrete form of "just say `">>" = Shr`": every fixed-spelling
 // terminal the lexer recognises, as DATA (`LitRule { spelling, tk }`), instead of
-// the hand lexer's ~40 open-coded `set_current(Tk.Shr, ">>")` arms that used to
+// the hand lexer's ~40 open-coded `set_current(Tk.Op(OpId.Shr), ">>")` arms that used to
 // live in `advance_token` (parse/lexer.av). It is the single SOURCE OF TRUTH for
 // the spelling<->token binding — the one place a spelling names its token.
 //
@@ -19,10 +19,10 @@
 // only for human readability. token_table_test.av proves every rule is faithful to
 // the hand lexer (each spelling lexes to exactly its declared token) THROUGH the
 // same `lex_dump` oracle the byte-scanner uses.
-use core.{KwId, Tk, OpId, kw_rows, op_rows}
+use core.{KwId, Tk, OpId, kw_rows, op_rows, tk_is_op}
 
 /// One fixed-spelling terminal: the exact source text `spelling` lexes to token
-/// kind `tk`. The declarative `">>" = Tk.Shr` binding. `spelling` is pure ASCII
+/// kind `tk`. The declarative `">>" = Tk.Op(OpId.Shr)` binding. `spelling` is pure ASCII
 /// (every operator/punctuation byte is < 128), so its byte length == its char
 /// length — the generator can branch on raw bytes without a codepoint decode.
 export type LitRule = { spelling: string, tk: Tk }
@@ -32,7 +32,7 @@ export type LitRule = { spelling: string, tk: Tk }
 /// `spelling` — a STATIC string literal in the generated scanner, so a caller uses
 /// it as the lexeme with ZERO allocation (an operator's source bytes always equal
 /// its canonical spelling, so this is byte-identical to slicing the source, but
-/// free — matching the hand lexer's old `set_current(Tk.Arrow, "->")` constants).
+/// free — matching the hand lexer's old `set_current(Tk.Op(OpId.Arrow), "->")` constants).
 /// `len == 0` is the no-match sentinel (the byte starts no operator) — `tk` is then
 /// `Tk.Error`, `spelling` is `""`, and callers must not consume. Produced by the
 /// generated maximal-munch scanner (parse/gen_operator_scanner.av, from emit_lex.av).
@@ -54,12 +54,12 @@ export type OpMatch = { tk: Tk, len: int, spelling: string }
 /// `tk_name` also read. Listing the 38 pairs again here was a second declaration free to
 /// drift from the first — the same duplication `keyword_rules()` shed.
 ///
-/// The `tk` a row carries is still the BARE variant (`Tk.Comma`), not `Tk.Op(OpId.Comma)`:
+/// The `tk` a row carries is still the BARE variant (`Tk.Op(OpId.Comma)`), not `Tk.Op(OpId.Comma)`:
 /// Phase A only introduces the collapsed token, and nothing constructs it until the seed
 /// train advances (t-y2i7.15).
 export fn operator_rules() -> List<LitRule> {
     mut out: List<LitRule> = []
-    for r in op_rows() { out.push(LitRule { spelling: r.spelling, tk: r.tk }) }
+    for r in op_rows() { out.push(LitRule { spelling: r.spelling, tk: Tk.Op(r.id) }) }
     out
 }
 

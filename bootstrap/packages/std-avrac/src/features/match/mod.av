@@ -6,7 +6,7 @@
 // one file per pass, all flattened into one module by dir-as-module.
 
 use codegen.{err_emit, StmtResult, err_sr, Ctx, EmitValue, ok_emit, field_resolved_at, emit_value_ptr, emit_value_ty, enum_reg_find_by_variant, vtype_is_ptr_type, emit_optional_is_none, emit_optional_unwrap, emit_if_optional_canon, body_ids_mix_null, arm_store_value_mixed, arm_merge_ty_mixed, ok_sr}
-use core.{Pattern, MatchArm, ParamEntry, Expr, Stmt, WhenArm, PatId, Variant, ValueType, FieldEntry, TypeArg, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types, type_short_name, vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding, VarBinding, variant_lookup, ExprId}
+use core.{Pattern, MatchArm, ParamEntry, Expr, Stmt, WhenArm, PatId, Variant, ValueType, FieldEntry, TypeArg, expr_diverges, vtype_display, vtype_enum_name, vtype_enum_type_args, vtype_eq, vtype_eq_deep, vtype_type_args, vtype_assignable, vtype_is_unknown, vtype_is_union, vtype_is_optional, vtype_strip_optional, vtype_render_full, vtype_union_types, type_short_name, vtype_from_name, vtype_is_value_scalar, pattern_is_optional_present, pattern_is_optional_absent, pattern_optional_binding, VarBinding, variant_lookup, ExprId, tk_is_op, OpId}
 use typeck.{check_expr, tc_er, EnumTypeReg, ExprResult, TC, check_expr_expected, check_assign_layout, tc_bind, tc_check_explicit_returns, tc_enter, tc_exit, tc_gate_unthreaded_lambda, tc_report, resolve_vtype, enum_type_variants, enum_type_params, tc_subst_vtype, variant_find}
 use features.grammar.{parse_grammar, grammar_checked, Grammar}
 
@@ -71,7 +71,7 @@ export fn avra_match_arm_grammar() -> Grammar {
   match_when_arm = "_" "->" @off(allow_dot_postfix) b:expression -> build_when_default(b)
                  | c:expression "->" @off(allow_dot_postfix) b:expression -> build_when_arm(c, b)
   // t-47hc.4.3 — the SPLICE arm comes first, gated on `@when(in_quote_body)` exactly as
-  // the hand gates it (`self.check(Tk.Tilde) && self.quote_depth > 0`). Outside a quote a
+  // the hand gates it (`self.check_op(OpId.Tilde) && self.quote_depth > 0`). Outside a quote a
   // leading `~` is not an arm at all and must fall through to `pattern_or`, which reports.
   // The trailing `","?` is the hand's too — it consumes a separator after the splice.
   match_arm     = @when(in_quote_body) "~" t:unary ( "," )? -> MkSpliceArm(t)

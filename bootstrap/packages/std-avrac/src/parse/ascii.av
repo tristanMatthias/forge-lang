@@ -1,8 +1,8 @@
 // WHY: t-47hc.2 (Phase 1) — named ASCII byte constants for the generated
 // byte-scanner, so its branches read `s.cur() == SLASH` instead of the opaque
 // `s.cur() == 47`. These name SOURCE BYTES (what the scanner reads), which are
-// NOT token kinds: byte SLASH (47) becomes Tk.Slash, byte LPAREN (40) becomes
-// Tk.LeftParen. The byte->token binding lives in the scanner's branches; the
+// NOT token kinds: byte SLASH (47) becomes Tk.Op(OpId.Slash), byte LPAREN (40) becomes
+// Tk.Op(OpId.LeftParen). The byte->token binding lives in the scanner's branches; the
 // token->name binding is tk_name (core/ast.av); this file is the byte->name
 // binding. They stay compile-time CONSTS (not a runtime lookup table) so the
 // scanner keeps EMITTING BRANCHES rather than interpreting a table — the design's

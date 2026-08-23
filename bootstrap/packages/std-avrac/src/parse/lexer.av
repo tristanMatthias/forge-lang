@@ -1,7 +1,7 @@
 // WHY: integrated lexer for the recursive-descent parser.
 // Scans source characters one at a time, producing Tk-typed tokens.
 
-use core.{Tk, tk_name}
+use core.{Tk, tk_name, tk_is_op, OpId}
 use diagnostics.{DiagCode}
 // The GENERATED operator/punctuation scanner (compiled from the declarative
 // operator table by emit_lex.av) + the raw-byte accessor it reads through, plus
@@ -89,7 +89,7 @@ impl Parser {
             // `op.spelling` is a STATIC string literal from the generated scanner —
             // an operator's source bytes always equal its canonical spelling, so this
             // is byte-identical to slicing the source but ZERO alloc (matching the old
-            // hand arms' `set_current(Tk.Arrow, "->")` constant lexemes).
+            // hand arms' `set_current(Tk.Op(OpId.Arrow), "->")` constant lexemes).
             self.set_current(op.tk, op.spelling)
             return
         }

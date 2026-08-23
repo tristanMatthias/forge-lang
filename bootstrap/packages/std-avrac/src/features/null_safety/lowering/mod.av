@@ -4,7 +4,7 @@
 // engine's chain state (st.postfix_step_base / postfix_step_node), NOT
 // st.build_sp — their rows are flat; the chain loop's snap owns the span.
 // Imports ONLY features.grammar + core (F4012).
-use core.{BuildName, ModulePath, Expr, ExprId, FORCE_UNWRAP_FN, byte_span}
+use core.{BuildName, ModulePath, Expr, ExprId, FORCE_UNWRAP_FN, byte_span, tk_is_op, OpId}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes, capval_to_node_list, capval_to_stmt_list, capval_tok_pos, capval_tok_text, postfix_step_node, BuildKind}
 
 /// Left-fold `l ( "??" r )*` into a left-associative `Expr.NullCoalesce`
@@ -35,7 +35,7 @@ export fn null_coalesce_builds() -> List<BuilderBind> {
 }
 
 /// `expr?` — error propagation (t-47hc.33 form 1), the hand postfix_step's
-/// `if self.check(Tk.Question)` arm. No captures: the whole suffix is the token, and
+/// `if self.check_op(OpId.Question)` arm. No captures: the whole suffix is the token, and
 /// the subject is the threaded base.
 export fn mk_try_suffix(st: PState) -> ExprId {
     postfix_step_node(st, Expr.Try(st.postfix_step_base))

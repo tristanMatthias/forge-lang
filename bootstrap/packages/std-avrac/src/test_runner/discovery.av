@@ -26,7 +26,7 @@
 // continue to reject files that declare their own program entry point
 // (those would override the test reporter's main).
 
-use core.{KwId, Tk, avra_is_dir, avra_readdir, avra_selfhost_file_exists, avra_selfhost_read_file, avra_str_ends_with, tk_is_kw}
+use core.{KwId, Tk, avra_is_dir, avra_readdir, avra_selfhost_file_exists, avra_selfhost_read_file, avra_str_ends_with, tk_is_kw, tk_is_op, OpId}
 use parse.{parser_new_lex_only}
 use list_ops.{list_filter}
 use pathutil.{basename_no_ext}
@@ -167,10 +167,10 @@ export fn classify_av_source(path: string, source: string) -> DiscoveredFile {
     while p.current_kind != Tk.Eof {
         // Track delimiter depth so we only count entries at module top.
         match p.current_kind {
-            .LeftBrace  -> { brace_depth = brace_depth + 1 }
-            .RightBrace -> { brace_depth = brace_depth - 1 }
-            .LeftParen  -> { paren_depth = paren_depth + 1 }
-            .RightParen -> { paren_depth = paren_depth - 1 }
+            .Op(.LeftBrace)  -> { brace_depth = brace_depth + 1 }
+            .Op(.RightBrace) -> { brace_depth = brace_depth - 1 }
+            .Op(.LeftParen)  -> { paren_depth = paren_depth + 1 }
+            .Op(.RightParen) -> { paren_depth = paren_depth - 1 }
             _ -> {}
         }
         if brace_depth == 0 && paren_depth == 0 {
@@ -179,7 +179,7 @@ export fn classify_av_source(path: string, source: string) -> DiscoveredFile {
                     try_capture_spec(p, entries)
                     true
                 }
-                .At -> {
+                .Op(.At) -> {
                     try_capture_test_annot(p, entries)
                     true
                 }
@@ -224,7 +224,7 @@ fn try_capture_test_annot(p: Parser, entries_ref: List<DiscoveredEntry>) {
         return
     }
     p.advance()
-    if p.current_kind == Tk.LeftParen { skip_paren_group(p) }
+    if tk_is_op(p.current_kind, OpId.LeftParen) { skip_paren_group(p) }
     advance_until_kw(p, KwId.Fn)
     if !tk_is_kw(p.current_kind, KwId.Fn) { return }
     p.advance()
@@ -263,7 +263,7 @@ fn try_detect_main(p: Parser) -> bool {
     p.advance()
     if p.current_kind != Tk.Identifier || p.current_lexeme != "main" { return false }
     p.advance()
-    p.current_kind == Tk.LeftParen
+    tk_is_op(p.current_kind, OpId.LeftParen)
 }
 
 /// Advance past a balanced `( ... )` group. Assumes the parser is
@@ -273,8 +273,8 @@ fn skip_paren_group(p: Parser) {
     mut depth = 1
     p.advance()
     while p.current_kind != Tk.Eof && depth > 0 {
-        if p.current_kind == Tk.LeftParen  { depth = depth + 1 }
-        if p.current_kind == Tk.RightParen { depth = depth - 1 }
+        if tk_is_op(p.current_kind, OpId.LeftParen)  { depth = depth + 1 }
+        if tk_is_op(p.current_kind, OpId.RightParen) { depth = depth - 1 }
         p.advance()
     }
 }

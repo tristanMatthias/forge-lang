@@ -32,8 +32,8 @@ use features.grammar.{parse_grammar}
 ///   No `@require` / `@expect` for the same reason: inside a `@try` before a cut they
 ///     degrade to plain reporting (the rollback already IS the abort), so they would be
 ///     dead markers that only suggest a commit point exists.
-///   No `^`. The `[` and `(` branches are same-line gated; the `Tk.Less` arm is
-///     not (`check(Tk.Less) && is_callable(result)` is the whole entry guard), so adding
+///   No `^`. The `[` and `(` branches are same-line gated; the `Tk.Op(OpId.Less)` arm is
+///     not (`check(Tk.Op(OpId.Less)) && is_callable(result)` is the whole entry guard), so adding
 ///     one here would reject a line-broken turbofish that must be accepted.
 ///   `@when(base_callable)` is the `is_callable(result)` conjunct — Ident, QualifiedIdent
 ///     or FieldAccess. It reads the folded BASE, not a mode, which is why it is a
