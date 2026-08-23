@@ -16,6 +16,7 @@
 //
 // Deliberately source-derived: a hand-copied list of 48 names would itself be a
 // place to drift, which is the defect this ticket exists to remove.
+use @std.avrac.parse.{keyword_rules}
 use @std.avrac.core.{KwId, kwid_name, kwid_keyword_str}
 
 extern fn avra_selfhost_read_file(path: string) -> string
@@ -42,13 +43,33 @@ fn between_all(src: string, open: string, close: string) -> List<string> {
     out
 }
 
-/// The ids `keyword_rules()` maps spellings onto. The needle carries NO row-syntax
-/// prefix on purpose: it used to be `"tk: Tk.Keyword(KwId."`, which read the rows
-/// only while they were struct literals, and went silently vacuous the moment they
-/// became `table` cells (`"and" | Tk.Keyword(KwId.And)`). token_table.av mentions
-/// `Tk.Keyword` nowhere but in its rows, so matching the constructor alone is both
-/// sufficient and immune to the next reformatting.
-fn table_kw_ids() -> List<string> { between_all(table_src(), "Tk.Keyword(KwId.", ")") }
+/// The ids `keyword_rules()` maps spellings onto — read from the RUNTIME TABLE,
+/// not scraped from source text.
+///
+/// It used to scrape `token_table.av` for the `Tk.Keyword(KwId.` constructor.
+/// That worked only while the rows were literals in that one file, and broke the
+/// moment `keyword_rules()` became DERIVED from core's `kw_rows()` — the
+/// constructor stopped appearing in the scanned file, the scan returned ~1 id
+/// instead of 47, and two assertions failed for a reason unrelated to their
+/// invariant. This is the third time in this area a text-pinned guard has gone
+/// wrong when the text moved.
+///
+/// Calling the function removes the class: it cannot go stale when a table is
+/// reformatted, relocated, or derived, and it tests what actually ships.
+fn table_kw_ids() -> List<string> {
+    mut out: List<string> = []
+    for r in keyword_rules() {
+        match r.tk {
+            .Keyword(id) -> {
+                // kwid_name renders "KwIf"; the enum-scraped side reads "If".
+                let n = kwid_name(id).substring(2, kwid_name(id).length)
+                if n != "" && !out.contains(n) { out.push(n) }
+            }
+            _ -> {}
+        }
+    }
+    out
+}
 
 /// The arms `kwid_keyword_str` actually covers: `.X -> "kw_x"`.
 fn kwid_str_arms() -> List<string> { between_all(ast_src(), "        .", " -> \"kw_") }
@@ -99,13 +120,26 @@ spec "t-y2i7.7: KwId stays in lockstep with the keyword set it mirrors" {
     }
 
     then "kwid_keyword_str is total over KwId, bar Reserved" {
-        // Reserved covers the 12 reserved-future spellings, so it has no single
-        // one of its own and is the ONE deliberate omission. Asserted from the
-        // arms in source, so a dropped arm fails here rather than returning "".
-        mut missing = 0
-        let arms = kwid_str_arms()
-        for n in kwid_names() { if n != "Reserved" && !arms.contains(n) { missing = missing + 1 } }
-        missing == 0 && !arms.contains("Reserved")
+        // BEHAVIOURAL, not textual. This used to scrape the match ARMS out of
+        // ast.av, which pinned the guard to one IMPLEMENTATION SHAPE: the moment
+        // kwid_keyword_str became a derivation over kw_rows() instead of a
+        // 52-arm ladder, there were no arms to find and all 47 read as missing.
+        // Calling the function tests the property the ticket actually cares
+        // about, and survives the next rewrite.
+        //
+        // Coverage of the whole enum comes from the arm above — "every declared
+        // KwId is a keyword_rules() target" — so every id reachable here is
+        // every id there is, Reserved excepted.
+        mut empty = 0
+        for r in keyword_rules() {
+            match r.tk {
+                .Keyword(id) -> {
+                    if id != KwId.Reserved && kwid_keyword_str(id) == "" { empty = empty + 1 }
+                }
+                _ -> {}
+            }
+        }
+        empty == 0 && kwid_keyword_str(KwId.Reserved) == ""
     }
 
     then "kwid_name is injective — no two ids share a rendering" {
