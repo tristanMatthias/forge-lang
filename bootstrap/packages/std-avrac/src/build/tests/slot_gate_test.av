@@ -19,7 +19,7 @@
 // with a per-spec log (the repo's exit-status idiom) — never `|| true` or a
 // parsed `rc=$?`.
 
-use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_getpid}
+use @std.avrac.core.{avra_shell_exec, avra_shell_exec_status, avra_selfhost_read_file, avra_selfhost_write_file, avra_getpid}
 
 extern fn avra_slot_gate_threshold_for(total_kb: int) -> int
 extern fn avra_slot_gate_should_wait(avail_kb: int, threshold_kb: int) -> int
@@ -196,3 +196,69 @@ spec "slot-gate policy: HEADROOM makes the decision predictive (t-2fe6)" {
         avra_slot_gate_should_wait(0 - 1, 4 * 1024 * 1024 + 3 * 1024 * 1024) == 0
     }
 }
+
+// t-2fe6 (B): the slot gate is RE-ENTRANT, so a slot-holder's own children do
+// not queue behind it.
+//
+// THE DEADLOCK. The slot fd is `static` and never closed, so a process HOLDS
+// its slot until it exits. A spec that shells out to a child `bs2` therefore
+// waits on itself under pressure: parent holds a slot, child queues for one of
+// the few remaining, parent cannot exit until the child returns, child cannot
+// start until a slot frees. Nothing consumes memory while this happens, so
+// every memory-based guard is blind to it.
+//
+// Observed on CI: pool frozen at 120/151 with the same three units in flight
+// and MemAvailable FLAT at 2971MB for ~40 minutes, against a ~14 minute norm —
+// heading for the job timeout. Two of the three stuck units shell out to child
+// compiles. Distinct from the eviction shape, where `avail` collapses ~8GB
+// inside one heartbeat and the runner kills the job.
+//
+// A child of a slot-holder is already covered by its parent's slot. The marker
+// rides the environment, which children inherit by construction.
+spec "the slot gate is re-entrant — a child of a slot-holder does not queue" {
+    then "with EVERY slot held, an un-marked compile blocks — the gate engages" {
+        // The control, and it earned its place: a first draft used the wrong
+        // width env var, so no slot was ever contended and the re-entrancy spec
+        // would have passed for the wrong reason. This caught that.
+        let dir = "${slot_dir()}_reentry_ctl"
+        let fd = hold_slot0(dir)
+        let rc = check_gated_rc("999999", dir, "AVRA_COMPILE_SLOT_WIDTH=1 ", "3", "/dev/null")
+        let _ = avra_flock_unlock(fd)
+        rc != 0
+    }
+    then "the SAME setup completes when the process is marked as already holding one" {
+        // The BYPASS branch in isolation. On its own this is NOT a guard for the
+        // fix — it injects the marker by hand, so it would pass even if nothing
+        // ever SET it. The nested spec below is what covers that half.
+        let dir = "${slot_dir()}_reentry_fix"
+        let fd = hold_slot0(dir)
+        let rc = check_gated_rc("999999", dir, "AVRA_SLOT_HELD=1 AVRA_COMPILE_SLOT_WIDTH=1 ", "10", "/dev/null")
+        let _ = avra_flock_unlock(fd)
+        rc == 0
+    }
+
+    then "a REAL slot-holder's child completes — the deadlock itself, end to end" {
+        // The one that actually guards the fix. Nothing is injected: a parent
+        // `bs2` takes the only slot under forced pressure, then shells out to a
+        // child `bs2`. The child must see the marker its PARENT set and proceed.
+        //
+        // Without the setenv calls this is the CI hang in miniature — the parent
+        // holds the slot, the child queues for it, the parent cannot exit until
+        // the child returns, and `timeout` reaps the pair.
+        let dir = "${slot_dir()}_nested"
+        let _ = avra_shell_exec("mkdir -p '${dir}'")
+        let fixture = "/tmp/avra_slot_nested_${string(avra_getpid())}.av"
+        let child_cmd = "./build/bs2 check '${SMALL_FILE}'"
+        let src = "use @std.avrac.core.{avra_shell_exec_status}\n"
+            + "fn main() -> int {\n"
+            + "    avra_shell_exec_status(\"${child_cmd}\")\n"
+            + "}\n"
+        let _ = avra_selfhost_write_file(fixture, src)
+        let rc = avra_shell_exec_status(
+            "AVRA_SLOT_GATE_MB=999999 AVRA_COMPILE_SLOT_WIDTH=1 AVRA_COMPILE_SLOT_DIR='${dir}' "
+            + "timeout 60 ./build/bs2 run '${fixture}' > /dev/null 2>&1")
+        let _ = avra_shell_exec("rm -f '${fixture}'")
+        rc == 0
+    }
+}
+

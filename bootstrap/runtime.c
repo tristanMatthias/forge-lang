@@ -6340,6 +6340,22 @@ void avra_compile_slot_gate(void) {
     // value is expensive — `compute_shard_jobs` records TWO prior tunings here
     // that were measurement artefacts and HALVED CI wall-time. Enable on a run,
     // measure WALL-TIME as well as survival, then consider a default.
+    // RE-ENTRANCY (t-2fe6 deadlock). The slot fd is `static` and is never
+    // closed, so a process HOLDS its slot until it exits. A spec that shells out
+    // to a child `bs2` therefore deadlocks against itself under pressure: the
+    // parent holds a slot, the child queues for one of the remaining few, the
+    // parent cannot exit until the child returns, and the child cannot start
+    // until a slot frees. Nothing is consuming memory, so it is invisible to
+    // every memory-based guard — the observed signature is a pool frozen with
+    // the same units in flight and MemAvailable FLAT, running to the job
+    // timeout (measured: 120/151, avail 2971MB unchanged for ~40 min, vs a
+    // ~14 min norm).
+    //
+    // A child of a slot-holder is already accounted for by its parent's slot,
+    // so it must not take a second one. The marker rides the environment, which
+    // children inherit by construction.
+    if (getenv("AVRA_SLOT_HELD")) return;
+
     int64_t headroom_kb = 0;
     { const char* h = getenv("AVRA_SLOT_GATE_HEADROOM_MB");
       if (h && *h) { int64_t hv = strtoll(h, NULL, 10); if (hv > 0) headroom_kb = hv * 1024; } }
@@ -6356,7 +6372,7 @@ void avra_compile_slot_gate(void) {
     // output-asserting fixtures. Only genuine schedule events (waiting,
     // acquired, pressure-cleared) speak, and only on the contended path.
     avra_slot_gate_fd = avra_slot_gate_try(dir, width);
-    if (avra_slot_gate_fd >= 0) return;
+    if (avra_slot_gate_fd >= 0) { setenv("AVRA_SLOT_HELD", "1", 1); return; }
     fprintf(stderr,
         "[slot-gate] memory pressure (%lld MiB available < %lld MiB): waiting for one of %lld compile slots\n",
         (long long)(avail_kb / 1024), (long long)((threshold_kb + headroom_kb) / 1024), (long long)width);
@@ -6374,6 +6390,7 @@ void avra_compile_slot_gate(void) {
         }
         avra_slot_gate_fd = avra_slot_gate_try(dir, width);
         if (avra_slot_gate_fd >= 0) {
+            setenv("AVRA_SLOT_HELD", "1", 1);
             fprintf(stderr, "[slot-gate] compile slot acquired (%lld MiB available)\n",
                 (long long)(avail_kb / 1024));
             return;
