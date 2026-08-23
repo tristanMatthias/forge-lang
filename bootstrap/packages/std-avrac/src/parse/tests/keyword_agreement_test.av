@@ -78,19 +78,40 @@ spec "the keyword set agrees with what the features declare (t-y2i7.8)" {
             central_only == reserved_only && central_only > 0
         }
 
-        then "a word a feature declares but the table omits is a CONTEXTUAL word, not a keyword" {
-            // The other direction is legitimately non-empty: a grammar can match
-            // a word as literal TEXT without it being a lexed keyword (`grammar`,
-            // `table`, the `with`/`without`/`only` operators, `_`). Asserting the
-            // set is empty would be wrong; asserting it stays SMALL catches a
-            // feature quietly inventing keywords the lexer never learns.
-            mut extra = 0
-            for d in declared {
-                mut found = false
-                for r in keyword_rules() { if r.spelling == d { found = true } }
-                if !found { extra = extra + 1 }
+        then "no feature declares a RESERVED word as its own syntax" {
+            // The reserved-future words are reserved precisely so no feature uses
+            // them. Without this, a feature could declare `"async"` and the
+            // orphan check above would SKIP it — is_reserved short-circuits before
+            // the membership test, so a reserved row is never compared either way.
+            mut used = 0
+            for r in keyword_rules() {
+                if is_reserved(r.tk) && declared.contains(r.spelling) { used = used + 1 }
             }
-            extra < 25
+            used == 0
+        }
+
+        then "the feature-only words are EXACTLY the known contextual ones" {
+            // The other direction is legitimately non-empty: a grammar can match a
+            // word as literal TEXT without it being a lexed keyword. But an upper
+            // BOUND is nearly vacuous — the measured set is 13 and a drift to 24
+            // would pass unnoticed — so the set is pinned exactly. A feature adding
+            // a contextual word turns this red on purpose: someone confirms it was
+            // meant, and adds it here.
+            let allow = ["config", "children", "body", "implements", "grammar", "_",
+                         "table", "arm", "stmt", "stmts", "decl", "without", "only"]
+            mut unexpected = 0
+            for d in declared {
+                mut central = false
+                for r in keyword_rules() { if r.spelling == d { central = true } }
+                if !central && !allow.contains(d) { unexpected = unexpected + 1 }
+            }
+            mut stale = 0
+            for a in allow {
+                mut still_declared = false
+                for d in declared { if d == a { still_declared = true } }
+                if !still_declared { stale = stale + 1 }
+            }
+            unexpected == 0 && stale == 0
         }
     }
 }
