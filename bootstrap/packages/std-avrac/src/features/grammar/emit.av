@@ -152,11 +152,10 @@ fn leaf_exprid_call(g: Grammar, leaf: string) -> string {
 fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> string {
     // ps3t.6.7 perf: the precedence table dispatches on the Tk enum too — it
     // shares the ONE guard rule via `tk_guard_on`, so it cannot drift from the
-    // FIRST-set guards. Punctuation emits `tk_is_op(t.tk, OpId.X)` (a CALL: `==`
-    // on the payload-carrying `Tk.Op` compares the tag alone and would answer
-    // true for every operator — t-vcb1), which is free of the per-iteration
-    // streq. An operator `tk_variant_for` can't name falls back to the text
-    // compare (none today, but keeps the invariant safe).
+    // FIRST-set guards. Punctuation emits `tk_is_op(t.tk, OpId.X)`, which is free
+    // of the per-iteration streq and of the synthesized `__eq_Tk` a `==` would
+    // call. An operator `tk_variant_for` can't name falls back to the text compare
+    // (none today, but keeps the invariant safe).
     mut lbp = "fn binary_lbp_g(t: Token) -> int {\n"
     for c in chain {
         mut cond = ""
@@ -2745,9 +2744,11 @@ fn tk_guard(text: string) -> string { tk_guard_on("st.cur()", text) }
 fn tk_guard_on(recv: string, text: string) -> string {
     let v = tk_variant_for(text)
     if v == "" { return "${recv}.text == \"${text}\"" }
-    // A CALL, not `st.cur().tk == Tk.Op(OpId.X)`: the token carries a payload now,
-    // and `==` on a payload-carrying enum compares the TAG ALONE — every operator
-    // would answer true (t-vcb1). Same reason the keyword guards emit `tk_is_kw`.
+    // A CALL, not `st.cur().tk == Tk.Op(OpId.X)`. Both are correct now that `==`
+    // compares payloads structurally, but this is the parser's hottest guard and
+    // `tk_is_op` matches the payload out instead of calling the synthesized
+    // `__eq_Tk`. Before t-vcb1 was fixed the `==` form was simply wrong — it
+    // compared the TAG alone and every operator answered true. Same for keywords.
     "tk_is_op(${recv}.tk, OpId.${v})"
 }
 

@@ -2982,10 +2982,17 @@ export fn render_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> strin
 /// `Tk` variant it mirrors, so the Phase B rewrite is `Tk.Comma` -> `OpId.Comma` with no
 /// renaming to reason about.
 ///
-/// PAYLOAD-FREE ON PURPOSE. `Tk.Op(id: OpId)` carries it, so `==` on a `Tk.Op` compares
-/// the TAG ALONE and answers TRUE for every operator (t-vcb1). Comparing the IDS is
-/// exact, which is why Phase B converts each site to `tk_is_op(tk, OpId.X)` — matching
-/// the payload out — and never to `tk == Tk.Op(OpId.X)`.
+/// PAYLOAD-FREE ON PURPOSE: `Tk.Op(id: OpId)` carries the payload, and `OpId` itself
+/// must stay a bare enum so comparing IDS is a plain exact `==`.
+///
+/// Phase B converts each site to `tk_is_op(tk, OpId.X)` rather than
+/// `tk == Tk.Op(OpId.X)`. Both are CORRECT today — `==` compares enum payloads
+/// structurally (see `emit_enum_tag_cmp`). `tk_is_op` is still the spelling to use:
+/// it matches the payload out directly instead of routing through the synthesized
+/// `__eq_Tk`, which matters in the parser's hottest loops, and a named predicate says
+/// what is being asked where a raw `==` against a constructor call does not.
+/// Historically it was not merely preferable but REQUIRED: `==` compared the tag alone
+/// and answered TRUE for every operator (t-vcb1, fixed).
 export enum OpId {
     Arrow, Minus, DotDot, Dot, QuestionQuestion, QuestionDot,
     Question, AmpAmp, Amp, PipePipe, PipeGt, Pipe,
@@ -3315,16 +3322,18 @@ export fn kwid_keyword_str(id: KwId) -> string {
 /// edit — an expensive place to learn it.
 /// Is `tk` the keyword `want`? (P7)
 ///
-/// USE THIS INSTEAD OF `tk == Tk.Keyword(KwId.X)`. That comparison type-checks
-/// and is WRONG: `==` on a payload-carrying enum compares only the TAG, so it
-/// answers true for EVERY keyword (t-vcb1). Binding the payload and comparing
-/// the inner id works, because `KwId` is a bare enum where `==` is exact.
+/// PREFER THIS to `tk == Tk.Keyword(KwId.X)`. Both are correct now that `==`
+/// compares enum payloads structurally, but this binds the payload out directly
+/// rather than calling the synthesized `__eq_Tk`, and a named predicate says what
+/// is being asked where a raw `==` against a constructor call does not.
 ///
-/// It is also the better spelling on its own terms — a named predicate says
-/// what is being asked, where a raw `==` against a constructor call does not.
-/// True iff `tk` is the operator `want`. The twin of `tk_is_kw`, and the ONLY correct
-/// way to test an operator token once `Tk.Op` carries a payload: `tk == Tk.Op(want)`
-/// compares the enum TAG alone and answers TRUE for every operator (t-vcb1).
+/// Until t-vcb1 was fixed the comparison was not just wordy but WRONG — `==`
+/// compared the TAG alone, so it answered true for EVERY keyword.
+/// True iff `tk` is the operator `want`. The twin of `tk_is_kw`, and the spelling to
+/// use for operator tests: it matches the payload out instead of routing through the
+/// synthesized `__eq_Tk`. `tk == Tk.Op(want)` is also correct now (t-vcb1 fixed), but
+/// was not before — it compared the enum TAG alone and answered TRUE for every
+/// operator.
 export fn tk_is_op(tk: Tk, want: OpId) -> bool {
     match tk {
         .Op(id) -> id == want

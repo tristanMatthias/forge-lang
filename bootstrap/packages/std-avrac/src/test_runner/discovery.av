@@ -244,11 +244,11 @@ fn advance_until(p: Parser, stop: Tk) {
     }
 }
 
-/// The keyword-aware sibling of `advance_until`. REQUIRED for keywords: the
-/// `!=` above compares whole `Tk` values, and on a payload-carrying variant
-/// that compares only the TAG (t-vcb1) — so `advance_until(p, Tk.Keyword(
-/// KwId.Fn))` stopped at the FIRST keyword of any kind, skipping past valid
-/// `@test` functions.
+/// The keyword-aware sibling of `advance_until`, asking the question directly
+/// rather than through the synthesized `__eq_Tk`. It was REQUIRED before t-vcb1
+/// was fixed: the `!=` above compared the TAG alone on a payload-carrying variant,
+/// so `advance_until(p, Tk.Keyword(KwId.Fn))` stopped at the FIRST keyword of any
+/// kind, skipping past valid `@test` functions.
 fn advance_until_kw(p: Parser, id: KwId) {
     while p.current_kind != Tk.Eof && !tk_is_kw(p.current_kind, id) {
         p.advance()

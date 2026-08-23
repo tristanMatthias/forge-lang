@@ -670,11 +670,12 @@ fn parser_ctor(source: string, file: string, store: NodeStore, feats: Registry) 
 
 /// Statement-start keywords (plus `}`) that panic-mode recovery stops at.
 ///
-/// A LIST + `in` is the natural spelling and is WRONG here: `in` compares with
-/// `==`, and on a payload-carrying variant that compares only the TAG (t-vcb1),
-/// so every keyword matched and `synchronize` stopped at the first one it saw.
-/// Matching the payload out and comparing `KwId` — a bare enum, where `==` is
-/// exact — is what actually discriminates.
+/// Matching the payload out and comparing `KwId` is deliberate. A LIST + `in` used
+/// to be outright WRONG here: `in` compares with `==`, which compared the TAG alone
+/// on a payload-carrying variant (t-vcb1), so every keyword matched and
+/// `synchronize` stopped at the first one it saw. `==` is structural now, so the
+/// list form would work — this stays because it is direct and this runs per token
+/// during recovery.
 fn is_sync_stop(tk: Tk) -> bool {
     match tk {
         .Op(.RightBrace) -> true
@@ -1201,18 +1202,18 @@ impl Parser {
         self.current_kind == kind
     }
 
-    /// The keyword-aware sibling of `check`. REQUIRED for keywords: `check`
-    /// compares whole `Tk` values with `==`, which on a payload-carrying
-    /// variant compares only the TAG (t-vcb1) — so `check(Tk.Keyword(KwId.Fn))`
-    /// answers true for EVERY keyword, not just `fn`.
+    /// The keyword-aware sibling of `check`. `check` compares whole `Tk` values
+    /// with `==`, which is structural now — so `check(Tk.Keyword(KwId.Fn))` would
+    /// be correct, but goes through the synthesized `__eq_Tk`. This asks the
+    /// question directly, on a path that runs per token. It was REQUIRED before
+    /// t-vcb1 was fixed: `==` compared the TAG alone and answered true for EVERY
+    /// keyword, not just `fn`.
     fn check_kw(self, id: KwId) -> bool {
         tk_is_kw(self.current_kind, id)
     }
 
     /// The operator-aware sibling of `check`, for exactly the reason `check_kw`
-    /// exists: `check` compares whole `Tk` values with `==`, and once the token
-    /// carries a payload that compares the TAG ALONE — every operator would
-    /// answer true (t-vcb1).
+    /// exists — see there.
     fn check_op(self, id: OpId) -> bool {
         tk_is_op(self.current_kind, id)
     }
