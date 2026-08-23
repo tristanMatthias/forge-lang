@@ -1,5 +1,6 @@
 // WHY: ps3t.6.5.11 — the code-generation face of the generator. Where
 
+use core.{op_rows, tk_name}
 use features.grammar.{terminal_guard, Grammar, Rule, GNode, GSeq, GItem, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
 // t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
 // The local wrappers below delegate to it so the two engines cannot drift.
@@ -2723,46 +2724,15 @@ fn build_fn(name: BuildName) -> string {
 
 // ── ps3t.6.7 perf: Tk-enum terminal dispatch ──
 fn tk_variant_for(text: string) -> string {
-    // punctuation
-    if text == "(" { return "LeftParen" }
-    if text == ")" { return "RightParen" }
-    if text == "{" { return "LeftBrace" }
-    if text == "}" { return "RightBrace" }
-    if text == "[" { return "LeftBracket" }
-    if text == "]" { return "RightBracket" }
-    if text == "," { return "Comma" }
-    if text == "." { return "Dot" }
-    if text == ".." { return "DotDot" }
-    if text == ":" { return "Colon" }
-    if text == "->" { return "Arrow" }
-    if text == "<-" { return "LeftArrow" }
-    if text == "@" { return "At" }
-    if text == "~" { return "Tilde" }
-    if text == "?" { return "Question" }
-    if text == "?." { return "QuestionDot" }
-    if text == "??" { return "QuestionQuestion" }
-    // operators
-    if text == "+" { return "Plus" }
-    if text == "-" { return "Minus" }
-    if text == "*" { return "Star" }
-    if text == "/" { return "Slash" }
-    if text == "%" { return "Percent" }
-    if text == "=" { return "Equal" }
-    if text == "==" { return "EqualEqual" }
-    if text == "!" { return "Bang" }
-    if text == "!=" { return "BangEqual" }
-    if text == "<" { return "Less" }
-    if text == "<=" { return "LessEqual" }
-    if text == ">" { return "Greater" }
-    if text == ">=" { return "GreaterEqual" }
-    if text == "&" { return "Amp" }
-    if text == "&&" { return "AmpAmp" }
-    if text == "|" { return "Pipe" }
-    if text == "||" { return "PipePipe" }
-    if text == "|>" { return "PipeGt" }
-    if text == "^" { return "Caret" }
-    if text == "<<" { return "Shl" }
-    if text == ">>" { return "Shr" }
+    // DERIVED from core's `op_rows()`. This was a 38-arm `if text == "…"` ladder
+    // listing every operator spelling against its `Tk` variant — the same 38 pairs
+    // that table already states, verified identical with zero disagreements before
+    // the ladder was deleted.
+    //
+    // A word (keyword or identifier) has no operator variant, so "" — the same
+    // answer the ladder's fallthrough gave, and what makes `tk_guard` emit a TEXT
+    // compare for word literals rather than a `Tk` compare.
+    for r in op_rows() { if r.spelling == text { return tk_name(r.tk) } }
     ""
 }
 
