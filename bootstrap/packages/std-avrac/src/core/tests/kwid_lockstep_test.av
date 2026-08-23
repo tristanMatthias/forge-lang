@@ -42,8 +42,13 @@ fn between_all(src: string, open: string, close: string) -> List<string> {
     out
 }
 
-/// The ids `keyword_rules()` maps spellings onto: `tk: Tk.Keyword(KwId.X)`.
-fn table_kw_ids() -> List<string> { between_all(table_src(), "tk: Tk.Keyword(KwId.", ")") }
+/// The ids `keyword_rules()` maps spellings onto. The needle carries NO row-syntax
+/// prefix on purpose: it used to be `"tk: Tk.Keyword(KwId."`, which read the rows
+/// only while they were struct literals, and went silently vacuous the moment they
+/// became `table` cells (`"and" | Tk.Keyword(KwId.And)`). token_table.av mentions
+/// `Tk.Keyword` nowhere but in its rows, so matching the constructor alone is both
+/// sufficient and immune to the next reformatting.
+fn table_kw_ids() -> List<string> { between_all(table_src(), "Tk.Keyword(KwId.", ")") }
 
 /// The arms `kwid_keyword_str` actually covers: `.X -> "kw_x"`.
 fn kwid_str_arms() -> List<string> { between_all(ast_src(), "        .", " -> \"kw_") }
