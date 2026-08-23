@@ -27,7 +27,7 @@
 // with a named-terminal kind — `KW` for keywords, `PUNCT` for operators.
 use core.{Tk, tk_keyword_str, tk_is_number_lit, tk_is_bool_lit}
 use parse.{Parser, parser_new_lex_only}
-use features.grammar.{Token}
+use features.grammar.{terminal_rules, Token}
 use diagnostics.{Diagnostic, error_def}
 
 impl Parser {
@@ -131,23 +131,11 @@ fn tk_is_keyword(tk: Tk) -> bool {
 /// load-bearing; keyword/operator tokens are matched by their `text`, so their
 /// kind just has to be non-`IDENT` (keywords) or otherwise distinct.
 fn tk_to_grammar_kind(tk: Tk) -> string {
-    match tk {
-        .Identifier -> "IDENT"
-        .String     -> "STRING"
-        .Eof        -> "EOF"
-        .Error      -> "ERROR"
-        // Interpolated / doc-comment tokens have no grammar terminal in the
-        // DSL surface (ps3t.6.7 lexer-mode territory); give them distinct
-        // non-matching kinds so they fail terminal matching, error-tolerant.
-        .Template       -> "TEMPLATE"
-        .DocComment     -> "DOC"
-        .ModDocComment  -> "MODDOC"
-        // NUMBER and BOOL are SETS, not single variants, so they read the
-        // shared predicates rather than listing their members here — the same
-        // definition `named_tk_guard` emits a call to. Listed in both places
-        // they drift, which is the FIELDNAME failure mode (t-y2i7.8).
-        _ -> if tk_is_number_lit(tk) { "NUMBER" }
-             else if tk_is_bool_lit(tk) { "BOOL" }
-             else if tk_is_keyword(tk) { "KW" } else { "PUNCT" }
-    }
+    // Inverse view of the SAME declaration the emitter reads (ast.av
+    // `terminal_rules`). First row whose `matches` answers wins, which is why
+    // that table's order is significant: NUMBER and BOOL precede the KW/PUNCT
+    // catch-alls below. Rows carrying `tr_never` are emitter-only (WORD tests
+    // TEXT, not kind) and can never claim a token here.
+    for t in terminal_rules() { if t.matches(tk) { return t.name } }
+    if tk_is_keyword(tk) { "KW" } else { "PUNCT" }
 }

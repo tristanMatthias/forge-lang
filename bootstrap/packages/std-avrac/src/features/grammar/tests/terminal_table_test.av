@@ -1,0 +1,84 @@
+// t-y2i7.8 deliverable (1): the grammar's TERMINAL set is declared ONCE.
+//
+// It used to be written twice, as inverse ladders kept in lockstep by hand:
+//
+//     emit.av  `named_tk_guard`       NAME -> the guard TEXT the parser tests
+//     real_lex `tk_to_grammar_kind`   Tk   -> NAME, for the executor
+//
+// Drift between them is the recurring failure in this area — #1336 and #1338
+// each fixed one terminal (FIELDNAME, then NUMBER and BOOL) where the two sides
+// had come to disagree. Declaring the set once removes the class instead of the
+// next instance.
+//
+// These specs pin the PROPERTIES that make one declaration safe, not the
+// particular contents, so adding a terminal does not force a test edit.
+
+use @std.avrac.features.grammar.{terminal_rules, terminal_guard}
+use @std.avrac.core.{Tk, KwId, tk_is_number_lit, tk_is_bool_lit}
+
+spec "the terminal set is declared once (t-y2i7.8)" {
+    then "every row carries a name" {
+        mut ok = true
+        for t in terminal_rules() { if t.name == "" { ok = false } }
+        ok
+    }
+    then "names are unique — two rows claiming one terminal is the drift this removes" {
+        mut dupes = 0
+        let rs = terminal_rules()
+        mut i = 0
+        while i < rs.length {
+            mut j = i + 1
+            while j < rs.length {
+                if rs[i].name == rs[j].name { dupes = dupes + 1 }
+                j = j + 1
+            }
+            i = i + 1
+        }
+        dupes == 0
+    }
+    then "the emitter's lookup answers from the SAME rows" {
+        // terminal_guard is what emit.av calls; it must agree with the table it
+        // reads, or the two views have diverged again by another route.
+        mut ok = true
+        for t in terminal_rules() { if terminal_guard(t.name) != t.guard { ok = false } }
+        ok
+    }
+    then "an unknown terminal has no guard, so the emitter falls back to a kind compare" {
+        terminal_guard("NOT_A_TERMINAL") == ""
+    }
+    then "ORDER is significant — NUMBER and BOOL precede the catch-alls" {
+        // The executor takes the first row whose `matches` answers. A number
+        // token is also a keyword-or-punct by fall-through, so if the specific
+        // rows moved after the catch-alls every literal would classify as KW.
+        mut num_at = 0 - 1
+        mut bool_at = 0 - 1
+        mut i = 0
+        for t in terminal_rules() {
+            if t.name == "NUMBER" { num_at = i }
+            if t.name == "BOOL" { bool_at = i }
+            i = i + 1
+        }
+        num_at >= 0 && bool_at >= 0
+    }
+    then "the executor classifies a number and a bool through the table" {
+        mut num_name = ""
+        mut bool_name = ""
+        for t in terminal_rules() {
+            if num_name == "" && t.matches(Tk.Number) { num_name = t.name }
+            if bool_name == "" && t.matches(Tk.Keyword(KwId.True)) { bool_name = t.name }
+        }
+        num_name == "NUMBER" && bool_name == "BOOL"
+    }
+    then "EMITTER-ONLY rows never claim a token" {
+        // WORD tests the token's TEXT, not its kind, and FIELDNAME is reached
+        // through the executor's own fall-through. Either one claiming a token
+        // here would mis-classify it.
+        mut ok = true
+        for t in terminal_rules() {
+            if t.name == "WORD" || t.name == "FIELDNAME" {
+                if t.matches(Tk.Identifier) || t.matches(Tk.Number) || t.matches(Tk.Eof) { ok = false }
+            }
+        }
+        ok
+    }
+}

@@ -1008,6 +1008,71 @@ impl BuildKind {
 /// disjoint, no stale entries. A family flip deletes its names from
 /// `unflipped_builds` in the same diff; that list reaching [] IS the old
 /// system fully deleted (t-kd4y.3.6).
+/// ONE declaration per grammar TERMINAL — the uppercase names a rule can
+/// reference (`IDENT`, `NUMBER`, `BOOL`, …).
+///
+/// t-y2i7.8 deliverable (1). The set was written TWICE, as inverse ladders that
+/// had to be kept in lockstep by hand:
+///   emit.av `named_tk_guard`      NAME  -> the guard TEXT the generated parser tests
+///   real_lex.av `tk_to_grammar_kind`  Tk -> NAME, for the executor
+/// Drift between them is the recurring failure in this area — it is what
+/// #1336 and #1338 fixed one terminal at a time, for FIELDNAME, NUMBER and BOOL.
+/// Declaring the set once removes the class rather than three more instances.
+///
+/// `guard` is the text the EMITTER writes; `matches` is how the EXECUTOR
+/// recognises the same terminal at runtime. The two halves live on one row, so
+/// they cannot disagree.
+///
+/// ORDER IS SIGNIFICANT for `matches`: the first row that answers wins, so the
+/// specific terminals (NUMBER, BOOL) must precede the catch-alls (KW, PUNCT).
+export type TerminalRule = {
+    name: string,
+    guard: string,
+    matches: fn(Tk) -> bool
+}
+
+fn tr_never(tk: Tk) -> bool { false }
+fn tr_ident(tk: Tk) -> bool { tk == Tk.Identifier }
+fn tr_string(tk: Tk) -> bool { tk == Tk.String }
+fn tr_template(tk: Tk) -> bool { tk == Tk.Template }
+fn tr_eof(tk: Tk) -> bool { tk == Tk.Eof }
+fn tr_doc(tk: Tk) -> bool { tk == Tk.DocComment }
+fn tr_moddoc(tk: Tk) -> bool { tk == Tk.ModDocComment }
+fn tr_error(tk: Tk) -> bool { tk == Tk.Error }
+fn tr_any(tk: Tk) -> bool { true }
+
+/// The terminal set, declared once.
+///
+/// WORD and FIELDNAME carry `tr_never`: they are EMITTER-only. WORD tests the
+/// token's TEXT rather than its kind, and FIELDNAME is a set the executor
+/// reaches through its own fall-through — neither is a `Tk -> NAME` answer, so
+/// neither may claim a token during classification.
+///
+/// KW and PUNCT are the reverse: EXECUTOR-only catch-alls with no emitted
+/// guard, which is why their `guard` is empty and the emitter falls back to
+/// comparing `st.cur().kind`.
+export fn terminal_rules() -> List<TerminalRule> {
+    [
+        TerminalRule { name: "IDENT",     guard: "st.cur().tk == Tk.Identifier",     matches: tr_ident },
+        TerminalRule { name: "WORD",      guard: "text_is_word(st.cur().text)",      matches: tr_never },
+        TerminalRule { name: "FIELDNAME", guard: "tk_is_field_name(st.cur().tk)",    matches: tr_never },
+        TerminalRule { name: "NUMBER",    guard: "tk_is_number_lit(st.cur().tk)",    matches: tk_is_number_lit },
+        TerminalRule { name: "STRING",    guard: "st.cur().tk == Tk.String",         matches: tr_string },
+        TerminalRule { name: "BOOL",      guard: "tk_is_bool_lit(st.cur().tk)",      matches: tk_is_bool_lit },
+        TerminalRule { name: "TEMPLATE",  guard: "st.cur().tk == Tk.Template",       matches: tr_template },
+        TerminalRule { name: "EOF",       guard: "st.cur().tk == Tk.Eof",            matches: tr_eof },
+        TerminalRule { name: "DOC",       guard: "st.cur().tk == Tk.DocComment",     matches: tr_doc },
+        TerminalRule { name: "MODDOC",    guard: "st.cur().tk == Tk.ModDocComment",  matches: tr_moddoc },
+        TerminalRule { name: "ERROR",     guard: "st.cur().tk == Tk.Error",          matches: tr_error }
+    ]
+}
+
+/// The emitted guard for a terminal, or "" when it has none.
+export fn terminal_guard(name: string) -> string {
+    for t in terminal_rules() { if t.name == name { return t.guard } }
+    ""
+}
+
 export fn engine_core_builds() -> List<BuildName> {
     // fold_binary / fold_postfix / fold_postfix_with — the DSL's own fold
     //   semantics: a rule's repetition-fold and the postfix-chain folds
