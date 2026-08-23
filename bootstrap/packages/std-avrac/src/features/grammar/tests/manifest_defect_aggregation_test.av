@@ -14,6 +14,7 @@
 
 use @std.avrac.features.{manifest_defects_for, render_manifest_defect, render_manifest_defects, FeatureDefect, ManifestDefect}
 use @std.avrac.features.grammar.{parse_grammar, grammar_checked, BuilderBind, bind_row, PState, CapVal, Grammar, BuildKind}
+use @std.avrac.core.{FeatureName}
 
 fn toy_gram(src: string) -> Grammar { grammar_checked(parse_grammar(src)) }
 
@@ -27,18 +28,18 @@ fn orphan_rows() -> List<BuilderBind> {
 spec "manifest defects are DATA, not a first-error string" {
     given "a manifest with an orphan builder" {
         then "the defect names the build and its arity as fields" {
-            let ds = manifest_defects_for("toy", toy_gram("r = \"a\" -> MkNone()"), orphan_rows())
+            let ds = manifest_defects_for(FeatureName("toy"), toy_gram("r = \"a\" -> MkNone()"), orphan_rows())
             // The orphan is reported, and the RENDERED form still reads well.
             ds.length >= 1 && render_manifest_defect(ds[0]).contains("MkNeverReferenced")
         }
         then "the defect carries its owning feature, so a report can group by it" {
-            let ds = manifest_defects_for("toy", toy_gram("r = \"a\" -> MkNone()"), orphan_rows())
-            ds[0].feature == "toy"
+            let ds = manifest_defects_for(FeatureName("toy"), toy_gram("r = \"a\" -> MkNone()"), orphan_rows())
+            ds[0].feature == FeatureName("toy")
         }
     }
     given "a coherent manifest" {
         then "no defects — the check is not vacuous in the passing direction either" {
-            manifest_defects_for("ok", toy_gram("r = \"a\" -> MkNone()"), []).length == 0
+            manifest_defects_for(FeatureName("ok"), toy_gram("r = \"a\" -> MkNone()"), []).length == 0
         }
     }
 }
@@ -47,8 +48,8 @@ spec "the report aggregates ACROSS features rather than stopping at the first" {
     then "two broken features both appear, and the count names how many" {
         // The whole point of the change: one run, every broken feature.
         mut all: List<FeatureDefect> = []
-        for d in manifest_defects_for("alpha", toy_gram("r = \"a\" -> MkNone()"), orphan_rows()) { all.push(d) }
-        for d in manifest_defects_for("beta", toy_gram("r = \"b\" -> MkNone()"), orphan_rows()) { all.push(d) }
+        for d in manifest_defects_for(FeatureName("alpha"), toy_gram("r = \"a\" -> MkNone()"), orphan_rows()) { all.push(d) }
+        for d in manifest_defects_for(FeatureName("beta"), toy_gram("r = \"b\" -> MkNone()"), orphan_rows()) { all.push(d) }
         let out = render_manifest_defects(all)
         out.contains("alpha") && out.contains("beta") && out.contains("2 feature(s)")
     }
