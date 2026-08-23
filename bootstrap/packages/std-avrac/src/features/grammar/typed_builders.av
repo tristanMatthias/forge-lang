@@ -506,7 +506,15 @@ fn bind_literal(store: NodeStore, sig: FnSig, mod_path: string) -> ExprId {
         // path. A spanned row is a hand-authored engine decision
         // (the features' lowering/ submodules) until an annotation earns the surface.
         FieldInit { name: "spanned", value_id: store.exprs.add_leaf(Expr.Bool("false")) },
-        FieldInit { name: "module", value_id: str_lit(store, mod_path) },
+        // `module` is a `ModulePath` newtype (t-y2i7.3 section 14), so the
+        // synthesized literal has to CONSTRUCT one — a bare string is rejected
+        // by the struct-field identity gate (t-5qi0) exactly as a hand-written
+        // one would be. Emitting the call keeps synthesized rows on the same
+        // footing as the hand-authored manifests.
+        FieldInit { name: "module", value_id: store.exprs.add_leaf(Expr.Call(
+            store.exprs.add_leaf(Expr.Ident("ModulePath")),
+            [str_lit(store, mod_path)]
+        )) },
         FieldInit { name: "export_name", value_id: str_lit(store, adapter_name(sig.name)) },
         FieldInit { name: "build", value_id: store.exprs.add_leaf(Expr.Ident(adapter_name(sig.name))) },
     ]

@@ -2333,11 +2333,21 @@ export fn derived_import_lines_for(src: string, binds: List<BuildKindRow>, gramm
     mut foreign_mods: List<string> = []
     mut foreign_names: List<string> = []
     for n in calls {
-        mut home_mod = ""
+        // `module` is a `ModulePath?` (t-y2i7.3 section 14). Unstamped is
+        // `null`, not `""` — a row that has not been through `bind_rows` has
+        // NO module, which is a different statement from having an empty one.
+        //
+        // This exact line is the ticket's motivating example: the bare
+        // `"features.grammar"` literal was typo-able in silence. The nominal
+        // `==` gate (t-tzt0) now rejects comparing a ModulePath against an
+        // unwrapped literal outright.
+        mut home_mod: ModulePath? = null
         for b in binds {
-            if b.export_name == n && b.module != "" && b.module != "features.grammar" { home_mod = b.module }
+            if let m = b.module {
+                if b.export_name == n && m != ModulePath("features.grammar") { home_mod = m }
+            }
         }
-        if home_mod != "" {
+        if home_mod != null {
             foreign_mods.push(home_mod)
             foreign_names.push(n)
         } else if str_in(core_fn_homes(), n) {

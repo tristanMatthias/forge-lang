@@ -16,7 +16,7 @@
 //
 // `binding_stmt_row` stays in features.grammar and is IMPORTED, not moved:
 // the component-family builds (t-kd4y.3.3.5) drive the same row shape.
-use core.{Stmt, StmtId, ValueType, build_let_else_init, stmt_ids_diverge, type_expr_to_vtype}
+use core.{ModulePath, Stmt, StmtId, ValueType, build_let_else_init, stmt_ids_diverge, type_expr_to_vtype}
 use features.grammar.{Token, PState, CapVal, BuilderBind, bind_row, bind_rows, binding_stmt_row, capval_present, capval_to_expr, capval_to_stmt, capval_to_texpr, capval_tok_list, capval_tok_text, param_entries_from_toks, BuildKind}
 
 /// `let` / `mut` bindings — the shared core of the `MkLetBinding` /
@@ -84,7 +84,7 @@ export fn mk_let_destructure_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// byte_span_none row and the destructure a bare leaf; the statement-list
 /// loop stamps the outermost node, so no build reads st.build_sp).
 export fn let_builds() -> List<BuilderBind> {
-    bind_rows("features.let_stmt.lowering", [bind_row("MkLetBinding", BuildKind.Stmt, 6, false, "mk_let_binding_abi", mk_let_binding_abi),
+    bind_rows(ModulePath("features.let_stmt.lowering"), [bind_row("MkLetBinding", BuildKind.Stmt, 6, false, "mk_let_binding_abi", mk_let_binding_abi),
      bind_row("MkMutBinding", BuildKind.Stmt, 5, false, "mk_mut_binding_abi", mk_mut_binding_abi),
      bind_row("MkConstBinding", BuildKind.Stmt, 3, false, "mk_const_binding_abi", mk_const_binding_abi),
      bind_row("MkDestructure", BuildKind.Stmt, 2, false, "mk_let_destructure_abi", mk_let_destructure_abi)])

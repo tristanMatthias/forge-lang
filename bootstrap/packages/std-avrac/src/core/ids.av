@@ -37,3 +37,18 @@ export type TypeId = int
 /// conflating them is what broke the first attempt at this (312 grammar specs).
 /// `null` now means "use the grammar's first rule".
 export type RuleName = string
+
+/// A lowering module's dotted path — `features.tuples.lowering`, the value
+/// `bind_rows` stamps across every row of a feature's manifest.
+///
+/// t-y2i7.3 section 14. It was a bare `string`, which is what the ticket's
+/// motivating example turns on: `b.module != "features.grammar"` in emit.av
+/// compares against a hand-written literal, and a typo there is silent.
+///
+/// REQUIRED, not optional, with `ModulePath("")` as the not-yet-stamped value
+/// that `bind_row` sets and `bind_rows` overwrites. The optional shape reads
+/// better and is what `RuleName` uses, but it cannot be used here: `${opt}`
+/// interpolates an optional as a raw POINTER ADDRESS, and ~15 lang-definition
+/// tests interpolate this field directly. Measured, not assumed — a required
+/// newtype interpolates as its underlying string.
+export type ModulePath = string

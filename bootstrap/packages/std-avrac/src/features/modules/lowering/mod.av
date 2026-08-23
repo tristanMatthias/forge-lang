@@ -14,7 +14,7 @@
 // CapVals (list captures wrapped by manifest_arg_spelling,
 // capval_tok_list unwrapping singleton-preserving).
 
-use core.{Annotation, Expr, ExprId, Stmt, StmtId, ValueType, byte_span}
+use core.{ModulePath, Annotation, Expr, ExprId, Stmt, StmtId, ValueType, byte_span}
 use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, capval_to_finit_list, capval_to_stmt, capval_tok_list, capval_tok_text, capval_toks, param_entries_from_toks, BuildKind}
 
 /// `use seg ( . seg )* { names }` — the bare-path import (`MkUseBare`).
@@ -53,7 +53,7 @@ export fn module_build(st: PState, vals: List<CapVal>) -> CapVal {
 /// names (zero gram edits) to fns in THIS module, which the generated
 /// parser imports directly.
 export fn use_builds() -> List<BuilderBind> {
-    bind_rows("features.modules.lowering", [bind_row("MkUseBare", BuildKind.Stmt, 2, false, "use_bare_build", use_bare_build),
+    bind_rows(ModulePath("features.modules.lowering"), [bind_row("MkUseBare", BuildKind.Stmt, 2, false, "use_bare_build", use_bare_build),
      bind_row("MkUsePkg", BuildKind.Stmt, 3, false, "use_pkg_build", use_pkg_build),
      bind_row("MkModule", BuildKind.Stmt, 1, false, "module_build", module_build)])
 }
@@ -80,7 +80,7 @@ export fn mk_qualified_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// The qualified-reference row (t-kd4y.3.5.6) — spanned at the `@` byte.
 export fn qualified_ref_builds() -> List<BuilderBind> {
-    bind_rows("features.modules.lowering", [bind_row("MkQualExpr", BuildKind.Expr, 4, true, "mk_qualified_abi", mk_qualified_abi)])
+    bind_rows(ModulePath("features.modules.lowering"), [bind_row("MkQualExpr", BuildKind.Expr, 4, true, "mk_qualified_abi", mk_qualified_abi)])
 }
 
 /// `export <decl>` → `Stmt.Annotated([@export], inner)` (t-kd4y.3.5.9) —
@@ -100,5 +100,5 @@ export fn mk_export_abi(st: PState, vals: List<CapVal>) -> CapVal {
 /// The export-wrapper row (t-kd4y.3.5.9) — flat: the wrapper allocates no
 /// spanned node of its own.
 export fn export_builds() -> List<BuilderBind> {
-    bind_rows("features.modules.lowering", [bind_row("MkExport", BuildKind.Stmt, 1, false, "mk_export_abi", mk_export_abi)])
+    bind_rows(ModulePath("features.modules.lowering"), [bind_row("MkExport", BuildKind.Stmt, 1, false, "mk_export_abi", mk_export_abi)])
 }

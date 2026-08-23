@@ -9,7 +9,7 @@
 // sits on; `parser.av` holds the parse+desugar.
 //
 // dir-as-module (g2eo.1): no `mod` decls — the sibling files surface flat.
-use core.{Expr, ExprId, byte_span}
+use core.{ModulePath, Expr, ExprId, byte_span}
 use features.grammar.{parse_grammar}
 
 /// The `grammar { … }` feature block's core (the `MkGrammarBlock` build,
@@ -41,7 +41,7 @@ export fn mk_grammar_block_abi(st: PState, vals: List<CapVal>) -> CapVal {
 }
 
 export fn grammar_block_builds() -> List<BuilderBind> {
-    bind_rows("features.grammar", [bind_row("MkGrammarBlock", BuildKind.Expr, 1, true, "mk_grammar_block_abi", mk_grammar_block_abi)])
+    bind_rows(ModulePath("features.grammar"), [bind_row("MkGrammarBlock", BuildKind.Expr, 1, true, "mk_grammar_block_abi", mk_grammar_block_abi)])
 }
 
 /// The `grammar { … }` expression construct — the definition carries the

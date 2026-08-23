@@ -4,7 +4,7 @@
 // parse-side, reached through the engine's `desugar_template_in` seam
 // (the apply_it_sugar pattern), so the concatenation shape and
 // format-spec routing stay ONE implementation.
-use core.{Expr, ExprId, byte_span, byte_span_none}
+use core.{ModulePath, Expr, ExprId, byte_span, byte_span_none}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_tok_text, desugar_template_in, BuildKind}
 
 /// A `"…${x}…"` template primary. The desugar is SHARED with the entry
@@ -44,6 +44,6 @@ export fn mk_tagged_template_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// BOTH of the template family's rows.
 export fn templates_builds() -> List<BuilderBind> {
-    bind_rows("features.templates.lowering", [bind_row("MkTemplate", BuildKind.Expr, 1, false, "mk_template_abi", mk_template_abi),
+    bind_rows(ModulePath("features.templates.lowering"), [bind_row("MkTemplate", BuildKind.Expr, 1, false, "mk_template_abi", mk_template_abi),
      bind_row("MkTaggedTemplate", BuildKind.Expr, 2, true, "mk_tagged_template_abi", mk_tagged_template_abi)])
 }
