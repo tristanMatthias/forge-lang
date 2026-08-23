@@ -6,6 +6,8 @@
 // low-precedence operators must work when parenthesized.
 
 type TcStr = { s: string, n: int }
+
+fn tc_apply(f: fn(int) -> List<TcStr>) -> int { f(0).length }
 type TcBool = { ok: bool, v: int }
 type TcMix = { neg: int, flag: bool, xs: List<int> }
 
@@ -53,13 +55,46 @@ spec "table cell value integrity" {
     }
 }
 
-spec "`table` is a contextual word, not a reserved keyword" {
-    then "a variable named `table` works in a comparison (table < 10)" {
-        let table = 5
-        (table < 10) && (table > 2) && !(table < 5)
+extern fn avra_shell_exec(cmd: string) -> string
+extern fn avra_getpid() -> int
+
+spec "`table` is a RESERVED keyword (t-y2i7.17)" {
+    // This spec used to assert the OPPOSITE — that `table` was contextual and a
+    // variable could be named `table`. That was a deliberate, tested decision,
+    // and it is being changed deliberately too: `table {…}` starts a construct
+    // from nothing exactly as `defer` does, so it reserves like `defer`.
+    //
+    // The old spec existed because `table < 10` (a comparison against a VARIABLE
+    // named table) is ambiguous with `table<Row>` (the typed literal). Reserving
+    // the word removes that ambiguity at the source rather than disambiguating it
+    // — there is no longer a variable it could be. The typed form is still
+    // covered by the specs above, which is where that coverage belongs.
+    then "a variable named `table` is now a parse error" {
+        let dir = "build/kwprobe_" + string(avra_getpid())
+        let _ = avra_shell_exec("mkdir -p '${dir}'")
+        let _w = avra_shell_exec("printf 'fn main() { let table = 5\n  println(string(table)) }\n' > '${dir}/p.av'")
+        let out = avra_shell_exec("./build/bs2 compile '${dir}/p.av' 2>&1")
+        let _rm = avra_shell_exec("rm -rf '${dir}'")
+        // The lexer now hands `table` to the parser as a keyword, so the binding
+        // position rejects it. Asserting the REJECTION, not a particular message.
+        out.contains("error[") && !out.contains("Compiled")
     }
-    then "a variable named `table` can be indexed and measured" {
-        let table = [10, 20, 30]
-        table[1] == 20 && table.length == 3
+    then "a table literal is still a valid LAMBDA BODY — `(x) -> table<R> { … }`" {
+        // REGRESSION GUARD. Reserving `table` moved it from kind "IDENT" to "KW",
+        // and `tok_starts_expr_leaf` recognised it only through that IDENT test.
+        // `paren_lambda_ahead` asks that helper whether the body starts an
+        // expression, so an UNTYPED-param lambda with a table-literal body
+        // silently stopped parsing: `expected `)` after arguments`.
+        //
+        // The TYPED-param form `(x: int) -> table<R> {…}` takes a different path
+        // and kept working, which is exactly why this needs its own arm — testing
+        // the typed form alone passes against the bug.
+        // The lambda needs a typed CONTEXT for `x` to infer from, hence the
+        // helper — the untyped PARAM is the point, since that is the shape that
+        // routes through paren_lambda_ahead.
+        tc_apply((x) -> table<TcStr> {
+            s      | n
+            "ok"   | 1
+        }) == 1
     }
 }
