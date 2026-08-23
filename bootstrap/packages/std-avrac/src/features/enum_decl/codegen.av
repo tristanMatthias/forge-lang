@@ -2,7 +2,7 @@
 // enum value comparison (tag equality via struct GEP).
 
 use core.{ExprId, FieldEntry, VarBinding, variant_lookup, ValueType, vtype_enum_name}
-use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity}
+use codegen.{Ctx, EmitValue, ok_emit, err_emit, null_ptr_val, enum_reg_find_by_variant, enum_reg_find_by_variant_arity, enum_has_payload}
 use core.{type_registry_id_for, vtype_strip_optional}
 use codegen.{needs_optional_box, emit_optional_some}
 use features.closures.{emit_expected}
@@ -92,11 +92,29 @@ fn fill_enum_payload(ctx: Ctx, env: List<VarBinding>, payload_ptr: ptr, fields: 
 }
 
 
-/// Compare two enum values by their tag field. Returns Bool.
-/// Used by `emit_binary` for `==` / `!=` on enum types — `pred`
-/// is the LLVM icmp predicate (32 = EQ, 33 = NE).
+/// Compare two enum values. Returns Bool. Used by `emit_binary` for `==` / `!=`
+/// on enum types — `pred` is the LLVM icmp predicate (32 = EQ, 33 = NE).
+///
+/// A PAYLOAD-FREE enum compares by tag: the tag is the entire value, so one
+/// `icmp` is exact and this stays a single instruction.
+///
+/// Anything carrying a payload goes through the synthesized `__eq_<Enum>`
+/// (codegen/setup.av), which compares the payload too. Comparing only the tag
+/// answered TRUE for `Tk.Op(Comma) == Tk.Op(RightParen)` — silently, since it
+/// type-checks — and that one defect broke argument-list parsing, parser error
+/// recovery and test discovery at once (t-vcb1). The spec requires structural
+/// equality, so the payload participates.
 export fn emit_enum_tag_cmp(ctx: Ctx, lhs: ptr, rhs: ptr, ty: ValueType, pred: int) -> Result<EmitValue, string> {
     let enum_name = vtype_enum_name(ty)
+    if enum_has_payload(ctx.enums, enum_name) && ctx.get_fn("__eq_${enum_name}") != null {
+        let l = ctx.to_ptr(lhs, "enum_l")
+        let r = ctx.to_ptr(rhs, "enum_r")
+        let eq = ctx.call("__eq_${enum_name}", [l, r])
+        // __eq_ returns 1/0; `==` wants it != 0, `!=` wants it == 0.
+        let want = if pred == 32 { 33 } else { 32 }
+        let cmp = ctx.icmp(want, eq, avra_llvm_const_int(ctx.i64_type, 0, 0), "enum_eq")
+        return ok_emit(ctx.zext(cmp, ctx.i64_type, "enum_eq_ext"), .Bool)
+    }
     let st_ty = ctx.get_type(enum_name)
     let lhs_ptr = ctx.to_ptr(lhs, "enum_l")
     let rhs_ptr = ctx.to_ptr(rhs, "enum_r")

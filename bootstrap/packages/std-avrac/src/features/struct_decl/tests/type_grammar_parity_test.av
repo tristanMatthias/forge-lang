@@ -19,7 +19,7 @@
 
 use @std.avrac.features.grammar.{emitted_rule_body, checked_in_parser_source, avra_program_grammar, run_grammar_stmt}
 use @std.avrac.parse.{parse_program_source}
-use @std.avrac.core.{render_stmt_ids, Stmt}
+use @std.avrac.core.{render_stmt_ids, Stmt, OpId, tk_is_op}
 use @std.avrac.test_runner.{sel_of_source}
 
 fn dsl_program(src: string) -> string {
@@ -133,7 +133,7 @@ spec "t-47hc slice 10.12: `type` is routed onto the production path, COMMITTED" 
         let rule = emitted_rule_body(decl_src(), "fn parse_type_decl(st: PState) -> CapVal")
         rule != "" &&
             // ONE opener admitting either form — the brace test is the left disjunct...
-            rule.contains("if st.cur().tk == Tk.LeftBrace || ") &&
+            rule.contains("if tk_is_op(st.cur().tk, OpId.LeftBrace) || ") &&
             // ...and the alias form is an `else if` INSIDE it. Two adjacent `if`s would mean
             // the alias group is still tried after the brace form completed — the bug.
             rule.contains("} else if ") &&

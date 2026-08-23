@@ -15,6 +15,7 @@
 // matching the hand oracle's resync), so every generated parser regenerates
 // byte-identically.
 use @std.avrac.features.grammar.{parse_grammar, run_grammar_expr, emit_parser_source}
+use @std.avrac.core.{OpId, tk_is_op}
 use @std.avrac.test_runner.{write_fixture}
 
 extern fn avra_shell_exec(cmd: string) -> string
@@ -122,7 +123,7 @@ spec "t-47hc.21: @require inside @try defers to the rollback until the @cut" {
 // --emit-gen-check cannot cover it. Compiling the rendered fn closes that gap.
 fn emitted_compiles(grammar_src: string) -> bool {
     let src = "use @std.avrac.features.grammar.{Token, CapVal, PState, capval_to_expr, literal_node, mk_binary, tok_starts_expr_leaf}\n" +
-        "use @std.avrac.core.{Expr, ExprId, NodeStore, Tk}\n\n" +
+        "use @std.avrac.core.{Expr, ExprId, NodeStore, Tk, OpId, tk_is_op}\n\n" +
         emit_parser_source(parse_grammar(grammar_src).grammar) +
         "\nfn main() {}\n"
     let path = "/tmp/avra_require_emit.av"
@@ -162,7 +163,7 @@ spec "t-47hc.24: @require on a rule reference composes with @try on BOTH sides o
         // both halves pinned.
         let src = emitted(g_try_ref_precut())
         src.contains("if !(starts_blk(st)) {") &&
-            src.contains("fn starts_blk(st: PState) -> bool {\n    st.cur().tk == Tk.LeftBrace\n}")
+            src.contains("fn starts_blk(st: PState) -> bool {\n    tk_is_op(st.cur().tk, OpId.LeftBrace)\n}")
     }
     then "and it REPORTS rather than returning — the rollback is the abort pre-cut" {
         // Same rule the terminal form follows: an early `return` before the cut would jump

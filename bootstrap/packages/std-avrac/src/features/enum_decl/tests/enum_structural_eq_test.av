@@ -1,0 +1,66 @@
+// WHY: `==` on an enum compares the PAYLOAD, not just the tag.
+//
+// It used to compare the tag alone, so `EsOp.Tok(A) == EsOp.Tok(B)` answered
+// TRUE. That type-checks and looks right, so it failed silently — and it broke
+// three unrelated things at once (t-vcb1): call-argument parsing stopped at the
+// first `,` whose next token was any operator, parser error recovery stopped
+// syncing on `}`, and test discovery treated every entry as top-level. It is
+// also the reason a hand-written `tk_is_op` / `tk_is_kw` had to exist for every
+// payload-carrying enum.
+//
+// The spec requires structural equality, so codegen synthesizes `__eq_<Enum>`
+// (codegen/setup.av). These specs pin the behaviour that synthesis exists for.
+
+enum EsId { A, B }
+
+enum EsTok {
+    Tok(id: EsId)
+    Named(s: string)
+    Pair(x: int, y: int)
+    Word
+}
+
+enum EsTree {
+    Leaf(v: int)
+    Node(l: EsTree, r: EsTree)
+}
+
+spec "enum equality is structural, not tag-only" {
+    then "same variant, DIFFERENT payload is NOT equal — the whole point" {
+        !(EsTok.Tok(EsId.A) == EsTok.Tok(EsId.B))
+    }
+    then "same variant, same payload is equal" {
+        EsTok.Tok(EsId.A) == EsTok.Tok(EsId.A)
+    }
+    then "`!=` agrees with `==` on a differing payload" {
+        EsTok.Tok(EsId.A) != EsTok.Tok(EsId.B)
+    }
+    then "different variants are not equal" {
+        !(EsTok.Tok(EsId.A) == EsTok.Word)
+    }
+    then "a payload-free variant equals itself" {
+        EsTok.Word == EsTok.Word
+    }
+    then "string payloads compare BY VALUE, not by pointer" {
+        EsTok.Named("hi") == EsTok.Named("hi") && !(EsTok.Named("hi") == EsTok.Named("yo"))
+    }
+    then "every field of a multi-field payload participates" {
+        EsTok.Pair(1, 2) == EsTok.Pair(1, 2) && !(EsTok.Pair(1, 2) == EsTok.Pair(1, 3))
+    }
+}
+
+spec "enum equality recurses through a self-referential payload" {
+    // A field whose type is the enum ITSELF resolves to `Struct("EsTree")`, not
+    // `Enum(...)`. Looking only for an enum name loses the recursion and the
+    // field falls through to a POINTER compare — two structurally equal trees
+    // then read as unequal, which is what this spec would catch.
+    then "structurally equal trees are equal" {
+        EsTree.Node(EsTree.Leaf(1), EsTree.Leaf(2)) == EsTree.Node(EsTree.Leaf(1), EsTree.Leaf(2))
+    }
+    then "a difference in a DEEP leaf makes them unequal" {
+        !(EsTree.Node(EsTree.Leaf(1), EsTree.Leaf(2)) == EsTree.Node(EsTree.Leaf(1), EsTree.Leaf(9)))
+    }
+    then "a difference in the FIRST branch is caught too" {
+        !(EsTree.Node(EsTree.Leaf(7), EsTree.Leaf(2)) == EsTree.Node(EsTree.Leaf(1), EsTree.Leaf(2)))
+    }
+}
