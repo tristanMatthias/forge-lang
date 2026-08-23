@@ -3053,6 +3053,14 @@ export fn op_rows() -> List<OpRow> {
     }
 }
 
+/// The OpId variant's NAME (`Comma`, `LeftParen`) — equal by construction to the bare
+/// `Tk` variant it mirrors, which is exactly what the `tk` column records. Reading it
+/// there avoids a third spelling of the same 38 names.
+export fn opid_name(id: OpId) -> string {
+    for r in op_rows() { if r.id == id { return tk_name(r.tk) } }
+    ""
+}
+
 /// The spelling an operator id is written as; "" for anything unlisted.
 export fn opid_spelling(id: OpId) -> string {
     for r in op_rows() { if r.id == id { return r.spelling } }
@@ -3334,6 +3342,10 @@ export fn tk_is_kw(tk: Tk, want: KwId) -> bool {
 export fn tk_source_expr(tk: Tk) -> string {
     match tk {
         .Keyword(id) -> "Tk.Keyword(KwId." + kwid_name(id).substring(2, kwid_name(id).length) + ")"
+        // Explicit, not the default arm: an operator token must reconstruct as
+        // `Tk.Op(OpId.Comma)`. The default would emit `Tk.` + the name and produce
+        // `Tk.Comma` — the BARE variant, which is what this collapse replaces.
+        .Op(id) -> "Tk.Op(OpId." + opid_name(id) + ")"
         _ -> "Tk." + tk_name(tk)
     }
 }
@@ -3375,7 +3387,7 @@ export fn kwid_name(id: KwId) -> string {
 export fn tk_name(tk: Tk) -> string {
     match tk {
         // DERIVED from op_rows(), like the Keyword arm below — no ladder.
-        .Op(id) -> opid_spelling(id)
+        .Op(id) -> opid_name(id)
         .LeftParen -> "LeftParen"
         .RightParen -> "RightParen"
         .LeftBrace -> "LeftBrace"
