@@ -3065,7 +3065,23 @@ export enum Tk {
 /// hand. That gap is why `@hand(postfix_suffix)` had to stay: the native `.`-led
 /// branches declined on `x.ref` and the delegate picked it up.
 export fn tk_is_field_name(tk: Tk) -> bool {
-    tk == Tk.Identifier || tk_is_kw(tk, KwId.Reserved)
+    // ANY keyword is a legal field name, not just the reserved-future ones.
+    //
+    // A field name lives in its own namespace — it is only ever read straight
+    // after a `.` or as a `{ name: … }` key, where no keyword meaning is
+    // reachable. Restricting it to Identifier-or-Reserved was arbitrary, and it
+    // had a real cost: it made reserving an ordinary-looking word like `table`
+    // or `grammar` impossible without renaming every `.grammar` in the tree
+    // (553 of them), because the field position would stop accepting it.
+    //
+    // Widening here is what lets a surface keyword BE a keyword. `x.if`,
+    // `{ type: … }` and `.grammar` are all legal field names now, and none of
+    // them can mean anything else in that position.
+    match tk {
+        .Identifier -> true
+        .Keyword(_) -> true
+        _ -> false
+    }
 }
 
 /// The `NUMBER` terminal's token set. `3.14` lexes as `Tk.Float` and `3` as

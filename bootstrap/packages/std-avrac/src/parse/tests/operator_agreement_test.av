@@ -13,7 +13,7 @@
 // a rule that the table lacks is a rule that can never match. Neither is visible
 // from either side alone.
 
-use @std.avrac.parse.{operator_rules}
+use @std.avrac.parse.{operator_rules, OPERATOR_RULE_COUNT}
 use @std.avrac.features.{all_grammar_operators}
 
 spec "the operator set agrees with the grammar (t-y2i7.8)" {
@@ -49,7 +49,14 @@ spec "the operator set agrees with the grammar (t-y2i7.8)" {
         then "and the two sets are the SAME SIZE — no duplicate hiding a gap" {
             // Both directions above pass on a pair of sets that agree elementwise
             // but differ in multiplicity. Equal counts closes that.
-            declared.length == operator_rules().length
+            //
+            // Pinned to the CANONICAL count as well, not just to each other:
+            // dropping an operator from the grammar AND the table would keep the
+            // two sides equal and slip through on 37. token_table_test already
+            // catches that, but a guard whose meaning depends on a sibling file's
+            // guard is weaker than one that stands alone.
+            declared.length == OPERATOR_RULE_COUNT
+                && operator_rules().length == OPERATOR_RULE_COUNT
         }
     }
 }
