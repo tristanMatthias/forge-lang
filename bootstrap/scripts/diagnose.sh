@@ -5581,11 +5581,29 @@ enum Shape {
 
 fn add(a: int, b: int) -> int { a + b }
 
+// PROBE (not for merge): a `fn` stored in a STRUCT FIELD, read back and called.
+// Three CI runs say a compiler built from source using this shape mis-parses
+// number literals on Linux while macOS is unaffected; this asks whether the
+// shape itself misbehaves at runtime, in isolation, on the failing platform.
+type Row = { name: string, matches: fn(int) -> bool }
+fn never_m(n: int) -> bool { false }
+fn is_six(n: int) -> bool { n == 6 }
+fn rows() -> List<Row> {
+    [
+        Row { name: "no",  matches: never_m },
+        Row { name: "yes", matches: is_six },
+    ]
+}
+fn pick(n: int) -> string {
+    for r in rows() { if r.matches(n) { return r.name } }
+    "none"
+}
+
 fn main() -> int {
     let xs = [1, 2, 3]
     mut sum = 0
     for x in xs { sum = sum + x }
-    let tag = if sum == 6 { "ok" } else { "bad" }
+    let tag = if sum == 6 && pick(sum) == "yes" { "ok" } else { "bad" }
     let double = (n: int) -> n * 2
     let p = Pair { a: double(sum), b: xs[1] }
     let shape_w = match Shape.Wide(p.a + p.b) {
