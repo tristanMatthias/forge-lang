@@ -1,7 +1,7 @@
 // WHY: codegen for list literals [1, 2, 3] and list higher-order methods.
 // Lists are backed by the C-runtime avra_array_* functions.
 
-use core.{Expr, ExprId, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
+use core.{vtype_is_str_repr, Expr, ExprId, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_optional_coerce, box_into_list}
 use features.closures.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.{emit_single_arg}
@@ -158,12 +158,17 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
         // scalar paths keep their single-compare loop at no cost.
         "contains" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            let fname = if vtype_list_elem(list_ty) is .Str { "avra_array_contains_str" } else { "avra_array_contains" }
+            // `vtype_is_str`, NOT `is .Str`: a `List<RuleName>` holds strings and must
+            // compare BY VALUE. The bare variant check picked the IDENTITY helper
+            // for every newtype element, so membership answered false for equal
+            // strings at different addresses — the same class as t-xpi0, where
+            // `contains` compared strings by identity.
+            let fname = if vtype_is_str_repr(vtype_list_elem(list_ty)) { "avra_array_contains_str" } else { "avra_array_contains" }
             return ok_emit(ctx.call(fname, [list_val, arg_r.value]), .Int)
         }
         "index_of" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
-            let fname = if vtype_list_elem(list_ty) is .Str { "avra_array_index_of_str" } else { "avra_array_index_of" }
+            let fname = if vtype_is_str_repr(vtype_list_elem(list_ty)) { "avra_array_index_of_str" } else { "avra_array_index_of" }
             return ok_emit(ctx.call(fname, [list_val, arg_r.value]), .Int)
         }
         "reverse" -> {

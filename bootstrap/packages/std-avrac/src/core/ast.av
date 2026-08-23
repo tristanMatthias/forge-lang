@@ -1392,8 +1392,30 @@ export fn vtype_wrap_optional(t: ValueType) -> ValueType {
     }
 }
 
-/// True iff `t` is the `string` type.
+/// True iff `t` is the `string` type. IDENTITY, not representation — a newtype
+/// over `string` is NOT a string here, which is what keeps `.raw()` and any
+/// other newtype-only method from being dispatched as a string method.
+/// For "is this LAID OUT as a string", use `vtype_is_str_repr`.
 export fn vtype_is_str(t: ValueType) -> bool { t is .Str }
+
+/// True iff `t` is REPRESENTED as a string — `string`, or a newtype over one.
+///
+/// The REPRESENTATION half of the question `vtype_is_str` answers for IDENTITY.
+/// A newtype is layout-transparent by spec Axis 1 (a compile-time distinction,
+/// no runtime representation change), so anything choosing how to EMIT — value
+/// comparison, `avra_array_contains_str` vs the identity variant, concatenation
+/// — must see through the wrapper.
+///
+/// The two must stay separate. Collapsing them by making `vtype_is_str` itself
+/// transparent routes METHOD DISPATCH through the string methods too, and the
+/// newtype's own `.raw()` disappears: "codegen error: string method `raw` not
+/// implemented", which takes down the whole @std build.
+///
+/// Why it matters: `List<RuleName>.contains` picked the IDENTITY helper, so
+/// membership answered false for equal strings at different addresses. Latent
+/// because the obvious test reuses one literal, which is interned to the same
+/// pointer. Same class as t-xpi0.
+export fn vtype_is_str_repr(t: ValueType) -> bool { vtype_newtype_underlying(t) is .Str }
 
 /// True iff `t` is an unsigned sized-integer (`u8`/`u16`/`u32`/`u64`).
 /// Used by codegen to pick LLVM's unsigned ICmp predicates + zext.
