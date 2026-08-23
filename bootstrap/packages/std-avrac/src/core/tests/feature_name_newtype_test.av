@@ -1,0 +1,44 @@
+// t-y2i7.3 section 14, last of the four identifier newtypes.
+//
+// A feature name, a build name, a rule name and a module path were all bare
+// `string`, so any of them could be passed where another was expected and
+// nothing objected. These pin that they are now four distinct types.
+//
+// `LanguageFeature.name` itself stays a `string`: it is the generic COMPONENT
+// instance name, and core must not learn what a feature is. The conversion
+// happens where a component name BECOMES a feature name, at the two call sites
+// in features/lang.av.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_getpid}
+
+fn fn_probe(slug: string, body: string) -> string {
+    let root = avra_shell_exec("pwd").trim()
+    let path = "/tmp/avra_fname_${slug}_${string(avra_getpid())}.av"
+    let src = "type FeatureName = string\n"
+        + "type BuildName = string\n"
+        + "fn takes_feature(f: FeatureName) -> int { 1 }\n"
+        + "fn main() -> int {\n    ${body}\n    0\n}\n"
+    let _ = avra_selfhost_write_file(path, src)
+    let out = avra_shell_exec("cd '${root}' && ./build/bs2 check '${path}' 2>&1")
+    let _ = avra_shell_exec("rm -f '${path}'")
+    out
+}
+
+spec "FeatureName is nominally distinct (t-y2i7.3 section 14)" {
+    then "a bare string is rejected" {
+        fn_probe("bare", "let _ = takes_feature(\"calls\")").contains("error[F1000]")
+    }
+    then "ANOTHER identifier newtype is rejected — the confusion this prevents" {
+        fn_probe("cross", "let _ = takes_feature(BuildName(\"MkAnn\"))").contains("error[F1000]")
+    }
+    then "the wrapper is accepted" {
+        !fn_probe("ok", "let _ = takes_feature(FeatureName(\"calls\"))").contains("error[")
+    }
+    then "it displays as the string it wraps" {
+        let f: FeatureName = FeatureName("calls")
+        "${f}" == "calls"
+    }
+}
+
+type FeatureName = string
+type BuildName = string

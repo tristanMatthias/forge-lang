@@ -52,3 +52,12 @@ export type RuleName = string
 /// tests interpolate this field directly. Measured, not assumed — a required
 /// newtype interpolates as its underlying string.
 export type ModulePath = string
+
+/// A language feature's declared name — `if_stmt`, `calls`: the `name` a
+/// `LanguageFeature` gives itself, and the key every manifest defect is grouped
+/// under.
+///
+/// t-y2i7.3 section 14, the last of the identifier newtypes. It was a bare
+/// `string`, so a feature name, a build name, a rule name and a module path
+/// were one type and interchangeable by accident.
+export type FeatureName = string

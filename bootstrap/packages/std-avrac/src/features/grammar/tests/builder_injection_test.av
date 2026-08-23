@@ -18,7 +18,7 @@
 use @std.avrac.features.grammar.{grammar_build_refs, derived_import_lines_for, builder_kind_rows, grammar_checked, parse_grammar, Grammar, BuilderBind, PState, CapVal, BuildKind}
 use @std.avrac.features.grammar.{grammar_with_builder_kinds, emit_parser_source, call_with_build_sp, new_pstate}
 use @std.avrac.features.{builder_validation_error_for, feature_builders}
-use @std.avrac.core.{ModulePath, ExprId}
+use @std.avrac.core.{FeatureName, ModulePath, ExprId}
 
 /// ABI-shaped no-op — never invoked; these specs exercise validation and
 /// derivation, not execution (slice B's live pair covers that).
@@ -87,19 +87,19 @@ spec "t-kd4y.3: grammar_build_refs collects every build reference" {
 
 spec "t-kd4y.3: builder validation gates the manifest at registry build" {
     then "a fully-supplied manifest validates clean" {
-        builder_validation_error_for("toy", toy_gram(), toy_binds()) == ""
+        builder_validation_error_for(FeatureName("toy"), toy_gram(), toy_binds()) == ""
     }
     then "engine builds need no supplying — the central fallback resolves them" {
-        builder_validation_error_for("toy", central_gram(), no_binds()) == ""
+        builder_validation_error_for(FeatureName("toy"), central_gram(), no_binds()) == ""
     }
     then "a reference no builder resolves is rejected, naming rule and build" {
-        let err = builder_validation_error_for("toy", toy_gram(), no_binds())
+        let err = builder_validation_error_for(FeatureName("toy"), toy_gram(), no_binds())
         err.contains("toy") && err.contains("top") && err.contains("Phantom")
             && err.contains("resolves to no builder")
     }
     then "an orphan builder (supplied, never referenced) is rejected" {
         let orphan = [bind("Phantom", BuildKind.Expr, 0, ModulePath("features.toy"), "phantom_build")]
-        let err = builder_validation_error_for("toy", central_gram(), orphan)
+        let err = builder_validation_error_for(FeatureName("toy"), central_gram(), orphan)
         err.contains("Phantom") && err.contains("no rule")
     }
     then "an arity drift between rule and builder is rejected" {
@@ -107,7 +107,7 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             bind("Phantom", BuildKind.Expr, 2, ModulePath("features.toy"), "phantom_build"),
             bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
-        let err = builder_validation_error_for("toy", toy_gram(), drifted)
+        let err = builder_validation_error_for(FeatureName("toy"), toy_gram(), drifted)
         // t-kd4y.3 Batch A: (name, arity) is the dispatch key everywhere, so
         // the message names the unmatched REF — a name may legitimately carry
         // several rows at distinct arities (MkEnumDecl's generic/plain pair).
@@ -126,7 +126,7 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             bind("Phantom", BuildKind.Expr, 2, ModulePath("features.toy"), "phantom_pair_build"),
             bind("Phantom", BuildKind.Expr, 1, ModulePath("features.toy"), "phantom_build"),
         ]
-        builder_validation_error_for("toy", grammar_checked(g), pair) == ""
+        builder_validation_error_for(FeatureName("toy"), grammar_checked(g), pair) == ""
     }
     then "a `spanned` builder of a kind with NO span protocol is rejected" {
         // ONE protocol exists — st.build_sp via call_with_build_sp, legal
@@ -143,7 +143,7 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
                           module: ModulePath("features.toy"), export_name: "spanny_build", build: nil_build },
             bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
-        let err = builder_validation_error_for("toy", grammar_checked(g), spanny)
+        let err = builder_validation_error_for(FeatureName("toy"), grammar_checked(g), spanny)
         err.contains("Spanny") && err.contains("spanned") && err.contains("span protocol")
     }
     then "shadowing a central name is rejected — different kind" {
@@ -161,7 +161,7 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             bind("Block", BuildKind.Expr, 1, ModulePath("features.toy"), "block_build"),
             bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
-        let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
+        let err = builder_validation_error_for(FeatureName("toy"), grammar_checked(g), shadow)
         err.contains("Block") && err.contains("shadows")
     }
     then "shadowing a central name is rejected — SAME kind and arity too" {
@@ -181,7 +181,7 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             bind("Block", BuildKind.Stmt, 1, ModulePath("features.toy"), "block_build"),
             bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
-        let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
+        let err = builder_validation_error_for(FeatureName("toy"), grammar_checked(g), shadow)
         err.contains("Block") && err.contains("shadows") && err.contains("central")
     }
     then "shadowing a TABLELESS engine build is rejected too" {
@@ -199,7 +199,7 @@ spec "t-kd4y.3: builder validation gates the manifest at registry build" {
             bind("MkNone", BuildKind.Expr, 0, ModulePath("features.toy"), "none_build"),
             bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
-        let err = builder_validation_error_for("toy", grammar_checked(g), shadow)
+        let err = builder_validation_error_for(FeatureName("toy"), grammar_checked(g), shadow)
         err.contains("MkNone") && err.contains("shadows") && err.contains("central")
     }
 }
@@ -298,8 +298,8 @@ spec "t-kd4y.3 Batch B: the expression-span row — `spanned` on an expr-kind bi
             bind_spanned("Phantom", BuildKind.Variant, 1, ModulePath("features.toy"), "phantom_build"),
             bind("Zed", BuildKind.Expr, 0, ModulePath("features.toy"), "zed_build"),
         ]
-        builder_validation_error_for("toy", toy_gram(), ok) == "" &&
-            builder_validation_error_for("toy", toy_gram(), bad).contains("span protocol")
+        builder_validation_error_for(FeatureName("toy"), toy_gram(), ok) == "" &&
+            builder_validation_error_for(FeatureName("toy"), toy_gram(), bad).contains("span protocol")
     }
     then "the generated parser threads sp_start INTO a spanned expr adapter" {
         // The rule fn captures the entry byte (`let sp_start = st.cur().pos`)
