@@ -198,6 +198,7 @@ export fn match_lang() -> LanguageFeature {
     let empty_arms: List<MatchArm> = []
     LanguageFeature match_def {
         name = "match",
+        contextual = ["_"],
         title = "match — pattern matching with guards, or-patterns, and exhaustiveness",
         docs = """
 `match subject { pattern -> body, ... }` selects the first arm whose

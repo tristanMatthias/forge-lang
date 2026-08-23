@@ -24,6 +24,7 @@ body: TokenStream? … }` declares a component; `component Name inst { … }`
 it. Config pairs ride `key value` or `key = expr`; a `body: TokenStream`
 component captures its instance body verbatim.
 """,
+        contextual = ["config", "children", "body", "implements"],
         gram = grammar {
   // The COMPONENT definition, MODERN form only (t-47hc Phase 4 slice A):
   // `component name [implements A, B] { config? children? body:TokenStream? … }`.

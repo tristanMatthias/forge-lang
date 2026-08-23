@@ -50,6 +50,7 @@ partial updates go through `with`).
         emit_expr = struct_lit_emit_expr,
         resolve_expr = struct_lit_resolve_expr,
         check_expr = struct_lit_check_expr,
+        contextual = ["without", "only"],
         gram_family = "expr",
     }
     struct_lit_def

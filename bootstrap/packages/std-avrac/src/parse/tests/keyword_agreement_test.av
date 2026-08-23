@@ -21,7 +21,7 @@
 // legitimate and asserted below.
 
 use @std.avrac.parse.{keyword_rules}
-use @std.avrac.features.{all_feature_keywords}
+use @std.avrac.features.{all_feature_keywords, all_contextual_words}
 use @std.avrac.core.{Tk, KwId}
 
 /// A row is RESERVED-FUTURE if its token is the catch-all reserved id. Those are
@@ -90,28 +90,42 @@ spec "the keyword set agrees with what the features declare (t-y2i7.8)" {
             used == 0
         }
 
-        then "the feature-only words are EXACTLY the known contextual ones" {
-            // The other direction is legitimately non-empty: a grammar can match a
-            // word as literal TEXT without it being a lexed keyword. But an upper
-            // BOUND is nearly vacuous — the measured set is 13 and a drift to 24
-            // would pass unnoticed — so the set is pinned exactly. A feature adding
-            // a contextual word turns this red on purpose: someone confirms it was
-            // meant, and adds it here.
-            let allow = ["config", "children", "body", "implements", "grammar", "_",
-                         "table", "arm", "stmt", "stmts", "decl", "without", "only"]
-            mut unexpected = 0
+        then "every feature-only word is DECLARED contextual by the feature that spells it" {
+            // The allowlist used to be a hardcoded array right here, which made a
+            // TEST FILE the authority on which of a feature's words are syntax,
+            // and let a feature change its grammar without the owning
+            // declaration moving with it.
+            //
+            // It is now `LanguageFeature.contextual`, declared by whoever spells
+            // the word: `config` is component_decl's, `arm` is quote_expr's, `_`
+            // is match's, `without`/`only` are struct_decl's. The DEFAULT is the
+            // other way round — a word a grammar spells RESERVES — which is what
+            // lets a keyword be added by writing one grammar line instead of also
+            // editing a central table that can silently disagree.
+            let ctx = all_contextual_words()
+            mut gap = 0
             for d in declared {
                 mut central = false
                 for r in keyword_rules() { if r.spelling == d { central = true } }
-                if !central && !allow.contains(d) { unexpected = unexpected + 1 }
+                if !central && !ctx.contains(d) { gap = gap + 1 }
             }
-            mut stale = 0
-            for a in allow {
-                mut still_declared = false
-                for d in declared { if d == a { still_declared = true } }
-                if !still_declared { stale = stale + 1 }
-            }
-            unexpected == 0 && stale == 0
+            // KNOWN GAP, tracked rather than tolerated — exactly one word.
+            //
+            // `table {…}` starts a construct from nothing exactly as `defer`
+            // does, so it SHOULD reserve and does not. MEASURED why it cannot
+            // yet: making it a keyword breaks the very rule that spells it. The
+            // built compiler then fails to parse `table<Row> {…}` at all — its
+            // FIRST gate no longer admits the token — and since token_table.av
+            // is itself written with table literals, the compiler stops
+            // compiling its own source. Reserving it needs the expression
+            // dispatch to admit a keyword-led branch first.
+            //
+            // `grammar` is NOT in this gap: it is genuinely contextual and now
+            // declares itself so. Reserving it would make `.grammar` a parse
+            // error at all 553 sites, because an ACTIVE keyword is not a legal
+            // field name (reserved_kw_field_test pins that — only RESERVED-but-
+            // inactive words like `ref`/`owned` are).
+            gap == 1
         }
     }
 }

@@ -65,6 +65,12 @@ is exactly the quoted form with the quotes dropped.
         gram = grammar {
   grammar_expr = "grammar" "{" body:@rawbrace(grammar) "}" -> MkGrammarBlock(body)
         },
+        // `grammar` is CONTEXTUAL, and deliberately so. Reserving it would make
+        // `.grammar` a parse error at all 553 sites — an ACTIVE keyword is not a
+        // legal field name (reserved_kw_field_test pins that; only RESERVED-but-
+        // inactive words like `ref`/`owned` are). `expr_keyword` below is the
+        // mechanism that already parses it contextually.
+        contextual = ["grammar"],
         expr_keyword = "grammar",
         gram_family = "expr",
     }

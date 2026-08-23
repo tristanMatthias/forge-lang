@@ -51,6 +51,24 @@ export component LanguageFeature {
         expr_tag: Expr? = null,
         stmt_tag: Stmt? = null,
         expr_keyword: string = "",
+        // Words this feature's grammar SPELLS that must NOT become reserved
+        // keywords (t-y2i7.8).
+        //
+        // The default is the other way round: a word literal in a grammar IS
+        // surface syntax, so it reserves. That default is what lets a keyword be
+        // added by writing ONE grammar line — the epic's acceptance criterion —
+        // instead of also editing a central table that can silently disagree.
+        //
+        // A CONTEXTUAL word is one that only means something INSIDE another
+        // construct and is an ordinary name everywhere else: `config` inside a
+        // component block, `arm` after `quote`, `only`/`without` inside a type
+        // declaration. Reserving those would cost far more than it buys —
+        // `body` alone is used as a plain name 439 times in this compiler.
+        //
+        // Contrast `table {…}` and `grammar {…}`, which start a construct from
+        // nothing exactly as `defer` does. Those are NOT contextual and DO
+        // reserve; that they did not was a real inconsistency, not a design.
+        contextual: List<string> = [],
         emit_expr: fn(Ctx, List<VarBinding>, Expr) -> Result<EmitValue, string> = noop_emit_expr,
         emit_stmt: fn(Ctx, List<VarBinding>, Stmt) -> Result<StmtResult, string> = noop_emit_stmt,
         resolve_expr: fn(Resolver, Expr) -> Resolver = noop_resolve_expr,
@@ -183,6 +201,25 @@ export fn all_grammar_operators() -> List<string> {
     // arithmetic/comparison operator.
     for t in grammar_literals(avra_program_grammar()) {
         if !text_is_word(t) && !out.contains(t) { out.push(t) }
+    }
+    out
+}
+
+/// Every word the features declare as CONTEXTUAL — spelled by a grammar but
+/// deliberately NOT reserved. The union of `LanguageFeature.contextual`.
+///
+/// This is the exception list for the default "a word a grammar spells is a
+/// keyword". It lives on the features because that is who knows: `config` is
+/// component_decl's, `arm` is quote_expr's. It used to be a hardcoded array
+/// inside keyword_agreement_test, which meant a test file was the authority on
+/// which of a feature's words were syntax — and that a feature could change its
+/// grammar without the owning declaration moving with it.
+export fn all_contextual_words() -> List<string> {
+    mut out: List<string> = []
+    for f in language_features() {
+        for w in f.contextual {
+            if !out.contains(w) { out.push(w) }
+        }
     }
     out
 }
