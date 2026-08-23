@@ -196,3 +196,44 @@ spec "slot-gate policy: HEADROOM makes the decision predictive (t-2fe6)" {
         avra_slot_gate_should_wait(0 - 1, 4 * 1024 * 1024 + 3 * 1024 * 1024) == 0
     }
 }
+
+// t-2fe6 (B): the slot gate is RE-ENTRANT, so a slot-holder's own children do
+// not queue behind it.
+//
+// THE DEADLOCK. The slot fd is `static` and never closed, so a process HOLDS
+// its slot until it exits. A spec that shells out to a child `bs2` therefore
+// waits on itself under pressure: parent holds a slot, child queues for one of
+// the few remaining, parent cannot exit until the child returns, child cannot
+// start until a slot frees. Nothing consumes memory while this happens, so
+// every memory-based guard is blind to it.
+//
+// Observed on CI: pool frozen at 120/151 with the same three units in flight
+// and MemAvailable FLAT at 2971MB for ~40 minutes, against a ~14 minute norm —
+// heading for the job timeout. Two of the three stuck units shell out to child
+// compiles. Distinct from the eviction shape, where `avail` collapses ~8GB
+// inside one heartbeat and the runner kills the job.
+//
+// A child of a slot-holder is already covered by its parent's slot. The marker
+// rides the environment, which children inherit by construction.
+spec "the slot gate is re-entrant — a child of a slot-holder does not queue" {
+    then "with EVERY slot held, an un-marked compile blocks — the gate engages" {
+        // The control, and it earned its place: a first draft used the wrong
+        // width env var, so no slot was ever contended and the re-entrancy spec
+        // would have passed for the wrong reason. This caught that.
+        let dir = "${slot_dir()}_reentry_ctl"
+        let fd = hold_slot0(dir)
+        let rc = check_gated_rc("999999", dir, "AVRA_COMPILE_SLOT_WIDTH=1 ", "3", "/dev/null")
+        let _ = avra_flock_unlock(fd)
+        rc != 0
+    }
+    then "the SAME setup completes when the process is marked as already holding one" {
+        // The deadlock, fixed: the child sees the inherited marker and proceeds
+        // instead of queueing for a slot its parent will never release.
+        let dir = "${slot_dir()}_reentry_fix"
+        let fd = hold_slot0(dir)
+        let rc = check_gated_rc("999999", dir, "AVRA_SLOT_HELD=1 AVRA_COMPILE_SLOT_WIDTH=1 ", "10", "/dev/null")
+        let _ = avra_flock_unlock(fd)
+        rc == 0
+    }
+}
+
