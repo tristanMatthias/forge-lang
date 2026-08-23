@@ -1027,7 +1027,8 @@ impl BuildKind {
 /// specific terminals (NUMBER, BOOL) must precede the catch-alls (KW, PUNCT).
 export type TerminalRule = {
     name: string,
-    guard: string
+    guard: string,
+    matches: fn(Tk) -> bool
 }
 
 
@@ -1041,20 +1042,30 @@ export type TerminalRule = {
 /// KW and PUNCT are the reverse: EXECUTOR-only catch-alls with no emitted
 /// guard, which is why their `guard` is empty and the emitter falls back to
 /// comparing `st.cur().kind`.
+fn tr_never(tk: Tk) -> bool { false }
+fn tr_ident(tk: Tk) -> bool { tk == Tk.Identifier }
+fn tr_string(tk: Tk) -> bool { tk == Tk.String }
+fn tr_template(tk: Tk) -> bool { tk == Tk.Template }
+fn tr_eof(tk: Tk) -> bool { tk == Tk.Eof }
+fn tr_doc(tk: Tk) -> bool { tk == Tk.DocComment }
+fn tr_moddoc(tk: Tk) -> bool { tk == Tk.ModDocComment }
+fn tr_error(tk: Tk) -> bool { tk == Tk.Error }
+fn tr_any(tk: Tk) -> bool { true }
+
 export fn terminal_rules() -> List<TerminalRule> {
     table<TerminalRule> {
-        name        | guard
-        "IDENT"     | "st.cur().tk == Tk.Identifier"
-        "WORD"      | "text_is_word(st.cur().text)"
-        "FIELDNAME" | "tk_is_field_name(st.cur().tk)"
-        "NUMBER"    | "tk_is_number_lit(st.cur().tk)"
-        "STRING"    | "st.cur().tk == Tk.String"
-        "BOOL"      | "tk_is_bool_lit(st.cur().tk)"
-        "TEMPLATE"  | "st.cur().tk == Tk.Template"
-        "EOF"       | "st.cur().tk == Tk.Eof"
-        "DOC"       | "st.cur().tk == Tk.DocComment"
-        "MODDOC"    | "st.cur().tk == Tk.ModDocComment"
-        "ERROR"     | "st.cur().tk == Tk.Error"
+        name        | guard                                  | matches
+        "IDENT"     | "st.cur().tk == Tk.Identifier"         | tr_ident
+        "WORD"      | "text_is_word(st.cur().text)"          | tr_never
+        "FIELDNAME" | "tk_is_field_name(st.cur().tk)"        | tr_never
+        "NUMBER"    | "tk_is_number_lit(st.cur().tk)"        | tk_is_number_lit
+        "STRING"    | "st.cur().tk == Tk.String"             | tr_string
+        "BOOL"      | "tk_is_bool_lit(st.cur().tk)"          | tk_is_bool_lit
+        "TEMPLATE"  | "st.cur().tk == Tk.Template"           | tr_template
+        "EOF"       | "st.cur().tk == Tk.Eof"                | tr_eof
+        "DOC"       | "st.cur().tk == Tk.DocComment"         | tr_doc
+        "MODDOC"    | "st.cur().tk == Tk.ModDocComment"      | tr_moddoc
+        "ERROR"     | "st.cur().tk == Tk.Error"              | tr_error
     }
 }
 
