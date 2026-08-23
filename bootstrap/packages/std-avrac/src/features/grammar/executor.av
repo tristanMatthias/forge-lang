@@ -1925,16 +1925,34 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // (`<` WORD `>` `{`), NOT `peek_is_table_row_type`'s raw-byte scan — one
     // spelling of the discrimination, reused, so the two cannot drift.
     if cond == "ident_lbrace_feature" {
-        if st.cur().kind != "IDENT" { return false }
         if st.pos + 1 >= st.toks.length { return false }
         let nx = st.toks[st.pos + 1]
+        // `table` is tested by TEXT, before the IDENT gate, because it is a
+        // KEYWORD (t-y2i7.17) and a keyword's kind is "KW", not "IDENT". Gating
+        // on IDENT first is what made reserving `table` stop `table<Row> { … }`
+        // from parsing at all: the literal's own rule was never entered, and
+        // since token_table.av is written with table literals the compiler then
+        // could not compile its own source.
+        //
+        // Both forms are text-tested, so this reads the same whether `table`
+        // lexes as an identifier or as a keyword.
+        if st.cur().text == "table" {
+            if nx.text == "{" { return ident_lbrace_is_feature_form(st) }
+            // `table<Row> {` — the typed form. The `<` used to need
+            // disambiguating from a comparison against a VARIABLE named
+            // `table`; reserving the word removes that ambiguity, but the
+            // shape check is kept because it still discriminates the typed
+            // literal from anything else a `table <` could begin.
+            return nx.text == "<" && st.pos + 4 < st.toks.length
+                && tok_starts_word(st.toks[st.pos + 2])
+                && st.toks[st.pos + 3].text == ">"
+                && st.toks[st.pos + 4].text == "{"
+        }
+        // A REGISTERED `kw { … }` feature construct (grammar / sql / regex) —
+        // those are contextual, so they really are IDENT-kinded.
+        if st.cur().kind != "IDENT" { return false }
         if nx.text == "{" { return ident_lbrace_is_feature_form(st) }
-        // `table<Row> {` — the typed form, whose `<` would otherwise be read as a
-        // comparison against a variable named `table`.
-        return st.cur().text == "table" && nx.text == "<" && st.pos + 4 < st.toks.length
-            && tok_starts_word(st.toks[st.pos + 2])
-            && st.toks[st.pos + 3].text == ">"
-            && st.toks[st.pos + 4].text == "{"
+        return false
     }
     // Tuple-destructure `for (a, b) in ...`, checked before consuming `for`.
     if cond == "for_destructure" {
@@ -1961,11 +1979,20 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
             else if t.tk == Tk.RightParen || t.tk == Tk.RightBracket { depth = depth - 1 }
             else if t.tk == Tk.LeftBrace && depth <= 0 {
                 // The body brace. The table form is exactly `… table {`.
-                return i > st.pos + 1 && st.toks[i - 1].kind == "IDENT" && st.toks[i - 1].text == "table"
+                //
+                // Tested by TEXT alone. It used to also require kind == "IDENT",
+                // which stopped matching the moment `table` became a keyword
+                // (t-y2i7.17) — `match s table { … }` silently lost its table
+                // form. The word is the discriminator either way.
+                return i > st.pos + 1 && st.toks[i - 1].text == "table"
             }
             i = i + 1
         }
-        false
+        // `return`, not a bare `false`: this function's TAIL is `true` (unknown
+        // conditions default permissive), so falling out of this block would
+        // answer TRUE for a `match` whose body brace was never found — the exact
+        // opposite of what the loop concluded.
+        return false
     }
     // `if let v = x { … }` — the BIND-FRESH form, which desugars to a temp + a
     // none-check + an unwrap-bind prepended to the then-block.

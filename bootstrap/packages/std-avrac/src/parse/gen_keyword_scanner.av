@@ -577,6 +577,18 @@ export fn classify_keyword(src: bytes, start: int, end: int) -> Tk {
     }
     if b0 == LOWER_T {
         let b1 = byte_at(src, start + 1)
+        if b1 == LOWER_A {
+            let b2 = byte_at(src, start + 2)
+            if b2 == LOWER_B {
+                let b3 = byte_at(src, start + 3)
+                if b3 == LOWER_L {
+                    let b4 = byte_at(src, start + 4)
+                    if b4 == LOWER_E {
+                        if start + 5 == end { return Tk.Keyword(KwId.Table) }
+                    }
+                }
+            }
+        }
         if b1 == LOWER_H {
             let b2 = byte_at(src, start + 2)
             if b2 == LOWER_E {

@@ -996,7 +996,7 @@ export fn register_decls(ids: List<StmtId>, store: NodeStore) -> ResolverState {
 ///    method interns during the use-site rewrite instead
 ///    (`rewrite_impl_method_stmt`), where the target has resolved to its
 ///    qualified name and the identity is the true `mod::Foo__run`.
-fn intern_item_symbols(table: SymbolTable, items: List<ModuleItemEntry>) {
+fn intern_item_symbols(syms: SymbolTable, items: List<ModuleItemEntry>) {
     mut i = 0
     while i < items.length {
         // `entry`, not `it`: inside a method-call argument a bare `it`
@@ -1006,7 +1006,7 @@ fn intern_item_symbols(table: SymbolTable, items: List<ModuleItemEntry>) {
         match entry.kind {
             .AliasSym or .MethodSym -> {}
             .FnSym or .TypeSym or .EnumSym or .TraitSym or .NewtypeSym or .UnionAliasSym or .ShapeSym or .ConstSym -> {
-                let _ = table.intern(entry.canonical, entry.kind, entry.exported)
+                let _ = syms.intern(entry.canonical, entry.kind, entry.exported)
             }
         }
         i = i + 1
@@ -1015,13 +1015,13 @@ fn intern_item_symbols(table: SymbolTable, items: List<ModuleItemEntry>) {
 
 /// Recursive twin of `intern_item_symbols` over the module tree: intern
 /// each node's items, then descend into children and siblings.
-fn intern_tree_symbols(table: SymbolTable, tree: ModuleNode) {
+fn intern_tree_symbols(syms: SymbolTable, tree: ModuleNode) {
     match tree {
         .End -> {}
         .Node(_, _, items, children, next) -> {
-            intern_item_symbols(table, items)
-            intern_tree_symbols(table, children)
-            intern_tree_symbols(table, next)
+            intern_item_symbols(syms, items)
+            intern_tree_symbols(syms, children)
+            intern_tree_symbols(syms, next)
         }
     }
 }

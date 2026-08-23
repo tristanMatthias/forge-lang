@@ -2978,7 +2978,7 @@ export enum KwId {
     Match, Mod, Mut, None, Not, Null,
     Or, Parallel, Quote, Reserved, Return, Select,
     Shape, Spawn, Spec, Then, Trait, True,
-    Type, Use, When, Where, While, With
+    Table, Type, Use, When, Where, While, With
 }
 
 export enum Tk {
@@ -3157,6 +3157,7 @@ export fn kw_rows() -> List<KwRow> {
         KwId.With      | "with"
         KwId.When      | "when"
         KwId.Is        | "is"
+        KwId.Table     | "table"
         KwId.Spec      | "spec"
         KwId.Given     | "given"
         KwId.Then      | "then"

@@ -33,12 +33,12 @@ spec "fn_unit_key: composed, deterministic, component-sensitive" {
         let named = fn_unit_key("g", 33, 11, 22, false, "d0c0", "tc1")
         let sig = fn_unit_key("f", 34, 11, 22, false, "d0c0", "tc1")
         let body = fn_unit_key("f", 33, 12, 22, false, "d0c0", "tc1")
-        let table = fn_unit_key("f", 33, 11, 23, false, "d0c0", "tc1")
+        let tbl = fn_unit_key("f", 33, 11, 23, false, "d0c0", "tc1")
         let erased = fn_unit_key("f", 33, 11, 22, true, "d0c0", "tc1")
         let modes = fn_unit_key("f", 33, 11, 22, false, "d1c0", "tc1")
         let tool = fn_unit_key("f", 33, 11, 22, false, "d0c0", "tc2")
         base.hash != named.hash && base.hash != sig.hash
-            && base.hash != body.hash && base.hash != table.hash
+            && base.hash != body.hash && base.hash != tbl.hash
             && base.hash != erased.hash && base.hash != modes.hash
             && base.hash != tool.hash
     }

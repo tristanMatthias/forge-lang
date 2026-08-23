@@ -164,7 +164,7 @@ export fn keyword_rules() -> List<LitRule> {
 
 /// The exact keyword count `keyword_rules` must have (token_table_test.av guard).
 /// BUMP in lockstep with keyword_rules when the reserved-word set changes.
-export const KEYWORD_RULE_COUNT = 59
+export const KEYWORD_RULE_COUNT = 60
 
 // ── Character-CLASS RUN terminals ─────────────────────────────────
 /// One character-class RUN terminal: a maximal run of bytes each satisfying `pred`
