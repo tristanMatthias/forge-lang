@@ -14,7 +14,7 @@ use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_b
 use @std.avrac.parse.{oracle_decl}
 use @std.avrac.core.{BuildName}
 
-fn str_has(xs: List<string>, s: string) -> bool {
+fn str_has(xs: List<BuildName>, s: BuildName) -> bool {
     for x in xs { if x == s { return true } }
     false
 }
@@ -54,10 +54,10 @@ spec "annotation + export wrappers as LanguageFeatures" {
         // rules spell it). MkAnnotated: engine-core AND tableless (toy
         // vocabulary; no production rule).
         central_build_kind(BuildName("MkDocAnnotated")) == BuildKind.Stmt
-            && str_has(engine_core_builds(), "MkDocAnnotated")
-            && str_has(engine_core_builds(), "MkAnnotated")
-            && str_has(central_tableless_builds(), "MkAnnotated")
-            && !str_has(feature_builders().map((b) -> b.name), "MkDocAnnotated")
+            && str_has(engine_core_builds(), BuildName("MkDocAnnotated"))
+            && str_has(engine_core_builds(), BuildName("MkAnnotated"))
+            && str_has(central_tableless_builds(), BuildName("MkAnnotated"))
+            && !str_has(feature_builders().map((b) -> b.name), BuildName("MkDocAnnotated"))
     }
 }
 

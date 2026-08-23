@@ -9,7 +9,7 @@ use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind, feature_decl_grammar_fragments}
 use @std.avrac.core.{BuildName}
 
-fn row_of(name: string) -> string {
+fn row_of(name: BuildName) -> string {
     mut row = ""
     for b in feature_builders() {
         if b.name == name { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}/${b.module}" }
@@ -48,8 +48,8 @@ spec "select as a LanguageFeature" {
         has_decl && has_arm
     }
     then "both builds ride the manifest and NOTHING is left central" {
-        row_of("MkSelect") == "stmt/1/flat/select_build/features.select_stmt.lowering"
-            && row_of("MkSelectArm") == "sarm/3/flat/select_arm_build/features.select_stmt.lowering"
+        row_of(BuildName("MkSelect")) == "stmt/1/flat/select_build/features.select_stmt.lowering"
+            && row_of(BuildName("MkSelectArm")) == "sarm/3/flat/select_arm_build/features.select_stmt.lowering"
             && central_build_kind(BuildName("MkSelect")) == null
             && central_build_kind(BuildName("MkSelectArm")) == null
     }

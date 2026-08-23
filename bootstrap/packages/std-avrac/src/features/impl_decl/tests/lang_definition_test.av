@@ -11,7 +11,7 @@ use @std.avrac.features.{with_builders, feature_keywords, feature_gram, feature_
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, central_build_kind}
 use @std.avrac.core.{BuildName}
 
-fn manifest_row_desc(name: string) -> string {
+fn manifest_row_desc(name: BuildName) -> string {
     mut row = ""
     for b in feature_builders() {
         if b.name == name { row = "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.module}.${b.export_name}" }
@@ -42,9 +42,9 @@ spec "impl as a LanguageFeature" {
         builder_validation_error(with_builders(impl_decl_lang(), impl_decl_builds())) == ""
     }
     then "MkImpl, MkMethod and MkAssocTypeDef ride the manifest, owned by the feature" {
-        manifest_row_desc("MkImpl") == "stmt/3/flat/features.impl_decl.lowering.impl_build" &&
-            manifest_row_desc("MkMethod") == "stmt/4/flat/features.impl_decl.lowering.method_build" &&
-            manifest_row_desc("MkAssocTypeDef") == "stmt/2/flat/features.impl_decl.lowering.mk_assoc_type_def_abi"
+        manifest_row_desc(BuildName("MkImpl")) == "stmt/3/flat/features.impl_decl.lowering.impl_build" &&
+            manifest_row_desc(BuildName("MkMethod")) == "stmt/4/flat/features.impl_decl.lowering.method_build" &&
+            manifest_row_desc(BuildName("MkAssocTypeDef")) == "stmt/2/flat/features.impl_decl.lowering.mk_assoc_type_def_abi"
     }
     then "the engine carries no impl classification any more" {
         // The purity-ledger half of the flip: a central row left behind would

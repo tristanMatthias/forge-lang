@@ -6,6 +6,7 @@
 use @std.avrac.features.break_continue.{break_lang, continue_lang}
 use @std.avrac.features.{feature_keywords, feature_gram, feature_builders}
 use @std.avrac.features.grammar.{render_grammar, avra_program_grammar, grammar_build_refs, Grammar}
+use @std.avrac.core.{BuildName}
 
 spec "break / continue as LanguageFeatures" {
     then "the keywords derive from the declared grammars" {
@@ -31,8 +32,8 @@ spec "break / continue as LanguageFeatures" {
             mut ref_break = false
             mut ref_continue = false
             for br in grammar_build_refs(g) {
-                if br.name == "build_break" && br.argc == 0 { ref_break = true }
-                if br.name == "build_continue" && br.argc == 0 { ref_continue = true }
+                if br.name == BuildName("build_break") && br.argc == 0 { ref_break = true }
+                if br.name == BuildName("build_continue") && br.argc == 0 { ref_continue = true }
             }
             if !has_break || !has_continue || !ref_break || !ref_continue { ok = false }
         }
@@ -50,8 +51,8 @@ spec "break / continue as LanguageFeatures" {
         mut b = ""
         mut c = ""
         for r in feature_builders() {
-            if r.name == "build_break" { b = "${r.kind}/${string(r.arity)}/${if r.spanned { "spanned" } else { "flat" }}" }
-            if r.name == "build_continue" { c = "${r.kind}/${string(r.arity)}/${if r.spanned { "spanned" } else { "flat" }}" }
+            if r.name == BuildName("build_break") { b = "${r.kind}/${string(r.arity)}/${if r.spanned { "spanned" } else { "flat" }}" }
+            if r.name == BuildName("build_continue") { c = "${r.kind}/${string(r.arity)}/${if r.spanned { "spanned" } else { "flat" }}" }
         }
         b == "stmt/0/flat" && c == "stmt/0/flat"
     }

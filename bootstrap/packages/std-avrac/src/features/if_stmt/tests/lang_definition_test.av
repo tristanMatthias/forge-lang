@@ -47,14 +47,14 @@ spec "if as a LanguageFeature" {
             for r in g.rules { if r.name == "if_stmt" { has_rule = true } }
             mut has_ref = false
             for br in grammar_build_refs(g) {
-                if br.name == "build_if" && br.argc == 3 { has_ref = true }
+                if br.name == BuildName("build_if") && br.argc == 3 { has_ref = true }
             }
             if !has_rule || !has_ref { ok = false }
         }
         ok
     }
     then "build_if rides the manifest as a SPANNED stmt row" {
-        row_of("build_if") == "stmt/3/spanned/build_if_abi"
+        row_of(BuildName("build_if")) == "stmt/3/spanned/build_if_abi"
     }
 }
 
@@ -67,7 +67,7 @@ spec "if as a LanguageFeature" {
 // expression views can take it without the statement rules). The spine keeps
 // only the `@peek(if_let)`-gated REFERENCE — which is what makes `if_expr`
 // still reach the form.
-fn row_of(name: string) -> string {
+fn row_of(name: BuildName) -> string {
     for b in feature_builders() {
         if b.name == name { return "${b.kind}/${string(b.arity)}/${if b.spanned { "spanned" } else { "flat" }}/${b.export_name}" }
     }
@@ -122,8 +122,8 @@ fn rule_expects(g: Grammar, rule: string) -> string {
 
 spec "if let is feature-owned — rules and lowerings both" {
     then "both if-let builds ride the manifest, span-free, at arity 5" {
-        row_of("MkIfLet") == "expr/5/flat/mk_if_let_abi"
-            && row_of("MkIfLetStmt") == "stmt/5/flat/mk_if_let_stmt_abi"
+        row_of(BuildName("MkIfLet")) == "expr/5/flat/mk_if_let_abi"
+            && row_of(BuildName("MkIfLetStmt")) == "stmt/5/flat/mk_if_let_stmt_abi"
     }
     then "neither name is an engine central build any more" {
         // The flip's other half: a name the manifest supplies must NOT also
