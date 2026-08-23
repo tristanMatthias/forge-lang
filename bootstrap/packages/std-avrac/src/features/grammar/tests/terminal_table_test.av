@@ -7,13 +7,19 @@
 //
 // Drift between them is the recurring failure in this area — #1336 and #1338
 // each fixed one terminal (FIELDNAME, then NUMBER and BOOL) where the two sides
-// had come to disagree. Declaring the set once removes the class instead of the
-// next instance.
+// had come to disagree. One row now carries BOTH halves, so agreement is
+// STRUCTURAL: there is no second declaration to drift from.
+//
+// (An earlier attempt at this shipped and was reverted: the shared predicate
+// column tripped a real ABI bug — a bool-returning fn value read as i64 with
+// undefined high bits — which made every token classify as the first row on
+// x86-64. That is t-21gy, fixed in #1356, and the column is back on top of it.
+// If this file ever goes red on Linux only, re-read that ticket first.)
 //
 // These specs pin the PROPERTIES that make one declaration safe, not the
 // particular contents, so adding a terminal does not force a test edit.
 
-use @std.avrac.features.grammar.{terminal_rules, terminal_guard, executor_terminal_names, tk_to_grammar_kind}
+use @std.avrac.features.grammar.{terminal_rules, terminal_guard, tk_to_grammar_kind}
 use @std.avrac.core.{Tk, KwId}
 
 spec "the terminal set is declared once (t-y2i7.8)" {
@@ -37,8 +43,6 @@ spec "the terminal set is declared once (t-y2i7.8)" {
         dupes == 0
     }
     then "the emitter's lookup answers from the SAME rows" {
-        // terminal_guard is what emit.av calls; it must agree with the table it
-        // reads, or the two views have diverged again by another route.
         mut ok = true
         for t in terminal_rules() { if terminal_guard(t.name) != t.guard { ok = false } }
         ok
@@ -46,47 +50,55 @@ spec "the terminal set is declared once (t-y2i7.8)" {
     then "an unknown terminal has no guard, so the emitter falls back to a kind compare" {
         terminal_guard("NOT_A_TERMINAL") == ""
     }
-    then "every name the EXECUTOR can produce is declared" {
-        // This is the agreement check that replaces the two hand-kept ladders.
-        // The classifier is driven for real — not re-described — so a name it
-        // starts producing without a matching declaration turns this red.
-        let declared = terminal_rules()
-        mut missing = 0
-        for n in executor_terminal_names() {
-            if n == "KW" || n == "PUNCT" { continue }   // catch-alls, no emitted guard
-            mut found = false
-            for t in declared { if t.name == n { found = true } }
-            if !found { missing = missing + 1 }
-        }
-        missing == 0
-    }
-    then "the real classifier answers with declared names" {
-        // Drives `tk_to_grammar_kind` itself over the tokens whose
-        // classification has actually drifted before (#1336, #1338).
-        let names = executor_terminal_names()
+    then "the EXECUTOR answers from those same rows too — structural, not merely equal" {
+        // Drives the real classifier and requires its answer to BE a declared
+        // row's name (or a documented catch-all). Nothing here re-describes the
+        // terminal set, which is the whole point: a second description is the
+        // thing that used to drift.
+        let rs = terminal_rules()
         mut bad = 0
         for tk in [Tk.Identifier, Tk.Number, Tk.String, Tk.Eof, Tk.Error,
                    Tk.Template, Tk.DocComment, Tk.ModDocComment,
-                   Tk.Keyword(KwId.True), Tk.Keyword(KwId.False)] {
-            mut found = false
-            for n in names { if n == tk_to_grammar_kind(tk) { found = true } }
+                   Tk.Keyword(KwId.True), Tk.Keyword(KwId.False), Tk.Keyword(KwId.If)] {
+            let k = tk_to_grammar_kind(tk)
+            mut found = k == "KW" || k == "PUNCT"
+            for t in rs { if t.name == k { found = true } }
             if !found { bad = bad + 1 }
         }
         bad == 0
     }
+    then "every row's own predicate agrees with the classifier's answer" {
+        // The structural claim, tested directly: if a row's `matches` accepts a
+        // token, the classifier must return THAT row's name — i.e. both engines
+        // really are reading one row, not two that happen to coincide.
+        let rs = terminal_rules()
+        mut bad = 0
+        for tk in [Tk.Identifier, Tk.Number, Tk.String, Tk.Eof, Tk.Error,
+                   Tk.Template, Tk.DocComment, Tk.ModDocComment,
+                   Tk.Keyword(KwId.True), Tk.Keyword(KwId.False)] {
+            mut first = ""
+            for t in rs { if first == "" && t.matches(tk) { first = t.name } }
+            if first != "" && first != tk_to_grammar_kind(tk) { bad = bad + 1 }
+        }
+        bad == 0
+    }
     then "literals classify as literals, not as keywords" {
-        // The exact drift #1338 fixed: a number or bool token falling through
-        // to the KW catch-all. Both sides must call them NUMBER and BOOL.
+        // The exact drift #1338 fixed, and the exact symptom t-21gy produced:
+        // a number or bool falling through to a catch-all or to the first row.
         tk_to_grammar_kind(Tk.Number) == "NUMBER"
             && tk_to_grammar_kind(Tk.Keyword(KwId.True)) == "BOOL"
             && tk_to_grammar_kind(Tk.Keyword(KwId.False)) == "BOOL"
     }
-    then "EMITTER-ONLY rows are never produced by the classifier" {
-        // WORD tests the token TEXT and FIELDNAME is reached through the
-        // executor's own fall-through; neither is a classifier answer.
+    then "EMITTER-ONLY rows never claim a token" {
+        // WORD tests the token's TEXT and FIELDNAME is reached through the
+        // executor's own fall-through. Either claiming a token here would
+        // mis-classify it — and because they sit FIRST in the table, they would
+        // claim EVERY token. That is precisely what t-21gy did.
         mut ok = true
-        for n in executor_terminal_names() {
-            if n == "WORD" || n == "FIELDNAME" { ok = false }
+        for t in terminal_rules() {
+            if t.name == "WORD" || t.name == "FIELDNAME" {
+                if t.matches(Tk.Identifier) || t.matches(Tk.Number) || t.matches(Tk.Eof) { ok = false }
+            }
         }
         ok
     }

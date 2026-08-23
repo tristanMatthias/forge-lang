@@ -27,7 +27,7 @@
 // with a named-terminal kind — `KW` for keywords, `PUNCT` for operators.
 use core.{Tk, tk_keyword_str, tk_is_number_lit, tk_is_bool_lit}
 use parse.{Parser, parser_new_lex_only}
-use features.grammar.{Token}
+use features.grammar.{Token, terminal_rules}
 use diagnostics.{Diagnostic, error_def}
 
 impl Parser {
@@ -131,28 +131,14 @@ fn tk_is_keyword(tk: Tk) -> bool {
 /// load-bearing; keyword/operator tokens are matched by their `text`, so their
 /// kind just has to be non-`IDENT` (keywords) or otherwise distinct.
 export fn tk_to_grammar_kind(tk: Tk) -> string {
-    // A match on a Tk enum is the right tool here, and it stays. What used to be
-    // wrong is that the NAMES it produces were also spelled out independently in
-    // emit.av's guard ladder, with nothing checking the two agreed — that drift
-    // is what #1336 and #1338 each fixed one terminal at a time.
+    // ONE declaration serves both engines: the emitter takes each row's `guard`,
+    // this takes its `matches`. Neither can drift from the other, because there
+    // is no other to drift from.
     //
-    // The names are now declared once in `terminal_rules()` (ast.av) and
-    // AGREEMENT IS ENFORCED by terminal_table_test, rather than the two sides
-    // sharing a runtime table. Sharing the table itself was tried and reverted:
-    // it put a per-token function-pointer dispatch on this path, and the
-    // window-built compiler on Linux then failed to classify number literals at
-    // all (`undefined variable \`1\`` on `let xs = [1, 2, 3]`) while macOS was
-    // fine. Not worth a cross-platform hazard on the lexer's hot path.
-    match tk {
-        .Identifier -> "IDENT"
-        .String     -> "STRING"
-        .Eof        -> "EOF"
-        .Error      -> "ERROR"
-        .Template       -> "TEMPLATE"
-        .DocComment     -> "DOC"
-        .ModDocComment  -> "MODDOC"
-        _ -> if tk_is_number_lit(tk) { "NUMBER" }
-             else if tk_is_bool_lit(tk) { "BOOL" }
-             else if tk_is_keyword(tk) { "KW" } else { "PUNCT" }
-    }
+    // KW and PUNCT stay OUT of the table deliberately — they are catch-alls with
+    // no emitted guard, and `terminal_guard` uses "" as its not-a-terminal
+    // sentinel, so a row with an empty guard would be indistinguishable from an
+    // absent one.
+    for t in terminal_rules() { if t.matches(tk) { return t.name } }
+    if tk_is_keyword(tk) { "KW" } else { "PUNCT" }
 }
