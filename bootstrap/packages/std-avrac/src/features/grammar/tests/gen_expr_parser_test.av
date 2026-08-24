@@ -20,6 +20,7 @@
 // corpus and compare the canonical dump_expr trees (the same acceptance path
 // parser_equivalence_test.av's interpreter already passes).
 use @std.avrac.features.grammar.{Token, CapVal, PState, new_pstate, capval_to_expr, literal_node, fold_binary_expr, fold_postfix_expr, dump_expr}
+use features.grammar.{GKind}
 use @std.avrac.features.logical_op.lowering.{fold_logical_expr}
 use @std.avrac.features.unary_op.lowering.{unary_expr}
 use @std.avrac.parse.{parse_expression_generated_probe}
@@ -188,11 +189,11 @@ fn parse_suffix(st: PState) -> CapVal {
 }
 
 fn parse_primary(st: PState) -> CapVal {
-    if st.cur().kind == "NUMBER" { return CapVal.Node(literal_node(st, st.advance())) }
-    if st.cur().kind == "STRING" { return CapVal.Node(literal_node(st, st.advance())) }
+    if st.cur().kind == GKind.NUMBER { return CapVal.Node(literal_node(st, st.advance())) }
+    if st.cur().kind == GKind.STRING { return CapVal.Node(literal_node(st, st.advance())) }
     if st.cur().text == "true" { return CapVal.Node(literal_node(st, st.advance())) }
     if st.cur().text == "false" { return CapVal.Node(literal_node(st, st.advance())) }
-    if st.cur().kind == "IDENT" { return CapVal.Node(literal_node(st, st.advance())) }
+    if st.cur().kind == GKind.IDENT { return CapVal.Node(literal_node(st, st.advance())) }
     if st.cur().text == "(" {
         let _ = st.advance()
         let e = parse_expression(st)

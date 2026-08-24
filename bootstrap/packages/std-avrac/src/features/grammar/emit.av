@@ -1,7 +1,7 @@
 // WHY: ps3t.6.5.11 — the code-generation face of the generator. Where
 
 use core.{op_rows, tk_name, tk_is_op, OpId}
-use features.grammar.{terminal_guard, Grammar, Rule, GNode, GSeq, GItem, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
+use features.grammar.{terminal_guard, Grammar, Rule, GNode, GSeq, GItem, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred, GKind}
 // t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
 // The local wrappers below delegate to it so the two engines cannot drift.
 use features.grammar.{dispatch_has_tail, seq_lone_item_index, seq_is_bare_ref, rule_owns_recovery}
@@ -2770,7 +2770,7 @@ fn named_tk_guard(tok: string) -> string {
     // and falls back to comparing the token's kind.
     let g = terminal_guard(tok)
     if g != "" { return g }
-    "st.cur().kind == \"${tok}\""
+    "st.cur().kind == GKind.${tok}"
 }
 
 fn prim_first_guard(g: Grammar, prim: GPrim, visited: List<string>) -> string {

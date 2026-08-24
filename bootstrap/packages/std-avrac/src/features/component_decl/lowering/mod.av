@@ -12,7 +12,7 @@
 // binding_stmt_row / fn_decl_edges precedent) and the two thin def cores
 // here drive it — one implementation, no new module edges.
 use core.{BuildName, ModulePath, ChildrenSlot, CompConfig, CompConfigPair, Expr, ExprId, ParamEntry, Stmt, StmtId, Tk, TypeParamEntry, ValueType, byte_span_none, type_expr_to_vtype}
-use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, binding_stmt_row, capval_present, capval_to_children_slot_list, capval_to_comp_config_list, capval_to_comp_config_pair_list, capval_to_expr, capval_to_pentry_list, capval_to_stmt_list, capval_to_texpr, capval_tok_list, capval_tok_text, capval_tok_texts, expr_id_is_error, fn_decl_edges, mk_component_def_with_params, BuildKind}
+use features.grammar.{PState, CapVal, Token, BuilderBind, bind_row, bind_rows, binding_stmt_row, capval_present, capval_to_children_slot_list, capval_to_comp_config_list, capval_to_comp_config_pair_list, capval_to_expr, capval_to_pentry_list, capval_to_stmt_list, capval_to_texpr, capval_tok_list, capval_tok_text, capval_tok_texts, expr_id_is_error, fn_decl_edges, mk_component_def_with_params, BuildKind, GKind}
 
 /// One `key: ty ( = default )?` config-schema entry — the MkCompConfig
 /// build's core. Mirrors the retired parse_comp_config_schema's row exactly,
@@ -81,7 +81,7 @@ export fn mk_comp_body_marker(st: PState, marker: string) -> CapVal {
         st.set_abort_prop(true)
         return CapVal.Node(st.error_node_silent())
     }
-    CapVal.Tok(Token { kind: "IDENT", text: marker, pos: st.cur().pos, tk: Tk.Identifier })
+    CapVal.Tok(Token { kind: GKind.IDENT, text: marker, pos: st.cur().pos, tk: Tk.Identifier })
 }
 
 export fn mk_comp_body_marker_abi(st: PState, vals: List<CapVal>) -> CapVal {

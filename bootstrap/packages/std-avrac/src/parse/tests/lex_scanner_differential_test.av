@@ -27,7 +27,7 @@
 // Two implementations agreeing with an external constant is evidence. Two implementations
 // agreeing with each other, when one calls the other, is not.
 
-use @std.avrac.features.grammar.{lex_real}
+use @std.avrac.features.grammar.{lex_real, GKind}
 use @std.avrac.parse.{scan_dq_body, scan_tmpl_body, scan_raw_body, scan_ml_body, scan_raw_ml_body, scan_block_comment, scan_interp_region}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
@@ -41,9 +41,11 @@ fn hand_end(src: string) -> int {
 }
 
 /// What the first token's KIND was — an error path must not be read as agreement.
-fn hand_kind(src: string) -> string {
+/// Returns `NotATerminal` for an empty stream: no token carries it, so an error
+/// path can never be mistaken for agreement with a real kind.
+fn hand_kind(src: string) -> GKind {
     let toks = lex_real(src)
-    if toks.length < 1 { return "NONE" }
+    if toks.length < 1 { return GKind.NotATerminal }
     toks[0].kind
 }
 
@@ -58,21 +60,21 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         // "abc"  -> body 1..4, close at 4, token ends 5
         let c = "\"abc\""
         scan_dq_body(avra_bytes_from_string(c), 1) == 4 &&
-        hand_kind(c) == "STRING" && hand_end(c) == 5 && c.length == 5
+        hand_kind(c) == GKind.STRING && hand_end(c) == 5 && c.length == 5
     }
 
     then "dq_body treats a bare brace as ordinary content" {
         // "a{b}c" -> nothing suspends; close at 6, token ends 7
         let c = "\"a{b}c\""
         scan_dq_body(avra_bytes_from_string(c), 1) == 6 &&
-        hand_kind(c) == "STRING" && hand_end(c) == 7
+        hand_kind(c) == GKind.STRING && hand_end(c) == 7
     }
 
     then "dq_body runs through a newline" {
         // "a\nb" (real LF) -> close at 4, token ends 5
         let c = "\"a\nb\""
         scan_dq_body(avra_bytes_from_string(c), 1) == 4 &&
-        hand_kind(c) == "STRING" && hand_end(c) == 5
+        hand_kind(c) == GKind.STRING && hand_end(c) == 5
     }
 
     // THE ESCAPE SEAM. scan_dq_body must CONSUME escape pairs: a `\"` may not end the body
@@ -83,13 +85,13 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         // "a\"b"  -> the only REAL close is the last byte
         let c = "\"a\\\"b\""
         scan_dq_body(avra_bytes_from_string(c), 1) == c.length - 1 &&
-        hand_kind(c) == "STRING" && hand_end(c) == c.length
+        hand_kind(c) == GKind.STRING && hand_end(c) == c.length
     }
 
     then "dq_body does not suspend at an ESCAPED interpolation lead" {
         let c = "\"a\\" + "$" + "{b}\""
         scan_dq_body(avra_bytes_from_string(c), 1) == c.length - 1 &&
-        hand_kind(c) == "STRING" && hand_end(c) == c.length
+        hand_kind(c) == GKind.STRING && hand_end(c) == c.length
     }
 
     // A genuine interpolation DOES suspend, and the whole literal still lexes as one
@@ -97,7 +99,7 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
     then "a multi-segment interpolated string ends at its closing quote" {
         let c = "\"a" + "$" + "{x}b" + "$" + "{y}c\""
         scan_dq_body(avra_bytes_from_string(c), 1) == 2 &&
-        hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
+        hand_kind(c) == GKind.TEMPLATE && hand_end(c) == c.length
     }
 
     then "tmpl_body is verbatim — no escapes, no interpolation" {
@@ -105,14 +107,14 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         let b = "`a" + "$" + "{x}c`"
         scan_tmpl_body(avra_bytes_from_string(a), 1) == 4 && hand_end(a) == 5 &&
         scan_tmpl_body(avra_bytes_from_string(b), 1) == b.length - 1 && hand_end(b) == b.length &&
-        hand_kind(a) == "TEMPLATE" && hand_kind(b) == "TEMPLATE"
+        hand_kind(a) == GKind.TEMPLATE && hand_kind(b) == GKind.TEMPLATE
     }
 
     then "raw_body agrees with an independent expectation" {
         // r"abc" -> body 2..5, close at 5, token ends 6
         let c = "r\"abc\""
         scan_raw_body(avra_bytes_from_string(c), 2) == 5 &&
-        hand_kind(c) == "STRING" && hand_end(c) == 6
+        hand_kind(c) == GKind.STRING && hand_end(c) == 6
     }
 
     // THE REGRESSION THIS FILE EXISTS FOR. A single-line raw string may NOT span a newline:
@@ -123,7 +125,7 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
         // hand_end pins where the PRODUCTION lexer resumes — 6, just past the LF it
         // stopped at. Without it the row cannot tell a correct stop from one that
         // swallowed the later-line body and then errored anyway.
-        scan_raw_body(avra_bytes_from_string(c), 2) == 5 && hand_kind(c) == "ERROR" &&
+        scan_raw_body(avra_bytes_from_string(c), 2) == 5 && hand_kind(c) == GKind.ERROR &&
         hand_end(c) == 6
     }
 
@@ -131,7 +133,7 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
     // one escape pair) and then REQUIRES the closing quote. The removed `sq_body` rule
     // called `'abc'` a 3-byte body; the hand calls it an error.
     then "a char literal is one codepoint — `'abc'` is an error" {
-        hand_kind("'abc'") == "ERROR" && hand_kind("'a'") == "NUMBER"
+        hand_kind("'abc'") == GKind.ERROR && hand_kind("'a'") == GKind.NUMBER
     }
 
     // `"""…"""` — close_rep 3. The body may contain ORDINARY quotes, which is exactly what a
@@ -159,7 +161,7 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
     // ordinary quotes; matching the close at one byte consumed the outer delimiter and the
     // whole literal reported unterminated. Pre-existing — the base compiler still fails this.
     then "a nested triple-quoted string inside an interpolation keeps the outer literal whole" {
-        hand_kind("\"v " + "$" + "{\"\"\"a\"b\"\"\"} end\"") == "TEMPLATE"
+        hand_kind("\"v " + "$" + "{\"\"\"a\"b\"\"\"} end\"") == GKind.TEMPLATE
     }
 
     // ml_body now supplies the BOUNDS for `"""…"""` literal segments. These rows pin the
@@ -168,19 +170,19 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
     then "a multiline literal with embedded quotes lexes whole" {
         // The body holds a lone `"` and a `""`; only THREE close it.
         let c = "\"\"\"a\"b\"\"c\"\"\""
-        hand_kind(c) == "STRING" && hand_end(c) == c.length
+        hand_kind(c) == GKind.STRING && hand_end(c) == c.length
     }
 
     then "a multiline literal with interpolation lexes as one TEMPLATE" {
         let c = "\"\"\"a" + "$" + "{x}b\"\"\""
-        hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
+        hand_kind(c) == GKind.TEMPLATE && hand_end(c) == c.length
     }
 
     // The escape seam: scan_ml_body consumes escape pairs, so `\"` inside a multiline body
     // must not be mistaken for the start of the close.
     then "an escaped quote inside a multiline body does not close it" {
         let c = "\"\"\"a\\\"\"\"\""
-        hand_kind(c) == "STRING" && hand_end(c) == c.length
+        hand_kind(c) == GKind.STRING && hand_end(c) == c.length
     }
 
     // scan_interp_region owns the `${…}` extent now. `start` is AT the `${`; the returned
@@ -226,12 +228,12 @@ spec "the generated body scanners stop where the PRODUCTION lexer stops" {
     // an offset-only assertion.
     then "a raw nested string inside a real literal keeps the literal whole" {
         let c = "\"v " + "$" + "{r\"a\"} end\""
-        hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
+        hand_kind(c) == GKind.TEMPLATE && hand_end(c) == c.length
     }
 
     then "a nested triple-quoted string with an escape keeps the literal whole" {
         let c = "\"v " + "$" + "{\"\"\"a\\\"\"\"\"} end\""
-        hand_kind(c) == "TEMPLATE" && hand_end(c) == c.length
+        hand_kind(c) == GKind.TEMPLATE && hand_end(c) == c.length
     }
 
     // t-v126: a brace hides inside a CHAR literal and a BACKTICK template too, not just a

@@ -2,7 +2,7 @@
 
 use features.{is_expr_keyword, is_registered_component, register_component_name, register_raw_body_component, component_is_raw_body}
 use core.{Annotation, BinOp, Expr, ExprId, FieldEntry, FieldInit, KwId, LogicOp, MatchArm, NodeRef, NodeStore, ParamEntry, PatId, Pattern, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeId, TypeParamEntry, UnOp, ValueType, Variant, WhenArm, build_line_index, byte_span, byte_span_none, gensym_name, new_node_store, render_type_name_list, tk_is_kw, type_expr_to_vtype, tk_is_op, OpId}
-use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GPrim, GAnnot}
+use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GPrim, GAnnot, GKind, gkind_from_name}
 use features.grammar.{Token, lex_real, LexDiag, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
 use features.grammar.{dispatch_has_tail}
@@ -627,7 +627,7 @@ export type PostfixTryState = { base: ExprId, sp_start: int, step_base: ExprId, 
 impl PState {
     fn cur(self) -> Token { self.toks[self.pos] }
 
-    fn at_end(self) -> bool { self.cur().kind == "EOF" }
+    fn at_end(self) -> bool { self.cur().kind == GKind.EOF }
 
     fn advance(self) -> Token {
         let t = self.toks[self.pos]
@@ -666,8 +666,8 @@ impl PState {
         // shared runners undo the remainder on an errored exit, so no abandoned
         // parse can leave a half-consumed `>>` for the next one to trip over.
         self.tok_edits.push(TokEdit { idx: self.pos, orig: cur })
-        self.toks.set(self.pos, Token { kind: "PUNCT", text: ">", pos: cur.pos + 1, tk: Tk.Op(OpId.Greater) })
-        Token { kind: "PUNCT", text: ">", pos: cur.pos, tk: Tk.Op(OpId.Greater) }
+        self.toks.set(self.pos, Token { kind: GKind.PUNCT, text: ">", pos: cur.pos + 1, tk: Tk.Op(OpId.Greater) })
+        Token { kind: GKind.PUNCT, text: ">", pos: cur.pos, tk: Tk.Op(OpId.Greater) }
     }
 
     fn report(self, msg: string) {
@@ -1101,7 +1101,10 @@ fn named_tok_matches(name: string, tok: Token) -> bool {
     // t-kd4y.1). Same predicate the emitted guard calls; word_terminal_test
     // pins the two to one set.
     if name == "WORD" { return text_is_word(tok.text) }
-    tok.kind == name
+    // The terminal NAME is grammar text; `gkind_from_name` resolves it through
+    // the same table the emitter reads, and answers `NotATerminal` for a name
+    // that is not one — which no token carries, so it matches nothing.
+    tok.kind == gkind_from_name(name)
 }
 
 fn tok_starts_prim(g: Grammar, prim: GPrim, st: PState, visited: List<string>) -> bool {
@@ -1645,7 +1648,7 @@ fn ident_lbrace_is_feature_form(st: PState) -> bool {
 /// `match x { … }` is a plain identifier and nothing else; a blanket decline on a
 /// following `{` turned every mode-gated subject into `unexpected token`.
 fn ident_lbrace_owned_elsewhere(st: PState) -> bool {
-    if st.cur().kind != "IDENT" { return false }
+    if st.cur().kind != GKind.IDENT { return false }
     if st.pos + 1 >= st.toks.length { return false }
     if st.toks[st.pos + 1].text != "{" { return false }
     if ident_lbrace_is_feature_form(st) { return true }
@@ -1718,7 +1721,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // tested `STRING || TEMPLATE`; this sibling tested only STRING, so in
         // STATEMENT position a template-keyed map was claimed as a block (t-myz7).
         let k = st.toks[st.pos + 1]
-        return !((k.kind == "STRING" || k.kind == "TEMPLATE") && st.toks[st.pos + 2].text == ":")
+        return !((k.kind == GKind.STRING || k.kind == GKind.TEMPLATE) && st.toks[st.pos + 2].text == ":")
     }
     // Expression-position brace: `{ }` is an EMPTY MAP here (unlike statement
     // position, where it stays a block), otherwise a map needs a string/template
@@ -1729,7 +1732,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.toks[st.pos + 1].text == "}" { return true }
         if st.pos + 2 >= st.toks.length { return false }
         let k = st.toks[st.pos + 1]
-        return (k.kind == "STRING" || k.kind == "TEMPLATE") && st.toks[st.pos + 2].text == ":"
+        return (k.kind == GKind.STRING || k.kind == GKind.TEMPLATE) && st.toks[st.pos + 2].text == ":"
     }
     // `IDENT {` — the token twin of Parser.peek_after_ident_is_lbrace. Distinguishes the
     // `~Name { … }` splice (which splices only the CONSTRUCTOR NAME of a struct literal)
@@ -1774,7 +1777,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "dot_number" {
         if !tk_is_op(st.cur().tk, OpId.Dot) { return false }
         if st.pos + 1 >= st.toks.length { return false }
-        return st.toks[st.pos + 1].kind == "NUMBER"
+        return st.toks[st.pos + 1].kind == GKind.NUMBER
     }
     if cond == "dot_plain_field" {
         if !tk_is_op(st.cur().tk, OpId.Dot) { return false }
@@ -1824,7 +1827,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return st.store.lines.to_linecol(st.toks[st.pos + 1].pos).line == st.store.lines.to_linecol(after.pos).line
     }
     if cond == "ident_lbrace" {
-        if st.cur().kind != "IDENT" { return false }
+        if st.cur().kind != GKind.IDENT { return false }
         if st.pos + 1 >= st.toks.length { return false }
         return st.toks[st.pos + 1].text == "{"
     }
@@ -1838,7 +1841,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "tilde_ident_lbrace" {
         if st.cur().text != "~" { return false }
         if st.pos + 2 >= st.toks.length { return false }
-        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if st.toks[st.pos + 1].kind != GKind.IDENT { return false }
         return st.toks[st.pos + 2].text == "{"
     }
     // `Ident {` that is a PLAIN STRUCT LITERAL — i.e. `ident_lbrace` MINUS the two
@@ -1878,7 +1881,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // branch that parses them. Excluding both suffixed shapes here
     // is what makes the fall-through correct by construction.
     if cond == "ident_plain" {
-        if st.cur().kind != "IDENT" { return false }
+        if st.cur().kind != GKind.IDENT { return false }
         if st.pos + 1 >= st.toks.length { return true }
         let nx = st.toks[st.pos + 1]
         // A TYPED table literal `table<Row> { … }` is NOT a bare ident followed by a
@@ -1900,19 +1903,19 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
             && tok_starts_word(st.toks[st.pos + 2])
             && st.toks[st.pos + 3].text == ">"
             && st.toks[st.pos + 4].text == "{" { return false }
-        if nx.kind == "TEMPLATE" { return false }
+        if nx.kind == GKind.TEMPLATE { return false }
         // Decline a following `{` only when a sibling branch actually takes it. See
         // ident_lbrace_owned_elsewhere: with `allow_struct_lit` off nobody does, and a
         // blanket decline sent the subject of every `match`/`if`/`while` to the tail.
         return nx.text != "{" || !ident_lbrace_owned_elsewhere(st)
     }
     if cond == "ident_template" {
-        if st.cur().kind != "IDENT" { return false }
+        if st.cur().kind != GKind.IDENT { return false }
         if st.pos + 1 >= st.toks.length { return false }
-        return st.toks[st.pos + 1].kind == "TEMPLATE"
+        return st.toks[st.pos + 1].kind == GKind.TEMPLATE
     }
     if cond == "ident_lbrace_plain" {
-        if st.cur().kind != "IDENT" { return false }
+        if st.cur().kind != GKind.IDENT { return false }
         if st.pos + 1 >= st.toks.length { return false }
         if st.toks[st.pos + 1].text != "{" { return false }
         return !ident_lbrace_is_feature_form(st)
@@ -1950,7 +1953,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         }
         // A REGISTERED `kw { … }` feature construct (grammar / sql / regex) —
         // those are contextual, so they really are IDENT-kinded.
-        if st.cur().kind != "IDENT" { return false }
+        if st.cur().kind != GKind.IDENT { return false }
         if nx.text == "{" { return ident_lbrace_is_feature_form(st) }
         return false
     }
@@ -1974,7 +1977,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         mut depth = 0
         while i < st.toks.length {
             let t = st.toks[i]
-            if t.kind == "EOF" { return false }
+            if t.kind == GKind.EOF { return false }
             if tk_is_op(t.tk, OpId.LeftParen) || tk_is_op(t.tk, OpId.LeftBracket) { depth = depth + 1 }
             else if tk_is_op(t.tk, OpId.RightParen) || tk_is_op(t.tk, OpId.RightBracket) { depth = depth - 1 }
             else if tk_is_op(t.tk, OpId.LeftBrace) && depth <= 0 {
@@ -2029,7 +2032,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return !(tk_is_op(st.cur().tk, OpId.Greater) || tk_is_op(st.cur().tk, OpId.Shr))
     }
     if cond == "comma_ident" {
-        return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
+        return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == GKind.IDENT
     }
     // The component-def `body: TokenStream` marker gate (t-47hc slice A):
     // the WORD `body` followed by a colon — `current_lexeme ==
@@ -2038,7 +2041,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // enter the marker group and fail `":"`
     // on well-formed input.
     if cond == "body_marker" {
-        return st.cur().text == "body" && st.cur().kind == "IDENT" &&
+        return st.cur().text == "body" && st.cur().kind == GKind.IDENT &&
             st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == ":"
     }
     // The component-body `let` gate (t-47hc slice A): comp_field owns EVERY
@@ -2148,13 +2151,13 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         let at = comp_header_end(st)
         if at < 0 { return false }
         if st.pos + 2 >= st.toks.length || st.toks[st.pos + 2].text != "implements" { return false }
-        return st.toks[at].kind == "IDENT"
+        return st.toks[at].kind == GKind.IDENT
     }
     if cond == "comp_inst_shape" {
         if st.pos + 3 >= st.toks.length { return false }
-        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if st.toks[st.pos + 1].kind != GKind.IDENT { return false }
         let inst = st.toks[st.pos + 2]
-        if inst.kind != "IDENT" || inst.text == "implements" { return false }
+        if inst.kind != GKind.IDENT || inst.text == "implements" { return false }
         return tk_is_op(st.toks[st.pos + 3].tk, OpId.LeftBrace)
     }
     // ── Slice C: the BARE-IDENT instantiation, `name inst { … }` ──
@@ -2166,12 +2169,12 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // result — but the component name is the current token either way, so the two are
     // equivalent.
     if cond == "bare_comp_inst" || cond == "bare_comp_inst_raw" {
-        if st.cur().kind != "IDENT" { return false }
+        if st.cur().kind != GKind.IDENT { return false }
         if !comp_name_is_registered(st) { return false }
         let want_raw = cond == "bare_comp_inst_raw"
         if comp_name_is_raw_body(st) != want_raw { return false }
         if st.pos + 2 >= st.toks.length { return false }
-        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if st.toks[st.pos + 1].kind != GKind.IDENT { return false }
         return tk_is_op(st.toks[st.pos + 2].tk, OpId.LeftBrace)
     }
     // ── The four `parse_comp_block_body` arms, as dispatch conds (t-47hc.5.1 B2b) ──
@@ -2185,30 +2188,30 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     //
     // Arm 2: `ident name {` — a nested block with its own instance name.
     if cond == "comp_nested_named" {
-        if st.cur().kind != "IDENT" || comp_name_is_raw_body(st) { return false }
+        if st.cur().kind != GKind.IDENT || comp_name_is_raw_body(st) { return false }
         return src_next_nonws_is_value_word(st.src, st.src.length, cfg_pair_after(st))
     }
     // Arm 3: `ident {` — the brace form, whose instance name IS the component
     // name (parse_comp_block_body passes comp_name twice, not a fresh name).
     if cond == "comp_nested_bare" {
-        if st.cur().kind != "IDENT" || comp_name_is_raw_body(st) { return false }
+        if st.cur().kind != GKind.IDENT || comp_name_is_raw_body(st) { return false }
         return src_next_nonws_is_lbrace(st.src, st.src.length, cfg_pair_after(st))
     }
     // The RAW-BODY twins of arms 2/3: a component registered with `body: TokenStream`
     // has its instance body captured VERBATIM rather than parsed, so the same two
     // surface shapes route to a `@rawbrace` rule instead.
     if cond == "comp_nested_raw_named" {
-        if st.cur().kind != "IDENT" || !comp_name_is_raw_body(st) { return false }
+        if st.cur().kind != GKind.IDENT || !comp_name_is_raw_body(st) { return false }
         return src_next_nonws_is_value_word(st.src, st.src.length, cfg_pair_after(st))
     }
     if cond == "comp_nested_raw_bare" {
-        if st.cur().kind != "IDENT" || !comp_name_is_raw_body(st) { return false }
+        if st.cur().kind != GKind.IDENT || !comp_name_is_raw_body(st) { return false }
         return src_next_nonws_is_lbrace(st.src, st.src.length, cfg_pair_after(st))
     }
     // Arm 4: `name() { … }` — the method shorthand (spec §4.1), distinguished from
     // a `name()` CALL statement by the trailing block.
     if cond == "comp_method" {
-        if st.cur().kind != "IDENT" { return false }
+        if st.cur().kind != GKind.IDENT { return false }
         return src_at_empty_call_block(st.src, st.src.length, cfg_pair_after(st))
     }
     if cond == "double_colon" {
@@ -2237,7 +2240,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // level `declaration` catches it on the `statement` tail — so the wrappers need the
     // same escape or they reject source the top level accepts.
     if cond == "bare_inst_lead" {
-        if st.cur().kind != "IDENT" { return false }
+        if st.cur().kind != GKind.IDENT { return false }
         if st.pos + 2 >= st.toks.length { return false }
         if !tok_starts_word(st.toks[st.pos + 1]) { return false }
         if word_excluded_as_instance_name(st.toks[st.pos + 1].text) { return false }
@@ -2251,7 +2254,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // the native paths themselves.
         // Declining sends it to `primary`, whose F0040 is the pinned answer.
         if st.pos + 1 >= st.toks.length { return false }
-        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if st.toks[st.pos + 1].kind != GKind.IDENT { return false }
         if st.pos + 3 >= st.toks.length { return true }
         // `@pkg::` — the qualified-reference form, adjacency-checked exactly as
         // `double_colon` checks it so a spaced `: :` is not mistaken for `::`.
@@ -2326,7 +2329,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return st.cur().tk == Tk.Identifier
     }
     if cond == "ident_colon" {
-        if st.cur().kind != "IDENT" { return false }
+        if st.cur().kind != GKind.IDENT { return false }
         if st.pos + 1 >= st.toks.length { return false }
         return st.toks[st.pos + 1].text == ":"
     }
@@ -2340,7 +2343,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "lparen_ident_colon" {
         if st.cur().text != "(" { return false }
         if st.pos + 2 >= st.toks.length { return false }
-        if st.toks[st.pos + 1].kind != "IDENT" { return false }
+        if st.toks[st.pos + 1].kind != GKind.IDENT { return false }
         return st.toks[st.pos + 2].text == ":"
     }
     // t-47hc.24 — "is this token position a DECLARATION lead?"
@@ -2356,7 +2359,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "decl_lead" {
         // Non-IDENT leads (doc comments, `@`, `export`, the decl keywords) pass
         // unconditionally — the narrowing is IDENT-only.
-        if st.cur().kind != "IDENT" { return true }
+        if st.cur().kind != GKind.IDENT { return true }
         if st.pos + 2 >= st.toks.length { return false }
         // `Comp inst {`: an instance NAME (a raw word starting with a
         // letter or `_`, so keyword-kinded tokens count too) then the block brace.
@@ -2399,13 +2402,13 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
 fn comp_header_end(st: PState) -> int {
     if st.cur().text != "component" { return 0 - 1 }
     if st.pos + 2 >= st.toks.length { return 0 - 1 }
-    if st.toks[st.pos + 1].kind != "IDENT" { return 0 - 1 }
+    if st.toks[st.pos + 1].kind != GKind.IDENT { return 0 - 1 }
     mut i = st.pos + 2
     if st.toks[i].text != "implements" { return i }
     i = i + 1
-    if i >= st.toks.length || st.toks[i].kind != "IDENT" { return 0 - 1 }
+    if i >= st.toks.length || st.toks[i].kind != GKind.IDENT { return 0 - 1 }
     i = i + 1
-    while i + 1 < st.toks.length && tk_is_op(st.toks[i].tk, OpId.Comma) && st.toks[i + 1].kind == "IDENT" {
+    while i + 1 < st.toks.length && tk_is_op(st.toks[i].tk, OpId.Comma) && st.toks[i + 1].kind == GKind.IDENT {
         i = i + 2
     }
     // `implements A,` then the closer — a legal trailing comma, not a fourth trait.
@@ -2454,7 +2457,7 @@ fn cfg_pair_common(st: PState) -> bool {
     // `fn` / `component` / `let` end the pairs and begin the block body.
     let tk = st.cur().tk
     if tk_is_kw(tk, KwId.Fn) || tk_is_kw(tk, KwId.Component) || tk_is_kw(tk, KwId.Let) { return false }
-    if st.cur().kind != "IDENT" { return false }
+    if st.cur().kind != GKind.IDENT { return false }
     // `on` is reserved for the event-handler form, never a config key.
     if st.cur().text == "on" { return false }
     // A following `{` is a NESTED BLOCK, not a value — checked BEFORE any
@@ -3529,7 +3532,7 @@ fn exec_primary(g: Grammar, prim: GPrim, st: PState, env: CapEnv, multi: bool, a
 /// produce the same STRING, not a new node kind — a name slot downstream is a string
 /// either way, and inventing a second encoding would leave the lowerer blind to it.
 export fn mk_splice_name(st: PState, name: string) -> CapVal {
-    CapVal.Tok(Token { kind: "IDENT", text: "~" + name, pos: st.cur().pos, tk: Tk.Identifier })
+    CapVal.Tok(Token { kind: GKind.IDENT, text: "~" + name, pos: st.cur().pos, tk: Tk.Identifier })
 }
 
 /// The PLAIN half of `name_or_splice` — the name exactly as written.
@@ -3541,11 +3544,11 @@ export fn mk_splice_name(st: PState, name: string) -> CapVal {
 /// a file). An explicit identity build states what the branch yields instead of relying
 /// on a fallthrough that differs between the two engines.
 export fn mk_plain_name(st: PState, name: string) -> CapVal {
-    CapVal.Tok(Token { kind: "IDENT", text: name, pos: st.cur().pos, tk: Tk.Identifier })
+    CapVal.Tok(Token { kind: GKind.IDENT, text: name, pos: st.cur().pos, tk: Tk.Identifier })
 }
 
 export fn gensym_token(st: PState, tag: string) -> Token {
-    Token { kind: "IDENT", text: fresh_name(st, tag), pos: st.cur().pos, tk: Tk.Identifier }
+    Token { kind: GKind.IDENT, text: fresh_name(st, tag), pos: st.cur().pos, tk: Tk.Identifier }
 }
 
 /// The raw balanced-brace capture a `body:@rawbrace(tag)` binds (t-47hc.31). Shared by
@@ -3568,7 +3571,7 @@ fn rawbrace_owner_name(st: PState, tag: string) -> string {
     if tag != "component" { return "" }
     if st.pos < 3 { return "" }
     let cn = st.toks[st.pos - 3]
-    if cn.kind != "IDENT" { return "" }
+    if cn.kind != GKind.IDENT { return "" }
     cn.text
 }
 
@@ -3584,22 +3587,22 @@ export fn rawbrace_scan(st: PState, tag: string) -> Token {
             // t-47hc.4.3 — the `component` tag carries its own unterminated-body wording.
             if owner != "" {
                 st.report("unterminated `body: TokenStream` block for `${owner}` — no balancing `}` before end of file")
-                return Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
+                return Token { kind: GKind.RAW, text: "", pos: start, tk: Tk.String }
             }
             st.report("unterminated `${tag} { }` block — no balancing `}` before end of file")
-            return Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
+            return Token { kind: GKind.RAW, text: "", pos: start, tk: Tk.String }
         }
         if tk_is_op(st.cur().tk, OpId.LeftBrace) { depth = depth + 1 }
         if tk_is_op(st.cur().tk, OpId.RightBrace) {
             depth = depth - 1
             if depth == 0 {
                 let body = st.src.substring(start, st.cur().pos).trim()
-                return Token { kind: "RAW", text: body, pos: start, tk: Tk.String }
+                return Token { kind: GKind.RAW, text: body, pos: start, tk: Tk.String }
             }
         }
         let _ = st.advance()
     }
-    Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
+    Token { kind: GKind.RAW, text: "", pos: start, tk: Tk.String }
 }
 
 fn not_closer(st: PState, closer: OpId) -> bool {
@@ -3935,13 +3938,13 @@ export fn run_static_snode_at_shared(lex_diags: List<LexDiag>, toks: List<Token>
 /// FIRST (t-47hc slice 10.9). Mirrors `type_atom`'s alternatives — qualified_type `@`,
 /// fn_type `fn`, dyn_type `dyn`, list_type `[`, paren_type `(`, named_type IDENT.
 export fn tok_starts_type(tok: Token) -> bool {
-    if tok.kind == "IDENT" { return true }
+    if tok.kind == GKind.IDENT { return true }
     let t = tok.text
     t == "@" || t == "fn" || t == "dyn" || t == "[" || t == "("
 }
 
 export fn tok_starts_expr_leaf(tok: Token) -> bool {
-    if tok.kind == "IDENT" || tok.kind == "NUMBER" || tok.kind == "STRING" || tok.kind == "BOOL" || tok.kind == "TEMPLATE" { return true }
+    if tok.kind == GKind.IDENT || tok.kind == GKind.NUMBER || tok.kind == GKind.STRING || tok.kind == GKind.BOOL || tok.kind == GKind.TEMPLATE { return true }
     let t = tok.text
     t == "~" || t == "!" || t == "-" || t == "not" || t == "@" || t == "." ||
     t == "(" || t == "[" || t == "{" ||
@@ -4096,12 +4099,12 @@ export fn literal_node(st: PState, t: Token) -> ExprId {
     // NUMBER rather than crashing (t-9bz3). Only literals reaching a build through this
     // core were affected — a float via a binding was fine, which is what made it look
     // like a codegen bug rather than a parse one.
-    if t.kind == "NUMBER" {
+    if t.kind == GKind.NUMBER {
         if t.tk == Tk.Float { return st.store.intern_expr_leaf(Expr.FloatLit(t.text)) }
         return st.store.intern_expr_leaf(Expr.Number(t.text))
     }
-    if t.kind == "STRING" { return st.store.intern_expr_leaf(Expr.String(t.text)) }
-    if t.kind == "BOOL" { return st.store.intern_expr_leaf(Expr.Bool(t.text)) }
+    if t.kind == GKind.STRING { return st.store.intern_expr_leaf(Expr.String(t.text)) }
+    if t.kind == GKind.BOOL { return st.store.intern_expr_leaf(Expr.Bool(t.text)) }
     // `null` / `none` are keyword tokens (Tk.KwNull/KwNone → the generic "KW" grammar
     // kind), so they match by tk here rather than kind — byte-identical to hand
     // parse_primary's `Tk.KwNull|KwNone -> alloc_leaf(Expr.None)` (the absence literal).
@@ -4967,8 +4970,8 @@ export fn capval_to_finit(st: PState, v: CapVal) -> FieldInit {
 /// already-generated `parse_pattern_or` without re-emitting that family.
 export fn tok_starts_pattern(t: Token) -> bool {
     t.text == "let" || t.text == "none" || t.text == "null" || t.text == "." ||
-    t.kind == "IDENT" || t.text == "true" || t.text == "false" ||
-    t.kind == "STRING" || t.text == "-" || t.kind == "NUMBER"
+    t.kind == GKind.IDENT || t.text == "true" || t.text == "false" ||
+    t.kind == GKind.STRING || t.text == "-" || t.kind == GKind.NUMBER
 }
 
 /// A capture as a parameter list (declaration family, ps3t.6.5.7): the param
