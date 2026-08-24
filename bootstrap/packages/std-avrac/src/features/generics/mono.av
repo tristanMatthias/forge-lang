@@ -1892,7 +1892,7 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
             .QualifiedIdent(ename) -> collect_bare_variant(obj, ename, expected, regs, st)
             _ -> collect_inst_expr(regs.store.exprs.get(obj), regs, st)
         }
-        _ -> collect_inst_expr_inner(expr, regs, st)
+        _ -> collect_inst_expr_inner(expr, expected, regs, st)
     }
 }
 
@@ -1902,7 +1902,7 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
 /// (they propagate expected) — by the time control reaches this
 /// function those arms are already dispatched, so we don't re-list
 /// them here.
-fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> CollectState {
+fn collect_inst_expr_inner(expr: Expr, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     match expr {
         .GenericCall(callee, type_names, args) -> {
             let s = collect_inst_exprs(args, regs, st)
@@ -1923,14 +1923,25 @@ fn collect_inst_expr_inner(expr: Expr, regs: GenRegs, st: CollectState) -> Colle
         .NullCoalesce(l, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
         .FieldAssign(l, _, r) -> collect_inst_expr(regs.store.exprs.get(r), regs, collect_inst_expr(regs.store.exprs.get(l), regs, st))
         .Index(obj, idx) -> collect_inst_expr(regs.store.exprs.get(idx), regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st))
-        .IfExpr(c, t, e) -> collect_inst_expr(regs.store.exprs.get(e), regs, collect_inst_expr(regs.store.exprs.get(t), regs, collect_inst_expr(regs.store.exprs.get(c), regs, st)))
+        .IfExpr(c, t, e) -> collect_inst_expr_with_expected(regs.store.exprs.get(e), expected, regs, collect_inst_expr_with_expected(regs.store.exprs.get(t), expected, regs, collect_inst_expr(regs.store.exprs.get(c), regs, st)))
         .Unary(_, e) -> collect_inst_expr(regs.store.exprs.get(e), regs, st)
         .Assign(_, val) -> collect_inst_expr(regs.store.exprs.get(val), regs, st)
         .With(obj, inits) -> collect_inst_field_inits(inits, regs, collect_inst_expr(regs.store.exprs.get(obj), regs, st))
         .Lambda(_, body) -> collect_inst_expr(regs.store.exprs.get(body), regs, st)
         .Block(body) -> collect_inst_stmt_ids(body, regs, st)
-        .MatchExpr(subj, arms) -> collect_inst_arms(arms, regs, collect_inst_expr(regs.store.exprs.get(subj), regs, st))
-        .ListLit(elems) -> collect_inst_exprs(elems, regs, st)
+        .MatchExpr(subj, arms) -> collect_inst_arms_expected(arms, expected, regs, collect_inst_expr(regs.store.exprs.get(subj), regs, st))
+        .ListLit(elems) -> {
+            // A List<E> expectation types every element at E.
+            let elem_expected = match expected {
+                .List(elem) -> elem,
+                _ -> ValueType.Unknown,
+            }
+            mut acc = st
+            for el in elems {
+                acc = collect_inst_expr_with_expected(regs.store.exprs.get(el), elem_expected, regs, acc)
+            }
+            acc
+        }
         .Tuple(elems) -> collect_inst_exprs(elems, regs, st)
         .MapLit(entries) -> collect_inst_exprs(entries, regs, st)
         .ListComp(body, _, coll, filter) -> {
@@ -2008,6 +2019,13 @@ fn collect_inst_args_with_params(ids: List<ExprId>, params: List<ParamEntry>, re
 /// Walk every match arm collecting instantiations from arm
 /// bodies. Patterns themselves don't register instantiations.
 fn collect_inst_arms(arms: List<MatchArm>, regs: GenRegs, st: CollectState) -> CollectState {
+    collect_inst_arms_expected(arms, ValueType.Unknown, regs, st)
+}
+
+/// Arms walker that threads the match's own expected type into every
+/// arm BODY (a `let x: T = match ...` types each arm at T). Guards are
+/// bool-typed and collect plain.
+fn collect_inst_arms_expected(arms: List<MatchArm>, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     mut acc = st
     mut i = 0
     while i < arms.length {
@@ -2015,7 +2033,7 @@ fn collect_inst_arms(arms: List<MatchArm>, regs: GenRegs, st: CollectState) -> C
         if arm.guard_id != null {
             acc = collect_inst_expr(regs.store.exprs.get(arm.guard_id!), regs, acc)
         }
-        acc = collect_inst_expr(regs.store.exprs.get(arm.body_id), regs, acc)
+        acc = collect_inst_expr_with_expected(regs.store.exprs.get(arm.body_id), expected, regs, acc)
         i = i + 1
     }
     acc
@@ -2263,15 +2281,29 @@ fn rename_self_calls_arms(store: NodeStore, arms: List<MatchArm>, orig_name: str
 /// Specialise a generic enum — mirror of `specialize_fn` but
 /// for enum decls. Substitutes type params in every variant's
 /// payload fields.
-fn specialize_enum(mangled: string, variants: List<Variant>, ta: List<TypeArg>) -> Stmt {
+fn specialize_enum(store: NodeStore, mangled: string, variants: List<Variant>, ta: List<TypeArg>) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
-    Stmt.EnumDecl(mangled, empty_tp, substitute_variants(variants, ta))
+    let decl = Stmt.EnumDecl(mangled, empty_tp, substitute_variants(variants, ta))
+    mono_erased_wrap(store, decl, ta)
+}
+
+/// Wrap an erased instantiation's decl in @mono_erased so codegen lays
+/// out its unbound-param slots as the erased wide repr instead of
+/// hard-erroring — the type-side mirror of specialize_fn's tag.
+fn mono_erased_wrap(store: NodeStore, decl: Stmt, ta: List<TypeArg>) -> Stmt {
+    mut ta_erased = false
+    for a in ta { if vtype_is_unknown(a.concrete_vt) { ta_erased = true } }
+    if !ta_erased { return decl }
+    mut annots: List<Annotation> = []
+    annots.push(Annotation { name: "mono_erased", arg_ids: [] })
+    Stmt.Annotated(annots, store.stmts.add_leaf(decl))
 }
 /// Specialise a generic struct — mirror of `specialize_fn`.
 /// Substitutes type params in every field's declared type.
-fn specialize_struct(mangled: string, fields: List<FieldEntry>, ta: List<TypeArg>) -> Stmt {
+fn specialize_struct(store: NodeStore, mangled: string, fields: List<FieldEntry>, ta: List<TypeArg>) -> Stmt {
     let empty_tp: List<TypeParamEntry> = []
-    Stmt.TypeDecl(mangled, empty_tp, substitute_fields(fields, ta))
+    let decl = Stmt.TypeDecl(mangled, empty_tp, substitute_fields(fields, ta))
+    mono_erased_wrap(store, decl, ta)
 }
 
 /// Specialise one impl method for a concrete struct instantiation (mkwc).
@@ -2347,9 +2379,9 @@ fn generate_specializations(insts: List<Inst>, regs: GenRegs) -> List<StmtId> {
             let enum_e = generic_enum_lookup(regs.enums, name)
             let struct_e = generic_struct_lookup(regs.structs, name)
             if enum_e != null {
-                out.push(regs.store.stmts.add_leaf(specialize_enum(mangled, enum_e!.variants, ta)))
+                out.push(regs.store.stmts.add_leaf(specialize_enum(regs.store, mangled, enum_e!.variants, ta)))
             } else if struct_e != null {
-                out.push(regs.store.stmts.add_leaf(specialize_struct(mangled, struct_e!.fields, ta)))
+                out.push(regs.store.stmts.add_leaf(specialize_struct(regs.store, mangled, struct_e!.fields, ta)))
             }
             // Both kinds also need each of their impl methods specialised onto
             // THIS instantiation — otherwise `value.method()` has no concrete
@@ -3204,6 +3236,19 @@ fn rewrite_expr_with_expected(expr: Expr, expected: ValueType, regs: GenRegs, in
         // A bare generic-enum variant: pick the specialisation the annotation
         // names (multi-inst enums would otherwise get first-inst-wins).
         .FieldAccess(obj, f) -> rewrite_field_access(obj, f, expected, regs, insts)
+        // The expected type survives into positions that adopt it wholesale:
+        // match arms, both if-branches, and (element-wise) list literals.
+        .MatchExpr(subj, arms) -> Expr.MatchExpr(rewrite_expr_id(subj, regs, insts), rewrite_arms_expected(arms, expected, regs, insts))
+        .IfExpr(c, t, e) -> Expr.IfExpr(rewrite_expr_id(c, regs, insts), rewrite_expr_id_expected(t, expected, regs, insts), rewrite_expr_id_expected(e, expected, regs, insts))
+        .ListLit(elems) -> {
+            let elem_expected = match expected {
+                .List(elem) -> elem,
+                _ -> ValueType.Unknown,
+            }
+            mut out_elems: List<ExprId> = []
+            for el in elems { out_elems.push(rewrite_expr_id_expected(el, elem_expected, regs, insts)) }
+            Expr.ListLit(out_elems)
+        }
         _ -> rewrite_expr(expr, regs, insts)
     }
 }
@@ -3231,6 +3276,10 @@ fn rewrite_stmt_id(id: StmtId, regs: GenRegs, insts: List<Inst>) -> StmtId {
 /// Rewrite one expression row, allocating against the original.
 fn rewrite_expr_id(id: ExprId, regs: GenRegs, insts: List<Inst>) -> ExprId {
     regs.store.reexpr(rewrite_expr(regs.store.exprs.get(id), regs, insts), id)
+}
+
+fn rewrite_expr_id_expected(id: ExprId, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> ExprId {
+    regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(id), expected, regs, insts), id)
 }
 
 /// Rewrite a `let`/`mut` binding's type annotation + init.
@@ -3485,6 +3534,12 @@ fn rewrite_args_with_params(ids: List<ExprId>, params: List<ParamEntry>, regs: G
 /// Map `rewrite_expr` over each guard + body in a match-arm
 /// list.
 fn rewrite_arms(arms: List<MatchArm>, regs: GenRegs, insts: List<Inst>) -> List<MatchArm> {
+    rewrite_arms_expected(arms, ValueType.Unknown, regs, insts)
+}
+
+/// Arm rewriter threading the match's expected type into every arm
+/// body — the rewrite-side mirror of collect_inst_arms_expected.
+fn rewrite_arms_expected(arms: List<MatchArm>, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> List<MatchArm> {
     mut out: List<MatchArm> = []
     mut i = 0
     while i < arms.length {
@@ -3492,7 +3547,7 @@ fn rewrite_arms(arms: List<MatchArm>, regs: GenRegs, insts: List<Inst>) -> List<
         let new_guard_id = if arm.guard_id != null {
             rewrite_expr_id(arm.guard_id!, regs, insts)
         } else { null }
-        out.push(MatchArm { pattern: arm.pattern, pattern_id: arm.pattern_id, guard_id: new_guard_id, body_id: rewrite_expr_id(arm.body_id, regs, insts) })
+        out.push(MatchArm { pattern: arm.pattern, pattern_id: arm.pattern_id, guard_id: new_guard_id, body_id: rewrite_expr_id_expected(arm.body_id, expected, regs, insts) })
         i = i + 1
     }
     out

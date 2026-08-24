@@ -16,6 +16,7 @@ use core.{vtype_strip_optional, vtype_is_optional}
 use features.trait_decl.{box_for_trait, resolve_concrete_type_name}
 
 extern fn avra_ice_push_fn(name: string)
+extern fn avra_ice_set_fn(name: string)
 extern fn avra_ice_pop_fn()
 use codegen.{analyze_releasable}
 use features.spawn_expr.{stmts_has_spawn}
@@ -269,6 +270,8 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
     if fn_val == null {
         return err_stmt("codegen error: function `${name}` was not declared in pass 1")
     }
+    // ICE context: an F9999 inside this body names the function.
+    avra_ice_set_fn(name)
     let entry = ctx.bb_in(fn_val, "entry")
     ctx.position(entry)
 
@@ -291,9 +294,11 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
         body_cg.task_group = body_cg.call("avra_task_group_new", [])
     }
 
+    avra_ice_push_fn("params of ${name}")
     let resolved_params = body_cg.resolve_params(params)
     let empty_env: List<VarBinding> = []
     let env = bind_params_inline(body_cg, fn_val, resolved_params, 0, empty_env)
+    avra_ice_pop_fn()
 
     // Emit null checks for all ptr/struct/enum parameters when debug mode is on.
     if body_cg.debug_null_checks {
@@ -370,6 +375,7 @@ export fn emit_function_body(ctx: Ctx, name: string, params: List<ParamEntry>, b
         return err_stmt("internal compiler error (ICE): LLVM verification failed for function `${name}` — codegen produced invalid IR (verifier report above)")
     }
     let e: List<VarBinding> = []
+    avra_ice_set_fn("(between functions)")
     ok_stmt(e)
 }
 

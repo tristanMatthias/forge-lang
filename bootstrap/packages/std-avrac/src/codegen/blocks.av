@@ -1,6 +1,7 @@
 // WHY: block expression codegen — evaluating statement blocks as values.
 
 use core.{Expr, Stmt, StmtId, ValueType, VarBinding, stmt_unwrap, stmt_diverges}
+extern fn avra_ice_at(file: string, line: int, col: int)
 use codegen.{BlockResult, Ctx, EmitValue, ok_emit, emit_value_ptr, emit_value_ty}
 use codegen.{emit_if_optional_canon, emit_cond_truthy}
 use core.{ValueType}
@@ -230,6 +231,7 @@ export fn emit_block_loop_scoped(ctx: Ctx, env: List<VarBinding>, stmts: List<St
         if cur_ctx.has_terminator() { return ok_br(last_val, last_ty, cur_ctx, cur_env) }
         let sid = stmts[i]
         let pos = cur_ctx.nodes.stmt_pos(sid)
+        avra_ice_at(pos.file, pos.line, pos.col)
         let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
         let sr = emit_stmt(line_ctx, cur_env, cur_ctx.nodes.stmts.get(sid))?
         cur_ctx = sr.ctx
@@ -261,6 +263,7 @@ export fn emit_block_loop_ctx(ctx: Ctx, env: List<VarBinding>, stmts: List<StmtI
         if cur_ctx.has_terminator() { return ok_br(last_val, last_ty, cur_ctx, cur_env) }
         let sid = stmts[i]
         let pos = cur_ctx.nodes.stmt_pos(sid)
+        avra_ice_at(pos.file, pos.line, pos.col)
         let line_ctx = cur_ctx with { source_line: pos.line, source_file: pos.file }
         let sr = emit_stmt(line_ctx, cur_env, cur_ctx.nodes.stmts.get(sid))?
         cur_ctx = sr.ctx

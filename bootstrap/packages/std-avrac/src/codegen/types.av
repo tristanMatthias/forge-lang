@@ -12,7 +12,7 @@
 //                                 logic (features/<X>/codegen.av)
 //                                 or the dispatchers (codegen.av)
 
-use core.{VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_unknown, variant_lookup, field_vtype_of, env_extend, vtype_struct_name}
+use core.{VarBinding, FieldEntry, ParamEntry, Variant, ValueType, vtype_is_unknown, variant_lookup, field_vtype_of, env_extend, vtype_struct_name, vtype_render_full}
 
 // LLVMTypeKind values from llvm-c/Core.h (LLVM 20). Only the kinds the
 // value-dispatch helpers test; keep in sync with the pinned LLVM major.
@@ -452,6 +452,7 @@ extern fn avra_map_has_cstr(map: ptr, key: string) -> int
 // (prints an F9999 diagnostic naming the offending fn, then exits). Typed
 // `-> ptr` so it can stand in the `.Unknown` match arm; the value is unused.
 extern fn avra_layout_unknown_ice() -> ptr
+extern fn avra_ice_push_fn(name: string)
 
 export fn fn_ret_types_new() -> FnRetTypes {
     FnRetTypes { ord: [], idx: avra_map_new_cstr() }
@@ -909,7 +910,10 @@ export fn llvm_type_for_full(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueTyp
 export fn llvm_type_for_full_g(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, vt: ValueType, allow_unknown: bool) -> ptr {
     match resolve_layout(i64t, i1t, dt, pt, vt, allow_unknown) {
         .Ok(l) -> l.ty
-        .Err(_) -> avra_layout_unknown_ice()
+        .Err(_) -> {
+            avra_ice_push_fn("layout of ${vtype_render_full(vt)}")
+            avra_layout_unknown_ice()
+        }
     }
 }
 
@@ -956,7 +960,10 @@ export fn llvm_type_for_full_sized(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: p
 export fn llvm_type_for_full_sized_g(i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, i8t: ptr, i16t: ptr, i32t: ptr, vt: ValueType, allow_unknown: bool) -> ptr {
     match resolve_layout_sized(i64t, i1t, dt, pt, i8t, i16t, i32t, vt, allow_unknown) {
         .Ok(l) -> l.ty
-        .Err(_) -> avra_layout_unknown_ice()
+        .Err(_) -> {
+            avra_ice_push_fn("layout of ${vtype_render_full(vt)}")
+            avra_layout_unknown_ice()
+        }
     }
 }
 
