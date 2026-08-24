@@ -78,7 +78,11 @@ spec "enum equality recurses through a self-referential payload" {
 // cannot fail for the defect it exists to catch. Measured: with the unwrap
 // removed, the literal versions of these six specs left five still passing.
 
-type EsName = string          // newtype over a string
+type EsName  = string          // newtype over a string
+type EsMaybe = string?         // newtype over an OPTIONAL — `vt is .Optional` is
+                               // FALSE for this, so deciding optionality before
+                               // resolving the nominal name skips the null guard
+type EsMaybeTok = EsTok?       // ...and the same over an enum
 
 /// A string with the same CONTENTS on every call, but a fresh allocation each
 /// time — so equality has to look at the bytes, not the pointer.
@@ -89,6 +93,8 @@ enum EsWrap {
     Maybe(s: string?)
     Named(n: EsName)
     MaybeTok(t: EsTok?)
+    AliasMaybe(m: EsMaybe)
+    AliasMaybeTok(k: EsMaybeTok)
 }
 
 spec "enum equality unwraps optional and newtype payloads" {
@@ -112,5 +118,17 @@ spec "enum equality unwraps optional and newtype payloads" {
     }
     then "an absent optional enum never equals a present one" {
         !(EsWrap.MaybeTok(null) == EsWrap.MaybeTok(EsTok.Word))
+    }
+    then "a NEWTYPE OVER AN OPTIONAL string still takes the null-aware path" {
+        EsWrap.AliasMaybe(es_str(1)) == EsWrap.AliasMaybe(es_str(1)) &&
+        !(EsWrap.AliasMaybe(es_str(1)) == EsWrap.AliasMaybe(es_str(2))) &&
+        EsWrap.AliasMaybe(null) == EsWrap.AliasMaybe(null) &&
+        !(EsWrap.AliasMaybe(null) == EsWrap.AliasMaybe(es_str(1)))
+    }
+    then "a NEWTYPE OVER AN OPTIONAL enum recurses, and null-guards" {
+        EsWrap.AliasMaybeTok(EsTok.Pair(1, 2)) == EsWrap.AliasMaybeTok(EsTok.Pair(1, 2)) &&
+        !(EsWrap.AliasMaybeTok(EsTok.Pair(1, 2)) == EsWrap.AliasMaybeTok(EsTok.Pair(1, 3))) &&
+        EsWrap.AliasMaybeTok(null) == EsWrap.AliasMaybeTok(null) &&
+        !(EsWrap.AliasMaybeTok(null) == EsWrap.AliasMaybeTok(EsTok.Word))
     }
 }

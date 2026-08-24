@@ -6,7 +6,7 @@ use parse.{parse_int_literal}
 use core.{avra_llvm_const_int, vtype_is_str_repr, vtype_enum_name, vtype_nominal_name, vtype_strip_optional, vtype_newtype_underlying, vtype_is_unknown, avra_llvm_build_or}
 extern fn avra_ice_phase(phase: string)
 use core.{avra_process_env_get}
-use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EnumReg, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructReg, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, llvm_type_for_full, llvm_type_for_full_sized, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup, cg_newtype_vtype_lookup}
+use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EnumReg, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructReg, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, llvm_type_for_full, llvm_type_for_full_sized, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup, cg_newtype_vtype_lookup, variants_have_payload, enum_reg_has, enum_has_payload}
 use codegen.{analyze_releasable, analyze_copy_types, analyze_return_ownership_set}
 use codegen.{publish_fn_units}
 use codegen.{analyze_cycles, cycle_set_has}
@@ -1743,13 +1743,39 @@ fn declare_eq_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
 /// through their own `__eq_` (or a tag compare when payload-free), and every
 /// other pointer-shaped type by reference — which is what `==` already means
 /// for structs, lists, maps and closures.
+/// Peel a type down to what equality should actually compare: `vtype_newtype_
+/// underlying` for a structural newtype, and the codegen newtype registry for a
+/// NOMINAL one — a newtype field resolves to `Struct("EsName")`, not
+/// `Newtype("EsName", ...)`, so the structural helper alone does not see it.
+///
+/// Iterative with a bound rather than recursive: an alias chain is short, and a
+/// malformed registry must not become an infinite loop in codegen.
+fn eq_resolve_nominal(fctx: Ctx, vt: ValueType) -> ValueType {
+    mut cur = vtype_newtype_underlying(vt)
+    mut hops = 0
+    while hops < 8 {
+        let nominal = vtype_nominal_name(cur)
+        if nominal == "" { return cur }
+        let via = cg_newtype_vtype_lookup(fctx.newtypes, nominal)
+        if vtype_is_unknown(via) { return cur }
+        cur = vtype_newtype_underlying(via)
+        hops = hops + 1
+    }
+    cur
+}
+
 fn emit_eq_field_cmp(fctx: Ctx, fn_val: ptr, pay_ty: ptr, pa: ptr, pb: ptr, idx: int, vt: ValueType, nm: string, f_bb: ptr) {
     // UNWRAP FIRST. `T?` and a newtype are transparent to equality: the comparison
     // a field wants is the one its INNER type wants. Dispatching on the wrapper
     // instead sent both to the catch-all POINTER compare, so `Some("hi") ==
     // Some("hi")` and a newtype-wrapped enum both answered false on equal values.
-    let opt = vt is .Optional
-    let inner = vtype_newtype_underlying(vtype_strip_optional(vt))
+    // Resolve NOMINAL newtypes before asking whether this is an optional.
+    // `type MaybeText = string?` resolves to a nominal name, so `vt is .Optional`
+    // is FALSE for it — the null-aware path would be skipped and a null field
+    // would reach a comparison that dereferences.
+    let base = eq_resolve_nominal(fctx, vt)
+    let opt = base is .Optional
+    let inner = eq_resolve_nominal(fctx, vtype_strip_optional(base))
     let fty = fctx.llvm_type_for(vt)
     let ga = avra_llvm_build_struct_gep2(fctx.builder, pay_ty, pa, idx, "eq_a_${nm}_p")
     let gb = avra_llvm_build_struct_gep2(fctx.builder, pay_ty, pb, idx, "eq_b_${nm}_p")
@@ -1789,14 +1815,8 @@ fn emit_eq_field_cmp(fctx: Ctx, fn_val: ptr, pay_ty: ptr, pa: ptr, pb: ptr, idx:
 /// `f_bb` when they differ and to `ok_bb` when they match.
 fn emit_eq_inner_cmp(fctx: Ctx, vt: ValueType, va: ptr, vb: ptr, nm: string, f_bb: ptr, ok_bb: ptr) {
     let zero = avra_llvm_const_int(fctx.i64_type, 0, 0)
-    // A newtype field resolves NOMINALLY — `Struct("EsName")`, not
-    // `Newtype("EsName", Str)` — the same kind mismatch the self-referential case
-    // hits below, so `vtype_newtype_underlying` alone does not see through it.
-    // The codegen newtype registry does, and it is the same table the rest of
-    // codegen unwraps through.
-    let nominal = vtype_nominal_name(vt)
-    let via_reg = if nominal == "" { ValueType.Unknown } else { cg_newtype_vtype_lookup(fctx.newtypes, nominal) }
-    let inner = if vtype_is_unknown(via_reg) { vt } else { vtype_newtype_underlying(via_reg) }
+    // `vt` arrives already peeled by `eq_resolve_nominal`.
+    let inner = vt
     if vtype_is_str_repr(inner) {
         let r = fctx.call("avra_streq", [fctx.to_ptr(va, "eq_sa"), fctx.to_ptr(vb, "eq_sb")])
         avra_llvm_build_cond_br(fctx.builder, fctx.icmp(33, r, zero, "eq_${nm}"), ok_bb, f_bb)
