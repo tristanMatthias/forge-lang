@@ -29,10 +29,11 @@ spec "Tk.Op round-trips through tk_source_expr" {
         mut bad = 0
         for r in op_rows() {
             let src = tk_source_expr(Tk.Op(r.id))
-            // Must be `Tk.Op(OpId.<Name>)` — not `Tk.<spelling>` and not the
-            // BARE variant `Tk.<Name>`, which is what this collapse replaces.
-            if !src.starts_with("Tk.Op(OpId.") || !src.ends_with(")") { bad = bad + 1 }
-            if src.contains(r.spelling) && r.spelling != "" && !src.contains(opid_name(r.id)) { bad = bad + 1 }
+            // EXACT, not a shape check. `starts_with("Tk.Op(OpId.")` plus
+            // `ends_with(")")` is satisfied by the WRONG id — `Tk.Op(OpId.Greater)`
+            // passes it while standing in for `OpId.Equal` — so the assertion could
+            // not fail for the defect it exists to catch.
+            if src != "Tk.Op(OpId.${opid_name(r.id)})" { bad = bad + 1 }
         }
         bad == 0
     }

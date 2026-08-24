@@ -42,7 +42,9 @@ spec "enum equality is structural, not tag-only" {
         EsTok.Word == EsTok.Word
     }
     then "string payloads compare BY VALUE, not by pointer" {
-        EsTok.Named("hi") == EsTok.Named("hi") && !(EsTok.Named("hi") == EsTok.Named("yo"))
+        // Runtime-built, so this cannot pass on interned-literal pointer identity.
+        EsTok.Named(es_str(1)) == EsTok.Named(es_str(1)) &&
+        !(EsTok.Named(es_str(1)) == EsTok.Named(es_str(2)))
     }
     then "every field of a multi-field payload participates" {
         EsTok.Pair(1, 2) == EsTok.Pair(1, 2) && !(EsTok.Pair(1, 2) == EsTok.Pair(1, 3))
@@ -62,5 +64,53 @@ spec "enum equality recurses through a self-referential payload" {
     }
     then "a difference in the FIRST branch is caught too" {
         !(EsTree.Node(EsTree.Leaf(7), EsTree.Leaf(2)) == EsTree.Node(EsTree.Leaf(1), EsTree.Leaf(2)))
+    }
+}
+
+// The remaining branches of `emit_eq_field_cmp`: a float payload (`fcmp oeq`),
+// an OPTIONAL payload and a NEWTYPE payload. The last two are the ones that
+// unwrap: dispatching on the wrapper instead of the inner type sent both to the
+// catch-all POINTER compare, so equal values read as unequal.
+//
+// Every string here is BUILT AT RUNTIME (`es_str`). Written as literals these
+// specs pass whether or not the unwrap happens, because equal literals are
+// interned to ONE pointer and the pointer fast-path answers first — a guard that
+// cannot fail for the defect it exists to catch. Measured: with the unwrap
+// removed, the literal versions of these six specs left five still passing.
+
+type EsName = string          // newtype over a string
+
+/// A string with the same CONTENTS on every call, but a fresh allocation each
+/// time — so equality has to look at the bytes, not the pointer.
+fn es_str(tag: int) -> string { "v" + string(tag) }
+
+enum EsWrap {
+    Num(f: float)
+    Maybe(s: string?)
+    Named(n: EsName)
+    MaybeTok(t: EsTok?)
+}
+
+spec "enum equality unwraps optional and newtype payloads" {
+    then "a float payload compares by value" {
+        EsWrap.Num(1.5) == EsWrap.Num(1.5) && !(EsWrap.Num(1.5) == EsWrap.Num(2.5))
+    }
+    then "an optional string payload compares its CONTENTS, not its pointer" {
+        EsWrap.Maybe(es_str(1)) == EsWrap.Maybe(es_str(1)) &&
+        !(EsWrap.Maybe(es_str(1)) == EsWrap.Maybe(es_str(2)))
+    }
+    then "two absent optionals are equal, and absent never equals present" {
+        EsWrap.Maybe(null) == EsWrap.Maybe(null) && !(EsWrap.Maybe(null) == EsWrap.Maybe(es_str(1)))
+    }
+    then "a newtype payload compares as its underlying type" {
+        EsWrap.Named(es_str(1)) == EsWrap.Named(es_str(1)) &&
+        !(EsWrap.Named(es_str(1)) == EsWrap.Named(es_str(2)))
+    }
+    then "an optional ENUM payload recurses through the inner enum's equality" {
+        EsWrap.MaybeTok(EsTok.Pair(1, 2)) == EsWrap.MaybeTok(EsTok.Pair(1, 2)) &&
+        !(EsWrap.MaybeTok(EsTok.Pair(1, 2)) == EsWrap.MaybeTok(EsTok.Pair(1, 3)))
+    }
+    then "an absent optional enum never equals a present one" {
+        !(EsWrap.MaybeTok(null) == EsWrap.MaybeTok(EsTok.Word))
     }
 }

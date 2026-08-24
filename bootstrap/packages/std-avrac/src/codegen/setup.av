@@ -3,10 +3,10 @@
 use core.{Expr, FieldEntry, ParamEntry, ValueType, VarBinding, Variant, filter_fields_only, filter_fields_without, find_annotation, stmt_unwrap, vtype_fn_ret, vtype_is_unknown, vtype_struct_name}
 use core.{NodeStore, StmtId}
 use parse.{parse_int_literal}
-use core.{avra_llvm_const_int, vtype_is_str_repr, vtype_enum_name, vtype_nominal_name, avra_llvm_build_or}
+use core.{avra_llvm_const_int, vtype_is_str_repr, vtype_enum_name, vtype_nominal_name, vtype_strip_optional, vtype_newtype_underlying, vtype_is_unknown, avra_llvm_build_or}
 extern fn avra_ice_phase(phase: string)
 use core.{avra_process_env_get}
-use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EnumReg, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructReg, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, llvm_type_for_full, llvm_type_for_full_sized, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EnumReg, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructReg, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, llvm_type_for_full, llvm_type_for_full_sized, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup, cg_newtype_vtype_lookup}
 use codegen.{analyze_releasable, analyze_copy_types, analyze_return_ownership_set}
 use codegen.{publish_fn_units}
 use codegen.{analyze_cycles, cycle_set_has}
@@ -1743,40 +1743,92 @@ fn declare_eq_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
 /// through their own `__eq_` (or a tag compare when payload-free), and every
 /// other pointer-shaped type by reference — which is what `==` already means
 /// for structs, lists, maps and closures.
-fn emit_eq_field_cmp(fctx: Ctx, pay_ty: ptr, pa: ptr, pb: ptr, idx: int, vt: ValueType, nm: string) -> ptr {
+fn emit_eq_field_cmp(fctx: Ctx, fn_val: ptr, pay_ty: ptr, pa: ptr, pb: ptr, idx: int, vt: ValueType, nm: string, f_bb: ptr) {
+    // UNWRAP FIRST. `T?` and a newtype are transparent to equality: the comparison
+    // a field wants is the one its INNER type wants. Dispatching on the wrapper
+    // instead sent both to the catch-all POINTER compare, so `Some("hi") ==
+    // Some("hi")` and a newtype-wrapped enum both answered false on equal values.
+    let opt = vt is .Optional
+    let inner = vtype_newtype_underlying(vtype_strip_optional(vt))
     let fty = fctx.llvm_type_for(vt)
     let ga = avra_llvm_build_struct_gep2(fctx.builder, pay_ty, pa, idx, "eq_a_${nm}_p")
     let gb = avra_llvm_build_struct_gep2(fctx.builder, pay_ty, pb, idx, "eq_b_${nm}_p")
     let va = avra_llvm_build_load(fctx.builder, fty, ga, "eq_a_${nm}")
     let vb = avra_llvm_build_load(fctx.builder, fty, gb, "eq_b_${nm}")
-    if vtype_is_str_repr(vt) {
-        let r = fctx.call("avra_streq", [fctx.to_ptr(va, "eq_sa"), fctx.to_ptr(vb, "eq_sb")])
-        return fctx.icmp(33, r, avra_llvm_const_int(fctx.i64_type, 0, 0), "eq_${nm}")
+
+    // An OPTIONAL field can be null, and the inner comparisons dereference:
+    // `avra_streq` reads `a[0]`, and a payload-free enum tag-compare GEPs. So
+    // settle the null cases up front — identical pointers (both none included)
+    // are equal, exactly one null is not — and only then compare the inner.
+    mut cur_a = va
+    mut cur_b = vb
+    if opt {
+        let cont = avra_llvm_append_basic_block(fctx.lc, fn_val, "eq_${nm}_opt_ok")
+        let both = avra_llvm_append_basic_block(fctx.lc, fn_val, "eq_${nm}_present")
+        let notsame = avra_llvm_append_basic_block(fctx.lc, fn_val, "eq_${nm}_notsame")
+        let pa_p = fctx.to_ptr(va, "eq_oa")
+        let pb_p = fctx.to_ptr(vb, "eq_ob")
+        avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, pa_p, pb_p, "eq_${nm}_same"), cont, notsame)
+        avra_llvm_position_at_end(fctx.builder, notsame)
+        let nul = avra_llvm_const_null(fctx.ptr_type)
+        let an = fctx.icmp(32, pa_p, nul, "eq_${nm}_an")
+        let bn = fctx.icmp(32, pb_p, nul, "eq_${nm}_bn")
+        let either = avra_llvm_build_or(fctx.builder, an, bn, "eq_${nm}_either")
+        avra_llvm_build_cond_br(fctx.builder, either, f_bb, both)
+        avra_llvm_position_at_end(fctx.builder, both)
+        emit_eq_inner_cmp(fctx, inner, pa_p, pb_p, nm, f_bb, cont)
+        avra_llvm_position_at_end(fctx.builder, cont)
+        return
     }
-    if vt is .Float {
+    let cont = avra_llvm_append_basic_block(fctx.lc, fn_val, "eq_${nm}_ok")
+    emit_eq_inner_cmp(fctx, inner, cur_a, cur_b, nm, f_bb, cont)
+    avra_llvm_position_at_end(fctx.builder, cont)
+}
+
+/// Compare two already-loaded, already-unwrapped field values, branching to
+/// `f_bb` when they differ and to `ok_bb` when they match.
+fn emit_eq_inner_cmp(fctx: Ctx, vt: ValueType, va: ptr, vb: ptr, nm: string, f_bb: ptr, ok_bb: ptr) {
+    let zero = avra_llvm_const_int(fctx.i64_type, 0, 0)
+    // A newtype field resolves NOMINALLY — `Struct("EsName")`, not
+    // `Newtype("EsName", Str)` — the same kind mismatch the self-referential case
+    // hits below, so `vtype_newtype_underlying` alone does not see through it.
+    // The codegen newtype registry does, and it is the same table the rest of
+    // codegen unwraps through.
+    let nominal = vtype_nominal_name(vt)
+    let via_reg = if nominal == "" { ValueType.Unknown } else { cg_newtype_vtype_lookup(fctx.newtypes, nominal) }
+    let inner = if vtype_is_unknown(via_reg) { vt } else { vtype_newtype_underlying(via_reg) }
+    if vtype_is_str_repr(inner) {
+        let r = fctx.call("avra_streq", [fctx.to_ptr(va, "eq_sa"), fctx.to_ptr(vb, "eq_sb")])
+        avra_llvm_build_cond_br(fctx.builder, fctx.icmp(33, r, zero, "eq_${nm}"), ok_bb, f_bb)
+        return
+    }
+    if inner is .Float {
         // OEQ (ordered, equal) — NaN compares unequal, as everywhere else.
-        return fctx.fcmp(1, va, vb, "eq_${nm}")
+        avra_llvm_build_cond_br(fctx.builder, fctx.fcmp(1, va, vb, "eq_${nm}"), ok_bb, f_bb)
+        return
     }
     // NOMINAL name, not `vtype_enum_name`: a SELF-REFERENTIAL field (`Node(l:
     // Tree)`) resolves to `Struct("Tree")` even though `Tree` is an enum, so
     // asking only for the enum name loses the recursion and the field silently
     // falls through to a POINTER compare — two structurally equal trees then
     // read as unequal. `enum_reg_has` keeps a genuine struct out of this branch.
-    let en = vtype_nominal_name(vt)
+    let en = vtype_nominal_name(inner)
     if en != "" && enum_reg_has(fctx.enums, en) {
         if enum_has_payload(fctx.enums, en) {
             let r = fctx.call("__eq_${en}", [fctx.to_ptr(va, "eq_ea"), fctx.to_ptr(vb, "eq_eb")])
-            return fctx.icmp(33, r, avra_llvm_const_int(fctx.i64_type, 0, 0), "eq_${nm}")
+            avra_llvm_build_cond_br(fctx.builder, fctx.icmp(33, r, zero, "eq_${nm}"), ok_bb, f_bb)
+            return
         }
         // Payload-free nested enum: the tag is the whole value.
         let et = fctx.get_type(en)
         if et != null {
             let ta = fctx.load_i64(fctx.gep(et, fctx.to_ptr(va, "eq_ea"), 0, "eq_a_${nm}_tp"), "eq_a_${nm}_t")
             let tb = fctx.load_i64(fctx.gep(et, fctx.to_ptr(vb, "eq_eb"), 0, "eq_b_${nm}_tp"), "eq_b_${nm}_t")
-            return fctx.icmp(32, ta, tb, "eq_${nm}")
+            avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, ta, tb, "eq_${nm}"), ok_bb, f_bb)
+            return
         }
     }
-    fctx.icmp(32, va, vb, "eq_${nm}")
+    avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, va, vb, "eq_${nm}"), ok_bb, f_bb)
 }
 
 /// Emit the body of `__eq_EnumName`. Identity first, then null, then the tag,
@@ -1834,10 +1886,7 @@ fn emit_eq_body_enum(ctx: Ctx, name: string, variants: List<Variant>) {
                 avra_llvm_build_br(fctx.builder, t_bb)
             } else {
                 for (fi, fe) in v.fields.enumerate() {
-                    let c = emit_eq_field_cmp(fctx, pay_ty, pa, pb, fi, fe.resolved, "${v.name}_${fe.name}")
-                    let cont = avra_llvm_append_basic_block(ctx.lc, fn_val, "eq_${v.name}_${fe.name}_ok")
-                    avra_llvm_build_cond_br(fctx.builder, c, cont, f_bb)
-                    avra_llvm_position_at_end(fctx.builder, cont)
+                    emit_eq_field_cmp(fctx, fn_val, pay_ty, pa, pb, fi, fe.resolved, "${v.name}_${fe.name}", f_bb)
                 }
                 avra_llvm_build_br(fctx.builder, t_bb)
             }

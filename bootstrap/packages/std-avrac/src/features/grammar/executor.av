@@ -2026,7 +2026,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // reason the terminal emitters widen for it.
     if cond == "not_gt" {
         if st.at_end() { return false }
-        return !(tk_is_op(st.cur().tk, OpId.Greater) || st.cur().text == ">>")
+        return !(tk_is_op(st.cur().tk, OpId.Greater) || tk_is_op(st.cur().tk, OpId.Shr))
     }
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"

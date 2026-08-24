@@ -645,8 +645,6 @@ export type EnumLookup = {
     variants: List<Variant>,
 }
 
-/// Look up an enum by name. Always returns an EnumLookup — callers
-/// inspect `.found` to distinguish hit from miss.
 /// True when any variant of `variants` carries a payload field.
 ///
 /// This is the exact dividing line for `==`: a PAYLOAD-FREE enum's tag IS its
@@ -659,10 +657,6 @@ export fn variants_have_payload(variants: List<Variant>) -> bool {
     false
 }
 
-/// `variants_have_payload` by enum NAME. Returns false for an enum the registry
-/// doesn't know, which keeps the tag-only path for unregistered names — the
-/// only safe answer, since we cannot emit a call to a `__eq_` that was never
-/// declared.
 /// Does the registry know `name` as an ENUM? Needed before treating a nominal
 /// name as one: a self-referential field resolves to `Struct("Tree")` even when
 /// `Tree` is an enum (see `vtype_nominal_name`), so the name alone is not proof.
@@ -672,12 +666,18 @@ export fn enum_reg_has(reg: EnumReg, name: string) -> bool {
     false
 }
 
+/// `variants_have_payload` by enum NAME. Returns false for an enum the registry
+/// doesn't know, which keeps the tag-only path for unregistered names — the
+/// only safe answer, since we cannot emit a call to a `__eq_` that was never
+/// declared.
 export fn enum_has_payload(reg: EnumReg, name: string) -> bool {
     let l = enum_reg_lookup(reg, name)
     if !l.found { return false }
     variants_have_payload(l.variants)
 }
 
+/// Look up an enum by name. Always returns an EnumLookup — callers
+/// inspect `.found` to distinguish hit from miss.
 export fn enum_reg_lookup(reg: EnumReg, name: string) -> EnumLookup {
     if avra_map_has_cstr(reg.idx, name) == 0 {
         let empty: List<Variant> = []
