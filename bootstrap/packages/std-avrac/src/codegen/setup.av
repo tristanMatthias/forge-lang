@@ -3,10 +3,10 @@
 use core.{Expr, FieldEntry, ParamEntry, ValueType, VarBinding, Variant, filter_fields_only, filter_fields_without, find_annotation, stmt_unwrap, vtype_fn_ret, vtype_is_unknown, vtype_struct_name}
 use core.{NodeStore, StmtId}
 use parse.{parse_int_literal}
-use core.{avra_llvm_const_int}
+use core.{avra_llvm_const_int, vtype_is_str_repr, vtype_enum_name, vtype_nominal_name, vtype_strip_optional, vtype_newtype_underlying, vtype_is_unknown, avra_llvm_build_or}
 extern fn avra_ice_phase(phase: string)
 use core.{avra_process_env_get}
-use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EnumReg, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructReg, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, llvm_type_for_full, llvm_type_for_full_sized, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup}
+use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EnumReg, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructReg, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, llvm_type_for_full, llvm_type_for_full_sized, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup, cg_newtype_vtype_lookup, variants_have_payload, enum_reg_has, enum_has_payload}
 use codegen.{analyze_releasable, analyze_copy_types, analyze_return_ownership_set}
 use codegen.{publish_fn_units}
 use codegen.{analyze_cycles, cycle_set_has}
@@ -499,6 +499,7 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     } else {
         declare_release_fns_structs(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.structs)
         declare_release_fns_enums(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.enums)
+        declare_eq_fns_enums(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.enums)
     }
 
     // Reposition builder at main's entry after release fn emission
@@ -1706,6 +1707,239 @@ fn emit_release_bodies_enums(ctx: Ctx, reg: EnumReg, cycles: List<string>) {
     }
 }
 
+// ── Structural enum equality (`__eq_<Enum>`) ──
+//
+// WHY THIS EXISTS: `==` on an enum used to compare the TAG ALONE, so
+// `Tk.Op(Comma) == Tk.Op(RightParen)` answered TRUE (t-vcb1). That is not a
+// style wart — it silently broke argument-list parsing, parser error recovery
+// and test discovery, and it is why a hand-written `tk_is_op` / `tk_is_kw` had
+// to exist for every payload-carrying enum. The spec requires structural
+// equality (§ "Structural equality works"), so `==` compares the payload too.
+//
+// A per-enum FUNCTION rather than inlined comparisons: a recursive enum (an
+// Expr holding an Expr) would otherwise expand forever. A call makes the
+// recursion a call. The declare/emit split, the linkonce_odr linkage and the
+// library-ownership rule all mirror `__release_<T>` above.
+
+/// Declare `__eq_EnumName(ptr, ptr) -> i64` for every enum carrying a payload.
+/// Phase 1, split from body emission so mutually recursive enums can call each
+/// other. Payload-free enums get nothing: their `==` stays one tag `icmp`.
+fn declare_eq_fns_enums(m: ptr, i64t: ptr, pt: ptr, reg: EnumReg) {
+    mut i = 0
+    while i < reg.ord.length {
+        let e = reg.ord[i]
+        if variants_have_payload(e.variants) {
+            decl(m, "__eq_${e.name}", i64t, [pt, pt])
+        }
+        i = i + 1
+    }
+}
+
+/// Compare ONE payload field of a variant, returning an i1.
+///
+/// Each field compares the way `==` compares that type on its own, so an enum
+/// payload can never disagree with a direct comparison of the same value:
+/// strings through `avra_streq`, floats through `fcmp oeq`, nested enums
+/// through their own `__eq_` (or a tag compare when payload-free), and every
+/// other pointer-shaped type by reference — which is what `==` already means
+/// for structs, lists, maps and closures.
+/// Peel a type down to what equality should actually compare: `vtype_newtype_
+/// underlying` for a structural newtype, and the codegen newtype registry for a
+/// NOMINAL one — a newtype field resolves to `Struct("EsName")`, not
+/// `Newtype("EsName", ...)`, so the structural helper alone does not see it.
+///
+/// Iterative with a bound rather than recursive: an alias chain is short, and a
+/// malformed registry must not become an infinite loop in codegen.
+fn eq_resolve_nominal(fctx: Ctx, vt: ValueType) -> ValueType {
+    mut cur = vtype_newtype_underlying(vt)
+    mut hops = 0
+    while hops < 8 {
+        let nominal = vtype_nominal_name(cur)
+        if nominal == "" { return cur }
+        let via = cg_newtype_vtype_lookup(fctx.newtypes, nominal)
+        if vtype_is_unknown(via) { return cur }
+        cur = vtype_newtype_underlying(via)
+        hops = hops + 1
+    }
+    cur
+}
+
+fn emit_eq_field_cmp(fctx: Ctx, fn_val: ptr, pay_ty: ptr, pa: ptr, pb: ptr, idx: int, vt: ValueType, nm: string, f_bb: ptr) {
+    // UNWRAP FIRST. `T?` and a newtype are transparent to equality: the comparison
+    // a field wants is the one its INNER type wants. Dispatching on the wrapper
+    // instead sent both to the catch-all POINTER compare, so `Some("hi") ==
+    // Some("hi")` and a newtype-wrapped enum both answered false on equal values.
+    // Resolve NOMINAL newtypes before asking whether this is an optional.
+    // `type MaybeText = string?` resolves to a nominal name, so `vt is .Optional`
+    // is FALSE for it — the null-aware path would be skipped and a null field
+    // would reach a comparison that dereferences.
+    let base = eq_resolve_nominal(fctx, vt)
+    let opt = base is .Optional
+    let inner = eq_resolve_nominal(fctx, vtype_strip_optional(base))
+    let fty = fctx.llvm_type_for(vt)
+    let ga = avra_llvm_build_struct_gep2(fctx.builder, pay_ty, pa, idx, "eq_a_${nm}_p")
+    let gb = avra_llvm_build_struct_gep2(fctx.builder, pay_ty, pb, idx, "eq_b_${nm}_p")
+    let va = avra_llvm_build_load(fctx.builder, fty, ga, "eq_a_${nm}")
+    let vb = avra_llvm_build_load(fctx.builder, fty, gb, "eq_b_${nm}")
+
+    // An OPTIONAL field can be null, and the inner comparisons dereference:
+    // `avra_streq` reads `a[0]`, and a payload-free enum tag-compare GEPs. So
+    // settle the null cases up front — identical pointers (both none included)
+    // are equal, exactly one null is not — and only then compare the inner.
+    mut cur_a = va
+    mut cur_b = vb
+    if opt {
+        let cont = avra_llvm_append_basic_block(fctx.lc, fn_val, "eq_${nm}_opt_ok")
+        let both = avra_llvm_append_basic_block(fctx.lc, fn_val, "eq_${nm}_present")
+        let notsame = avra_llvm_append_basic_block(fctx.lc, fn_val, "eq_${nm}_notsame")
+        let pa_p = fctx.to_ptr(va, "eq_oa")
+        let pb_p = fctx.to_ptr(vb, "eq_ob")
+        avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, pa_p, pb_p, "eq_${nm}_same"), cont, notsame)
+        avra_llvm_position_at_end(fctx.builder, notsame)
+        let nul = avra_llvm_const_null(fctx.ptr_type)
+        let an = fctx.icmp(32, pa_p, nul, "eq_${nm}_an")
+        let bn = fctx.icmp(32, pb_p, nul, "eq_${nm}_bn")
+        let either = avra_llvm_build_or(fctx.builder, an, bn, "eq_${nm}_either")
+        avra_llvm_build_cond_br(fctx.builder, either, f_bb, both)
+        avra_llvm_position_at_end(fctx.builder, both)
+        emit_eq_inner_cmp(fctx, inner, pa_p, pb_p, nm, f_bb, cont)
+        avra_llvm_position_at_end(fctx.builder, cont)
+        return
+    }
+    let cont = avra_llvm_append_basic_block(fctx.lc, fn_val, "eq_${nm}_ok")
+    emit_eq_inner_cmp(fctx, inner, cur_a, cur_b, nm, f_bb, cont)
+    avra_llvm_position_at_end(fctx.builder, cont)
+}
+
+/// Compare two already-loaded, already-unwrapped field values, branching to
+/// `f_bb` when they differ and to `ok_bb` when they match.
+fn emit_eq_inner_cmp(fctx: Ctx, vt: ValueType, va: ptr, vb: ptr, nm: string, f_bb: ptr, ok_bb: ptr) {
+    let zero = avra_llvm_const_int(fctx.i64_type, 0, 0)
+    // `vt` arrives already peeled by `eq_resolve_nominal`.
+    let inner = vt
+    if vtype_is_str_repr(inner) {
+        let r = fctx.call("avra_streq", [fctx.to_ptr(va, "eq_sa"), fctx.to_ptr(vb, "eq_sb")])
+        avra_llvm_build_cond_br(fctx.builder, fctx.icmp(33, r, zero, "eq_${nm}"), ok_bb, f_bb)
+        return
+    }
+    if inner is .Float {
+        // OEQ (ordered, equal) — NaN compares unequal, as everywhere else.
+        avra_llvm_build_cond_br(fctx.builder, fctx.fcmp(1, va, vb, "eq_${nm}"), ok_bb, f_bb)
+        return
+    }
+    // NOMINAL name, not `vtype_enum_name`: a SELF-REFERENTIAL field (`Node(l:
+    // Tree)`) resolves to `Struct("Tree")` even though `Tree` is an enum, so
+    // asking only for the enum name loses the recursion and the field silently
+    // falls through to a POINTER compare — two structurally equal trees then
+    // read as unequal. `enum_reg_has` keeps a genuine struct out of this branch.
+    let en = vtype_nominal_name(inner)
+    if en != "" && enum_reg_has(fctx.enums, en) {
+        if enum_has_payload(fctx.enums, en) {
+            let r = fctx.call("__eq_${en}", [fctx.to_ptr(va, "eq_ea"), fctx.to_ptr(vb, "eq_eb")])
+            avra_llvm_build_cond_br(fctx.builder, fctx.icmp(33, r, zero, "eq_${nm}"), ok_bb, f_bb)
+            return
+        }
+        // Payload-free nested enum: the tag is the whole value.
+        let et = fctx.get_type(en)
+        if et != null {
+            let ta = fctx.load_i64(fctx.gep(et, fctx.to_ptr(va, "eq_ea"), 0, "eq_a_${nm}_tp"), "eq_a_${nm}_t")
+            let tb = fctx.load_i64(fctx.gep(et, fctx.to_ptr(vb, "eq_eb"), 0, "eq_b_${nm}_tp"), "eq_b_${nm}_t")
+            avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, ta, tb, "eq_${nm}"), ok_bb, f_bb)
+            return
+        }
+    }
+    avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, va, vb, "eq_${nm}"), ok_bb, f_bb)
+}
+
+/// Emit the body of `__eq_EnumName`. Identity first, then null, then the tag,
+/// then the matching variant's fields — each field short-circuiting to the
+/// false exit, so the body needs no phi nodes.
+fn emit_eq_body_enum(ctx: Ctx, name: string, variants: List<Variant>) {
+    let fn_val = ctx.get_fn("__eq_${name}")
+    if fn_val == null { return }
+    let fctx = ctx.with_fn(fn_val, "__eq_${name}")
+    let a = avra_llvm_get_param(fn_val, 0)
+    let b = avra_llvm_get_param(fn_val, 1)
+    let i64t = fctx.i64_type
+
+    let entry = avra_llvm_append_basic_block(ctx.lc, fn_val, "entry")
+    let t_bb = avra_llvm_append_basic_block(ctx.lc, fn_val, "eq_true")
+    let f_bb = avra_llvm_append_basic_block(ctx.lc, fn_val, "eq_false")
+    let nn_bb = avra_llvm_append_basic_block(ctx.lc, fn_val, "eq_nonnull")
+    let tag_bb = avra_llvm_append_basic_block(ctx.lc, fn_val, "eq_tags")
+
+    avra_llvm_position_at_end(fctx.builder, entry)
+    // Identical pointers are equal without a load — this is also what makes two
+    // null operands equal before either side is dereferenced.
+    avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, a, b, "eq_same"), t_bb, nn_bb)
+
+    avra_llvm_position_at_end(fctx.builder, nn_bb)
+    let nul = avra_llvm_const_null(fctx.ptr_type)
+    let an = fctx.icmp(32, a, nul, "eq_a_null")
+    let bn = fctx.icmp(32, b, nul, "eq_b_null")
+    // Exactly one side null — the both-null case already returned true.
+    let either = avra_llvm_build_or(fctx.builder, an, bn, "eq_either_null")
+    avra_llvm_build_cond_br(fctx.builder, either, f_bb, tag_bb)
+
+    avra_llvm_position_at_end(fctx.builder, tag_bb)
+    let ety = fctx.get_type(name)
+    let ta = fctx.load_i64(fctx.gep(ety, a, 0, "eq_a_tag_p"), "eq_a_tag")
+    let tb = fctx.load_i64(fctx.gep(ety, b, 0, "eq_b_tag_p"), "eq_b_tag")
+    let pa = avra_llvm_build_load(fctx.builder, fctx.ptr_type, fctx.gep(ety, a, 1, "eq_a_pay_p"), "eq_a_pay")
+    let pb = avra_llvm_build_load(fctx.builder, fctx.ptr_type, fctx.gep(ety, b, 1, "eq_b_pay_p"), "eq_b_pay")
+    let same_tag = avra_llvm_append_basic_block(ctx.lc, fn_val, "eq_same_tag")
+    avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, ta, tb, "eq_tag"), same_tag, f_bb)
+    avra_llvm_position_at_end(fctx.builder, same_tag)
+
+    mut i = 0
+    while i < variants.length {
+        let v = variants[i]
+        if v.fields.length > 0 {
+            let hit = avra_llvm_append_basic_block(ctx.lc, fn_val, "eq_${v.name}")
+            let next = avra_llvm_append_basic_block(ctx.lc, fn_val, "eq_not_${v.name}")
+            let hv = avra_llvm_const_int(i64t, avra_variant_hash(v.name), 0)
+            avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, ta, hv, "is_${v.name}"), hit, next)
+            avra_llvm_position_at_end(fctx.builder, hit)
+            let pay_ty = fctx.get_type(variant_payload_name(name, v.name))
+            if pay_ty == null {
+                // No payload layout to compare against — the tags already matched.
+                avra_llvm_build_br(fctx.builder, t_bb)
+            } else {
+                for (fi, fe) in v.fields.enumerate() {
+                    emit_eq_field_cmp(fctx, fn_val, pay_ty, pa, pb, fi, fe.resolved, "${v.name}_${fe.name}", f_bb)
+                }
+                avra_llvm_build_br(fctx.builder, t_bb)
+            }
+            avra_llvm_position_at_end(fctx.builder, next)
+        }
+        i = i + 1
+    }
+    // Tags matched and this variant carries no payload.
+    avra_llvm_build_br(fctx.builder, t_bb)
+
+    avra_llvm_position_at_end(fctx.builder, t_bb)
+    avra_llvm_build_ret(fctx.builder, avra_llvm_const_int(i64t, 1, 0))
+    avra_llvm_position_at_end(fctx.builder, f_bb)
+    avra_llvm_build_ret(fctx.builder, avra_llvm_const_int(i64t, 0, 0))
+    avra_llvm_set_linkonce_odr(fn_val)
+}
+
+/// Phase 2 for enum equality: emit each `__eq_` body this compile owns.
+/// External / other-package enums keep the declaration and link the body from
+/// the producer's object, exactly as releases do.
+fn emit_eq_bodies_enums(ctx: Ctx, reg: EnumReg) {
+    mut i = 0
+    while i < reg.ord.length {
+        let e = reg.ord[i]
+        if e.external || !type_belongs_to_lib_pkg(ctx, e.name) {
+            i = i + 1
+            continue
+        }
+        if variants_have_payload(e.variants) { emit_eq_body_enum(ctx, e.name, e.variants) }
+        i = i + 1
+    }
+}
+
 /// Top-level orchestrator for release functions. Declares every
 /// signature first (so mutually-recursive types can call each
 /// other), then emits every body. Run once per module before user
@@ -1717,6 +1951,9 @@ fn emit_release_functions(ctx: Ctx, cycles: List<string>) {
     // Phase 2: emit bodies (cycle-capable types get suspect calls)
     emit_release_bodies_structs(ctx, ctx.structs, cycles)
     emit_release_bodies_enums(ctx, ctx.enums, cycles)
+    // Structural enum equality shares the declare-then-emit shape.
+    declare_eq_fns_enums(ctx.module, ctx.i64_type, ctx.ptr_type, ctx.enums)
+    emit_eq_bodies_enums(ctx, ctx.enums)
 }
 
 /// Walk the AST building the trait registry. Each `trait Foo {...}`

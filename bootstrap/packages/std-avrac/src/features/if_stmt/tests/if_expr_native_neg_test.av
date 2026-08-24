@@ -18,6 +18,7 @@
 // only agreement would not catch BOTH regressing to the same wrong text.
 extern fn avra_shell_exec(cmd: string) -> string
 use @std.avrac.test_runner.{write_fixture}
+use @std.avrac.core.{OpId, tk_is_op}
 
 use @std.avrac.features.grammar.{checked_in_parser_source}
 
@@ -133,7 +134,7 @@ spec "t-47hc.24: the native if expression reports its own block diagnostic" {
         // t-47hc.8 one-file dedup: the gate calls block_expr's shared FIRST
         // predicate; the LeftBrace test lives in its body — both halves pinned.
         gen.contains("if !(starts_block_expr(st)) {\n            st.report_coded(\"F0010\", \"expected `{` after if condition\")") &&
-            gen.contains("fn starts_block_expr(st: PState) -> bool {\n    st.cur().tk == Tk.LeftBrace\n}")
+            gen.contains("fn starts_block_expr(st: PState) -> bool {\n    tk_is_op(st.cur().tk, OpId.LeftBrace)\n}")
     }
 }
 

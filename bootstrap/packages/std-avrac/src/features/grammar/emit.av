@@ -1,5 +1,6 @@
 // WHY: ps3t.6.5.11 — the code-generation face of the generator. Where
 
+use core.{op_rows, tk_name, tk_is_op, OpId}
 use features.grammar.{terminal_guard, Grammar, Rule, GNode, GSeq, GItem, GPrim, GBuild, GAnnot, rule_index_of, is_base_pred}
 // t-zrn3: the UNGUARDED-TAIL predicate is SHARED with executor.exec_node — see ast.av.
 // The local wrappers below delegate to it so the two engines cannot drift.
@@ -149,23 +150,19 @@ fn leaf_exprid_call(g: Grammar, leaf: string) -> string {
 /// the recursion, dropping a malloc + rc_set per node — with ONE thin `CapVal`
 /// wrapper (`parse_binary_pratt_g`) at the boundary the per-rule wrappers call.
 fn emit_pratt_prelude(g: Grammar, chain: List<ChainRule>, leaf: string) -> string {
-    // ps3t.6.7 perf: the precedence table dispatches on the Tk enum too (same
-    // tk_guard rule) — every binary operator in the chain is punctuation with a
-    // 1:1 Tk variant, so `t.tk == Tk.X` is byte-identical to `t.text == "X"` but
-    // free of the per-iteration streq. An operator tk_variant_for can't name
-    // falls back to the text compare (none today, but keeps the invariant safe).
+    // ps3t.6.7 perf: the precedence table dispatches on the Tk enum too — it
+    // shares the ONE guard rule via `tk_guard_on`, so it cannot drift from the
+    // FIRST-set guards. Punctuation emits `tk_is_op(t.tk, OpId.X)`, which is free
+    // of the per-iteration streq and of the synthesized `__eq_Tk` a `==` would
+    // call. An operator `tk_variant_for` can't name falls back to the text compare
+    // (none today, but keeps the invariant safe).
     mut lbp = "fn binary_lbp_g(t: Token) -> int {\n"
     for c in chain {
         mut cond = ""
         mut j = 0
         for op in c.ops {
             if j > 0 { cond = cond + " || " }
-            let tkv = tk_variant_for(op)
-            if tkv == "" {
-                cond = cond + "t.text == \"${op}\""
-            } else {
-                cond = cond + "t.tk == Tk.${tkv}"
-            }
+            cond = cond + tk_guard_on("t", op)
             j = j + 1
         }
         lbp = lbp + "    if ${cond} { return ${string(c.lbp)} }\n"
@@ -1505,7 +1502,7 @@ fn emit_one_terminal(g: Grammar, item: GItem, idx: int, annots: List<GAnnot>, in
     // — an always-failing check that rejected valid input; this is the fix).
     let t = prim_lit_text(item.prim)
     let base_cond = prim_first_guard(g, item.prim, [])
-    // A ">" terminal (the generic-arg-list close) ALSO matches ">>" (Tk.Shr) and
+    // A ">" terminal (the generic-arg-list close) ALSO matches ">>" (Tk.Op(OpId.Shr)) and
     // splits it — consuming ONE ">" and leaving the second in-slot for the enclosing
     // generic's own close — the emit mirror of the interpreter's exec split_gt
     // (executor.av) and Parser.maybe_split_shr. Without it, List<List<T>> /
@@ -1682,7 +1679,7 @@ fn emit_opt(g: Grammar, item: GItem, annots: List<GAnnot>, ind: string, list_lab
 /// WITHOUT consuming (a speculative alternative rolls back to zero width). Such
 /// a body's emitted `while` needs a no-progress break: the loop's FIRST guard
 /// can stay true while the step declines to consume (the postfix chain guards
-/// on `Tk.Less`, so `a < b` re-enters forever once the generic-call step
+/// on `Tk.Op(OpId.Less)`, so `a < b` re-enters forever once the generic-call step
 /// decides it is a comparison).
 fn group_can_stall(g: Grammar, node: GNode) -> bool {
     match node {
@@ -2723,56 +2720,36 @@ fn build_fn(name: BuildName) -> string {
 
 // ── ps3t.6.7 perf: Tk-enum terminal dispatch ──
 fn tk_variant_for(text: string) -> string {
-    // punctuation
-    if text == "(" { return "LeftParen" }
-    if text == ")" { return "RightParen" }
-    if text == "{" { return "LeftBrace" }
-    if text == "}" { return "RightBrace" }
-    if text == "[" { return "LeftBracket" }
-    if text == "]" { return "RightBracket" }
-    if text == "," { return "Comma" }
-    if text == "." { return "Dot" }
-    if text == ".." { return "DotDot" }
-    if text == ":" { return "Colon" }
-    if text == "->" { return "Arrow" }
-    if text == "<-" { return "LeftArrow" }
-    if text == "@" { return "At" }
-    if text == "~" { return "Tilde" }
-    if text == "?" { return "Question" }
-    if text == "?." { return "QuestionDot" }
-    if text == "??" { return "QuestionQuestion" }
-    // operators
-    if text == "+" { return "Plus" }
-    if text == "-" { return "Minus" }
-    if text == "*" { return "Star" }
-    if text == "/" { return "Slash" }
-    if text == "%" { return "Percent" }
-    if text == "=" { return "Equal" }
-    if text == "==" { return "EqualEqual" }
-    if text == "!" { return "Bang" }
-    if text == "!=" { return "BangEqual" }
-    if text == "<" { return "Less" }
-    if text == "<=" { return "LessEqual" }
-    if text == ">" { return "Greater" }
-    if text == ">=" { return "GreaterEqual" }
-    if text == "&" { return "Amp" }
-    if text == "&&" { return "AmpAmp" }
-    if text == "|" { return "Pipe" }
-    if text == "||" { return "PipePipe" }
-    if text == "|>" { return "PipeGt" }
-    if text == "^" { return "Caret" }
-    if text == "<<" { return "Shl" }
-    if text == ">>" { return "Shr" }
+    // DERIVED from core's `op_rows()`. This was a 38-arm `if text == "…"` ladder
+    // listing every operator spelling against its `Tk` variant — the same 38 pairs
+    // that table already states, verified identical with zero disagreements before
+    // the ladder was deleted.
+    //
+    // A word (keyword or identifier) has no operator variant, so "" — the same
+    // answer the ladder's fallthrough gave, and what makes `tk_guard` emit a TEXT
+    // compare for word literals rather than a `Tk` compare.
+    for r in op_rows() { if r.spelling == text { return tk_name(r.tk) } }
     ""
 }
 
 /// Emit a single-terminal FIRST guard over `st.cur()`. Operator/punctuation
 /// terminals dispatch on the `Tk` enum (fast int compare, byte-identical);
 /// keywords and everything else keep the `.text` string compare.
-fn tk_guard(text: string) -> string {
+fn tk_guard(text: string) -> string { tk_guard_on("st.cur()", text) }
+
+/// `tk_guard` over an arbitrary receiver expression. ONE implementation of the
+/// punctuation-guard rule: the pratt precedence ladder (`t`) and every FIRST-set
+/// guard (`st.cur()`) both route here, so an operator can never be compared one
+/// way in one emitter and another way in the next (t-vcb1 — see below).
+fn tk_guard_on(recv: string, text: string) -> string {
     let v = tk_variant_for(text)
-    if v == "" { return "st.cur().text == \"${text}\"" }
-    "st.cur().tk == Tk.${v}"
+    if v == "" { return "${recv}.text == \"${text}\"" }
+    // A CALL, not `st.cur().tk == Tk.Op(OpId.X)`. Both are correct now that `==`
+    // compares payloads structurally, but this is the parser's hottest guard and
+    // `tk_is_op` matches the payload out instead of calling the synthesized
+    // `__eq_Tk`. Before t-vcb1 was fixed the `==` form was simply wrong — it
+    // compared the TAG alone and every operator answered true. Same for keywords.
+    "tk_is_op(${recv}.tk, OpId.${v})"
 }
 
 /// Emit a NAMED-terminal guard (IDENT / NUMBER / STRING / BOOL / TEMPLATE / …)

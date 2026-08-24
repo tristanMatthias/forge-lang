@@ -617,7 +617,7 @@ export enum GPrim {
     ///
     ///   grammar_expr = "grammar" "{" body:@rawbrace(grammar) "}" -> MkGrammarBlock(body)
     ///
-    /// Depth counting is TOKEN-level (`Tk.LeftBrace`/`Tk.RightBrace`), exactly like
+    /// Depth counting is TOKEN-level (`Tk.Op(OpId.LeftBrace)`/`Tk.Op(OpId.RightBrace)`), exactly like
     /// the hand's — a `{` inside a string or template literal is part of that one
     /// token and never miscounts the depth. The cursor is left AT the balancing `}`
     /// so the rule's own trailing `"}"` literal consumes it, keeping the close brace

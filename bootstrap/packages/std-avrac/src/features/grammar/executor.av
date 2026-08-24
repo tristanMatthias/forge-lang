@@ -1,7 +1,7 @@
 // WHY: ps3t.6.4 — the grammar-DSL *generator*, in its executable form.
 
 use features.{is_expr_keyword, is_registered_component, register_component_name, register_raw_body_component, component_is_raw_body}
-use core.{Annotation, BinOp, Expr, ExprId, FieldEntry, FieldInit, KwId, LogicOp, MatchArm, NodeRef, NodeStore, ParamEntry, PatId, Pattern, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeId, TypeParamEntry, UnOp, ValueType, Variant, WhenArm, build_line_index, byte_span, byte_span_none, gensym_name, new_node_store, render_type_name_list, tk_is_kw, type_expr_to_vtype}
+use core.{Annotation, BinOp, Expr, ExprId, FieldEntry, FieldInit, KwId, LogicOp, MatchArm, NodeRef, NodeStore, ParamEntry, PatId, Pattern, SrcPos, Stmt, StmtId, Tk, TypeExpr, TypeId, TypeParamEntry, UnOp, ValueType, Variant, WhenArm, build_line_index, byte_span, byte_span_none, gensym_name, new_node_store, render_type_name_list, tk_is_kw, type_expr_to_vtype, tk_is_op, OpId}
 use features.grammar.{Grammar, Rule, GNode, GSeq, GItem, GPrim, GAnnot}
 use features.grammar.{Token, lex_real, LexDiag, rule_index_of}
 // t-zrn3: the UNGUARDED-TAIL predicate, SHARED with emit_dispatch (see ast.av).
@@ -649,7 +649,7 @@ impl PState {
         self.first_pos = self.pos
     }
 
-    /// Split a `>>` (Tk.Shr) token when a single `>` is expected — the
+    /// Split a `>>` (Tk.Op(OpId.Shr)) token when a single `>` is expected — the
     /// gnarly-5% nested-generic close (`List<List<T>>`), the executor-side
     /// analogue of Parser.maybe_split_shr (ps3t.6.5.10). The lexer
     /// merges two adjacent `>` into ONE `>>`; here we CONSUME the first half
@@ -666,8 +666,8 @@ impl PState {
         // shared runners undo the remainder on an errored exit, so no abandoned
         // parse can leave a half-consumed `>>` for the next one to trip over.
         self.tok_edits.push(TokEdit { idx: self.pos, orig: cur })
-        self.toks.set(self.pos, Token { kind: "PUNCT", text: ">", pos: cur.pos + 1, tk: Tk.Greater })
-        Token { kind: "PUNCT", text: ">", pos: cur.pos, tk: Tk.Greater }
+        self.toks.set(self.pos, Token { kind: "PUNCT", text: ">", pos: cur.pos + 1, tk: Tk.Op(OpId.Greater) })
+        Token { kind: "PUNCT", text: ">", pos: cur.pos, tk: Tk.Op(OpId.Greater) }
     }
 
     fn report(self, msg: string) {
@@ -1060,7 +1060,7 @@ impl PState {
                 tk_is_kw(k, KwId.Type) || tk_is_kw(k, KwId.Enum) || tk_is_kw(k, KwId.Impl) || tk_is_kw(k, KwId.If) ||
                 tk_is_kw(k, KwId.While) || tk_is_kw(k, KwId.For) || tk_is_kw(k, KwId.Match) || tk_is_kw(k, KwId.Return) ||
                 tk_is_kw(k, KwId.Extern) || tk_is_kw(k, KwId.Trait) || tk_is_kw(k, KwId.Defer) || tk_is_kw(k, KwId.Spec) ||
-                tk_is_kw(k, KwId.Given) || tk_is_kw(k, KwId.Then) || tk_is_kw(k, KwId.Select) || k == Tk.RightBrace {
+                tk_is_kw(k, KwId.Given) || tk_is_kw(k, KwId.Then) || tk_is_kw(k, KwId.Select) || tk_is_op(k, OpId.RightBrace) {
                 return
             }
             let _ = self.advance()
@@ -1542,7 +1542,7 @@ export fn base_pred(flag: string, st: PState) -> bool {
         }
     }
     // The `.` arm's ENTIRE entry-guard conjunct of postfix_step:
-    //   check(Tk.Dot) && dot_is_postfix(result) && (!cell_mode || same_line)
+    //   check(Tk.Op(OpId.Dot)) && dot_is_postfix(result) && (!cell_mode || same_line)
     // Folded into ONE predicate rather than spelled as `@when(cell_mode)` + `^` + a base
     // read, because `dot_is_postfix` is not a conjunction of those — it is a decision
     // TREE (cross-line-uppercase rejects outright; otherwise allow_dot_postfix short-
@@ -1552,7 +1552,7 @@ export fn base_pred(flag: string, st: PState) -> bool {
     // one caller. `peek_next_is_upper` reads the SOURCE char after the `.`;
     // on the token stream the next token's first char is the same question.
     if flag == "dot_postfix_ok" {
-        if st.cur().tk != Tk.Dot { return false }
+        if !tk_is_op(st.cur().tk, OpId.Dot) { return false }
         let same_line = st.pos == 0 ||
             st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line
         // cell_mode confines a `.` postfix to its own line (table cells).
@@ -1677,13 +1677,13 @@ fn ident_lbrace_owned_elsewhere(st: PState) -> bool {
 /// `paren_arrow_ahead` — they differ only in what they ask about the token AFTER the
 /// arrow, and duplicating the walk is how the two gates would drift on nesting.
 fn paren_arrow_close(st: PState) -> int {
-    if st.cur().tk != Tk.LeftParen { return -1 }
+    if !tk_is_op(st.cur().tk, OpId.LeftParen) { return -1 }
     mut depth = 0
     mut i = st.pos
     while i < st.toks.length {
         let t = st.toks[i]
-        if t.tk == Tk.LeftParen || t.tk == Tk.LeftBracket || t.tk == Tk.LeftBrace { depth = depth + 1 }
-        else if t.tk == Tk.RightParen || t.tk == Tk.RightBracket || t.tk == Tk.RightBrace {
+        if tk_is_op(t.tk, OpId.LeftParen) || tk_is_op(t.tk, OpId.LeftBracket) || tk_is_op(t.tk, OpId.LeftBrace) { depth = depth + 1 }
+        else if tk_is_op(t.tk, OpId.RightParen) || tk_is_op(t.tk, OpId.RightBracket) || tk_is_op(t.tk, OpId.RightBrace) {
             depth = depth - 1
             if depth == 0 { break }
             if depth < 0 { return -1 }
@@ -1693,9 +1693,9 @@ fn paren_arrow_close(st: PState) -> int {
     // Unbalanced to end of input — `(1 + 2` with no closer. Not a lambda, and the group
     // branch is the one that reports the missing `)`.
     if i >= st.toks.length || depth != 0 { return -1 }
-    if st.toks[i].tk != Tk.RightParen { return -1 }
+    if !tk_is_op(st.toks[i].tk, OpId.RightParen) { return -1 }
     if i + 1 >= st.toks.length { return -1 }
-    if st.toks[i + 1].tk != Tk.Arrow { return -1 }
+    if !tk_is_op(st.toks[i + 1].tk, OpId.Arrow) { return -1 }
     i
 }
 
@@ -1765,19 +1765,19 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // One core, three closers. The `)` form was written first and the `]`/`}` siblings
     // were missing for months — a `[1, 2,]` or `{ a: 1, }` was silently
     // mis-handled (t-myz7).
-    if cond == "comma_not_rparen" { return comma_not_closer(st, Tk.RightParen) }
-    if cond == "not_rparen" { return not_closer(st, Tk.RightParen) }
-    if cond == "not_rbrace" { return not_closer(st, Tk.RightBrace) }
-    if cond == "comma_not_rbracket" { return comma_not_closer(st, Tk.RightBracket) }
-    if cond == "comma_not_rbrace" { return comma_not_closer(st, Tk.RightBrace) }
+    if cond == "comma_not_rparen" { return comma_not_closer(st, OpId.RightParen) }
+    if cond == "not_rparen" { return not_closer(st, OpId.RightParen) }
+    if cond == "not_rbrace" { return not_closer(st, OpId.RightBrace) }
+    if cond == "comma_not_rbracket" { return comma_not_closer(st, OpId.RightBracket) }
+    if cond == "comma_not_rbrace" { return comma_not_closer(st, OpId.RightBrace) }
     // `.0` tuple index — a second-token guard, same reason every `.`-led branch needs one.
     if cond == "dot_number" {
-        if st.cur().tk != Tk.Dot { return false }
+        if !tk_is_op(st.cur().tk, OpId.Dot) { return false }
         if st.pos + 1 >= st.toks.length { return false }
         return st.toks[st.pos + 1].kind == "NUMBER"
     }
     if cond == "dot_plain_field" {
-        if st.cur().tk != Tk.Dot { return false }
+        if !tk_is_op(st.cur().tk, OpId.Dot) { return false }
         if st.pos + 1 >= st.toks.length { return false }
         // The field name is whatever `consume_field_name` accepts — an identifier OR a
         // reserved-but-inactive keyword (`x.ref`, `x.owned`). Reading the shared
@@ -1785,7 +1785,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // native branch cover that full acceptance set (t-47hc.33.1).
         if !tk_is_field_name(st.toks[st.pos + 1].tk) { return false }
         if st.pos + 2 >= st.toks.length { return true }
-        if st.toks[st.pos + 2].tk != Tk.LeftParen { return true }
+        if !tk_is_op(st.toks[st.pos + 2].tk, OpId.LeftParen) { return true }
         // A `(` follows: this is an enum ctor only if the BASE reads as a type name.
         return !base_pred("base_upper_ident", st)
     }
@@ -1795,18 +1795,18 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // two halves of `dot_plain_field`'s `!base_pred(...)` stay ONE predicate rather than
     // being restated here and drifting. Shape only: `.` IDENT `(`.
     if cond == "dot_enum_ctor" {
-        if st.cur().tk != Tk.Dot { return false }
+        if !tk_is_op(st.cur().tk, OpId.Dot) { return false }
         if st.pos + 2 >= st.toks.length { return false }
         if !tk_is_field_name(st.toks[st.pos + 1].tk) { return false }
-        return st.toks[st.pos + 2].tk == Tk.LeftParen
+        return tk_is_op(st.toks[st.pos + 2].tk, OpId.LeftParen)
     }
     if cond == "qdot_plain_field" {
-        if st.cur().tk != Tk.QuestionDot { return false }
+        if !tk_is_op(st.cur().tk, OpId.QuestionDot) { return false }
         if st.pos + 1 >= st.toks.length { return false }
         if !tk_is_field_name(st.toks[st.pos + 1].tk) { return false }
         if st.pos + 2 >= st.toks.length { return true }
         let after = st.toks[st.pos + 2]
-        if after.tk != Tk.LeftParen { return true }
+        if !tk_is_op(after.tk, OpId.LeftParen) { return true }
         return st.store.lines.to_linecol(st.toks[st.pos + 1].pos).line != st.store.lines.to_linecol(after.pos).line
     }
     // The EXACT COMPLEMENT of qdot_plain_field: `?.` IDENT with a SAME-LINE `(`.
@@ -1816,11 +1816,11 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // the same two token positions, so keeping them mutually exclusive is a matter of
     // testing the same line relation in opposite directions, which is what this does.
     if cond == "qdot_method_call" {
-        if st.cur().tk != Tk.QuestionDot { return false }
+        if !tk_is_op(st.cur().tk, OpId.QuestionDot) { return false }
         if st.pos + 2 >= st.toks.length { return false }
         if !tk_is_field_name(st.toks[st.pos + 1].tk) { return false }
         let after = st.toks[st.pos + 2]
-        if after.tk != Tk.LeftParen { return false }
+        if !tk_is_op(after.tk, OpId.LeftParen) { return false }
         return st.store.lines.to_linecol(st.toks[st.pos + 1].pos).line == st.store.lines.to_linecol(after.pos).line
     }
     if cond == "ident_lbrace" {
@@ -1959,7 +1959,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         return st.cur().text == "for" && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].text == "("
     }
     if cond == "match_subjectless" {
-        return st.cur().text == "match" && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].tk == Tk.LeftBrace
+        return st.cur().text == "match" && st.pos + 1 < st.toks.length && tk_is_op(st.toks[st.pos + 1].tk, OpId.LeftBrace)
     }
     // `match <subject> table { … }` — the TABLE sub-language. The natural decision
     // point is AFTER parsing the subject, which a
@@ -1975,9 +1975,9 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         while i < st.toks.length {
             let t = st.toks[i]
             if t.kind == "EOF" { return false }
-            if t.tk == Tk.LeftParen || t.tk == Tk.LeftBracket { depth = depth + 1 }
-            else if t.tk == Tk.RightParen || t.tk == Tk.RightBracket { depth = depth - 1 }
-            else if t.tk == Tk.LeftBrace && depth <= 0 {
+            if tk_is_op(t.tk, OpId.LeftParen) || tk_is_op(t.tk, OpId.LeftBracket) { depth = depth + 1 }
+            else if tk_is_op(t.tk, OpId.RightParen) || tk_is_op(t.tk, OpId.RightBracket) { depth = depth - 1 }
+            else if tk_is_op(t.tk, OpId.LeftBrace) && depth <= 0 {
                 // The body brace. The table form is exactly `… table {`.
                 //
                 // Tested by TEXT alone. It used to also require kind == "IDENT",
@@ -2026,7 +2026,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // reason the terminal emitters widen for it.
     if cond == "not_gt" {
         if st.at_end() { return false }
-        return !(st.cur().tk == Tk.Greater || st.cur().text == ">>")
+        return !(tk_is_op(st.cur().tk, OpId.Greater) || tk_is_op(st.cur().tk, OpId.Shr))
     }
     if cond == "comma_ident" {
         return st.cur().text == "," && st.pos + 1 < st.toks.length && st.toks[st.pos + 1].kind == "IDENT"
@@ -2060,9 +2060,9 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     if cond == "let_destructure" {
         if !tk_is_kw(st.cur().tk, KwId.Let) { return false }
         if st.pos + 1 >= st.toks.length { return false }
-        if st.toks[st.pos + 1].tk == Tk.LeftParen { return true }
+        if tk_is_op(st.toks[st.pos + 1].tk, OpId.LeftParen) { return true }
         if st.pos + 2 >= st.toks.length { return false }
-        return st.toks[st.pos + 1].text == "mut" && st.toks[st.pos + 2].tk == Tk.LeftParen
+        return st.toks[st.pos + 1].text == "mut" && tk_is_op(st.toks[st.pos + 2].tk, OpId.LeftParen)
     }
     // `implements` is a CONTEXTUAL word, not a keyword token — the hand tests
     // `check(Tk.Identifier) && current_lexeme == "implements"`, so this must too.
@@ -2155,7 +2155,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.toks[st.pos + 1].kind != "IDENT" { return false }
         let inst = st.toks[st.pos + 2]
         if inst.kind != "IDENT" || inst.text == "implements" { return false }
-        return st.toks[st.pos + 3].tk == Tk.LeftBrace
+        return tk_is_op(st.toks[st.pos + 3].tk, OpId.LeftBrace)
     }
     // ── Slice C: the BARE-IDENT instantiation, `name inst { … }` ──
     //
@@ -2172,7 +2172,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if comp_name_is_raw_body(st) != want_raw { return false }
         if st.pos + 2 >= st.toks.length { return false }
         if st.toks[st.pos + 1].kind != "IDENT" { return false }
-        return st.toks[st.pos + 2].tk == Tk.LeftBrace
+        return tk_is_op(st.toks[st.pos + 2].tk, OpId.LeftBrace)
     }
     // ── The four `parse_comp_block_body` arms, as dispatch conds (t-47hc.5.1 B2b) ──
     //
@@ -2241,10 +2241,10 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         if st.pos + 2 >= st.toks.length { return false }
         if !tok_starts_word(st.toks[st.pos + 1]) { return false }
         if word_excluded_as_instance_name(st.toks[st.pos + 1].text) { return false }
-        return st.toks[st.pos + 2].tk == Tk.LeftBrace
+        return tk_is_op(st.toks[st.pos + 2].tk, OpId.LeftBrace)
     }
     if cond == "annot_lead" {
-        if st.cur().tk != Tk.At { return false }
+        if !tk_is_op(st.cur().tk, OpId.At) { return false }
         // A BARE `@` (no name at all) is NOT ours. Letting it in built an annotation with
         // an EMPTY name wrapping the following declaration, and the two engines rendered
         // that differently (`(@annotated @ …)` vs `(@annotated …)`) — a divergence between
@@ -2261,13 +2261,13 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     }
     // Bare "the cursor is on an IDENT" (t-47hc.5). The where-entry list needs exactly
     if cond == "list_comp_ahead" {
-        if st.cur().tk != Tk.LeftBracket { return false }
+        if !tk_is_op(st.cur().tk, OpId.LeftBracket) { return false }
         mut depth = 0
         mut i = st.pos
         while i < st.toks.length {
             let t = st.toks[i]
-            if t.tk == Tk.LeftParen || t.tk == Tk.LeftBracket || t.tk == Tk.LeftBrace { depth = depth + 1 }
-            else if t.tk == Tk.RightParen || t.tk == Tk.RightBracket || t.tk == Tk.RightBrace {
+            if tk_is_op(t.tk, OpId.LeftParen) || tk_is_op(t.tk, OpId.LeftBracket) || tk_is_op(t.tk, OpId.LeftBrace) { depth = depth + 1 }
+            else if tk_is_op(t.tk, OpId.RightParen) || tk_is_op(t.tk, OpId.RightBracket) || tk_is_op(t.tk, OpId.RightBrace) {
                 depth = depth - 1
                 if depth == 0 { return false }
                 if depth < 0 { return false }
@@ -2296,18 +2296,18 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // paren_backtrack_guard specs). Same nesting-aware walk as
         // comp_paren_shape: brackets and braces tracked, so a comma inside a
         // nested `f(a, b)` / `[1, 2]` / `{ … }` cannot claim the group.
-        if st.cur().tk != Tk.LeftParen { return false }
+        if !tk_is_op(st.cur().tk, OpId.LeftParen) { return false }
         mut depth = 0
         mut i = st.pos
         while i < st.toks.length {
             let t = st.toks[i]
-            if t.tk == Tk.LeftParen || t.tk == Tk.LeftBracket || t.tk == Tk.LeftBrace { depth = depth + 1 }
-            else if t.tk == Tk.RightParen || t.tk == Tk.RightBracket || t.tk == Tk.RightBrace {
+            if tk_is_op(t.tk, OpId.LeftParen) || tk_is_op(t.tk, OpId.LeftBracket) || tk_is_op(t.tk, OpId.LeftBrace) { depth = depth + 1 }
+            else if tk_is_op(t.tk, OpId.RightParen) || tk_is_op(t.tk, OpId.RightBracket) || tk_is_op(t.tk, OpId.RightBrace) {
                 depth = depth - 1
                 if depth == 0 { return false }
                 if depth < 0 { return false }
             }
-            else if depth == 1 && t.tk == Tk.Comma { return true }
+            else if depth == 1 && tk_is_op(t.tk, OpId.Comma) { return true }
             i = i + 1
         }
         return false
@@ -2366,7 +2366,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
         // Shares the ONE `word_excluded_as_instance_name` list, so the gate cannot
         // be narrower than the check it fronts.
         if word_excluded_as_instance_name(st.toks[st.pos + 1].text) { return false }
-        return st.toks[st.pos + 2].tk == Tk.LeftBrace
+        return tk_is_op(st.toks[st.pos + 2].tk, OpId.LeftBrace)
     }
     // `return_value` — does a RETURN VALUE follow the `return` keyword? The whole
     // guard, as one cond: `current_kind in [RightBrace, Eof] || current_line != prev_line`,
@@ -2382,7 +2382,7 @@ export fn lookahead_ok(cond: string, st: PState) -> bool {
     // Folded into ONE predicate for the same reason `dot_postfix_ok` is — the test
     // is a decision tree over three conjuncts, not a conjunction the markers can spell.
     if cond == "return_value" {
-        if st.at_end() || st.cur().tk == Tk.RightBrace { return false }
+        if st.at_end() || tk_is_op(st.cur().tk, OpId.RightBrace) { return false }
         if st.pos == 0 { return true }
         return st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line ==
                st.store.lines.to_linecol(st.cur().pos).line
@@ -2405,11 +2405,11 @@ fn comp_header_end(st: PState) -> int {
     i = i + 1
     if i >= st.toks.length || st.toks[i].kind != "IDENT" { return 0 - 1 }
     i = i + 1
-    while i + 1 < st.toks.length && st.toks[i].tk == Tk.Comma && st.toks[i + 1].kind == "IDENT" {
+    while i + 1 < st.toks.length && tk_is_op(st.toks[i].tk, OpId.Comma) && st.toks[i + 1].kind == "IDENT" {
         i = i + 2
     }
     // `implements A,` then the closer — a legal trailing comma, not a fourth trait.
-    if i < st.toks.length && st.toks[i].tk == Tk.Comma { i = i + 1 }
+    if i < st.toks.length && tk_is_op(st.toks[i].tk, OpId.Comma) { i = i + 1 }
     i
 }
 
@@ -3589,8 +3589,8 @@ export fn rawbrace_scan(st: PState, tag: string) -> Token {
             st.report("unterminated `${tag} { }` block — no balancing `}` before end of file")
             return Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
         }
-        if st.cur().tk == Tk.LeftBrace { depth = depth + 1 }
-        if st.cur().tk == Tk.RightBrace {
+        if tk_is_op(st.cur().tk, OpId.LeftBrace) { depth = depth + 1 }
+        if tk_is_op(st.cur().tk, OpId.RightBrace) {
             depth = depth - 1
             if depth == 0 {
                 let body = st.src.substring(start, st.cur().pos).trim()
@@ -3602,14 +3602,14 @@ export fn rawbrace_scan(st: PState, tag: string) -> Token {
     Token { kind: "RAW", text: "", pos: start, tk: Tk.String }
 }
 
-fn not_closer(st: PState, closer: Tk) -> bool {
-    st.cur().tk != closer
+fn not_closer(st: PState, closer: OpId) -> bool {
+    !tk_is_op(st.cur().tk, closer)
 }
 
-fn comma_not_closer(st: PState, closer: Tk) -> bool {
-    if st.cur().tk != Tk.Comma { return false }
+fn comma_not_closer(st: PState, closer: OpId) -> bool {
+    if !tk_is_op(st.cur().tk, OpId.Comma) { return false }
     if st.pos + 1 >= st.toks.length { return false }
-    st.toks[st.pos + 1].tk != closer
+    !tk_is_op(st.toks[st.pos + 1].tk, closer)
 }
 
 /// The result of `run_dsl_type_at`: the built type, the byte offset the DSL
@@ -3719,7 +3719,7 @@ export fn run_dsl_type_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
     // would then re-lex the whole `>>` where it already consumed the first `>`
     // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
-    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Op(OpId.Shr)).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
     DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
@@ -3740,7 +3740,7 @@ export fn run_static_type_at_shared(toks: List<Token>, start_byte: int, src: str
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
     // would then re-lex the whole `>>` where it already consumed the first `>`
     // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
-    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Op(OpId.Shr)).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
     DslTypeResult { te, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
@@ -3766,7 +3766,7 @@ export fn run_dsl_pattern_at_shared(toks: List<Token>, start_byte: int, src: str
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
     // would then re-lex the whole `>>` where it already consumed the first `>`
     // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
-    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Op(OpId.Shr)).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
     DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
@@ -3787,7 +3787,7 @@ export fn run_static_pat_at_shared(toks: List<Token>, start_byte: int, src: stri
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
     // would then re-lex the whole `>>` where it already consumed the first `>`
     // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
-    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Op(OpId.Shr)).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
     DslPatResult { pat, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
@@ -3821,7 +3821,7 @@ export fn run_dsl_expr_at_shared(lex_diags: List<LexDiag>, toks: List<Token>, st
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
     // would then re-lex the whole `>>` where it already consumed the first `>`
     // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
-    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Op(OpId.Shr)).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
     DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
@@ -3850,7 +3850,7 @@ export fn run_static_expr_at_shared(toks: List<Token>, start_byte: int, src: str
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
     // would then re-lex the whole `>>` where it already consumed the first `>`
     // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
-    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Op(OpId.Shr)).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
     DslExprResult { expr, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
@@ -3877,7 +3877,7 @@ fn run_dsl_snode_at_shared(rule: string, lex_diags: List<LexDiag>, toks: List<To
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
     // would then re-lex the whole `>>` where it already consumed the first `>`
     // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
-    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Op(OpId.Shr)).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
     DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }
@@ -3918,7 +3918,7 @@ export fn run_static_snode_at_shared(lex_diags: List<LexDiag>, toks: List<Token>
     // split slot, and restoring `>>` rewinds that token's pos by one — the hand
     // would then re-lex the whole `>>` where it already consumed the first `>`
     // (caught by channel_type_enforcement_test: `channel<GenOpt<int>>` resynced
-    // onto the restored `>>` and the hand's consume(Greater) met Tk.Shr).
+    // onto the restored `>>` and the hand's consume(Greater) met Tk.Op(OpId.Shr)).
     let stop_pos = st.cur().pos
     st.undo_all_tok_edits()
     DslStmtResult { stmt, stop_byte: stop_pos, had_error: st.had_error, diags: boundary_diags(st) }

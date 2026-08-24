@@ -98,10 +98,11 @@ spec "t-47hc.11: multi-alternative FIRST is parenthesized before the sameline `&
         src.contains(") && (st.pos == 0 ||")
     }
     then "both separator alternatives are inside that guarded disjunction" {
-        // emit lowers a literal that maps to a Tk to the enum compare (emit.av:1178),
-        // so `.`/`?` are `Tk.Dot`/`Tk.Question` — both must be in the wrapped guard.
+        // emit lowers a punctuation literal to the `tk_is_op` guard (one rule,
+        // `tk_guard_on`), so `.`/`?` appear as `OpId.Dot`/`OpId.Question` —
+        // both must be inside the wrapped guard.
         let src = emit_rule(MULTI_SL, "chain")
-        src.contains("Tk.Question") && src.contains("Tk.Dot")
+        src.contains("OpId.Question") && src.contains("OpId.Dot")
     }
     then "a same-line multi-separator chain collects every element" {
         elem_count(MULTI_SL, "1 . 2 ? 3") == 3

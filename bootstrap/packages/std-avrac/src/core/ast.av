@@ -2970,6 +2970,110 @@ export fn render_match_arm_list(store: NodeStore, arms: List<MatchArm>) -> strin
 ///
 /// NOTE the collapse is many-spellings-to-one-id in exactly one place:
 /// `Reserved` covers the 12 reserved-future keywords, mirroring `Tk.KwReserved`.
+/// The operator/punctuation ids, the twin of `KwId` (t-y2i7.15 Phase A).
+///
+/// PHASE A: added ADDITIVELY beside the 38 bare `Tk` operator variants it will
+/// replace. NOTHING constructs `Tk.Op` yet — the sweep of the 238 equality sites is
+/// Phase B, after the seed train advances past this. That ordering is the two-phase
+/// bootstrap discipline, not caution: the seed is an older compiler and must be able to
+/// build the source that introduces the variant before anything uses it.
+///
+/// One id per row of `operator_rules()` (parse/token_table.av), named exactly as the
+/// `Tk` variant it mirrors, so the Phase B rewrite is `Tk.Comma` -> `OpId.Comma` with no
+/// renaming to reason about.
+///
+/// PAYLOAD-FREE ON PURPOSE: `Tk.Op(id: OpId)` carries the payload, and `OpId` itself
+/// must stay a bare enum so comparing IDS is a plain exact `==`.
+///
+/// Phase B converts each site to `tk_is_op(tk, OpId.X)` rather than
+/// `tk == Tk.Op(OpId.X)`. Both are CORRECT today — `==` compares enum payloads
+/// structurally (see `emit_enum_tag_cmp`). `tk_is_op` is still the spelling to use:
+/// it matches the payload out directly instead of routing through the synthesized
+/// `__eq_Tk`, which matters in the parser's hottest loops, and a named predicate says
+/// what is being asked where a raw `==` against a constructor call does not.
+/// Historically it was not merely preferable but REQUIRED: `==` compared the tag alone
+/// and answered TRUE for every operator (t-vcb1, fixed).
+export enum OpId {
+    Arrow, Minus, DotDot, Dot, QuestionQuestion, QuestionDot,
+    Question, AmpAmp, Amp, PipePipe, PipeGt, Pipe,
+    BangEqual, Bang, EqualEqual, Equal, Shl, LessEqual,
+    LeftArrow, Less, Shr, GreaterEqual, Greater, Slash,
+    Comma, LeftParen, RightParen, LeftBrace, RightBrace, LeftBracket,
+    RightBracket, Plus, Star, Colon, At, Caret,
+    Tilde, Percent
+}
+
+/// THE operator list — id + spelling, the twin of `kw_rows()`.
+///
+/// Lives in core for the same reason `kw_rows` does: `OpId` is a core type, and core
+/// cannot import `parse`, so the spelling has to sit beside the id rather than in the
+/// lexical table. `operator_rules()` (parse/token_table.av) DERIVES from this, so the
+/// pairing is stated once.
+///
+/// The `tk` column carries the BARE variant (`Tk.Comma`) and is PHASE-A SCAFFOLDING.
+/// It exists so `operator_rules()` can derive without a 38-arm `OpId -> Tk` ladder —
+/// which would be trading one duplication for another, and a temporary one. Phase B
+/// makes the token `Tk.Op(id)`, derivable from the id, and this column is deleted.
+export type OpRow = { id: OpId, spelling: string, tk: Tk }
+
+export fn op_rows() -> List<OpRow> {
+    table<OpRow> {
+        id               | spelling | tk
+        OpId.Arrow            | "->" | Tk.Arrow
+        OpId.Minus            | "-"  | Tk.Minus
+        OpId.DotDot           | ".." | Tk.DotDot
+        OpId.Dot              | "."  | Tk.Dot
+        OpId.QuestionQuestion | "??" | Tk.QuestionQuestion
+        OpId.QuestionDot      | "?." | Tk.QuestionDot
+        OpId.Question         | "?"  | Tk.Question
+        OpId.AmpAmp           | "&&" | Tk.AmpAmp
+        OpId.Amp              | "&"  | Tk.Amp
+        OpId.PipePipe         | "||" | Tk.PipePipe
+        OpId.PipeGt           | "|>" | Tk.PipeGt
+        OpId.Pipe             | "|"  | Tk.Pipe
+        OpId.BangEqual        | "!=" | Tk.BangEqual
+        OpId.Bang             | "!"  | Tk.Bang
+        OpId.EqualEqual       | "==" | Tk.EqualEqual
+        OpId.Equal            | "="  | Tk.Equal
+        OpId.Shl              | "<<" | Tk.Shl
+        OpId.LessEqual        | "<=" | Tk.LessEqual
+        OpId.LeftArrow        | "<-" | Tk.LeftArrow
+        OpId.Less             | "<"  | Tk.Less
+        OpId.Shr              | ">>" | Tk.Shr
+        OpId.GreaterEqual     | ">=" | Tk.GreaterEqual
+        OpId.Greater          | ">"  | Tk.Greater
+        OpId.Slash            | "/"  | Tk.Slash
+        OpId.Comma            | ","  | Tk.Comma
+        OpId.LeftParen        | "("  | Tk.LeftParen
+        OpId.RightParen       | ")"  | Tk.RightParen
+        OpId.LeftBrace        | "{"  | Tk.LeftBrace
+        OpId.RightBrace       | "}"  | Tk.RightBrace
+        OpId.LeftBracket      | "["  | Tk.LeftBracket
+        OpId.RightBracket     | "]"  | Tk.RightBracket
+        OpId.Plus             | "+"  | Tk.Plus
+        OpId.Star             | "*"  | Tk.Star
+        OpId.Colon            | ":"  | Tk.Colon
+        OpId.At               | "@"  | Tk.At
+        OpId.Caret            | "^"  | Tk.Caret
+        OpId.Tilde            | "~"  | Tk.Tilde
+        OpId.Percent          | "%"  | Tk.Percent
+    }
+}
+
+/// The OpId variant's NAME (`Comma`, `LeftParen`) — equal by construction to the bare
+/// `Tk` variant it mirrors, which is exactly what the `tk` column records. Reading it
+/// there avoids a third spelling of the same 38 names.
+export fn opid_name(id: OpId) -> string {
+    for r in op_rows() { if r.id == id { return tk_name(r.tk) } }
+    ""
+}
+
+/// The spelling an operator id is written as; "" for anything unlisted.
+export fn opid_spelling(id: OpId) -> string {
+    for r in op_rows() { if r.id == id { return r.spelling } }
+    ""
+}
+
 export enum KwId {
     And, Break, Catch, Channel, Component, Const,
     Continue, Defer, Dyn, Else, Enum, Errdefer,
@@ -2991,6 +3095,10 @@ export enum Tk {
     // `Tk.Keyword(id: KwId.Defer)` is a PARSE ERROR — the field name here is
     // documentation for the declaration, not call syntax.
     Keyword(id: KwId),
+    // t-y2i7.15 PHASE A: the collapsed operator token, added ADDITIVELY beside the
+    // 38 bare operator variants it will replace. Nothing constructs it yet.
+    // Construction is POSITIONAL, as with Keyword: `Tk.Op(OpId.Comma)`.
+    Op(id: OpId),
     // Punctuation
     LeftParen
     RightParen
@@ -3214,13 +3322,25 @@ export fn kwid_keyword_str(id: KwId) -> string {
 /// edit — an expensive place to learn it.
 /// Is `tk` the keyword `want`? (P7)
 ///
-/// USE THIS INSTEAD OF `tk == Tk.Keyword(KwId.X)`. That comparison type-checks
-/// and is WRONG: `==` on a payload-carrying enum compares only the TAG, so it
-/// answers true for EVERY keyword (t-vcb1). Binding the payload and comparing
-/// the inner id works, because `KwId` is a bare enum where `==` is exact.
+/// PREFER THIS to `tk == Tk.Keyword(KwId.X)`. Both are correct now that `==`
+/// compares enum payloads structurally, but this binds the payload out directly
+/// rather than calling the synthesized `__eq_Tk`, and a named predicate says what
+/// is being asked where a raw `==` against a constructor call does not.
 ///
-/// It is also the better spelling on its own terms — a named predicate says
-/// what is being asked, where a raw `==` against a constructor call does not.
+/// Until t-vcb1 was fixed the comparison was not just wordy but WRONG — `==`
+/// compared the TAG alone, so it answered true for EVERY keyword.
+/// True iff `tk` is the operator `want`. The twin of `tk_is_kw`, and the spelling to
+/// use for operator tests: it matches the payload out instead of routing through the
+/// synthesized `__eq_Tk`. `tk == Tk.Op(want)` is also correct now (t-vcb1 fixed), but
+/// was not before — it compared the enum TAG alone and answered TRUE for every
+/// operator.
+export fn tk_is_op(tk: Tk, want: OpId) -> bool {
+    match tk {
+        .Op(id) -> id == want
+        _ -> false
+    }
+}
+
 export fn tk_is_kw(tk: Tk, want: KwId) -> bool {
     match tk {
         .Keyword(id) -> id == want
@@ -3231,6 +3351,10 @@ export fn tk_is_kw(tk: Tk, want: KwId) -> bool {
 export fn tk_source_expr(tk: Tk) -> string {
     match tk {
         .Keyword(id) -> "Tk.Keyword(KwId." + kwid_name(id).substring(2, kwid_name(id).length) + ")"
+        // Explicit, not the default arm: an operator token must reconstruct as
+        // `Tk.Op(OpId.Comma)`. The default would emit `Tk.` + the name and produce
+        // `Tk.Comma` — the BARE variant, which is what this collapse replaces.
+        .Op(id) -> "Tk.Op(OpId." + opid_name(id) + ")"
         _ -> "Tk." + tk_name(tk)
     }
 }
@@ -3271,6 +3395,8 @@ export fn kwid_name(id: KwId) -> string {
 
 export fn tk_name(tk: Tk) -> string {
     match tk {
+        // DERIVED from op_rows(), like the Keyword arm below — no ladder.
+        .Op(id) -> opid_name(id)
         .LeftParen -> "LeftParen"
         .RightParen -> "RightParen"
         .LeftBrace -> "LeftBrace"

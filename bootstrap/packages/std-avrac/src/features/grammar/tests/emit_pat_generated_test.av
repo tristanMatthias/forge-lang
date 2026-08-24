@@ -14,6 +14,7 @@
 // pinning the call spelling here pins both engines to one lowering.
 
 use @std.avrac.features.grammar.{emit_parser_source}
+use @std.avrac.core.{OpId, tk_is_op}
 // t-47hc.8: the pattern grammar fragment is owned by the match feature (features/match.av).
 use @std.avrac.features.match.{avra_pat_grammar}
 
@@ -37,7 +38,7 @@ spec "grammar emitter: renders the pattern family's generated static parser" {
         // predicate; the Tk test lives in the predicate body — both pinned.
         src.contains("if starts_variant_pat(st) {") &&
         src.contains("return parse_variant_pat(st)") &&
-        src.contains("fn starts_variant_pat(st: PState) -> bool {\n    st.cur().tk == Tk.Dot\n}") &&
+        src.contains("fn starts_variant_pat(st: PState) -> bool {\n    tk_is_op(st.cur().tk, OpId.Dot)\n}") &&
         src.contains("fn starts_str_pat(st: PState) -> bool {\n    st.cur().tk == Tk.String\n}")
     }
 

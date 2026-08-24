@@ -1,0 +1,44 @@
+// t-y2i7.15 Phase A: `Tk.Op` must RECONSTRUCT as valid source.
+//
+// Nothing constructs `Tk.Op` yet — Phase B does — so this is a guard on a token
+// that does not appear in any program today. It exists because the defect it
+// pins is invisible until Phase B and fatal there: `tk_source_expr` is what
+// renders a token into the GENERATED SCANNER, so a wrong answer here writes
+// uncompilable source into a checked-in file.
+//
+// The original Phase A cut had `tk_name(Tk.Op(id))` return the SPELLING while
+// the Keyword arm returns a NAME (`KwIf`). Two different kinds of answer from
+// one function, and `tk_source_expr`'s default arm then produced `Tk.,` for a
+// comma. Caught in review, not by a test — hence this test.
+
+use @std.avrac.core.{Tk, OpId, op_rows, tk_name, tk_source_expr, opid_name, opid_spelling}
+
+spec "Tk.Op round-trips through tk_source_expr" {
+    then "the sources are non-empty — anti-vacuity" {
+        op_rows().length > 0
+    }
+
+    then "tk_name answers a NAME for an operator, not its spelling" {
+        // `,` is the trap: a spelling that is also punctuation, so a wrong answer
+        // silently produces `Tk.,` rather than anything that looks like an error.
+        tk_name(Tk.Op(OpId.Comma)) == "Comma"
+            && tk_name(Tk.Op(OpId.LeftParen)) == "LeftParen"
+    }
+
+    then "every operator reconstructs as a constructible expression" {
+        mut bad = 0
+        for r in op_rows() {
+            let src = tk_source_expr(Tk.Op(r.id))
+            // EXACT, not a shape check. `starts_with("Tk.Op(OpId.")` plus
+            // `ends_with(")")` is satisfied by the WRONG id — `Tk.Op(OpId.Greater)`
+            // passes it while standing in for `OpId.Equal` — so the assertion could
+            // not fail for the defect it exists to catch.
+            if src != "Tk.Op(OpId.${opid_name(r.id)})" { bad = bad + 1 }
+        }
+        bad == 0
+    }
+
+    then "name and spelling stay DIFFERENT answers to different questions" {
+        opid_name(OpId.Comma) == "Comma" && opid_spelling(OpId.Comma) == ","
+    }
+}

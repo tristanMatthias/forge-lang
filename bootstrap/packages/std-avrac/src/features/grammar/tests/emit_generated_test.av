@@ -92,7 +92,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         src.contains("let __bres0 = parse_pipe(st)") &&
         src.contains("if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {") &&
         src.contains("let l = __bres0") &&
-        src.contains("if st.cur().tk == Tk.Equal {") &&
+        src.contains("if tk_is_op(st.cur().tk, OpId.Equal) {") &&
         src.contains("r = parse_assignment(st)") &&
         src.contains("call_with_build_sp(st, sp_start, mk_assign_abi, [l, r])")
     }
@@ -101,7 +101,7 @@ spec "grammar emitter: renders the GENERATED STATIC PARSER (CapVal/PState) per r
         // `pipe = l:null_coalesce ( "|>" r:pipe_arg )* -> fold_pipe(l, r)` with
         // `pipe_arg = @on(allow_it_sugar) logic_or`. The `|>` guard is Tk-dispatched.
         let src = emit_all()
-        src.contains("while st.cur().tk == Tk.PipeGt {") &&
+        src.contains("while tk_is_op(st.cur().tk, OpId.PipeGt) {") &&
         src.contains("parse_logic_or(st)") &&
         src.contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")") &&
         src.contains("call_with_build_sp(st, sp_start, fold_pipe_abi, [l, CapVal.Nodes(r_list)])")
@@ -168,7 +168,7 @@ fn ")
         // emit_fold_build's manifest branch spells the spanned adapter while
         // the operator-absent fast-path stays.
         let src = emit_all()
-        src.contains("while st.cur().tk == Tk.QuestionQuestion {") &&
+        src.contains("while tk_is_op(st.cur().tk, OpId.QuestionQuestion) {") &&
         src.contains("call_with_build_sp(st, sp_start, fold_nullish_abi, [l, CapVal.Toks(ops), CapVal.Nodes(rs)])")
     }
 
@@ -191,8 +191,8 @@ fn ")
         // (logicop_of maps both) — the guard unions the operator's Tk (tk_guard,
         // ps3t.6.7 perf) with the keyword text (keywords stay on the text compare).
         let src = emit_all()
-        src.contains("while st.cur().tk == Tk.PipePipe || st.cur().text == \"or\" {") &&
-        src.contains("while st.cur().tk == Tk.AmpAmp || st.cur().text == \"and\" {") &&
+        src.contains("while tk_is_op(st.cur().tk, OpId.PipePipe) || st.cur().text == \"or\" {") &&
+        src.contains("while tk_is_op(st.cur().tk, OpId.AmpAmp) || st.cur().text == \"and\" {") &&
         src.contains("call_with_build_sp(st, sp_start, fold_logical_abi, [l, CapVal.Toks(ops), CapVal.Nodes(rs)])")
     }
 
@@ -213,7 +213,7 @@ fn ")
         src.contains("let lbp = binary_lbp_g(st.cur())") &&
         src.contains("let rhs = parse_binary_pratt_g_id(st, lbp + 1)") &&
         src.contains("lhs = mk_binary(st, sp_start, lhs, tx, rhs)") &&
-        src.contains("if t.tk == Tk.Star || t.tk == Tk.Slash || t.tk == Tk.Percent { return 22 }") &&
+        src.contains("if tk_is_op(t.tk, OpId.Star) || tk_is_op(t.tk, OpId.Slash) || tk_is_op(t.tk, OpId.Percent) { return 22 }") &&
         src.contains("fn parse_binary_pratt_g(st: PState, min_bp: int) -> CapVal { CapVal.Node(parse_binary_pratt_g_id(st, min_bp)) }")
     }
 
@@ -240,8 +240,8 @@ fn ")
         let src = emit_all()
         src.contains("fn parse_unary(st: PState) -> CapVal {") &&
         src.contains("fn parse_unary_prefix(st: PState) -> CapVal {") &&
-        src.contains("if st.cur().tk == Tk.Bang || st.cur().tk == Tk.Minus || st.cur().text == \"not\" {") &&
-        src.contains("if st.modes.quote_depth == 0 && (st.cur().tk == Tk.Tilde) {") &&
+        src.contains("if tk_is_op(st.cur().tk, OpId.Bang) || tk_is_op(st.cur().tk, OpId.Minus) || st.cur().text == \"not\" {") &&
+        src.contains("if st.modes.quote_depth == 0 && (tk_is_op(st.cur().tk, OpId.Tilde)) {") &&
         src.contains("unary_abi(st, [op, operand])") &&
         // Phase 3a-7: NUMBER + STRING (slice 1) + BOOL (slice 2) + null/none (slice 3)
         // literal primaries are grammar-owned via branches BEFORE the @hand(primary_base)
@@ -293,13 +293,13 @@ fn ")
         // halves pinned, so the dedup can't silently drop the site guard or the
         // union content.
         src.contains("while starts_postfix_suffix(st) {") &&
-        src.contains("fn starts_postfix_suffix(st: PState) -> bool {\n    st.modes.allow_dot_postfix != 0 && ((st.cur().tk == Tk.Bang) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line))") &&
+        src.contains("fn starts_postfix_suffix(st: PState) -> bool {\n    st.modes.allow_dot_postfix != 0 && ((tk_is_op(st.cur().tk, OpId.Bang)) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line))") &&
         // The `@hand` tail's raw postfix-op set USED to close this union, and this
         // assertion pinned it. t-47hc.33.2 deleted the delegate, so that disjunct is
         // gone with it — what remains is the union of the NATIVE branches' FIRSTs, and
         // the `.` now enters through the @fallback branch that owns the trailing-dot
         // diagnostic rather than through a hand tail.
-        src.contains("st.cur().tk == Tk.Dot") &&
+        src.contains("tk_is_op(st.cur().tk, OpId.Dot)") &&
         src.contains("st.cur().text == \"catch\"") &&
         // Both stateful hand steps are SHARED delegate rules (`postfix_suffix = @hand(…)`,
         // `with_suffix = @hand(…)`), so each of the 19 FIRST-disjoint bases CALLS the one
@@ -373,7 +373,7 @@ fn ")
         // for its `while` guard — the operator group here (Tk-dispatched, ps3t.6.7 perf).
         let g = avra_program_grammar()
         let term = emit_rule_fn(g, rule_named(g, "term"))
-        term.contains("while st.cur().tk == Tk.Plus || st.cur().tk == Tk.Minus {")
+        term.contains("while tk_is_op(st.cur().tk, OpId.Plus) || tk_is_op(st.cur().tk, OpId.Minus) {")
     }
 }
 

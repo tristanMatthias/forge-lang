@@ -61,6 +61,7 @@
 // frozen base is byte-identical to the retired inline form's.
 
 use @std.avrac.features.grammar.{emit_rule_fn, emit_parser_source, Grammar, avra_program_grammar}
+use @std.avrac.core.{OpId, tk_is_op}
 
 /// The emitted ENTRY GUARD (`fn starts_<name>`) of one rule, cut from the
 /// full emitted source. A SINGLE-branch rule's leading zero-width gates
@@ -101,7 +102,7 @@ spec "t-47hc.33: `expr?` is grammar-native" {
         rule_src("unwrap_suffix").contains("st.modes.allow_dot_postfix != 0")
     }
     then "and the token test" {
-        rule_src("unwrap_suffix").contains("st.cur().tk == Tk.Question")
+        rule_src("unwrap_suffix").contains("tk_is_op(st.cur().tk, OpId.Question)")
     }
     then "and the SAME-LINE test — a `?` opening the next line ends the chain" {
         rule_src("unwrap_suffix").contains("to_linecol(st.toks[st.pos - 1].pos).line")
@@ -272,7 +273,7 @@ spec "t-47hc.33: `expr catch { … }` is grammar-native" {
         rule_src("catch_suffix").contains("return CapVal.Node(st.error_node_silent())")
     }
     then "the binding is OPTIONAL — bare `catch {` needs no parens" {
-        rule_src("catch_suffix").contains("if st.cur().tk == Tk.LeftParen {")
+        rule_src("catch_suffix").contains("if tk_is_op(st.cur().tk, OpId.LeftParen) {")
     }
     then "the mode restore precedes the closing-brace check — no leak on abort" {
         // Ordering matters: were the `}` abort emitted INSIDE the @on wrapper, a missing
@@ -356,7 +357,7 @@ spec "t-47hc.33: `f<T>(args)` is grammar-native" {
         rule_src("call_suffix").contains("base_pred(\"base_callable\", st)")
     }
     then "and the token test" {
-        rule_src("call_suffix").contains("st.cur().tk == Tk.Less")
+        rule_src("call_suffix").contains("tk_is_op(st.cur().tk, OpId.Less)")
     }
     then "the type arguments are TYPES, not expressions" {
         // The capture is a repeated `type_expr`, so its accumulator must be declared
@@ -474,7 +475,7 @@ spec "t-47hc.33: `expr!` is grammar-native" {
     then "it carries the hand entry guard — mode read AND same-line" {
         // `check(Tk.Bang) && allow_dot_postfix && current_line == prev_line`.
         let s = rule_src("unwrap_suffix")
-        let start = s.index_of("st.cur().tk == Tk.Bang")
+        let start = s.index_of("tk_is_op(st.cur().tk, OpId.Bang)")
         start >= 0 && s.contains("st.modes.allow_dot_postfix != 0")
     }
 }

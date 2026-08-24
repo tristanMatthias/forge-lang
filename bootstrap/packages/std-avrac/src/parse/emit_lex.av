@@ -178,7 +178,7 @@ export fn gen_operator_scanner_header() -> string {
     "// maximal-munch byte-branch trie by parse/emit_lex.av). Editing the operator\n" +
     "// table without regenerating fails parse/tests/gen_operator_scanner_regen_test.av.\n" +
     "use parse.{OpMatch, byte_at, " + const_import_list(operator_rules()) + "}\n" +
-    "use core.{Tk, KwId}\n\n"   // KwId: emitted keyword tokens are Tk.Keyword(KwId.X) (P7)
+    "use core.{Tk, KwId, OpId}\n\n"   // KwId/OpId: emitted tokens are Tk.Keyword(KwId.X) / Tk.Op(OpId.X)
 }
 
 /// The COMPLETE text of parse/gen_operator_scanner.av: header + generated body.

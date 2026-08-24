@@ -8,7 +8,7 @@
 // Plus the two properties the table test can't reach: maximal munch ACROSS a
 // multi-operator input, and the len-0 no-match sentinel.
 use @std.avrac.parse.{scan_operator, operator_rules, lex_dump}
-use @std.avrac.core.{Tk, tk_name}
+use @std.avrac.core.{Tk, OpId, tk_is_op, tk_name}
 
 extern fn avra_bytes_from_string(s: string) -> bytes
 
@@ -77,8 +77,8 @@ spec "t-47hc.2: generated scan_operator == hand lexer over the operator table" {
         let b = avra_bytes_from_string("<->")
         let n0 = scan_operator(b, 0)
         let n2 = scan_operator(b, 2)
-        m0.tk == Tk.Shr && m0.len == 2 && m2.tk == Tk.Equal && m2.len == 1 &&
-        n0.tk == Tk.LeftArrow && n0.len == 2 && n2.tk == Tk.Greater && n2.len == 1
+        tk_is_op(m0.tk, OpId.Shr) && m0.len == 2 && tk_is_op(m2.tk, OpId.Equal) && m2.len == 1 &&
+        tk_is_op(n0.tk, OpId.LeftArrow) && n0.len == 2 && tk_is_op(n2.tk, OpId.Greater) && n2.len == 1
     }
     then "adjacent operators tokenise identically to the hand lexer (maximal munch)" {
         // scan_op_kinds (generated) vs hand_op_kinds (lex_dump oracle) — a true

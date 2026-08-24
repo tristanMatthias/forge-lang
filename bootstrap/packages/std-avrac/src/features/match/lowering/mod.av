@@ -12,7 +12,7 @@
 // live here now, mk_when included (t-kd4y.3.5.2 — the when feature's
 // expression core, beside its one other caller mk_when_stmt_abi).
 
-use core.{BuildName, ModulePath, Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, ValueType, byte_span, byte_span_none, pattern_optional_present, pattern_optional_absent}
+use core.{BuildName, ModulePath, Stmt, StmtId, Expr, ExprId, PatId, Pattern, MatchArm, WhenArm, NodeRef, SrcPos, ValueType, byte_span, byte_span_none, pattern_optional_present, pattern_optional_absent, tk_is_op, OpId}
 use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_warm_val, capval_arm_val, capval_pat_val, capval_present, capval_to_expr, capval_to_expr_opt, capval_to_pat, capval_to_arm_list, capval_tok_list, capval_tok_text, capval_to_pat_list, capval_to_node_list, param_entries_from_toks, capval_to_when_arm_list, BuildKind}
 
 export fn build_when_arm(c: ExprId, b: ExprId) -> WhenArm {
@@ -251,7 +251,7 @@ export fn build_pat_str(raw: string) -> Pattern {
 ///
 /// The HAND's wording, verbatim (t-47hc.5). Its `parse_pattern` accepts only
 /// `_` and `rest` bare; every other bare identifier falls through to
-/// `consume(Tk.Dot, "expected `.`, `_`, literal, or type pattern to start
+/// `consume(Tk.Op(OpId.Dot), "expected `.`, `_`, literal, or type pattern to start
 /// pattern")`, so that is the message a rejected bare identifier gets —
 /// `Status_Gen.Ready` (a qualified enum prefix, which is not pattern syntax)
 /// is the shape that shows it. The rule reported its own sentence here, which

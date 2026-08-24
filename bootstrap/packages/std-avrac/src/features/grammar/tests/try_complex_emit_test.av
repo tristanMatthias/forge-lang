@@ -4,6 +4,7 @@
 // correct generated code: `mut <label>_list` declared, `@on` wrapped in set_modes
 // save/restore, the build reading the accumulator, and the snapshot/rollback scaffold.
 use @std.avrac.features.grammar.{parse_grammar, emit_rule_fn}
+use @std.avrac.core.{OpId, tk_is_op}
 
 // A complex @try grammar: paren_tail's untyped-lambda + tuple arms exercise every
 // feature the flat @try emitter could not: an optional GROUP with a mode-set + a
@@ -56,7 +57,7 @@ spec "t-47hc GAP-3: complex @try branches lower to correct generated code" {
         mark >= 0 && trunc > mark && restore > trunc && gensym > restore
     }
     then "the accumulator loop consumes the comma separators" {
-        emit_tail().contains("while st.cur().tk == Tk.Comma")
+        emit_tail().contains("while tk_is_op(st.cur().tk, OpId.Comma)")
     }
     // CodeRabbit #995: a `+` (Plus) repetition inside a @try branch MUST enforce ≥1, or a
     // 0-match Plus wrongly COMMITS the speculative branch (e.g. `(x)` committing the tuple
@@ -73,7 +74,7 @@ spec "t-47hc GAP-3: complex @try branches lower to correct generated code" {
         // omitted: the report alone is the rollback signal, and an early return would skip
         // the frame's restore. So the absence of the abort here is the assertion, not an
         // oversight — it is what keeps the speculative arms byte-identical.
-        s.contains("if !(st.cur().tk == Tk.Comma) {") &&
+        s.contains("if !(tk_is_op(st.cur().tk, OpId.Comma)) {") &&
             s.contains("st.report(\"expected at least one repetition\")") &&
             !s.contains("st.report(\"expected at least one repetition\")\n            st.set_abort_prop(true)")
     }
