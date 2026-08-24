@@ -5,8 +5,11 @@ use core.{NodeStore, StmtId}
 use parse.{parse_int_literal}
 use core.{avra_llvm_const_int, vtype_is_str_repr, vtype_enum_name, vtype_nominal_name, vtype_strip_optional, vtype_newtype_underlying, vtype_is_unknown, avra_llvm_build_or}
 extern fn avra_ice_phase(phase: string)
+extern fn avra_ice_push_fn(name: string)
+extern fn avra_ice_set_fn(name: string)
+extern fn avra_ice_pop_fn()
 use core.{avra_process_env_get}
-use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EnumReg, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructReg, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, llvm_type_for_full, llvm_type_for_full_sized, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup, cg_newtype_vtype_lookup, variants_have_payload, enum_reg_has, enum_has_payload}
+use codegen.{Ctx, CgNewtypeReg, CgUnionAliasReg, TypeRegs, DeferEntry, RcCleanupEntry, EnumReg, FnParamMeta, FnRetTypes, LoopStackFrame, StmtResult, StructReg, TopLevelVarMeta, TraitDeclReg, TraitMethodMeta, llvm_type_for_full, llvm_type_for_full_g, llvm_type_for_full_sized, ok_stmt, struct_reg_lookup, trait_decl_has, vtype_is_ptr_type, enum_reg_lookup, cg_newtype_vtype_lookup, variants_have_payload, enum_reg_has, enum_has_payload}
 use codegen.{analyze_releasable, analyze_copy_types, analyze_return_ownership_set}
 use codegen.{publish_fn_units}
 use codegen.{analyze_cycles, cycle_set_has}
@@ -1080,8 +1083,17 @@ fn resolve_setup_vt_list(regs: TypeRegs, types: List<ValueType>) -> List<ValueTy
 /// Populate an LLVM type array with the lowered LLVM type of each
 /// field in `fields`. Used when calling `LLVMStructSetBody`.
 fn fill_struct_field_types(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: List<FieldEntry>) {
+    fill_struct_field_types_g(arr, i64t, i1t, dt, pt, fields, false)
+}
+
+/// Erasure-aware field fill: an erased instantiation's unbound-param
+/// field lays out as the erased wide repr instead of hard-erroring
+/// (the type-side mirror of the @mono_erased fn-body exemption).
+fn fill_struct_field_types_g(arr: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, fields: List<FieldEntry>, allow_unknown: bool) {
     for (i, field) in fields.enumerate() {
-        avra_llvm_type_array_set(arr, i, llvm_type_for_full(i64t, i1t, dt, pt, field.resolved))
+        avra_ice_push_fn("field `${field.name}`")
+        avra_llvm_type_array_set(arr, i, llvm_type_for_full_g(i64t, i1t, dt, pt, field.resolved, allow_unknown))
+        avra_ice_pop_fn()
     }
 }
 
@@ -1138,7 +1150,8 @@ fn fill_and_register_structs_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr
                 let resolved_fields = resolve_field_list(op_fields, base_regs)
                 let count = resolved_fields.length
                 let field_arr = avra_llvm_type_array_new(count)
-                fill_struct_field_types(field_arr, i64t, i1t, dt, pt, resolved_fields)
+                let erased = find_annotation(store, store.stmts.get(ss), "mono_erased") != null
+                fill_struct_field_types_g(field_arr, i64t, i1t, dt, pt, resolved_fields, erased)
                 let st = avra_llvm_get_type_by_name(ctx, name)
                 if st == null {
                     eprintln("[CRASH] fill_and_register: LLVM type '${name}' not found after forward declare")
@@ -1178,7 +1191,11 @@ fn fill_and_register_structs_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr
 /// the actual init expression runs in `emit_top_level_init`.
 fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, init: Expr, type_reg: TypeRegistry, reg: List<TopLevelVarMeta>, define: bool) -> List<TopLevelVarMeta> {
     let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { infer_global_init_ty(init, type_reg) }
+    avra_ice_push_fn("global `${name}`")
+    avra_ice_push_fn("const global `${name}`")
     let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
+    avra_ice_pop_fn()
+    avra_ice_pop_fn()
     let g = avra_llvm_add_global(m, llvm_ty, name)
     // A global WITH an initializer is a DEFINITION; without one it is an
     // external declaration. Per-fn/CGU units (define=false) declare only — the
@@ -1203,7 +1220,9 @@ fn declare_one_global(m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: St
 /// store path, leaving consts at zero.
 fn declare_one_const_global(store: NodeStore, m: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, structs: StructReg, enums: EnumReg, name: string, ty_vt: ValueType, init: Expr, reg: List<TopLevelVarMeta>) -> List<TopLevelVarMeta> {
     let vt = if !vtype_is_unknown(ty_vt) { ty_vt } else { ValueType.Int }
+    avra_ice_push_fn("const global `${name}`")
     let llvm_ty = llvm_type_for_full(i64t, i1t, dt, pt, vt)
+    avra_ice_pop_fn()
     let g = avra_llvm_add_global(m, llvm_ty, name)
     let initial = const_initializer_for(store, init, llvm_ty, i64t, i1t)
     avra_llvm_set_initializer(g, initial)
@@ -1294,7 +1313,7 @@ fn infer_global_init_ty(init: Expr, type_reg: TypeRegistry) -> ValueType {
 /// `%EnumName.VariantName = type { field_types... }`. Outer enum
 /// shape is `{i64 tag, ptr payload}`; the per-variant struct names
 /// what `payload` actually points at when that variant is active.
-fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: List<Variant>, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, enums: EnumReg) {
+fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum_name: string, variants: List<Variant>, structs: StructReg, nts: CgNewtypeReg, uas: CgUnionAliasReg, enums: EnumReg, erased: bool) {
     mut i = 0
     while i < variants.length {
         let v = variants[i]
@@ -1304,7 +1323,9 @@ fn declare_variant_payloads(lc: ptr, i64t: ptr, i1t: ptr, dt: ptr, pt: ptr, enum
             let vp_regs = TypeRegs { structs, enums, newtypes: nts, union_aliases: uas }
             let resolved_fields = resolve_field_list(v.fields, vp_regs)
             let arr = avra_llvm_type_array_new(count)
-            fill_struct_field_types(arr, i64t, i1t, dt, pt, resolved_fields)
+            avra_ice_push_fn("payload of ${enum_name}.${v.name}")
+            fill_struct_field_types_g(arr, i64t, i1t, dt, pt, resolved_fields, erased)
+            avra_ice_pop_fn()
             let st = avra_llvm_struct_create_named(lc, payload_name)
             avra_llvm_struct_set_body(st, arr, count, 0)
             avra_llvm_type_array_free(arr)
@@ -1342,7 +1363,8 @@ fn declare_enums_ext(store: NodeStore, ctx: ptr, i64t: ptr, i1t: ptr, dt: ptr, p
                 avra_llvm_struct_set_body(st, field_arr, 2, 0)
                 avra_llvm_type_array_free(field_arr)
                 // Per-variant typed payload structs
-                declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs, nts, uas, cur)
+                let erased = find_annotation(store, store.stmts.get(ss), "mono_erased") != null
+                declare_variant_payloads(ctx, i64t, i1t, dt, pt, name, variants, structs, nts, uas, cur, erased)
                 let ev_regs = TypeRegs { structs, enums: cur, newtypes: nts, union_aliases: uas }
                 let resolved_variants = resolve_variant_fields(variants, ev_regs)
                 enum_reg_register_full(cur, name, resolved_variants, external)
@@ -1606,6 +1628,7 @@ fn emit_enum_variant_releases(ctx: Ctx, tag_val: ptr, payload: ptr, enum_name: s
 /// frees the outer object. Cycle-capable enums get an
 /// `avra_rc_suspect` call in the alive path.
 fn emit_release_body_enum(ctx: Ctx, name: string, variants: List<Variant>, is_cyclic: bool) {
+    avra_ice_set_fn("synthesized __release_${name}")
     let sc = emit_release_scaffold(ctx, name)
     if sc == null { return }
     let s = sc!
@@ -1625,6 +1648,7 @@ fn emit_release_body_enum(ctx: Ctx, name: string, variants: List<Variant>, is_cy
     emit_release_finish(s, is_cyclic)
     // linkonce_odr — same rationale as the struct path.
     if fn_val != null { avra_llvm_set_linkonce_odr(fn_val) }
+    avra_ice_pop_fn()
 }
 
 /// P2 library-mode ownership check (type variant).
@@ -1773,6 +1797,18 @@ fn emit_eq_field_cmp(fctx: Ctx, fn_val: ptr, pay_ty: ptr, pa: ptr, pb: ptr, idx:
     // `type MaybeText = string?` resolves to a nominal name, so `vt is .Optional`
     // is FALSE for it — the null-aware path would be skipped and a null field
     // would reach a comparison that dereferences.
+    // An ERASED slot (an unbound type param in a @mono_erased
+    // instantiation) lays out as the wide i64 scalar; compare it as one.
+    if vtype_is_unknown(vt) {
+        let ga0 = avra_llvm_build_struct_gep2(fctx.builder, pay_ty, pa, idx, "eq_a_${nm}_p")
+        let gb0 = avra_llvm_build_struct_gep2(fctx.builder, pay_ty, pb, idx, "eq_b_${nm}_p")
+        let va0 = avra_llvm_build_load(fctx.builder, fctx.i64_type, ga0, "eq_a_${nm}")
+        let vb0 = avra_llvm_build_load(fctx.builder, fctx.i64_type, gb0, "eq_b_${nm}")
+        let cont0 = avra_llvm_append_basic_block(fctx.lc, fn_val, "eq_${nm}_ok")
+        avra_llvm_build_cond_br(fctx.builder, fctx.icmp(32, va0, vb0, "eq_${nm}"), cont0, f_bb)
+        avra_llvm_position_at_end(fctx.builder, cont0)
+        return
+    }
     let base = eq_resolve_nominal(fctx, vt)
     let opt = base is .Optional
     let inner = eq_resolve_nominal(fctx, vtype_strip_optional(base))
@@ -1855,6 +1891,7 @@ fn emit_eq_inner_cmp(fctx: Ctx, vt: ValueType, va: ptr, vb: ptr, nm: string, f_b
 /// then the matching variant's fields — each field short-circuiting to the
 /// false exit, so the body needs no phi nodes.
 fn emit_eq_body_enum(ctx: Ctx, name: string, variants: List<Variant>) {
+    avra_ice_set_fn("synthesized __eq_${name}")
     let fn_val = ctx.get_fn("__eq_${name}")
     if fn_val == null { return }
     let fctx = ctx.with_fn(fn_val, "__eq_${name}")
@@ -1922,6 +1959,7 @@ fn emit_eq_body_enum(ctx: Ctx, name: string, variants: List<Variant>) {
     avra_llvm_position_at_end(fctx.builder, f_bb)
     avra_llvm_build_ret(fctx.builder, avra_llvm_const_int(i64t, 0, 0))
     avra_llvm_set_linkonce_odr(fn_val)
+    avra_ice_pop_fn()
 }
 
 /// Phase 2 for enum equality: emit each `__eq_` body this compile owns.
@@ -2155,6 +2193,8 @@ fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt
                 // Permit the erased wide repr when declaring its param
                 // widths; a non-erased fn with `.Unknown` params ICEs.
                 let is_erased = find_annotation(store, store.stmts.get(ss), "mono_erased") != null
+                // ICE context: an F9999 here names the signature being laid out.
+                avra_ice_push_fn("signature of ${name}")
                 let param_arr = avra_llvm_type_array_new(arity)
                 fill_typed_param_array_sized(param_arr, i64t, i1t, dt, pt, i8t, i16t, i32t, resolved_params, 0, is_erased)
                 let ret_vt = resolve_fn_ret(store, regs, traits, rvt, body, type_reg)
@@ -2167,9 +2207,11 @@ fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt
                 let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                 avra_llvm_type_array_free(param_arr)
                 avra_llvm_add_function(m, name, fn_type)
+                avra_ice_pop_fn()
                 fn_ret_types_register(cur, name, ret_vt, declared_ret_fn_params(regs, rvt))
             }
             .ExternFn(name, params, ext_rvt) -> {
+                avra_ice_push_fn("signature of extern ${name}")
                 let resolved_params = resolve_param_list(params, regs)
                 let arity = resolved_params.length
                 let param_arr = avra_llvm_type_array_new(arity)
@@ -2180,6 +2222,7 @@ fn declare_functions(store: NodeStore, m: ptr, ctx: ptr, i64t: ptr, i1t: ptr, dt
                 let fn_type = avra_llvm_function_type(ret_llvm, param_arr, arity, 0)
                 avra_llvm_type_array_free(param_arr)
                 avra_llvm_add_function(m, name, fn_type)
+                avra_ice_pop_fn()
                 fn_ret_types_register(cur, name, ret_vt, declared_ret_fn_params(regs, ext_rvt))
             }
             .Impl(_, methods) -> declare_functions(store, m, ctx, i64t, i1t, dt, pt, i8t, i16t, i32t, regs, traits, methods, cur, type_reg)

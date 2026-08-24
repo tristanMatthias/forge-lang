@@ -1118,6 +1118,18 @@ void avra_ice_phase(const char *phase) {
     g_ice_at_col = 0;
 }
 
+void avra_ice_push_fn(const char *name);
+
+// Replace the whole fn context with a single frame — for per-function
+// emission where early exits make push/pop pairing unreliable.
+void avra_ice_set_fn(const char *name) {
+    g_ice_fn_depth = 0;
+    g_ice_at_file[0] = 0;
+    g_ice_at_line = 0;
+    g_ice_at_col = 0;
+    avra_ice_push_fn(name);
+}
+
 // Enter a function / closure / impl-method body.
 void avra_ice_push_fn(const char *name) {
     if (g_ice_fn_depth >= 0 && g_ice_fn_depth < ICE_FN_STACK_MAX)
@@ -1138,17 +1150,26 @@ void avra_ice_pop_fn(void) {
 // fn-stack) so the real bug surfaces at compile time instead of at runtime.
 // Never returns (exits 99); typed `void*` only to satisfy the Avra call site.
 void *avra_layout_unknown_ice(void) {
-    const char *fn = "?";
-    if (g_ice_fn_depth > 0) {
-        int top = g_ice_fn_depth - 1;
-        if (top >= ICE_FN_STACK_MAX) top = ICE_FN_STACK_MAX - 1;
-        if (g_ice_fn_stack[top][0]) fn = g_ice_fn_stack[top];
-    }
     safe_write("\n  error[F9999]: internal compiler error — under-determined type at the layout boundary\n");
     safe_write("    the compiler tried to choose an LLVM representation for an unresolved (`Unknown`) type,\n");
     safe_write("    but nothing bound it. Per spec §6 a layout is never guessed from an under-determined type.\n");
     if (g_ice_phase[0]) { safe_write("    phase: "); safe_write(g_ice_phase); safe_write("\n"); }
-    safe_write("    in:    "); safe_write(fn); safe_write("\n");
+    if (g_ice_at_file[0]) {
+        char buf[512];
+        snprintf(buf, sizeof buf, "    at:    %s:%lld:%lld\n", g_ice_at_file, (long long)g_ice_at_line, (long long)g_ice_at_col);
+        safe_write(buf);
+    }
+    if (g_ice_fn_depth <= 0) {
+        safe_write("    in:    ? (no context pushed)\n");
+    } else {
+        int depth = g_ice_fn_depth;
+        if (depth > ICE_FN_STACK_MAX) depth = ICE_FN_STACK_MAX;
+        for (int i = depth - 1; i >= 0; i--) {
+            safe_write("    in:    ");
+            safe_write(g_ice_fn_stack[i][0] ? g_ice_fn_stack[i] : "?");
+            safe_write("\n");
+        }
+    }
     safe_write("    please report (include these lines): https://github.com/tristanMatthias/forge-lang/issues\n");
     exit(99);
     return NULL;  // unreachable
