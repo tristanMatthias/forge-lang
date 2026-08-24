@@ -3009,7 +3009,10 @@ fn maybe_prebuild_std_libs(project_dir: string, compiler_path: string) -> LibMod
     }
     let rc = pre_build_workspace_std_packages(project_dir, compiler_path)
     if rc != 0 {
-        let diag = avra_shell_exec("grep -lE 'error|abort|Killed|cannot' '${project_dir}/packages'/std-*/build/prebuild.log 2>/dev/null; tail -n 8 $(grep -lE 'error|abort|Killed|cannot' '${project_dir}/packages'/std-*/build/prebuild.log 2>/dev/null | head -1) 2>/dev/null")
+        // stdin closed up front and the tail guarded on a non-empty
+        // match: a bare `tail $(...)` with nothing matched reads the
+        // TERMINAL, hanging every interactive run.
+        let diag = avra_shell_exec("exec </dev/null; flist=$(grep -lE 'error|abort|Killed|cannot' '${project_dir}/packages'/std-*/build/prebuild.log 2>/dev/null); if [ -n \"$flist\" ]; then echo \"$flist\"; tail -n 8 \"$(echo \"$flist\" | head -1)\" 2>/dev/null; fi")
         if diag != "" { eprintln("[per-file] first failing pre-build log:\n${diag}") }
         return lib_mode_off(LibModeCause.Unavailable("the @std/* pre-build failed (rc=${string(rc)}) — see packages/std-*/build/prebuild.log"))
     }
