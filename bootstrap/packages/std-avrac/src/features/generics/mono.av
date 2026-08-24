@@ -1837,6 +1837,9 @@ fn collect_inst_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, st
     match tail_node {
         .Expr(e) -> collect_inst_expr_with_expected(regs.store.exprs.get(e), ret_vt, regs, tail_st)
         .Return(val) -> collect_inst_expr_with_expected(regs.store.exprs.get(val), ret_vt, regs, tail_st)
+        // A tail-position match STATEMENT is the fn's value: its arm
+        // bodies are return values, so they receive ret_vt too.
+        .Match(subj, arms) -> collect_inst_arms_expected(arms, ret_vt, regs, collect_inst_expr(regs.store.exprs.get(subj), regs, tail_st))
         _ -> collect_inst_stmt(tail_node, regs, tail_st)
     }
 }
@@ -1880,9 +1883,10 @@ fn collect_inst_expr_with_expected(expr: Expr, expected: ValueType, regs: GenReg
             try_add_struct_inst_with_expected(name, inits, expected, regs, collect_inst_field_inits(inits, regs, st))
         // An enum ctor in expected-type position: thread the annotation so a
         // payload-absent param (`B` in `Pair<int,string> = Pair.L(7)`) binds
-        // from it. Recurse into the ctor args first.
+        // from it. Recurse into the ctor args first, each under its declared
+        // field type.
         .EnumCtor(tn, variant, args) ->
-            try_add_enum_inst_with_expected(tn, variant, args, expected, regs, collect_inst_exprs(args, regs, st))
+            try_add_enum_inst_with_expected(tn, variant, args, expected, regs, collect_inst_ctor_args(tn, variant, args, expected, regs, st))
         // A bare generic-enum variant (`Opt.None`) — payload-less, so the
         // annotation is the only local source of type args.
         .FieldAccess(obj, _) -> match regs.store.exprs.get(obj) {
@@ -2099,6 +2103,29 @@ fn try_add_fn_inst_with_expected(name: string, tp: List<TypeParamEntry>, params:
 /// resolves instead of raising F1002. With `expected = Unknown` it reduces to
 /// pure payload inference. Enum mirror of `try_add_struct_inst_with_expected`
 /// (ps3t.3.8 / qcvb).
+/// Collect a ctor's args, each under its declared field type substituted
+/// with the params the site's expected type pins. A nested generic ctor
+/// arg (`P.Y(Q.W(v))` under an expected `P<Q<LN>>`) then binds its own
+/// instantiation from the field context instead of decaying to `Unknown`
+/// — the call-arg rule of ps3t.4.5(d).6, applied to enum ctors. Without
+/// bindings (no expectation, or a foreign one) this reduces to the plain
+/// collect.
+fn collect_inst_ctor_args(tn: string, variant: string, args: List<ExprId>, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
+    let e = generic_enum_lookup(regs.enums, tn)
+    if e == null { return collect_inst_exprs(args, regs, st) }
+    let bindings = bare_variant_type_args_from_expected(e!.tp, tn, expected)
+    if bindings.length == 0 { return collect_inst_exprs(args, regs, st) }
+    let fields = variant_lookup(e!.variants, variant).fields
+    mut acc = st
+    mut i = 0
+    while i < args.length {
+        let fexp = if i < fields.length { substitute_vtype(fields[i].resolved, bindings) } else { ValueType.Unknown }
+        acc = collect_inst_expr_with_expected(regs.store.exprs.get(args[i]), fexp, regs, acc)
+        i = i + 1
+    }
+    acc
+}
+
 fn try_add_enum_inst_with_expected(tn: string, variant: string, args: List<ExprId>, expected: ValueType, regs: GenRegs, st: CollectState) -> CollectState {
     let e = generic_enum_lookup(regs.enums, tn)
     if e == null { return st }
@@ -3184,6 +3211,9 @@ fn rewrite_fn_body(body: List<StmtId>, ret_vt: ValueType, regs: GenRegs, insts: 
         let new_node = match tail_node {
             .Expr(e) -> Stmt.Expr(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(e), ret_vt, regs, insts), e))
             .Return(val) -> Stmt.Return(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(val), ret_vt, regs, insts), val))
+            // Tail-position match statement: arm bodies are return
+            // values — mirror of collect_inst_fn_body's tail rule.
+            .Match(subj, arms) -> Stmt.Match(rewrite_expr_id(subj, regs, insts), rewrite_arms_expected(arms, ret_vt, regs, insts))
             _ -> rewrite_stmt(tail_node, regs, insts)
         }
         out.push(regs.store.restmt(new_node, tail_id))
@@ -3594,11 +3624,31 @@ fn rewrite_enum_ctor(tn: string, variant: string, args: List<ExprId>, regs: GenR
 /// unspecialised name). With `expected = Unknown` it mangles from the payload
 /// alone.
 fn rewrite_enum_ctor_with_expected(tn: string, variant: string, args: List<ExprId>, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> Expr {
-    let new_args = rewrite_expr_list_ids(args, regs, insts)
     let e = generic_enum_lookup(regs.enums, tn)
-    if e == null { return Expr.EnumCtor(tn, variant, new_args) }
+    if e == null { return Expr.EnumCtor(tn, variant, rewrite_expr_list_ids(args, regs, insts)) }
     let entry = e!
+    let new_args = rewrite_ctor_args(entry, variant, args, expected, regs, insts)
     Expr.EnumCtor(mangle_enum_at_site(regs.store, tn, variant, entry.tp, entry.variants, args, expected, insts), variant, new_args)
+}
+
+/// Rewrite-side mirror of `collect_inst_ctor_args`: each ctor arg rewrites
+/// under its declared field type (substituted with the expected-pinned
+/// params), so a nested generic ctor arg mangles to the SAME specialisation
+/// the collect pass registered instead of the erased base. Like
+/// `rewrite_args_with_params`, an `.Unknown` expected falls through to the
+/// plain rewrite and the arg stays byte-identical.
+fn rewrite_ctor_args(entry: GenericEnumEntry, variant: string, args: List<ExprId>, expected: ValueType, regs: GenRegs, insts: List<Inst>) -> List<ExprId> {
+    let bindings = bare_variant_type_args_from_expected(entry.tp, entry.name, expected)
+    if bindings.length == 0 { return rewrite_expr_list_ids(args, regs, insts) }
+    let fields = variant_lookup(entry.variants, variant).fields
+    mut out: List<ExprId> = []
+    mut i = 0
+    while i < args.length {
+        let fexp = if i < fields.length { substitute_vtype(fields[i].resolved, bindings) } else { ValueType.Unknown }
+        out.push(regs.store.reexpr(rewrite_expr_with_expected(regs.store.exprs.get(args[i]), fexp, regs, insts), args[i]))
+        i = i + 1
+    }
+    out
 }
 
 /// Mangled name for a bare generic-enum variant site (`Opt.None`). Prefers the

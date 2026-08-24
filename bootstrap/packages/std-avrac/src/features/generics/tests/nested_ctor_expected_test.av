@@ -1,0 +1,68 @@
+// A match arm that wraps the matched payload into a DIFFERENT generic
+// instantiation (`Outer.Y(Inner.W(v))` under an expected `Outer<Inner<Leaf>>`)
+// needs the ctor's ARGS collected/rewritten under their declared field types —
+// the call-arg rule of ps3t.4.5(d).6 applied to enum ctors. Before the fix the
+// inner ctor decayed to `Inner<Unknown>` (erased) and codegen died at the §6
+// layout boundary (F9999). A TAIL-POSITION match STATEMENT has the same
+// contract: its arm bodies are the fn's return values, so they receive ret_vt.
+
+use @std.avrac.core.{avra_shell_exec, avra_selfhost_write_file, avra_getpid}
+
+enum Outer<T> { Y(v: T), N }
+enum Inner<T> { W(v: T), Z }
+enum Leaf { NE(code: int) }
+
+fn make() -> Outer<Leaf> { Outer.Y(Leaf.NE(7)) }
+
+fn convert_let() -> Outer<Inner<Leaf>> {
+    let out: Outer<Inner<Leaf>> = match make() {
+        .Y(v) -> Outer.Y(Inner.W(v)),
+        .N -> Outer.N,
+    }
+    out
+}
+
+fn convert_tail() -> Outer<Inner<Leaf>> {
+    match make() {
+        .Y(v) -> Outer.Y(Inner.W(v)),
+        .N -> Outer.N,
+    }
+}
+
+fn read_back(o: Outer<Inner<Leaf>>) -> int {
+    match o {
+        .Y(v) -> match v { .W(x) -> match x { .NE(c) -> c }, .Z -> 0 - 1 },
+        .N -> 0 - 2,
+    }
+}
+
+/// Compile a probe source with the REAL bs2 (full pipeline, so mono runs) and
+/// return the captured diagnostics — the established shell-probe pattern.
+fn compile_probe(slug: string, src: string) -> string {
+    let root = avra_shell_exec("pwd").trim()
+    let path = "/tmp/avra_nestedctor_${slug}_${string(avra_getpid())}.av"
+    let _ = avra_selfhost_write_file(path, src)
+    avra_shell_exec("cd '${root}' && ./build/bs2 compile '${path}' --output '${path}.ll' 2>&1")
+}
+
+spec "ctor args thread their declared field types from the site's expected type" {
+    then "a let-annotated match arm converts the instantiation and the payload reads back" {
+        read_back(convert_let()) == 7
+    }
+    then "a tail-position match statement's arms receive the fn's return type" {
+        read_back(convert_tail()) == 7
+    }
+    then "compile-probe: the converting arm emits no F9999 layout ICE" {
+        let out = compile_probe("convarm",
+            "enum P<T> { Y(v: T), N }\n" +
+            "enum Q<T> { W(v: T), Z }\n" +
+            "enum L { E(c: int) }\n" +
+            "fn mk() -> P<L> { P.Y(L.E(7)) }\n" +
+            "fn conv() -> P<Q<L>> {\n" +
+            "    let out: P<Q<L>> = match mk() { .Y(v) -> P.Y(Q.W(v)), .N -> P.N }\n" +
+            "    out\n" +
+            "}\n" +
+            "fn main() { let _ = conv() }\n")
+        !out.contains("F9999") && !out.contains("under-determined")
+    }
+}
