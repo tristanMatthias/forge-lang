@@ -3,7 +3,7 @@
 // `emit_lambda` and parser helpers are in scope without self-imports.
 use core.{ExprId}
 use typeck.{check_expr, tc_bind_params, tc_check_signature_arity_top, tc_enter, tc_er, tc_exit, tc_first_unannotated_param, tc_param_types}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `(x, y) -> body` lambdas + the whole `(`-led paren family — the
 /// definition carries it all (t-kd4y.3.5.3): `paren_expr` is ONE
@@ -13,7 +13,7 @@ use features.grammar.{parse_grammar}
 /// beside it). The shared `param` rule moves here too — its build
 /// (MkParam) needed a gram owner, lambdas are its expression-side
 /// consumer, and fn/trait/impl/component reference it cross-fragment by
-/// name exactly as they always did. `gram_family = "expr"` folds the
+/// name exactly as they always did. `gram_family = GramFamily.Expr` folds the
 /// rules into every expression view via avra_expr_core; the spine's unary
 /// ladder references `paren_expr` by name. Captures referenced bindings
 /// from the enclosing scope; spec Axis 28.
@@ -49,7 +49,7 @@ the arrow and the mandatory tuple comma disambiguate.
         emit_expr = emit_lambda,
         resolve_expr = closure_resolve,
         check_expr = closure_check,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     closures_def
 }

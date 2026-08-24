@@ -5,7 +5,7 @@
 // (which consumes the element type this feature establishes).
 
 use core.{ValueType, vtype_display}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `channel<T>(cap)` — the definition carries the feature whole
 /// (t-kd4y.3.5.1): the construction rule, its one lowering, and the pass
@@ -13,7 +13,7 @@ use features.grammar.{parse_grammar}
 /// method paths in fn_decl (codegen) and typeck's check_method_call, not
 /// through the registry — same split List uses. `type_expr` and
 /// `expression` are cross-fragment references, bound by name when the
-/// expression views compose this gram (`gram_family = "expr"`).
+/// expression views compose this gram (`gram_family = GramFamily.Expr`).
 @language_feature
 export fn channels_lang() -> LanguageFeature {
     LanguageFeature channels_def {
@@ -33,7 +33,7 @@ closed-and-drained (spec Axis 18).
         emit_expr = channel_emit_expr,
         resolve_expr = channel_resolve,
         check_expr = channel_check,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     channels_def
 }

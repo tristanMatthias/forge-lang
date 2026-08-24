@@ -16,12 +16,12 @@ use core.{Stmt, Expr, ValueType, vtype_display, vtype_eq, vtype_is_unknown, expr
 use codegen.{err_emit, StmtResult}
 use codegen.{err_sr}
 use typeck.{check_expr, check_stmt, tc_er, tc_report, tc_gate_unthreaded_lambda, narrow_guard_of, tc_narrow_true_branch, tc_narrow_false_branch, tc_narrow_after_if, generic_args_layout_conflict}
-use features.grammar.{Grammar, grammar_checked, parse_grammar}
+use features.grammar.{Grammar, grammar_checked, parse_grammar, GramFamily}
 use features.{composed}
 
 /// The `if` STATEMENT rules — the plain form and its bind-fresh `if let`
 /// twin. The statement views compose this via the feature registry
-/// (gram_family = "stmt"); `statement` names both rules and binds them
+/// (gram_family = GramFamily.Stmt); `statement` names both rules and binds them
 /// after the flat merge.
 ///
 /// `@onfail(bail)` on `if_stmt`'s CONDITION: a failed condition ends the
@@ -150,7 +150,7 @@ form lives in the expression grammar, not this rule.
 """,
         // Both fragments compose here because the no-orphans validator
         // reads THIS gram: `iflet_expr`'s row (MkIfLet) is supplied below,
-        // so the rule referencing it must be in view. gram_family = "stmt"
+        // so the rule referencing it must be in view. gram_family = GramFamily.Stmt
         // hands the whole thing to the statement views — the expression
         // views take the expression fragment on its own, by name.
         gram = composed([avra_if_stmt_grammar(), avra_iflet_expr_grammar(), avra_if_expr_grammar()]),
@@ -165,7 +165,7 @@ form lives in the expression grammar, not this rule.
         check_expr = if_check_expr,
         eval_stmt = if_eval_stmt,
         eval_expr = if_eval_expr,
-        gram_family = "stmt",
+        gram_family = GramFamily.Stmt,
     }
     if_def
 }

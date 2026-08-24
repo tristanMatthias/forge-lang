@@ -1,7 +1,7 @@
 // quote / splice — capture the AST of a body as a runtime value (spec Axis
 // 30, Components V2 phase 3). The definition carries the feature whole:
 // syntax, docs, editor surface, and the three grammar rules the EXPRESSION
-// views compose (gram_family = "expr", t-kd4y.3.4 — the first expression
+// views compose (gram_family = GramFamily.Expr, t-kd4y.3.4 — the first expression
 // family to leave the spine). The lowerings (MkQuote / MkQuoteType /
 // MkQuoteArm) are feature-owned via the builder manifest and live in
 // `lowering/`; the lowering PASS that rewrites Expr.Quote into
@@ -12,7 +12,7 @@
 // flat at `features.quote_expr.{...}`.
 
 use core.{Expr, ExprId}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// The `quote` expression family. THREE rules, because the three bodies are
 /// structurally different — a block, a type, and a match arm — and
@@ -91,7 +91,7 @@ pass ever sees a Quote or Splice node.
         snippet = r"quote { ${1:body} }",
         expr_tag = Expr.Quote("expr", ExprId(0)),
         contextual = ["arm", "stmt", "stmts", "decl"],
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     quote_def
 }

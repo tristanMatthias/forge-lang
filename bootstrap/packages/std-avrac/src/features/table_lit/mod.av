@@ -3,12 +3,12 @@
 // only grammar.md — tables desugar to `Expr.ListLit` of `Expr.StructLit`
 // rows in the BUILDS, so the list/struct features carry the downstream
 // hooks and this definition is syntax + lowerings alone.
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `table [<Row>] { col | col … rows }` — the definition carries the
 /// whole family (t-kd4y.3.5.5): syntax, docs, surface, and ALL THREE
 /// lowerings its fragment spells (MkTableLit / MkTableHeader /
-/// MkTableRow). `gram_family = "expr"`; the spine's postfix ladder and
+/// MkTableRow). `gram_family = GramFamily.Expr`; the spine's postfix ladder and
 /// primary alternation dispatch to `table_lit` by name behind
 /// @peek(ident_lbrace_feature).
 @language_feature
@@ -45,7 +45,7 @@ cells. A context-free `table { … }` gets its row type from the binding.
   table_row  = @on(cell_mode) v:bitxor ( ^"|" ^@on(cell_mode) v:bitxor )* -> MkTableRow(v)
         },
         snippet = r"table<${1:Row}> {\n    ${2:col} | ${3:col}\n    ${4:v} | ${5:v}\n}",
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     table_lit_def
 }

@@ -3,7 +3,7 @@
 // `GenericCall` / `Index` / `Slice` are core codegen/typeck nodes (call
 // emission, mono, and index lowering live in core passes), so no pass
 // hooks ride this definition — syntax + the lowerings alone.
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `expr(args)` / `f<T>(args)` / `expr[i]` / `expr[a..b]` — the postfix
 /// chain's APPLY forms, one family with one shared argument rule
@@ -51,7 +51,7 @@ use features.grammar.{parse_grammar}
 /// was seen and `@expect` keys on the token. Dispatch is on `..` (FIRST), not
 /// speculation — the index expression is parsed exactly once. The `]` branch is
 /// `@fallback` so it owns the message for a token that starts NEITHER (`a[1 2]`).
-/// `gram_family = "expr"`.
+/// `gram_family = GramFamily.Expr`.
 @language_feature
 export fn calls_lang() -> LanguageFeature {
     LanguageFeature calls_def {
@@ -72,7 +72,7 @@ sugar in method position: `xs.map(it * 2)`.
   call_arg = @on(allow_dot_postfix) e:expression -> MkCallArg(e)
         },
         snippet = r"${1:f}(${2:args})",
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     calls_def
 }

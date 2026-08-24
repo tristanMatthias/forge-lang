@@ -6,7 +6,7 @@
 // at `features.modules.{...}`.
 use core.{Stmt, StmtId}
 use features.{composed}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// Register the `mod` declaration feature. Wires up the parser,
 /// resolver, and eval hooks. Codegen is provided implicitly by
@@ -120,7 +120,7 @@ form (`export let` compiles to module-local allocas).
 /// MkQualExpr row live here beside `use`. The rule also carries the
 /// struct-literal form behind the @when(allow_struct_lit) gate;
 /// `field_init` is referenced cross-fragment (struct_lit_lang owns it).
-/// `gram_family = "expr"`; the ladder dispatches on the `@` token.
+/// `gram_family = GramFamily.Expr`; the ladder dispatches on the `@` token.
 @language_feature
 export fn qualified_ref_lang() -> LanguageFeature {
     LanguageFeature qualified_ref_def {
@@ -141,7 +141,7 @@ annotation syntax — a qualified reference always carries `::`.
                    @expect("+", "expected `::` after the package name — a qualified reference is `@pkg::mod::name`; `@name` alone is annotation syntax")
                    @expect("}", "expected `}` after struct fields") -> MkQualExpr(n, s, lb, f)
         },
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     qualified_ref_def
 }

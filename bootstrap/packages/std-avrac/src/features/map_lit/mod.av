@@ -4,12 +4,12 @@
 use codegen.{err_emit}
 use core.{ValueType}
 use typeck.{check_expr_list_types, tc_er}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `{k: v, k: v}` map literals — the definition carries syntax, docs,
 /// surface, and the MkMapLit lowering (t-kd4y.3.5.4). Wires resolver,
 /// typeck, codegen, and the @comptime evaluator. Spec axis 28.
-/// `gram_family = "expr"`; the spine's `brace_expr` dispatches to
+/// `gram_family = GramFamily.Expr`; the spine's `brace_expr` dispatches to
 /// `map_literal` by name behind the @peek(brace_map) scan.
 @language_feature
 export fn map_lit_lang() -> LanguageFeature {
@@ -35,7 +35,7 @@ keys work like plain ones.
         resolve_expr = map_lit_resolve_expr,
         check_expr = map_lit_check_expr,
         eval_expr = map_lit_eval_expr,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     map_lit_def
 }

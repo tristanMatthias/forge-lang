@@ -5,7 +5,7 @@
 // (g2eo.1 directory-as-module). This file just imports and
 // registers their factory functions.
 
-use features.grammar.{Grammar, feature_decl_grammar_fragments, BuildKind, avra_program_grammar, rules_reachable_from, str_in}
+use features.grammar.{Grammar, feature_decl_grammar_fragments, BuildKind, avra_program_grammar, rules_reachable_from, str_in, GramFamily}
 use core.{noop_emit_expr, noop_emit_stmt, noop_resolve_expr, noop_resolve_stmt, noop_check_expr, noop_check_stmt, noop_eval_expr, noop_eval_stmt}
 use features.grammar.{Rule, build_rule_index, GrammarParse, BuilderBind, BuildKindRow, grammar_startup_fail}
 
@@ -41,7 +41,7 @@ export component LanguageFeature {
         // means the statement views compose it via
         // feature_stmt_grammar_fragments — so a lowering flip is pure
         // feature-file metadata: declare the gram, name its family.
-        gram_family: string = "",
+        gram_family: GramFamily = GramFamily.Unset,
         diags: List<DiagSpec> = [],
         snippet: string = "",
         // Build lowerings this feature OWNS (t-kd4y.3): one BuilderBind per
@@ -240,7 +240,7 @@ export fn feature_grammar_fragments() -> List<Grammar> {
         // Validate FIRST — a malformed gram must F9999 here, never be
         // silently dropped by the family filter below.
         let g = feature_gram(f)
-        if f.gram_family != "" && g.rules.length > 0 { all.push(g) }
+        if f.gram_family != GramFamily.Unset && g.rules.length > 0 { all.push(g) }
     }
     for g in feature_decl_grammar_fragments() {
         all.push(g)
@@ -288,14 +288,14 @@ export fn fragment_rule_names(gs: List<Grammar>) -> List<string> {
 }
 
 /// The TYPE-family fragments (t-kd4y.3.5.10): every feature whose gram
-/// declares `gram_family = "type"`, in registration order — the sibling
+/// declares `gram_family = GramFamily.Type`, in registration order — the sibling
 /// of the statement and expression seams. avra_type_grammar composes this
 /// list on top of its spine (splice_type + the type_atom dispatch), so a
 /// type-position rule lives ONLY in its feature file.
 export fn feature_type_grammar_fragments() -> List<Grammar> {
     mut types: List<Grammar> = []
     for f in language_features() {
-        if f.gram_family == "type" {
+        if f.gram_family == GramFamily.Type {
             types.push(feature_gram(f))
         }
     }
@@ -303,14 +303,14 @@ export fn feature_type_grammar_fragments() -> List<Grammar> {
 }
 
 /// The STATEMENT-family fragments: every feature whose gram declares
-/// `gram_family = "stmt"`, in registration order. The statement views
+/// `gram_family = GramFamily.Stmt`, in registration order. The statement views
 /// (avra_stmt_flip_grammar / avra_stmt_dispatch_grammar and the §2 shadows)
 /// compose this list, so a feature's statement rules live ONLY in its own
 /// file — adding one here is a feature-file edit, never a view edit.
 export fn feature_stmt_grammar_fragments() -> List<Grammar> {
     mut stmts: List<Grammar> = []
     for f in language_features() {
-        if f.gram_family == "stmt" {
+        if f.gram_family == GramFamily.Stmt {
             stmts.push(feature_gram(f))
         }
     }
@@ -318,7 +318,7 @@ export fn feature_stmt_grammar_fragments() -> List<Grammar> {
 }
 
 /// The EXPRESSION-family fragments: every feature whose gram declares
-/// `gram_family = "expr"`, in registration order. `avra_expr_core`
+/// `gram_family = GramFamily.Expr`, in registration order. `avra_expr_core`
 /// (features/grammar/avra_grammar.av) composes this list, so an expression
 /// keyword's rules live ONLY in its own file — the engine ladder keeps the
 /// DISPATCH (which primaries `unary` tries, and in what order) and the
@@ -327,7 +327,7 @@ export fn feature_stmt_grammar_fragments() -> List<Grammar> {
 export fn feature_expr_grammar_fragments() -> List<Grammar> {
     mut exprs: List<Grammar> = []
     for f in language_features() {
-        if f.gram_family == "expr" {
+        if f.gram_family == GramFamily.Expr {
             exprs.push(feature_gram(f))
         }
     }

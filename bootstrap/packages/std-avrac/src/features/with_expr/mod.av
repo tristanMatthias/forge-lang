@@ -3,14 +3,14 @@
 use core.{vtype_struct_name, ExprId}
 use features.struct_decl.{check_field_inits, check_struct_lit_fields}
 use typeck.{check_expr, tc_er}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `point with { x: 5 }` — a shallow-copied struct value with selected
 /// fields overridden (spec axis 28). The definition carries the
 /// `with_suffix` rule + the MkWithSuffix row (t-kd4y.3.5.6): every unary
 /// branch's `( @onfail(bail) s:with_suffix )*` tail references it
 /// cross-fragment by name, and the fold that rebinds the partial nodes
-/// (fold_postfix_with) stays engine-core. `gram_family = "expr"`.
+/// (fold_postfix_with) stays engine-core. `gram_family = GramFamily.Expr`.
 @language_feature
 export fn with_expr_lang() -> LanguageFeature {
     LanguageFeature with_expr_def {
@@ -29,7 +29,7 @@ completeness gate — that is the literal's job).
         emit_expr = emit_with,
         resolve_expr = with_resolve,
         check_expr = with_check,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     with_expr_def
 }

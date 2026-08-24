@@ -1,13 +1,13 @@
 // while — conditional loop (spec Axis 28). The definition carries the
 // feature whole: syntax, docs, editor surface, hooks, and the grammar rule
-// the statement views compose (gram_family = "stmt", t-47hc.8). The
+// the statement views compose (gram_family = GramFamily.Stmt, t-47hc.8). The
 // lowering (build_while) is feature-owned via the builder manifest with a
 // `spanned` row — the ADAPTER stamps the statement's SrcPos at the `while`
 // keyword (st.build_sp); the typed fn never sees the span.
 // dir-as-module (g2eo.1): codegen.av auto-loads as a sibling (emit_while).
 use core.{vtype_render_full, vtype_eq, vtype_is_unknown}
 use typeck.{check_expr, check_stmt, tc_report, narrow_guard_of, tc_narrow_true_branch}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// Type-check hook for `while`. The condition must be Bool (Int
 /// accepted for legacy compatibility); anything else surfaces as
@@ -77,7 +77,7 @@ present type inside the body.
         resolve_stmt = while_resolve,
         check_stmt = while_check,
         eval_stmt = while_eval,
-        gram_family = "stmt",
+        gram_family = GramFamily.Stmt,
     }
     while_def
 }

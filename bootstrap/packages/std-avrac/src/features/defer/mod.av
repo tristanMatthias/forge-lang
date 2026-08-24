@@ -6,7 +6,7 @@ use codegen.{StmtResult, ok_sr, err_sr, DeferEntry}
 use eval.{ok_result, value_null}
 use typeck.{check_expr, tc_gate_unthreaded_lambda}
 use list_ops.{list_push_copy}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// The typed LOWERINGS, home at last (t-47hc.8 dissolution): the grams'
 /// `-> build_defer(e)` / `-> build_errdefer(e)` resolve to THESE fns; the
@@ -59,7 +59,7 @@ and error propagation via `?`.
             match s { .Defer(b) -> check_effect_body(tc, b), _ -> tc },
         // The eval path doesn't model deferred execution yet (t-amoj).
         eval_stmt = (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
-        gram_family = "stmt",
+        gram_family = GramFamily.Stmt,
     }
     defer_def
 }
@@ -90,7 +90,7 @@ reverses correctly on cleanup:
             match s { .Errdefer(b) -> check_effect_body(tc, b), _ -> tc },
         // The eval path doesn't model deferred execution yet (t-amoj).
         eval_stmt = (rt: Runtime, s: Stmt) -> ok_result(rt, value_null()),
-        gram_family = "stmt",
+        gram_family = GramFamily.Stmt,
     }
     errdefer_def
 }

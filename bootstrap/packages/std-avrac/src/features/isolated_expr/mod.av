@@ -11,7 +11,7 @@
 
 use core.{ExprId}
 use typeck.{check_expr, tc_er}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `isolated { body }` — the definition carries the feature whole
 /// (t-kd4y.3.5.1). Same double-keyed `@expect` as spawn_lang (fragment
@@ -37,7 +37,7 @@ the parent, not a process-wide death.
         emit_expr = isolated_emit_expr,
         resolve_expr = isolated_resolve,
         check_expr = isolated_check,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     isolated_def
 }

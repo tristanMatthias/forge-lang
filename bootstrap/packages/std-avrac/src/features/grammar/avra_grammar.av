@@ -1,12 +1,12 @@
 // WHY: ps3t.6.5.11 — Avra's grammar, DOGFOODED into compiler `src/` as an
 
-use features.grammar.{Grammar, compose_fragments, compose_grammars, grammar_checked, parse_grammar}
+use features.grammar.{Grammar, compose_fragments, compose_grammars, grammar_checked, parse_grammar, GramFamily}
 use features.match.{avra_pat_grammar, avra_match_arm_grammar, avra_match_stmt_grammar, avra_match_table_grammar}
 // t-47hc.8 — the statement-family registry: every feature whose gram declares
-// `gram_family = "stmt"`, in registration order. The statement views fold it
+// `gram_family = GramFamily.Stmt`, in registration order. The statement views fold it
 // in below, so a statement keyword's rules live ONLY in its feature file.
 // t-kd4y.3.4 added its EXPRESSION twin: every feature whose gram declares
-// `gram_family = "expr"`, folded in by `avra_expr_core`, so an expression
+// `gram_family = GramFamily.Expr`, folded in by `avra_expr_core`, so an expression
 // keyword's rules live ONLY in its feature file while the ladder that
 // DISPATCHES to them stays here.
 use features.{feature_gram, feature_stmt_grammar_fragments, feature_expr_grammar_fragments, feature_type_grammar_fragments}
@@ -107,26 +107,26 @@ export fn avra_expr_spine_grammar() -> Grammar {
              | @peek(ident_template) base:tagged_template ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(base, p, s)
              | @peek(ident_plain) b:IDENT ( p:postfix_suffix )* ( @onfail(bail) s:with_suffix )* -> fold_postfix_with(b, p, s)
   // `grammar_expr` lives with the grammar feature (features/grammar's
-  // grammar_block_lang, gram_family = "expr", t-kd4y.3.5.6) — the
+  // grammar_block_lang, gram_family = GramFamily.Expr, t-kd4y.3.5.6) — the
   // @peek(ident_lbrace_feature) REGISTRY-gate history rides its comments.
   // The `table [<Row>] { … }` literal (table_lit / table_head / table_row)
-  // lives with the table_lit feature (gram_family = "expr", t-kd4y.3.5.5)
+  // lives with the table_lit feature (gram_family = GramFamily.Expr, t-kd4y.3.5.5)
   // — dispatched from the ladder above by name behind
   // @peek(ident_lbrace_feature); the line-sensitivity and bail history
   // ride the rules' own comments there.
   // `struct_lit_expr` + the shared `field_init` live with the struct_lit
-  // feature (features/struct_decl's struct_lit_lang, gram_family = "expr",
+  // feature (features/struct_decl's struct_lit_lang, gram_family = GramFamily.Expr,
   // t-kd4y.3.5.6); qualified_expr / with_suffix / the splice-struct branch
   // reference `field_init` cross-fragment by name.
   // `tagged_template` + `template_lit` live with the templates feature
-  // (templates_lang, gram_family = "expr", t-kd4y.3.5.9) — the primary
+  // (templates_lang, gram_family = GramFamily.Expr, t-kd4y.3.5.9) — the primary
   // alternation dispatches to them by name (TEMPLATE-led, and IDENT-led
   // behind @peek(ident_template)).
   // `qualified_expr` lives with the modules feature (qualified_ref_lang,
-  // gram_family = "expr", t-kd4y.3.5.6) — the @require'd-segment reporting
+  // gram_family = GramFamily.Expr, t-kd4y.3.5.6) — the @require'd-segment reporting
   // posture rides its comments there.
   brace_expr   = @peek(brace_map) map_literal | block_expr
-  // `map_literal` lives with the map_lit feature (gram_family = "expr",
+  // `map_literal` lives with the map_lit feature (gram_family = GramFamily.Expr,
   // t-kd4y.3.5.4) — `brace_expr` above dispatches to it by name.
   // t-47hc.33 — the postfix chain, as PURE DISPATCH (t-kd4y.3.5.8).
   //
@@ -171,11 +171,11 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // NO diagnostic at all. A zero-match `+` fails the rule, which is exactly that
   // behaviour.
   // `with_suffix` lives with the with feature (with_expr_lang,
-  // gram_family = "expr", t-kd4y.3.5.6) — every unary branch's suffix
+  // gram_family = GramFamily.Expr, t-kd4y.3.5.6) — every unary branch's suffix
   // tail references it by name; fold_postfix_with stays engine-core.
   // `variant_ctor` + the postfix `.Variant(args)` SUFFIX rule
   // (enum_ctor_suffix) live with the enum_ctor feature (features/
-  // struct_decl's enum_ctor_lang, gram_family = "expr", t-kd4y.3.5.6 +
+  // struct_decl's enum_ctor_lang, gram_family = GramFamily.Expr, t-kd4y.3.5.6 +
   // .3.5.8).
   // channel_expr lives with its feature (features/channels, gram_family =
   // "expr", t-kd4y.3.5.1) — referenced from the ladder above by name.
@@ -192,13 +192,13 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // `@when(at_quote_top)` sees bitnot and `@when(in_quote_body)` sees a splice
   // — a COUNTER, so a nested quote still resolves at the right depth.
   // spawn_expr / isolated_expr live with their features (features/spawn_expr
-  // + features/isolated_expr, gram_family = "expr", t-kd4y.3.5.1) — both
+  // + features/isolated_expr, gram_family = GramFamily.Expr, t-kd4y.3.5.1) — both
   // referenced from the ladder above by name, both carrying the t-rd44
   // `@require body:block_expr` gate (double-keyed @expect in fragment form).
   block_expr   = "{" @on(allow_dot_postfix) stmts:declaration* "}"
                  @expect("}", "expected `}` after block expression") -> MkExprBlock(stmts)
   // when_expr + when_arm live with the when feature (features/match's
-  // when_lang, gram_family = "expr", t-kd4y.3.5.2) — referenced from the
+  // when_lang, gram_family = GramFamily.Expr, t-kd4y.3.5.2) — referenced from the
   // ladder above by name.
   // match_expr lives with its feature (features/match's stmt fragment,
   // t-kd4y.3.5.2) — same three shapes as match_stmt, referenced from the
@@ -208,11 +208,11 @@ export fn avra_expr_spine_grammar() -> Grammar {
   // avra_if_expr_grammar, composed into if_lang's gram — t-kd4y.3.5.2);
   // referenced from the ladder above by name, like iflet_expr always was.
   // The `[`-led family (list_expr / list_comp) lives with the list_lit
-  // feature (gram_family = "expr", t-kd4y.3.5.4) — referenced from the
+  // feature (gram_family = GramFamily.Expr, t-kd4y.3.5.4) — referenced from the
   // ladder above by name; the comp-branch resync history rides the rules'
   // own comments there.
   // The `(`-led paren family (paren_expr / lambda_body) lives with the
-  // closures feature (gram_family = "expr", t-kd4y.3.5.3) — referenced
+  // closures feature (gram_family = GramFamily.Expr, t-kd4y.3.5.3) — referenced
   // from the ladder above by name. The F4014 exponential-backtracking
   // history rides the rules' own comments there.
   // The shared `param` rule lives there too (MkParam is closures' row);

@@ -1,6 +1,6 @@
 // for — range and collection loops (spec Axis 28). The definitions carry
 // the feature whole: syntax, docs, editor surface, hooks, and the grammar
-// rules the statement views compose (gram_family = "stmt", t-47hc.8). ONE
+// rules the statement views compose (gram_family = GramFamily.Stmt, t-47hc.8). ONE
 // rule serves TWO statements — a present `..` builds the integer-range
 // `Stmt.For`, an absent one the collection `Stmt.ForIn` — so the flip
 // splits across two LanguageFeatures (one per AST tag, like
@@ -14,7 +14,7 @@
 // emit_for_in) are in scope without explicit self-imports.
 use core.{vtype_list_elem}
 use typeck.{check_expr, check_stmt, tc_bind, tc_enter, tc_exit}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// Type-check hook for the range form. Both bounds must be Int;
 /// the loop variable enters scope as Int.
@@ -93,7 +93,7 @@ the next element with `continue`.
         resolve_stmt = for_resolve,
         check_stmt = for_check,
         eval_stmt = for_eval,
-        gram_family = "stmt",
+        gram_family = GramFamily.Stmt,
     }
     for_def
 }

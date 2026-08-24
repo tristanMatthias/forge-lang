@@ -2,7 +2,7 @@
 // at `features.pipe_op.{...}`. A syntax-only carrier: `|>` desugars to a
 // plain `Expr.Call` in the BUILD, so no pass hooks ride this definition —
 // the call machinery owns everything downstream.
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `a |> f` — the pipe operator (spec axis 28), desugared in the parser:
 /// `a |> f` → `f(a)`, `a |> f(b)` → `f(a, b)`, `a |> f(_, b)` → `f(a, b)`
@@ -10,7 +10,7 @@ use features.grammar.{parse_grammar}
 /// stratum and its `pipe_arg` sub-rule (`@on(allow_it_sugar)` — a piped
 /// closure body may use the `it` pronoun), one gram owning the
 /// `fold_pipe` row per the no-orphans validator (t-kd4y.3.5.7).
-/// `gram_family = "expr"`; `assignment` enters here and the stratum exits
+/// `gram_family = GramFamily.Expr`; `assignment` enters here and the stratum exits
 /// to `null_coalesce` by name.
 @language_feature
 export fn pipe_op_lang() -> LanguageFeature {
@@ -27,7 +27,7 @@ it positionally instead: `x |> clamp(_, 0, 9)` is `clamp(x, 0, 9)`.
   pipe_arg      = @on(allow_it_sugar) logic_or
         },
         snippet = r"${1:value} |> ${2:f}",
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     pipe_op_def
 }

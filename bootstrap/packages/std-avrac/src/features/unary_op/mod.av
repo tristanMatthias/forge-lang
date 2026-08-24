@@ -1,7 +1,7 @@
 // dir-as-module (g2eo.1): lowering/ auto-loads as a sibling, surface flat
 // at `features.unary_op.{...}`. A syntax-only carrier: `Expr.Unary` is a
 // core codegen/typeck node, so no pass hooks ride this definition.
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `!x` / `-x` / `not x` / `~x` — the prefix unary operators
 /// (t-kd4y.3.5.7). The definition carries `unary_prefix`, the first
@@ -13,7 +13,7 @@ use features.grammar.{parse_grammar}
 /// reaches this rule where bitnot is what it means. The two gates are
 /// exact complements (`quote_depth == 0` vs `> 0`), which is what makes
 /// that branch order behavior-identical to the retired in-spine one.
-/// `gram_family = "expr"`.
+/// `gram_family = GramFamily.Expr`.
 @language_feature
 export fn unary_op_lang() -> LanguageFeature {
     LanguageFeature unary_op_def {
@@ -28,7 +28,7 @@ bitwise NOT on an Int. Prefix operators nest right: `!!x` is `!(!x)`.
                | @when(at_quote_top) op:("~") operand:unary -> Unary(op, operand)
         },
         snippet = r"!${1:value}",
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     unary_op_def
 }

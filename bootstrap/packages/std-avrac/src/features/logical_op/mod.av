@@ -2,14 +2,14 @@
 // at `features.logical_op.{...}`. A syntax-only carrier: `Expr.Logical` is
 // a core codegen/typeck node (short-circuit lowering lives in codegen),
 // so no pass hooks ride this definition — syntax + the lowering alone.
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `a && b` / `a || b` (and the keyword spellings `and` / `or`) — the
 /// short-circuit logical operators. The definition carries BOTH ladder
 /// strata (t-kd4y.3.5.7): `logic_or` and `logic_and` are one family with
 /// one fold (`fold_logical` — the or/and distinction is the captured
 /// operator token, not the rule), so one gram owns the two rules and the
-/// row per the no-orphans validator. `gram_family = "expr"`; the ladder
+/// row per the no-orphans validator. `gram_family = GramFamily.Expr`; the ladder
 /// enters from `null_coalesce` (features/null_safety) and exits to
 /// `equality` (features/struct_decl's field_assign) by name.
 @language_feature
@@ -27,7 +27,7 @@ associate left: `a || b || c` is `(a || b) || c`.
   logic_and     = l:equality ( op:("&&" | "and") r:equality )* -> fold_logical(l, op, r)
         },
         snippet = r"${1:a} && ${2:b}",
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     logical_op_def
 }

@@ -10,7 +10,7 @@
 //
 // dir-as-module (g2eo.1): no `mod` decls — the sibling files surface flat.
 use core.{BuildName, ModulePath, Expr, ExprId, byte_span}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// The `grammar { … }` feature block's core (the `MkGrammarBlock` build,
 /// t-kd4y.3.5.6) — the desugared call the retired hand built:
@@ -51,7 +51,7 @@ export fn grammar_block_builds() -> List<BuilderBind> {
 /// expression keyword for the ladder's gate to answer true; the desugared
 /// `Call(Ident("parse_grammar"), …)` flows through the existing passes
 /// with no new AST node, so no per-pass handlers are needed.
-/// `gram_family = "expr"`.
+/// `gram_family = GramFamily.Expr`.
 @language_feature
 export fn grammar_block_lang() -> LanguageFeature {
     LanguageFeature grammar_block_def {
@@ -72,7 +72,7 @@ is exactly the quoted form with the quotes dropped.
         // mechanism that already parses it contextually.
         contextual = ["grammar"],
         expr_keyword = "grammar",
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     grammar_block_def
 }
