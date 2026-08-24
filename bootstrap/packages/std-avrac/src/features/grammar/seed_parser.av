@@ -36,7 +36,19 @@ use diagnostics.{diag_ice, render_diagnostic}
 /// One token of the grammar-of-grammars. `kind` ∈ {NAME, STRING,
 /// PUNCT, ARROW, EOF}; for PUNCT `text` is the single char; for STRING
 /// `text` is the unquoted contents.
-export type GTok = { kind: string, text: string }
+/// The KIND of a grammar-DSL source token.
+///
+/// A bare `string` until t-y2i7 §13, compared against "NAME" / "ARROW" / "PUNCT"
+/// / "STRING" / "EOF" / "ERROR" at 49 sites in this file, with nothing checking
+/// the spelling — a typo compiled and silently never matched.
+///
+/// DISTINCT from `GKind`, which is the kind of an AVRA source token. The two
+/// vocabularies overlap in spelling but not in meaning: this one has `NAME` and
+/// `ARROW` (grammar-DSL surface), `GKind` has `IDENT` and the literal terminals.
+/// They are deliberately separate enums, not one shared with unused arms.
+export enum GTokKind { NAME, ARROW, PUNCT, STRING, EOF, ERROR }
+
+export type GTok = { kind: GTokKind, text: string }
 
 /// The parse outcome: the grammar plus an error string ("" == ok). A
 /// nonempty `error` means `grammar` is a best-effort partial.
@@ -85,7 +97,7 @@ export fn scan_grammar(src: string) -> List<GTok> {
         }
         // arrow `->`
         if c == 45 && i + 1 < n && code_at(src, i + 1) == 62 {
-            toks.push(GTok { kind: "ARROW", text: "->" })
+            toks.push(GTok { kind: GTokKind.ARROW, text: "->" })
             i = i + 2
             continue
         }
@@ -94,7 +106,7 @@ export fn scan_grammar(src: string) -> List<GTok> {
             let start = i
             i = i + 1
             while i < n && is_ident_cont_code(code_at(src, i)) { i = i + 1 }
-            toks.push(GTok { kind: "NAME", text: src.substring(start, i) })
+            toks.push(GTok { kind: GTokKind.NAME, text: src.substring(start, i) })
             continue
         }
         // string literal — contents without the surrounding quotes. A
@@ -112,19 +124,19 @@ export fn scan_grammar(src: string) -> List<GTok> {
                 i = i + 1
             }
             if i >= n {
-                toks.push(GTok { kind: "ERROR", text: src.substring(start, i) })
+                toks.push(GTok { kind: GTokKind.ERROR, text: src.substring(start, i) })
                 continue
             }
             let text = src.substring(start, i)
             i = i + 1  // consume closing quote
-            toks.push(GTok { kind: "STRING", text })
+            toks.push(GTok { kind: GTokKind.STRING, text })
             continue
         }
         // single-char punctuation
-        toks.push(GTok { kind: "PUNCT", text: src.substring(i, i + 1) })
+        toks.push(GTok { kind: GTokKind.PUNCT, text: src.substring(i, i + 1) })
         i = i + 1
     }
-    toks.push(GTok { kind: "EOF", text: "" })
+    toks.push(GTok { kind: GTokKind.EOF, text: "" })
     toks
 }
 
@@ -138,7 +150,7 @@ type GP = { toks: List<GTok>, pos: int, error: string }
 impl GP {
     fn peek(self) -> GTok { self.toks[self.pos] }
 
-    fn at_end(self) -> bool { self.peek().kind == "EOF" }
+    fn at_end(self) -> bool { self.peek().kind == GTokKind.EOF }
 
     fn advance(self) -> GTok {
         let t = self.toks[self.pos]
@@ -149,7 +161,7 @@ impl GP {
     /// True when the cursor is a PUNCT with this exact text.
     fn is_punct(self, ch: string) -> bool {
         let t = self.peek()
-        t.kind == "PUNCT" && t.text == ch
+        t.kind == GTokKind.PUNCT && t.text == ch
     }
 
     /// Consume a PUNCT `ch` if present; report `msg` otherwise.
@@ -255,10 +267,10 @@ fn parse_grammar_body(p: GP) -> Grammar {
     // Optional `grammar NAME { … }` wrapper.
     mut name = "grammar"
     mut wrapped = false
-    if p.peek().kind == "NAME" && p.peek().text == "grammar" {
+    if p.peek().kind == GTokKind.NAME && p.peek().text == "grammar" {
         wrapped = true
         let _ = p.advance()
-        if p.peek().kind == "NAME" {
+        if p.peek().kind == GTokKind.NAME {
             name = p.advance().text
         } else {
             p.fail("expected grammar name after `grammar`")
@@ -293,7 +305,7 @@ fn parse_grammar_body(p: GP) -> Grammar {
 // rule = NAME "=" alt
 fn parse_rule(p: GP) -> Rule {
     mut rname = ""
-    if p.peek().kind == "NAME" {
+    if p.peek().kind == GTokKind.NAME {
         rname = p.advance().text
     } else {
         p.fail("expected a rule name")
@@ -328,7 +340,7 @@ fn at_try_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "try"
+    nxt.kind == GTokKind.NAME && nxt.text == "try"
 }
 
 /// `@fallback` — the UNCONDITIONAL-tail branch marker (t-47hc.33). Same leading position
@@ -338,7 +350,7 @@ fn at_fallback_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "fallback"
+    nxt.kind == GTokKind.NAME && nxt.text == "fallback"
 }
 
 fn parse_seq(p: GP) -> GSeq {
@@ -409,7 +421,7 @@ fn parse_seq(p: GP) -> GSeq {
     mut build = GBuild.None
     mut annots: List<GAnnot> = []
     while true {
-        if p.peek().kind == "ARROW" {
+        if p.peek().kind == GTokKind.ARROW {
             let _ = p.advance()
             build = parse_build(p)
         } else if p.is_punct("@") {
@@ -476,15 +488,15 @@ fn str_in_seq(xs: List<string>, s: string) -> bool {
 /// production, not another item.
 fn seq_can_continue(p: GP) -> bool {
     if p.at_end() { return false }
-    if p.peek().kind == "ARROW" { return false }
+    if p.peek().kind == GTokKind.ARROW { return false }
     if p.is_punct("|") || p.is_punct(")") || p.is_punct("}") { return false }
     // `@when(...)`-style forms are PRIMARIES (items) and `@off(...)` is a
     // leading item MARKER — keep going; `@expect`/`@recover` are trailing
     // annotations — stop the item list.
     if p.is_punct("@") { return at_when_primary(p) || at_peek_primary(p) || at_gensym_primary(p) || at_rawbrace_primary(p) || at_off_marker(p) || at_on_marker(p) || at_on_if_marker(p) || at_bump_marker(p) || at_cut_marker(p) || at_require_marker(p) || at_gate_marker(p) || at_onfail_marker(p) }
-    if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
+    if p.peek().kind == GTokKind.NAME && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
-        if nxt.kind == "PUNCT" && nxt.text == "=" { return false }
+        if nxt.kind == GTokKind.PUNCT && nxt.text == "=" { return false }
     }
     true
 }
@@ -495,7 +507,7 @@ fn at_when_primary(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "when"
+    nxt.kind == GTokKind.NAME && nxt.text == "when"
 }
 
 /// True when the cursor is `@gensym` — the zero-width GENERATOR primary. Same
@@ -505,7 +517,7 @@ fn at_gensym_primary(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "gensym"
+    nxt.kind == GTokKind.NAME && nxt.text == "gensym"
 }
 
 /// True when the cursor is `@rawbrace` — the raw balanced-brace CAPTURE primary
@@ -515,7 +527,7 @@ fn at_rawbrace_primary(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "rawbrace"
+    nxt.kind == GTokKind.NAME && nxt.text == "rawbrace"
 }
 
 /// True when the cursor is `@peek` — the zero-width LOOKAHEAD-predicate primary
@@ -524,14 +536,14 @@ fn at_gate_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "gate"
+    nxt.kind == GTokKind.NAME && nxt.text == "gate"
 }
 
 fn at_peek_primary(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "peek"
+    nxt.kind == GTokKind.NAME && nxt.text == "peek"
 }
 
 /// The single source of truth for the `@peek(cond)` NAME set. BOTH the validator
@@ -662,7 +674,7 @@ fn at_off_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "off"
+    nxt.kind == GTokKind.NAME && nxt.text == "off"
 }
 
 /// True when the cursor is `@cut` — the COMMIT-POINT marker (t-47hc.21). Bare (no
@@ -672,7 +684,7 @@ fn at_cut_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "cut"
+    nxt.kind == GTokKind.NAME && nxt.text == "cut"
 }
 
 /// True when the cursor is `@require` — the ABORT marker (t-47hc.21). Bare, like
@@ -681,7 +693,7 @@ fn at_require_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "require"
+    nxt.kind == GTokKind.NAME && nxt.text == "require"
 }
 
 /// True when the cursor is `@onfail` — the NON-ABORTING FAILURE-POLICY marker (t-myz7),
@@ -692,7 +704,7 @@ fn at_onfail_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "onfail"
+    nxt.kind == GTokKind.NAME && nxt.text == "onfail"
 }
 
 /// The COUNTERS a `@bump(counter)` marker may increment — an int cell in ExprModes, NOT
@@ -711,7 +723,7 @@ fn at_bump_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "bump"
+    nxt.kind == GTokKind.NAME && nxt.text == "bump"
 }
 
 /// True when the cursor is `@on` — the SET-ON twin of at_off_marker. Same item-start
@@ -720,7 +732,7 @@ fn at_on_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "on"
+    nxt.kind == GTokKind.NAME && nxt.text == "on"
 }
 
 /// True when the cursor is `@on_if` — the CONDITIONAL twin of at_on_marker (t-47hc.34).
@@ -729,7 +741,7 @@ fn at_on_if_marker(p: GP) -> bool {
     if !p.is_punct("@") { return false }
     if p.pos + 1 >= p.toks.length { return false }
     let nxt = p.toks[p.pos + 1]
-    nxt.kind == "NAME" && nxt.text == "on_if"
+    nxt.kind == GTokKind.NAME && nxt.text == "on_if"
 }
 
 // ── @off / @on mode-SET marker POSITION validation (t-47hc) ──
@@ -1565,7 +1577,7 @@ fn parse_labeled(p: GP) -> GItem {
             let _ = p.advance()   // "@"
             let _ = p.advance()   // "onfail"
             p.expect_punct("(", "expected `(` after `@onfail`")
-            if p.peek().kind == "NAME" {
+            if p.peek().kind == GTokKind.NAME {
                 let pol = p.advance().text
                 if onfail_policy_supported(pol) {
                     onfail = pol
@@ -1584,7 +1596,7 @@ fn parse_labeled(p: GP) -> GItem {
                 if !onfail_policy_takes_capture(onfail) {
                     p.fail("`@onfail(${onfail})` takes no capture — only `discard` names the list it throws away")
                 }
-                if p.peek().kind == "NAME" {
+                if p.peek().kind == GTokKind.NAME {
                     onfail_cap = p.advance().text
                 } else {
                     p.fail("expected a capture name in `@onfail(discard, <label>)`")
@@ -1603,7 +1615,7 @@ fn parse_labeled(p: GP) -> GItem {
         // ps3t.6.7 newline-sensitivity: a leading `^` marks the item same-line — it
         // matches only on the same source line as the previous token (the
         // postfix-chain cutoff). `^` lexes as a single-char PUNCT here.
-        if p.peek().kind == "PUNCT" && p.peek().text == "^" {
+        if p.peek().kind == GTokKind.PUNCT && p.peek().text == "^" {
             let _ = p.advance()
             sameline = true
         }
@@ -1622,7 +1634,7 @@ fn parse_labeled(p: GP) -> GItem {
             let _ = p.advance()   // "@"
             let _ = p.advance()   // "off"
             p.expect_punct("(", "expected `(` after `@off`")
-            if p.peek().kind == "NAME" {
+            if p.peek().kind == GTokKind.NAME {
                 let fl = p.advance().text
                 if off_flag_supported(fl) {
                     mode_off = fl
@@ -1642,7 +1654,7 @@ fn parse_labeled(p: GP) -> GItem {
             let _ = p.advance()   // "@"
             let _ = p.advance()   // "on"
             p.expect_punct("(", "expected `(` after `@on`")
-            if p.peek().kind == "NAME" {
+            if p.peek().kind == GTokKind.NAME {
                 let fl = p.advance().text
                 if on_flag_supported(fl) {
                     mode_on = fl
@@ -1667,7 +1679,7 @@ fn parse_labeled(p: GP) -> GItem {
             let _ = p.advance()   // "@"
             let _ = p.advance()   // "on_if"
             p.expect_punct("(", "expected `(` after `@on_if`")
-            if p.peek().kind == "NAME" {
+            if p.peek().kind == GTokKind.NAME {
                 let pr = p.advance().text
                 if when_pred_supported(pr) { mode_on_if = pr }
                 else { p.fail("unknown `@on_if` predicate `${pr}` — it must be a `@when` predicate name") }
@@ -1675,7 +1687,7 @@ fn parse_labeled(p: GP) -> GItem {
                 p.fail("expected a predicate name in `@on_if(pred, flag)`")
             }
             p.expect_punct(",", "expected `,` between the predicate and the flag in `@on_if(pred, flag)`")
-            if p.peek().kind == "NAME" {
+            if p.peek().kind == GTokKind.NAME {
                 let fl = p.advance().text
                 if on_flag_supported(fl) { mode_on = fl }
                 else { p.fail("unknown `@on_if` flag `${fl}` (expected allow_struct_lit / allow_dot_postfix / allow_it_sugar / cell_mode)") }
@@ -1692,7 +1704,7 @@ fn parse_labeled(p: GP) -> GItem {
             let _ = p.advance()   // "@"
             let _ = p.advance()   // "bump"
             p.expect_punct("(", "expected `(` after `@bump`")
-            if p.peek().kind == "NAME" {
+            if p.peek().kind == GTokKind.NAME {
                 let cn = p.advance().text
                 if bump_counter_supported(cn) {
                     mode_bump = cn
@@ -1719,9 +1731,9 @@ fn parse_labeled(p: GP) -> GItem {
     mut label = ""
     // A capture label is `NAME ":"` — needs one-token lookahead so a
     // bare NAME primary isn't mistaken for a label.
-    if p.peek().kind == "NAME" && p.pos + 1 < p.toks.length {
+    if p.peek().kind == GTokKind.NAME && p.pos + 1 < p.toks.length {
         let nxt = p.toks[p.pos + 1]
-        if nxt.kind == "PUNCT" && nxt.text == ":" {
+        if nxt.kind == GTokKind.PUNCT && nxt.text == ":" {
             label = p.advance().text   // NAME
             let _ = p.advance()        // ":"
         }
@@ -1830,7 +1842,7 @@ fn parse_postfix(p: GP) -> Postfix {
     if p.is_punct("{") {
         let _ = p.advance()
         p.expect_punct("#", "expected `#` in a repetition bound — the form is `x{#capture}`")
-        if p.peek().kind == "NAME" {
+        if p.peek().kind == GTokKind.NAME {
             bound = p.advance().text
         } else {
             p.fail("expected a capture name in `{#capture}`")
@@ -1870,16 +1882,16 @@ fn parse_postfix(p: GP) -> Postfix {
 // primary = NAME | STRING | "(" alt ")"
 fn parse_primary(p: GP) -> GPrim {
     let t = p.peek()
-    if t.kind == "ERROR" {
+    if t.kind == GTokKind.ERROR {
         p.fail("unterminated string literal")
         let _ = p.advance()
         return GPrim.Lit("")
     }
-    if t.kind == "STRING" {
+    if t.kind == GTokKind.STRING {
         let _ = p.advance()
         return GPrim.Lit(t.text)
     }
-    if t.kind == "NAME" {
+    if t.kind == GTokKind.NAME {
         let _ = p.advance()
         if is_terminal_name(t.text) { return GPrim.Named(t.text) }
         return GPrim.Ref(t.text)
@@ -1904,7 +1916,7 @@ fn parse_primary(p: GP) -> GPrim {
         let _ = p.advance()   // "gensym"
         p.expect_punct("(", "expected `(` after `@gensym`")
         mut tag = ""
-        if p.peek().kind == "NAME" { tag = p.advance().text }
+        if p.peek().kind == GTokKind.NAME { tag = p.advance().text }
         if tag == "" { p.fail("`@gensym` needs a tag name — `@gensym(iflet)`") }
         p.expect_punct(")", "expected `)` to close `@gensym`")
         return GPrim.Gensym(tag)
@@ -1918,7 +1930,7 @@ fn parse_primary(p: GP) -> GPrim {
         let _ = p.advance()   // "rawbrace"
         p.expect_punct("(", "expected `(` after `@rawbrace`")
         mut tag = ""
-        if p.peek().kind == "NAME" { tag = p.advance().text }
+        if p.peek().kind == GTokKind.NAME { tag = p.advance().text }
         if tag == "" { p.fail("`@rawbrace` needs a construct tag — `@rawbrace(grammar)` names the block in its unterminated-EOF diagnostic") }
         p.expect_punct(")", "expected `)` to close `@rawbrace`")
         return GPrim.RawBrace(tag)
@@ -1929,7 +1941,7 @@ fn parse_primary(p: GP) -> GPrim {
         let _ = p.advance()   // "when"
         p.expect_punct("(", "expected `(` after `@when`")
         mut flag = ""
-        if p.peek().kind == "NAME" {
+        if p.peek().kind == GTokKind.NAME {
             let fl = p.advance().text
             // Validated for the same reason `@off`/`@on`/`@peek` validate theirs: the
             // name is interpolated into emitted source, and modes_flag ungates (returns
@@ -1954,7 +1966,7 @@ fn parse_primary(p: GP) -> GPrim {
         let _ = p.advance()   // "peek"
         p.expect_punct("(", "expected `(` after `@peek`")
         mut cond = ""
-        if p.peek().kind == "NAME" {
+        if p.peek().kind == GTokKind.NAME {
             let c = p.advance().text
             if peek_cond_supported(c) { cond = c }
             else { p.fail("unknown `@peek` cond `${c}` (expected: " + peek_cond_expected_list() + ")") }
@@ -1970,7 +1982,7 @@ fn parse_primary(p: GP) -> GPrim {
 
 // build = NAME ( "(" ( NAME ( "," NAME )* )? ")" )?
 fn parse_build(p: GP) -> GBuild {
-    if p.peek().kind != "NAME" {
+    if p.peek().kind != GTokKind.NAME {
         p.fail("expected a build (constructor or helper name) after `->`")
         return GBuild.None
     }
@@ -1995,7 +2007,7 @@ fn parse_build(p: GP) -> GBuild {
 }
 
 fn parse_build_arg(p: GP) -> string {
-    if p.peek().kind == "NAME" { return p.advance().text }
+    if p.peek().kind == GTokKind.NAME { return p.advance().text }
     p.fail("expected a capture name in a build's argument list")
     ""
 }
@@ -2005,7 +2017,7 @@ fn parse_build_arg(p: GP) -> string {
 fn parse_annot(p: GP) -> GAnnot {
     let _ = p.advance()   // "@"
     mut kind = ""
-    if p.peek().kind == "NAME" { kind = p.advance().text }
+    if p.peek().kind == GTokKind.NAME { kind = p.advance().text }
     // Only `@expect` / `@recover` are known — reject anything else
     // (e.g. `@foo(...)`) rather than silently treating it as @expect.
     if kind != "expect" && kind != "recover" {
@@ -2014,7 +2026,7 @@ fn parse_annot(p: GP) -> GAnnot {
     p.expect_punct("(", "expected `(` after `@${kind}`")
     if kind == "recover" {
         // `sync_to` ":" STRING — the key MUST be `sync_to`.
-        if p.peek().kind == "NAME" {
+        if p.peek().kind == GTokKind.NAME {
             let key = p.advance().text
             if key != "sync_to" {
                 p.fail("expected `sync_to` in @recover(sync_to: …), got `${key}`")
@@ -2024,16 +2036,16 @@ fn parse_annot(p: GP) -> GAnnot {
         }
         p.expect_punct(":", "expected `:` in @recover(sync_to: …)")
         mut tok = ""
-        if p.peek().kind == "STRING" { tok = p.advance().text } else { p.fail("expected a string token in @recover") }
+        if p.peek().kind == GTokKind.STRING { tok = p.advance().text } else { p.fail("expected a string token in @recover") }
         p.expect_punct(")", "expected `)` to close @recover")
         return GAnnot.Recover(tok)
     }
     // @expect(tok, msg) — both string operands required, comma between.
     mut tok = ""
-    if p.peek().kind == "STRING" { tok = p.advance().text } else { p.fail("expected a token string in @expect") }
+    if p.peek().kind == GTokKind.STRING { tok = p.advance().text } else { p.fail("expected a token string in @expect") }
     p.expect_punct(",", "expected `,` between @expect's token and message")
     mut msg = ""
-    if p.peek().kind == "STRING" { msg = p.advance().text } else { p.fail("expected a message string in @expect") }
+    if p.peek().kind == GTokKind.STRING { msg = p.advance().text } else { p.fail("expected a message string in @expect") }
     // @expect(tok, msg, F0010) — the OPTIONAL third operand is the F-CODE the missing
     // token reports under (t-47hc.5). A bare NAME, not a string, because it names a
     // DiagCode rather than carrying user-facing text, and because a typo must be a hard
@@ -2043,7 +2055,7 @@ fn parse_annot(p: GP) -> GAnnot {
     mut code = ""
     if p.peek().text == "," {
         let _ = p.advance()
-        if p.peek().kind == "NAME" {
+        if p.peek().kind == GTokKind.NAME {
             let c = p.advance().text
             if expect_code_supported(c) { code = c }
             else { p.fail("unknown `@expect` code `${c}` — must be a SYNTAX code the seam can map (F0001, F0002, F0003, F0006, F0010, F0011, F0012, F0013, F0014, F0030, F0031, F0040, F0041)") }
