@@ -1,10 +1,10 @@
 // return — exit the enclosing function (spec Axis 28). The definition
 // carries the feature whole: syntax, docs, editor surface, and the grammar
-// rule the statement views compose (gram_family = "stmt", t-47hc.8). The
+// rule the statement views compose (gram_family = GramFamily.Stmt, t-47hc.8). The
 // lowering (build_return) is feature-owned via the builder manifest
 // (t-kd4y.3); Stmt.Return / Stmt.ReturnEmpty codegen — return-slot stores,
 // DeferStack unwinding, RC releases — stays with the central emitters.
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `return ( value )?` — an absent same-line value is a bare
 /// `Stmt.ReturnEmpty`; a present one is `Stmt.Return(value)`. The
@@ -36,7 +36,7 @@ Every `return` runs the scope's pending `defer` / `errdefer` entries
 """,
         gram = grammar { return_stmt = "return" ( @peek(return_value) @gate @onfail(bail) e:expression )? -> build_return(e) },
         snippet = r"return ${1:value}",
-        gram_family = "stmt",
+        gram_family = GramFamily.Stmt,
     }
     return_def
 }

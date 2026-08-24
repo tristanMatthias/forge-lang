@@ -3,7 +3,7 @@
 use core.{ExprId}
 use features.in_operator.codegen.{emit_in_check}
 use typeck.{check_expr, check_expr_list, tc_er}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `x in [1, 2, 3]` / `n in 0..10` — membership tests (produce Bool).
 /// The definition carries `in_tail` (one branch of the spine's `eq_tail`
@@ -11,7 +11,7 @@ use features.grammar.{parse_grammar}
 /// builds a PARTIAL `InCheck`, the range form the `>= s && <= e` desugar
 /// with MISSING sentinels — the `equality` stratum's rebind_eq
 /// (features/struct_decl) installs the real subject into either shape.
-/// `gram_family = "expr"`.
+/// `gram_family = GramFamily.Expr`.
 @language_feature
 export fn in_operator_lang() -> LanguageFeature {
     LanguageFeature in_operator_def {
@@ -33,7 +33,7 @@ exclusive with `==` chains and `is` at the same precedence.
         emit_expr = emit_in_check,
         resolve_expr = in_resolve,
         check_expr = in_check,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     in_operator_def
 }

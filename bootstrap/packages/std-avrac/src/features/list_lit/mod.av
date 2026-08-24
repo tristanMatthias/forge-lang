@@ -3,14 +3,14 @@
 // + check_list_lit are in scope without self-imports.
 use codegen.{err_emit}
 use typeck.{tc_er}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `[a, b, c]` list literals + the `[`-led comprehension — the definition
 /// carries both (t-kd4y.3.5.4): `list_expr` is ONE alternation whose
 /// comprehension branch spells MkListComp through the `list_comp`
 /// sub-rule, so one gram owns BOTH rows (the no-orphans validator demands
 /// it; list_comp_lang carries the ListComp hooks beside it, the
-/// closures/tuples precedent). `gram_family = "expr"` folds the rules
+/// closures/tuples precedent). `gram_family = GramFamily.Expr` folds the rules
 /// into every expression view; the spine's primary ladder references
 /// `list_expr` by name.
 @language_feature
@@ -49,7 +49,7 @@ a common element type.
         emit_expr = list_lit_emit_expr,
         resolve_expr = list_lit_resolve_expr,
         check_expr = list_lit_check_expr,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     list_lit_def
 }
@@ -75,7 +75,7 @@ fn list_lit_emit_expr(ctx: Ctx, env: List<VarBinding>, expr: Expr) -> Result<Emi
 
 /// `[T]` in TYPE position (t-kd4y.3.5.10) — the list family's
 /// type-position face, so the rule + its TyList row live here.
-/// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+/// `gram_family = GramFamily.Type`; the type spine's `type_atom` dispatches by name.
 @language_feature
 export fn list_type_lang() -> LanguageFeature {
     LanguageFeature list_type_def {
@@ -88,7 +88,7 @@ export fn list_type_lang() -> LanguageFeature {
         gram = grammar {
   list_type  = "[" e:type_expr "]" -> TyList(e)
         },
-        gram_family = "type",
+        gram_family = GramFamily.Type,
     }
     list_type_def
 }

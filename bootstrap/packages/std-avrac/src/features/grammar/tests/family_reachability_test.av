@@ -1,6 +1,6 @@
 // WHY: t-y2i7 section 1 — "family is not a property of the grammar; it is
 // reachability from a start rule." A feature currently DECLARES its family with
-// `gram_family = "expr" | "stmt" | "type"`, and three near-identical functions
+// `gram_family = GramFamily.Expr | .Stmt | .Type`, and three near-identical functions
 // filter on that label to build the composed views.
 //
 // The claim is that the label is redundant: the engine spine's
@@ -16,7 +16,7 @@
 // It gates the deletion of `gram_family` (t-y2i7.2 / P2b). Until it passes on
 // the real whole-program grammar, the label stays.
 
-use @std.avrac.features.grammar.{rules_reachable_from, avra_program_grammar, str_in, Grammar, parse_grammar, grammar_checked}
+use @std.avrac.features.grammar.{rules_reachable_from, avra_program_grammar, str_in, Grammar, parse_grammar, grammar_checked, GramFamily}
 use @std.avrac.features.{fragments_reaching, fragment_rule_names, feature_expr_grammar_fragments, feature_stmt_grammar_fragments, feature_type_grammar_fragments}
 
 fn toy(src: string) -> Grammar { grammar_checked(parse_grammar(src)) }

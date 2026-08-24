@@ -3,7 +3,7 @@
 // dir-as-module (g2eo.1): grammar.av + typeck.av + codegen.av + lowering/
 // auto-load as siblings, surface flat at `features.trait_decl.{...}`.
 use features.{composed}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// The `trait` declaration feature. Its rules compose through the decl
 /// fragment registry (the decl fragment, now inline on trait_lang; family "" — the gram here is
@@ -60,7 +60,7 @@ one without is a signature an `impl Name for T` block must supply.
 
 /// `dyn Trait` in TYPE position (t-kd4y.3.5.10) — the trait system's
 /// type-position face, so the rule + its TyDyn rows live here.
-/// `gram_family = "type"`; the type spine's `type_atom` dispatches by name.
+/// `gram_family = GramFamily.Type`; the type spine's `type_atom` dispatches by name.
 @language_feature
 export fn dyn_type_lang() -> LanguageFeature {
     LanguageFeature dyn_type_def {
@@ -73,7 +73,7 @@ dispatch where monomorphization cannot apply. `dyn Trait?` is nullable.
         gram = grammar {
   dyn_type   = "dyn" t:IDENT ( opt:"?" )? -> TyDyn(t, opt)
         },
-        gram_family = "type",
+        gram_family = GramFamily.Type,
     }
     dyn_type_def
 }

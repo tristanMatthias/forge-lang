@@ -4,11 +4,11 @@
 // SHARED desugar (parse's desugar_template_store, reached via the engine's
 // desugar_template_in seam), so this definition is syntax + lowerings
 // alone; codegen sees ordinary calls and string ops.
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `"…${expr}…"` template literals and ``tag"…"`` tagged templates — the
 /// definition carries both rules and both lowerings (t-kd4y.3.5.9).
-/// `gram_family = "expr"`; the ladder's primary alternation dispatches to
+/// `gram_family = GramFamily.Expr`; the ladder's primary alternation dispatches to
 /// `template_lit` on a TEMPLATE token and to `tagged_template` behind
 /// @peek(ident_template).
 @language_feature
@@ -34,7 +34,7 @@ template is exactly `tag(template)`.
   tagged_template = n:IDENT t:TEMPLATE -> MkTaggedTemplate(n, t)
         },
         snippet = r"""${1:tag}"${2:text}" """,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     templates_def
 }

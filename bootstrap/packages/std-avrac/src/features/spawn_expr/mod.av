@@ -5,13 +5,13 @@
 // surface flat at `features.spawn_expr.{...}`.
 use core.{ExprId}
 use typeck.{check_expr, tc_er}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `spawn { body }` — the definition carries the feature whole
 /// (t-kd4y.3.5.1): syntax, docs, its one lowering, and the pass hooks.
 /// Yields a typed `Task<T>` handle (T = the body's result type; ps3t.4.8)
 /// that is auto-awaited at scope exit. Spec Axis 18 (concurrency).
-/// `gram_family = "expr"`: the expression views compose the rule; the
+/// `gram_family = GramFamily.Expr`: the expression views compose the rule; the
 /// spine's `unary` alternation references `spawn_expr` by name. The
 /// `@expect` is declared twice, keyed both ways, because the rule lives in
 /// a FRAGMENT: `block_expr` is external here, so the standalone gram cannot
@@ -41,7 +41,7 @@ explicitly (spec Axis 18).
         emit_expr = spawn_emit_expr,
         resolve_expr = spawn_resolve,
         check_expr = spawn_check,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     spawn_def
 }

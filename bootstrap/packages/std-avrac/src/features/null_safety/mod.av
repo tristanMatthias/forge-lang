@@ -16,12 +16,12 @@ use codegen.{err_emit}
 use core.{vtype_wrap_optional, vtype_is_optional, vtype_is_unknown, ExprId}
 use features.struct_decl.{check_field_access}
 use typeck.{check_expr, tc_er, check_method_call}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `x ?? fallback` — null coalescing. The definition carries the
 /// ladder's `null_coalesce` stratum and its spanned `fold_nullish` row
 /// (t-kd4y.3.5.7) — the sibling `?.`/`?`/`catch` forms are postfix-chain
-/// definitions below (t-kd4y.3.5.8). `gram_family = "expr"`; `pipe`
+/// definitions below (t-kd4y.3.5.8). `gram_family = GramFamily.Expr`; `pipe`
 /// enters here and the stratum exits to `logic_or` by name.
 @language_feature
 export fn null_coalesce_lang() -> LanguageFeature {
@@ -40,7 +40,7 @@ associate left and stop at the first non-null value: `a ?? b ?? c`.
         emit_expr = null_coalesce_emit_expr,
         resolve_expr = null_coalesce_resolve_expr,
         check_expr = check_null_coalesce,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     null_coalesce_def
 }
@@ -53,7 +53,7 @@ associate left and stop at the first non-null value: `a ?? b ?? c`.
 /// spine's `postfix_suffix` dispatches here behind a zero-width
 /// `@peek(qdot_method_call)` gate on the SIBLING branch: the same
 /// same-line test read in opposite directions keeps `?.f` and `?.m(args)`
-/// apart before either rule is entered. `gram_family = "expr"`.
+/// apart before either rule is entered. `gram_family = GramFamily.Expr`.
 @language_feature
 export fn optional_chain_lang() -> LanguageFeature {
     LanguageFeature optional_chain_def {
@@ -72,7 +72,7 @@ short-circuit at the first null receiver.
         emit_expr = optional_chain_emit_expr,
         resolve_expr = optional_chain_resolve_expr,
         check_expr = optional_chain_check_expr,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     optional_chain_def
 }
@@ -84,7 +84,7 @@ short-circuit at the first null receiver.
 /// receiver is a method receiver by construction, so the plain call's
 /// `is_method || saved_it` disjunction is already decided). The arg list
 /// references `call_arg` cross-fragment (features/calls) by name.
-/// `gram_family = "expr"`.
+/// `gram_family = GramFamily.Expr`.
 @language_feature
 export fn optional_method_call_lang() -> LanguageFeature {
     LanguageFeature optional_method_call_def {
@@ -103,7 +103,7 @@ the `it` pronoun sugar exactly as a plain method call does.
         emit_expr = optional_method_call_emit_expr,
         resolve_expr = optional_method_call_resolve_expr,
         check_expr = optional_method_call_check_expr,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     optional_method_call_def
 }
@@ -114,7 +114,7 @@ the `it` pronoun sugar exactly as a plain method call does.
 /// call, exactly as the hand built it). ONE rule carries both branches —
 /// same entry guard (`@when(allow_dot_postfix)` + same-line `^`), same
 /// flat chain-threaded lowering, and `x!?` simply runs two steps.
-/// `gram_family = "expr"`.
+/// `gram_family = GramFamily.Expr`.
 @language_feature
 export fn try_lang() -> LanguageFeature {
     LanguageFeature try_def {
@@ -134,7 +134,7 @@ Both continue the postfix chain: `x!.field` and `f()?.g()` compose.
         emit_expr = try_emit_expr,
         resolve_expr = try_resolve_expr,
         check_expr = (tc: TC, expr: Expr) -> check_try(tc, expr),
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     try_def
 }
@@ -144,7 +144,7 @@ Both continue the postfix chain: `x!.field` and `f()?.g()` compose.
 /// path with a fallback value. The handler body is a declaration list
 /// (referenced cross-fragment by name); the node keeps the `catch`
 /// KEYWORD's line/col, read off the captured token's byte offset.
-/// `gram_family = "expr"`.
+/// `gram_family = GramFamily.Expr`.
 @language_feature
 export fn catch_lang() -> LanguageFeature {
     LanguageFeature catch_def {
@@ -168,7 +168,7 @@ expression is the recovery value.
         emit_expr = catch_emit_expr,
         resolve_expr = catch_resolve_expr,
         check_expr = check_catch,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     catch_def
 }

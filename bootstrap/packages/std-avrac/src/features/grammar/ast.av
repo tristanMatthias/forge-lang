@@ -189,7 +189,7 @@ export type BuildRef = { rule: string, name: BuildName, argc: int }
 /// `start` are absent.
 ///
 /// WHY THIS EXISTS (t-y2i7 section 1). A feature currently DECLARES which family
-/// its rules join, via `gram_family = "expr" | "stmt" | "type"`, and three
+/// its rules join, via `gram_family = GramFamily.Expr | .Stmt | .Type`, and three
 /// near-identical functions filter on that label to build the composed views.
 /// The label is an assertion about something the grammar already STATES: the
 /// engine spine's `statement = break_stmt | … | defer_stmt | …` alternation
@@ -1049,6 +1049,27 @@ export enum GKind {
     IDENT, WORD, FIELDNAME, NUMBER, STRING, BOOL, TEMPLATE,
     EOF, DOC, MODDOC, ERROR, KW, PUNCT, RAW, NotATerminal
 }
+
+/// Which composed VIEW FAMILY a feature's grammar rules join.
+///
+/// This was a bare `string` compared against "expr" / "stmt" / "type" at four
+/// composition sites, with nothing validating the spelling — and the failure mode
+/// is the worst kind: a typo does not error, it drops that feature's ENTIRE
+/// grammar out of every view silently, because the composer's filter simply never
+/// matches. 105 sites set it across 40 feature files.
+///
+/// `Unset` means the gram is composed elsewhere — a shared multi-family fragment
+/// wired by name in avra_grammar.av — or is empty. It is the default, so a
+/// feature that declares no family keeps today's behaviour exactly.
+///
+/// The label is TYPED rather than DELETED because deletion is blocked by
+/// measurement, not by effort: `family_reachability_test` asks whether
+/// reachability from a start rule reproduces the declared families, and answers
+/// that the TYPE family is reproduced exactly while `statement` and `expression`
+/// are MUTUALLY reachable — so both starts measure the same rule set and cannot
+/// be separated, while the declared expr and stmt families are genuinely
+/// different sets. The label carries information the graph does not.
+export enum GramFamily { Unset, Stmt, Expr, Type }
 
 export type TerminalRule = {
     name: string,

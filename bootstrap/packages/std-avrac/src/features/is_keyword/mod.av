@@ -3,7 +3,7 @@
 use core.{ExprId}
 use features.is_keyword.codegen.{emit_is_check}
 use typeck.{check_expr, tc_er}
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `x is .Some` — the runtime variant check (produces a Bool). The
 /// definition carries `is_tail`, one branch of the spine's `eq_tail`
@@ -11,7 +11,7 @@ use features.grammar.{parse_grammar}
 /// subject is a MISSING sentinel, and the `equality` stratum's rebind_eq
 /// (features/struct_decl) installs the real subject. Wired to the
 /// resolver, type-checker, codegen, and the @comptime evaluator via the
-/// standard tag-based dispatch. `gram_family = "expr"`.
+/// standard tag-based dispatch. `gram_family = GramFamily.Expr`.
 @language_feature
 export fn is_keyword_lang() -> LanguageFeature {
     LanguageFeature is_keyword_def {
@@ -32,7 +32,7 @@ precedence — one check per comparison.
         resolve_expr = is_resolve,
         check_expr = is_check,
         eval_expr = is_eval,
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     is_keyword_def
 }

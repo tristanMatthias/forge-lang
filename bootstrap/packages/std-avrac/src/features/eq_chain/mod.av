@@ -2,14 +2,14 @@
 // at `features.eq_chain.{...}`. A syntax-only carrier: the chain lowers
 // to plain `Expr.Binary` nodes (the engine's fold_binary shape), so no
 // pass hooks ride this definition.
-use features.grammar.{parse_grammar}
+use features.grammar.{parse_grammar, GramFamily}
 
 /// `a == b` / `a != b` — the equality comparison tail (t-kd4y.3.5.7).
 /// One branch of the spine's `eq_tail` dispatch (`is` and `in` are its
 /// siblings, each with its own feature): the rule builds a PARTIAL
 /// left-assoc `Binary` chain seeded with a MISSING left, and the
 /// `equality` stratum's `rebind_eq` (features/struct_decl) retargets the
-/// sentinel to the real base. `gram_family = "expr"`.
+/// sentinel to the real base. `gram_family = GramFamily.Expr`.
 @language_feature
 export fn eq_chain_lang() -> LanguageFeature {
     LanguageFeature eq_chain_def {
@@ -24,7 +24,7 @@ variant check and the `in` membership test at the same precedence.
   eqchain_tail = ( op:("==" | "!=") r:bitor )+ -> mk_eqchain(op, r)
         },
         snippet = r"${1:a} == ${2:b}",
-        gram_family = "expr",
+        gram_family = GramFamily.Expr,
     }
     eq_chain_def
 }
