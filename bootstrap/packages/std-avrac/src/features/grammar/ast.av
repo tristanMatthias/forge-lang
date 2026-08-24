@@ -1032,8 +1032,27 @@ impl BuildKind {
 /// One row owns both halves, so the two engines cannot say different things
 /// about the same name — the drift #1336 and #1338 each fixed one terminal at
 /// a time. (Doc comments are not legal on struct fields, hence this block.)
+/// The grammar-level KIND of a token: the many-to-one folding of `Tk` that the
+/// DSL's terminals name. `Tk.Number` and `Tk.Float` are both `NUMBER`; every
+/// keyword is `KW`; every operator is `PUNCT`.
+///
+/// It was a bare `string` until t-y2i7.16 — the same information as `Token.tk`,
+/// carried a second time and stringly, where a typo compiled and simply never
+/// matched. PAYLOAD-FREE, so `==` on it is one exact `icmp`.
+///
+/// `NotATerminal` is the sentinel `gkind_from_name` returns for a name that is
+/// not a terminal. No token ever carries it, so an unrecognised terminal name
+/// matches nothing — the right answer, and a total one. (It is NOT called
+/// `Unknown`: a second enum declaring that name currently breaks the lib build,
+/// see the open-bug entry in CLAUDE.md.)
+export enum GKind {
+    IDENT, WORD, FIELDNAME, NUMBER, STRING, BOOL, TEMPLATE,
+    EOF, DOC, MODDOC, ERROR, KW, PUNCT, RAW, NotATerminal
+}
+
 export type TerminalRule = {
     name: string,
+    gkind: GKind,
     guard: string,
     matches: fn(Tk) -> bool
 }
@@ -1065,21 +1084,47 @@ fn tr_error(tk: Tk) -> bool { tk == Tk.Error }
 /// comparing `st.cur().kind`.
 export fn terminal_rules() -> List<TerminalRule> {
     table<TerminalRule> {
-        name        | guard                                  | matches
-        "IDENT"     | "st.cur().tk == Tk.Identifier"         | tr_ident
-        "WORD"      | "text_is_word(st.cur().text)"          | tr_never
-        "FIELDNAME" | "tk_is_field_name(st.cur().tk)"        | tr_never
-        "NUMBER"    | "tk_is_number_lit(st.cur().tk)"        | tk_is_number_lit
-        "STRING"    | "st.cur().tk == Tk.String"             | tr_string
-        "BOOL"      | "tk_is_bool_lit(st.cur().tk)"          | tk_is_bool_lit
-        "TEMPLATE"  | "st.cur().tk == Tk.Template"           | tr_template
-        "EOF"       | "st.cur().tk == Tk.Eof"                | tr_eof
-        "DOC"       | "st.cur().tk == Tk.DocComment"         | tr_doc
-        "MODDOC"    | "st.cur().tk == Tk.ModDocComment"      | tr_moddoc
-        "ERROR"     | "st.cur().tk == Tk.Error"              | tr_error
+        name        | gkind           | guard                                  | matches
+        "IDENT"     | GKind.IDENT     | "st.cur().tk == Tk.Identifier"         | tr_ident
+        "WORD"      | GKind.WORD      | "text_is_word(st.cur().text)"          | tr_never
+        "FIELDNAME" | GKind.FIELDNAME | "tk_is_field_name(st.cur().tk)"        | tr_never
+        "NUMBER"    | GKind.NUMBER    | "tk_is_number_lit(st.cur().tk)"        | tk_is_number_lit
+        "STRING"    | GKind.STRING    | "st.cur().tk == Tk.String"             | tr_string
+        "BOOL"      | GKind.BOOL      | "tk_is_bool_lit(st.cur().tk)"          | tk_is_bool_lit
+        "TEMPLATE"  | GKind.TEMPLATE  | "st.cur().tk == Tk.Template"           | tr_template
+        "EOF"       | GKind.EOF       | "st.cur().tk == Tk.Eof"                | tr_eof
+        "DOC"       | GKind.DOC       | "st.cur().tk == Tk.DocComment"         | tr_doc
+        "MODDOC"    | GKind.MODDOC    | "st.cur().tk == Tk.ModDocComment"      | tr_moddoc
+        "ERROR"     | GKind.ERROR     | "st.cur().tk == Tk.Error"              | tr_error
     }
 }
 
+
+/// The `GKind` a terminal NAME denotes, or `NotATerminal` when the name is not
+/// one. `KW` / `PUNCT` / `RAW` are handled here rather than as table rows: they
+/// are catch-alls with no emitted guard, and `terminal_guard` uses "" as its
+/// not-a-terminal sentinel, so a row with an empty guard would be
+/// indistinguishable from an absent one.
+export fn gkind_from_name(name: string) -> GKind {
+    for t in terminal_rules() { if t.name == name { return t.gkind } }
+    if name == "KW" { return GKind.KW }
+    if name == "PUNCT" { return GKind.PUNCT }
+    if name == "RAW" { return GKind.RAW }
+    GKind.NotATerminal
+}
+
+/// The source spelling of a `GKind` — for the EMITTER, which writes the terminal
+/// name into generated guards. The inverse of `gkind_from_name` over the table's
+/// own rows.
+export fn gkind_name(k: GKind) -> string {
+    for t in terminal_rules() { if t.gkind == k { return t.name } }
+    match k {
+        .KW -> "KW"
+        .PUNCT -> "PUNCT"
+        .RAW -> "RAW"
+        _ -> ""
+    }
+}
 
 /// The emitted guard for a terminal, or "" when it has none.
 export fn terminal_guard(name: string) -> string {

@@ -27,7 +27,7 @@
 // with a named-terminal kind — `KW` for keywords, `PUNCT` for operators.
 use core.{Tk, tk_keyword_str, tk_is_number_lit, tk_is_bool_lit}
 use parse.{Parser, parser_new_lex_only}
-use features.grammar.{Token, terminal_rules}
+use features.grammar.{Token, terminal_rules, GKind}
 use diagnostics.{Diagnostic, error_def}
 
 impl Parser {
@@ -130,7 +130,7 @@ fn tk_is_keyword(tk: Tk) -> bool {
 /// NAMED-terminal kinds (`IDENT NUMBER STRING BOOL EOF`) are semantically
 /// load-bearing; keyword/operator tokens are matched by their `text`, so their
 /// kind just has to be non-`IDENT` (keywords) or otherwise distinct.
-export fn tk_to_grammar_kind(tk: Tk) -> string {
+export fn tk_to_grammar_kind(tk: Tk) -> GKind {
     // ONE declaration serves both engines: the emitter takes each row's `guard`,
     // this takes its `matches`. Neither can drift from the other, because there
     // is no other to drift from.
@@ -139,6 +139,6 @@ export fn tk_to_grammar_kind(tk: Tk) -> string {
     // no emitted guard, and `terminal_guard` uses "" as its not-a-terminal
     // sentinel, so a row with an empty guard would be indistinguishable from an
     // absent one.
-    for t in terminal_rules() { if t.matches(tk) { return t.name } }
-    if tk_is_keyword(tk) { "KW" } else { "PUNCT" }
+    for t in terminal_rules() { if t.matches(tk) { return t.gkind } }
+    if tk_is_keyword(tk) { GKind.KW } else { GKind.PUNCT }
 }

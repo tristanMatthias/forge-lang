@@ -19,7 +19,7 @@
 // These specs pin the PROPERTIES that make one declaration safe, not the
 // particular contents, so adding a terminal does not force a test edit.
 
-use @std.avrac.features.grammar.{terminal_rules, terminal_guard, tk_to_grammar_kind}
+use @std.avrac.features.grammar.{terminal_rules, terminal_guard, tk_to_grammar_kind, GKind}
 use @std.avrac.core.{Tk, KwId}
 
 spec "the terminal set is declared once (t-y2i7.8)" {
@@ -61,8 +61,8 @@ spec "the terminal set is declared once (t-y2i7.8)" {
                    Tk.Template, Tk.DocComment, Tk.ModDocComment,
                    Tk.Keyword(KwId.True), Tk.Keyword(KwId.False), Tk.Keyword(KwId.If)] {
             let k = tk_to_grammar_kind(tk)
-            mut found = k == "KW" || k == "PUNCT"
-            for t in rs { if t.name == k { found = true } }
+            mut found = k == GKind.KW || k == GKind.PUNCT
+            for t in rs { if t.gkind == k { found = true } }
             if !found { bad = bad + 1 }
         }
         bad == 0
@@ -76,18 +76,18 @@ spec "the terminal set is declared once (t-y2i7.8)" {
         for tk in [Tk.Identifier, Tk.Number, Tk.String, Tk.Eof, Tk.Error,
                    Tk.Template, Tk.DocComment, Tk.ModDocComment,
                    Tk.Keyword(KwId.True), Tk.Keyword(KwId.False)] {
-            mut first = ""
-            for t in rs { if first == "" && t.matches(tk) { first = t.name } }
-            if first != "" && first != tk_to_grammar_kind(tk) { bad = bad + 1 }
+            mut first = GKind.NotATerminal
+            for t in rs { if first == GKind.NotATerminal && t.matches(tk) { first = t.gkind } }
+            if first != GKind.NotATerminal && first != tk_to_grammar_kind(tk) { bad = bad + 1 }
         }
         bad == 0
     }
     then "literals classify as literals, not as keywords" {
         // The exact drift #1338 fixed, and the exact symptom t-21gy produced:
         // a number or bool falling through to a catch-all or to the first row.
-        tk_to_grammar_kind(Tk.Number) == "NUMBER"
-            && tk_to_grammar_kind(Tk.Keyword(KwId.True)) == "BOOL"
-            && tk_to_grammar_kind(Tk.Keyword(KwId.False)) == "BOOL"
+        tk_to_grammar_kind(Tk.Number) == GKind.NUMBER
+            && tk_to_grammar_kind(Tk.Keyword(KwId.True)) == GKind.BOOL
+            && tk_to_grammar_kind(Tk.Keyword(KwId.False)) == GKind.BOOL
     }
     then "EMITTER-ONLY rows never claim a token" {
         // WORD tests the token's TEXT and FIELDNAME is reached through the

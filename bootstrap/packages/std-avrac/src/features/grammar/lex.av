@@ -11,6 +11,7 @@
 // `tk` (fast enum compare) when the emitter can name the variant, else `text`.
 
 use core.{Tk}
+use features.grammar.{GKind}
 
 /// One target token. `pos` is the byte offset of the token start (used for
 /// span-ish diagnostics). `tk` is the parser's Tk-enum kind (ps3t.6.7 perf:
@@ -19,4 +20,4 @@ use core.{Tk}
 /// `text`, eliminating the avra_streq cost the string-keyed dispatch paid per
 /// descent level). The string `kind` (tk_to_grammar_kind's projection) stays for
 /// the named-terminal executor path (`NUMBER`/`STRING`/`IDENT`/…).
-export type Token = { kind: string, text: string, pos: int, tk: Tk }
+export type Token = { kind: GKind, text: string, pos: int, tk: Tk }
