@@ -751,6 +751,18 @@ export fn emit_method_on_value(ctx: Ctx, env: List<VarBinding>, r: EmitValue, me
                 return ok_emit(ctx.cast_to(r.value, nt_inner!), nt_inner!)
             }
         }
+        // A dyn receiver whose TRAIT kind was lost through a metadata
+        // boundary arrives here as a Struct of the trait's name — the
+        // hc66 class, for traits. Recover via the trait registry
+        // (qualified name, then bare) before refusing.
+        if trait_decl_has(ctx.trait_decls, owner) {
+            return emit_trait_dispatch(ctx, env, r.value, owner, method, args)
+        }
+        let segments = owner.split("::")
+        let bare_owner = segments[segments.length - 1]
+        if trait_decl_has(ctx.trait_decls, bare_owner) {
+            return emit_trait_dispatch(ctx, env, r.value, bare_owner, method, args)
+        }
         return err_emit("undefined method `${owner}.${method}`")
     }
     ctx.null_check(r.value, method, owner)
