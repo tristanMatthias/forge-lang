@@ -5,7 +5,7 @@
 // st.build_sp — their rows are flat; the chain loop's snap owns the span.
 // Imports ONLY features.grammar + core (F4012).
 use core.{BuildName, ModulePath, Expr, ExprId, FORCE_UNWRAP_FN, byte_span, tk_is_op, OpId}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes, capval_to_node_list, capval_to_stmt_list, capval_tok_pos, capval_tok_text, postfix_step_node, BuildKind}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, capval_to_expr, capval_toks, capval_nodes, capval_to_node_list, capval_to_stmt_list, capval_tok_pos, capval_tok_text, postfix_step_node, BuildKind, apply_it_sugar_method_args}
 
 /// Left-fold `l ( "??" r )*` into a left-associative `Expr.NullCoalesce`
 /// chain (`a ?? b ?? c` = `(a ?? b) ?? c`) — the retired hand
@@ -111,7 +111,8 @@ export fn mk_opt_chain_abi(st: PState, vals: List<CapVal>) -> CapVal {
 ///
 /// SPANNED via postfix_step_node, matching the hand's alloc_at.
 export fn mk_opt_method_call(st: PState, ncap: CapVal, acap: CapVal) -> ExprId {
-    postfix_step_node(st, Expr.OptionalMethodCall(st.postfix_step_base, capval_tok_text(ncap), capval_to_node_list(acap)))
+    let args = apply_it_sugar_method_args(st, capval_to_node_list(acap))
+    postfix_step_node(st, Expr.OptionalMethodCall(st.postfix_step_base, capval_tok_text(ncap), args))
 }
 
 export fn mk_opt_method_call_abi(st: PState, vals: List<CapVal>) -> CapVal {

@@ -40,12 +40,13 @@ use features.grammar.{parse_grammar, GramFamily}
 ///     base_pred (executor.av) shared by both engines rather than a modes_flag.
 ///   The type list is OPTIONAL as a whole: parse_type_name_list returns early on `>`, so
 ///     `f<>(x)` parses, and a bare `ta:type_expr ( "," ta:type_expr )*` would reject it.
-///   No `@on_if(base_field_access, allow_it_sugar)`. The plain-call branch carries it
-///     because the `(` arm sets `allow_it_sugar = is_method || saved_it`;
-///     try_parse_generic_call never touches the mode, so the sugar must stay at whatever
-///     the enclosing context already had. `call_arg` is still the right body — the same
-///     arg list is reached through parse_arg_list_ids, which sets allow_dot_postfix
-///     and leaves the it-wrap to the same `allow_it_sugar` read mk_call_arg performs.
+///   No `allow_it_sugar` mode anywhere in the call arms. The it-wrap happens at the
+///     FOLD (apply_it_sugar_args), never per argument — an inner plain call must not
+///     capture a pronoun owned by the enclosing method argument. Method position is
+///     read structurally off the fold's callee (FieldAccess); the mode flag remains
+///     only as the PIPE's "wrap plain-call args too" context (`x |> f(it + 1)`).
+///     `call_arg` is still the right body — the same arg list is reached through
+///     parse_arg_list_ids, which sets allow_dot_postfix.
 ///
 /// index_tail: two sequences because the closing `]` message differs by whether a `..`
 /// was seen and `@expect` keys on the token. Dispatch is on `..` (FIRST), not
@@ -67,7 +68,7 @@ sugar in method position: `xs.map(it * 2)`.
   index_suffix = ^"[" i:expression t:index_tail -> MkIndexSuffix(i, t)
   index_tail  = ".." e:expression @require "]" @expect("]", "expected `]` after slice") -> e
               | @fallback @require "]" @expect("]", "expected `]` after index") -> MkNone()
-  call_suffix = ^"(" @on_if(base_field_access, allow_it_sugar) ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
+  call_suffix = ^"(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkCallSuffix(a)
               | @try @when(base_callable) "<" ( ta:type_expr ( "," ta:type_expr )* )? ">" "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? ")" -> MkGenericCallSuffix(ta, a)
   call_arg = @on(allow_dot_postfix) e:expression -> MkCallArg(e)
         },
