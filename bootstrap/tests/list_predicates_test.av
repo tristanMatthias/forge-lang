@@ -1,0 +1,55 @@
+// list find/any/all/first/last/is_empty — predicate scans and the
+// optional-returning accessors, over scalar and string elements.
+
+fn show_int(v: int?) -> string {
+    if v == null { "none" } else { string(v!) }
+}
+
+fn show_str(v: string?) -> string {
+    if v == null { "none" } else { v! }
+}
+
+fn lp_run() -> string {
+    let nums = [1, 2, 3, 4]
+    let empty: List<int> = []
+    let names = ["ada", "grace", "alan"]
+    avra_test_capture_start()
+
+    let hit: int? = nums.find((x) -> x > 2)
+    let miss: int? = nums.find((x) -> x > 40)
+    println(show_int(hit))
+    println(show_int(miss))
+    let name_hit: string? = names.find((n) -> n.starts_with("gr"))
+    println(show_str(name_hit))
+
+    println(string(nums.any((x) -> x == 3)))
+    println(string(nums.any((x) -> x == 30)))
+    println(string(nums.all((x) -> x > 0)))
+    println(string(nums.all((x) -> x > 1)))
+    println(string(empty.any((x) -> x > 0)))
+    println(string(empty.all((x) -> x > 0)))
+
+    let head: int? = nums.first()
+    let tail: int? = nums.last()
+    let no_head: int? = empty.first()
+    let no_tail: int? = empty.last()
+    println(show_int(head))
+    println(show_int(tail))
+    println(show_int(no_head))
+    println(show_int(no_tail))
+    let last_name: string? = names.last()
+    println(show_str(last_name))
+
+    println(string(nums.is_empty()))
+    println(string(empty.is_empty()))
+    println(string(nums.contains(3)))
+    println(string(nums.index_of(3)))
+
+    avra_test_capture_stop()
+}
+
+spec "list predicates and optional accessors" {
+    then "find/any/all/first/last/is_empty output" {
+        lp_run() == "3\nnone\ngrace\ntrue\nfalse\ntrue\nfalse\nfalse\ntrue\n1\n4\nnone\nnone\nalan\nfalse\ntrue\ntrue\n2"
+    }
+}

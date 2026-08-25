@@ -3,6 +3,7 @@
 
 use core.{vtype_is_str_repr, Expr, ExprId, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_optional_coerce, box_into_list}
+use codegen.{optional_repr_tagged, emit_optional_some, emit_optional_none}
 use features.closures.{emit_lambda_typed, emit_typed_lambda_arg}
 use codegen.{emit_single_arg}
 
@@ -168,7 +169,7 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
             // newtype; only the `_repr` form peels the wrapper. Using the wrong
             // one here silently restores the bug.
             let fname = if vtype_is_str_repr(vtype_list_elem(list_ty)) { "avra_array_contains_str" } else { "avra_array_contains" }
-            return ok_emit(ctx.call(fname, [list_val, arg_r.value]), .Int)
+            return ok_emit(ctx.call(fname, [list_val, arg_r.value]), .Bool)
         }
         "index_of" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
@@ -215,6 +216,36 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
             let arg_r = emit_single_arg(ctx, env, args)?
             return ok_emit(ctx.call("avra_array_zip", [list_val, arg_r.value]), vtype_pair_list(vtype_list_elem(list_ty), vtype_list_elem(arg_r.ty)))
         }
+        // A predicate scan can miss, and `first`/`last` can see an empty
+        // list, so all three answer `T?` (built by `emit_list_opt_at`).
+        "find" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            mut find_param_types: List<ValueType> = []
+            find_param_types.push(elem_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, find_param_types)?
+            let idx = ctx.call("avra_array_find_idx", [list_val, arg_r.value])
+            let present = ctx.sge(idx, ctx.i64(0), "find_has")
+            return emit_list_opt_at(ctx, list_val, elem_ty, idx, present)
+        }
+        "first" -> {
+            let present = ctx.sgt(ctx.array_len(list_val), ctx.i64(0), "first_has")
+            return emit_list_opt_at(ctx, list_val, vtype_list_elem(list_ty), ctx.i64(0), present)
+        }
+        "last" -> {
+            let len = ctx.array_len(list_val)
+            let present = ctx.sgt(len, ctx.i64(0), "last_has")
+            let idx = ctx.sub(len, ctx.i64(1), "last_idx")
+            return emit_list_opt_at(ctx, list_val, vtype_list_elem(list_ty), idx, present)
+        }
+        "any" or "all" -> {
+            let elem_ty = vtype_list_elem(list_ty)
+            mut pred_param_types: List<ValueType> = []
+            pred_param_types.push(elem_ty)
+            let arg_r = emit_typed_lambda_arg(ctx, env, args, pred_param_types)?
+            let fname = if method == "any" { "avra_array_any" } else { "avra_array_all" }
+            return ok_emit(ctx.call(fname, [list_val, arg_r.value]), .Bool)
+        }
+        "is_empty" -> return ok_emit(ctx.eq(ctx.array_len(list_val), ctx.i64(0), "lst_empty"), .Bool)
         "slice" -> return emit_list_slice(ctx, env, list_val, list_ty, args)
         "join" -> {
             let arg_r = emit_single_arg(ctx, env, args)?
@@ -233,6 +264,31 @@ fn emit_list_slice(ctx: Ctx, env: List<VarBinding>, list: ptr, list_ty: ValueTyp
     let start_r = ctx.emit(env, ctx.nodes.exprs.get(args[0]))?
     let end_r = ctx.emit(env, ctx.nodes.exprs.get(args[1]))?
     ok_emit(ctx.call("avra_array_slice", [list, start_r.value, end_r.value]), list_ty)
+}
+
+/// An `elem?` from `list[idx]`, guarded by `present`. Repr per spec
+/// Axis 10 §3 (see map_lit's `emit_map_get`): a pointer-backed element
+/// uses the null-pointer niche, a value scalar boxes via
+/// `emit_optional_some` so `Some(0)` ≠ none. The fetch stays inside
+/// the present branch — `avra_array_get` traps out of bounds.
+fn emit_list_opt_at(ctx: Ctx, list_val: ptr, elem_ty: ValueType, idx: ptr, present: ptr) -> Result<EmitValue, string> {
+    let opt_ty = ValueType.Optional(elem_ty)
+    let slot = ctx.alloca_i64("lstopt_slot")
+    let merge_bb = ctx.bb("lstopt_end")
+    let else_bb = ctx.if_true(present, "lstopt")
+    let raw = ctx.call("avra_array_get", [list_val, idx])
+    let some_val = if optional_repr_tagged(elem_ty) {
+        ctx.to_i64(emit_optional_some(ctx, elem_ty, raw), "lstopt_some")
+    } else {
+        raw
+    }
+    ctx.store_br_if_open(some_val, slot, merge_bb)
+    ctx.position(else_bb)
+    ctx.store_br_if_open(emit_optional_none(ctx), slot, merge_bb)
+    ctx.position(merge_bb)
+    let merged = ctx.load_i64(slot, "lstopt_val")
+    if optional_repr_tagged(elem_ty) { ok_emit(merged, opt_ty) }
+    else { ok_emit(ctx.cast_to(merged, opt_ty), opt_ty) }
 }
 
 /// Codegen for `list.set(idx, val)`. Emits both args and forwards
