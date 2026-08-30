@@ -72,6 +72,9 @@ export fn check_list_method(tc: TC, elem: ValueType, method: string, args: List<
         "foreach"                                -> tc_er(tc, .Void)
         "pop" or "get"                           -> tc_er(tc, elem)
         "filter"                                 -> tc_er(tc, .List(elem))
+        // `concat` answers a NEW list of the same element type; the
+        // receiver and the argument are both left untouched.
+        "concat"                                 -> tc_er(tc, .List(elem))
         "map"                                    -> tc_er(tc, .List(tc_infer_lambda_ret(tc, args, elem)))
         // ryvy: enumerate -> List<(int, T)>; zip -> List<(T, U)> where
         // U is the element type of the argument list.
