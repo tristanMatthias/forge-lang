@@ -1,7 +1,7 @@
 // WHY: codegen for list literals [1, 2, 3] and list higher-order methods.
 // Lists are backed by the C-runtime avra_array_* functions.
 
-use core.{vtype_is_str_repr, Expr, ExprId, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list}
+use core.{vtype_is_str_repr, Expr, ExprId, VarBinding, ValueType, vtype_list_elem, vtype_fn_ret, vtype_pair_list, vtype_eq}
 use codegen.{Ctx, EmitValue, ok_emit, err_emit, emit_optional_coerce, box_into_list}
 use codegen.{optional_repr_tagged, emit_optional_some, emit_optional_none}
 use features.closures.{emit_lambda_typed, emit_typed_lambda_arg}
@@ -209,6 +209,25 @@ export fn emit_list_method_call(ctx: Ctx, env: List<VarBinding>, list_val: ptr, 
         // can destructure both. Each pair is a 2-slot tuple buffer.
         "enumerate" -> {
             return ok_emit(ctx.call("avra_array_enumerate", [list_val]), vtype_pair_list(.Int, vtype_list_elem(list_ty)))
+        }
+        // A NEW list holding this one's elements then `other`'s.
+        // Neither input moves, so a snapshot an earlier reference
+        // still holds stays intact — the declarative counterpart to
+        // `push`, which grows the receiver in place.
+        "concat" -> {
+            if args.length != 1 { return err_emit("list.concat expects 1 argument: the list to append") }
+            let arg_r = emit_single_arg(ctx, env, args)?
+            // Both sides must hold the SAME element type. A mixed
+            // concat would build a list whose elements disagree with
+            // its declared type, and every later read would trust
+            // the declaration. `.Unknown` stands for an untyped empty
+            // literal and joins with anything.
+            let mine = vtype_list_elem(list_ty)
+            let theirs = vtype_list_elem(arg_r.ty)
+            if !vtype_eq(mine, .Unknown) && !vtype_eq(theirs, .Unknown) && !vtype_eq(mine, theirs) {
+                return err_emit("list.concat needs both lists to hold the same element type")
+            }
+            return ok_emit(ctx.call("avra_array_concat", [list_val, arg_r.value]), list_ty)
         }
         // ryvy: `a.zip(b)` -> List<(A, B)>, truncated to the shorter
         // input. Backs `for (x, y) in a.zip(b)` for parallel iteration.

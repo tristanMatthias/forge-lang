@@ -168,6 +168,8 @@ fn build_declared_ctx(stmts: List<StmtId>, debug_null_checks: bool, coverage: bo
     // is a heap tuple buffer `(int, T)` / `(A, B)`.
     decl(m, "avra_array_enumerate", pt, [pt])
     decl(m, "avra_array_zip", pt, [pt, pt])
+    // A fresh list of both inputs' elements — neither is touched.
+    decl(m, "avra_array_concat", pt, [pt, pt])
     decl(m, "avra_array_find_idx", i64t, [pt, i64t])
     decl(m, "avra_array_any", i64t, [pt, i64t])
     decl(m, "avra_array_all", i64t, [pt, i64t])

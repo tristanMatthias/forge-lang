@@ -1,0 +1,41 @@
+// `xs.concat(ys)` — a NEW list of both, with NEITHER input touched.
+// The declarative counterpart to `push`: `with`-style updates lean on
+// it (`posts: user.posts.concat([new_post])`), and structural sharing
+// is only safe because the inputs survive unchanged.
+
+fn show_int(v: int?) -> string {
+    if v == null { "none" } else { string(v!) }
+}
+
+fn lc_run() -> string {
+    let a = [1, 2]
+    let b = [3, 4]
+    let empty: List<int> = []
+    avra_test_capture_start()
+
+    let c = a.concat(b)
+    println(string(c.length))
+    println("${c[0]} ${c[1]} ${c[2]} ${c[3]}")
+
+    // Neither input moved — this is what makes sharing safe.
+    println("${a.length} ${b.length}")
+
+    // An empty side on either end.
+    println("${a.concat(empty).length} ${empty.concat(b).length}")
+
+    // Strings carry through.
+    let s = ["x"].concat(["y"])
+    println("${s[0]}${s[1]}")
+
+    // Chains, and the element type survives for a later scan.
+    let long = [1].concat([2]).concat([3])
+    println("${long.length} ${show_int(long.last())}")
+
+    avra_test_capture_stop()
+}
+
+spec "list concat" {
+    then "concat answers both, and leaves both inputs alone" {
+        lc_run() == "4\n1 2 3 4\n2 2\n2 2\nxy\n3 3"
+    }
+}

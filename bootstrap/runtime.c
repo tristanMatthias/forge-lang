@@ -1663,20 +1663,28 @@ void* avra_array_new(void) {
     return a;
 }
 
+// Make room for `extra` more elements in ONE resize. Growth doubles
+// so repeated pushes stay amortised O(1); a bulk copy that knows its
+// size up front pays for its allocation once instead of per element.
+static void avra_arr_reserve(AvraArray* a, int64_t extra) {
+    int64_t want = a->len + extra;
+    if (want <= a->cap) { return; }
+    int64_t newcap = a->cap > 0 ? a->cap : 1;
+    while (newcap < want) { newcap *= 2; }
+    if (a->data == a->inline_buf) {
+        // First growth out of inline storage: malloc a real buffer + copy.
+        int64_t* nd = (int64_t*)avra_arr_xmalloc((size_t)newcap * sizeof(int64_t));
+        memcpy(nd, a->data, (size_t)a->len * sizeof(int64_t));
+        a->data = nd;
+    } else {
+        a->data = (int64_t*)avra_arr_xrealloc(a->data, (size_t)newcap * sizeof(int64_t));
+    }
+    a->cap = newcap;
+}
+
 void avra_array_push(void* arr, int64_t value) {
     AvraArray* a = (AvraArray*)arr;
-    if (a->len >= a->cap) {
-        int64_t newcap = a->cap * 2;
-        if (a->data == a->inline_buf) {
-            // First growth out of inline storage: malloc a real buffer + copy.
-            int64_t* nd = (int64_t*)avra_arr_xmalloc((size_t)newcap * sizeof(int64_t));
-            memcpy(nd, a->data, (size_t)a->len * sizeof(int64_t));
-            a->data = nd;
-        } else {
-            a->data = (int64_t*)avra_arr_xrealloc(a->data, (size_t)newcap * sizeof(int64_t));
-        }
-        a->cap = newcap;
-    }
+    avra_arr_reserve(a, 1);
     a->data[a->len++] = value;
 }
 
@@ -1791,6 +1799,27 @@ void* avra_array_zip(void* a_, void* b_) {
     for (int64_t i = 0; i < n; i++) {
         avra_array_push(dst, avra_make_pair(a->data[i], b->data[i]));
     }
+    return dst;
+}
+
+// A NEW list holding `a`'s elements then `b`'s. Neither input is
+// touched, so a snapshot an earlier reference still holds stays
+// intact. Backs `xs.concat(ys)` — the declarative counterpart to
+// `push`, which grows the receiver in place. Building ONE list in a
+// loop wants `push`: `out = out.concat(x)` re-copies everything
+// built so far on every turn.
+void* avra_array_concat(void* a_, void* b_) {
+    AvraArray* a = (AvraArray*)a_;
+    AvraArray* b = (AvraArray*)b_;
+    int64_t an = a ? a->len : 0;
+    int64_t bn = b ? b->len : 0;
+    AvraArray* dst = (AvraArray*)avra_array_new();
+    // The size is known, so this is ONE resize and two block copies —
+    // never a capacity check per element.
+    avra_arr_reserve(dst, an + bn);
+    if (an > 0) { memcpy(dst->data, a->data, (size_t)an * sizeof(int64_t)); }
+    if (bn > 0) { memcpy(dst->data + an, b->data, (size_t)bn * sizeof(int64_t)); }
+    dst->len = an + bn;
     return dst;
 }
 
