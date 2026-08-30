@@ -1,0 +1,28 @@
+// `it` binds at the METHOD fold, never at an inner plain call — the
+// pronoun survives call wrappers (`all(double(it.n))`) and
+// bare-argument use (`any(is_even(it))`).
+
+fn isn_double(x: int) -> int { x * 2 }
+fn isn_even(x: int) -> bool { x % 2 == 0 }
+
+type IsnRow = { name: string, n: int }
+
+fn isn_run() -> string {
+    let rows = [IsnRow { name: "a", n: 2 }, IsnRow { name: "b", n: 4 }]
+    let ns = [2, 4, 6]
+    avra_test_capture_start()
+    println(string(rows.all(isn_double(it.n) == it.n * 2)))
+    println(string(ns.any(isn_even(it))))
+    println(string(ns.all(isn_even(it))))
+    println(string(ns.map(isn_double(it)).length))
+    println(string(ns.filter(isn_even(it)).length))
+    let hit: IsnRow? = rows.find(isn_double(it.n) == 8)
+    if hit == null { println("none") } else { println(hit!.name) }
+    avra_test_capture_stop()
+}
+
+spec "it sugar binds at the method fold" {
+    then "call wrappers and bare `it` arguments" {
+        isn_run() == "true\ntrue\ntrue\n3\n3\nb"
+    }
+}

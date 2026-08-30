@@ -5207,15 +5207,10 @@ export fn postfix_step_node(st: PState, node: Expr) -> ExprId {
     rid
 }
 
-/// Apply the argument-position `it` sugar (parse_arg_list_ids_inner's
-/// rule): under `allow_it_sugar` an argument that MENTIONS `it` becomes
-/// `(it) -> arg`; an argument that is already a lambda is left alone —
-/// wrapping it would double-bind. An ENGINE service, kept beside the mode
-/// flag it reads (and the features.closures helpers it composes), so the
-/// calls feature's lowering stays inside the grammar+core import closure
-/// (F4012) — mk_call_arg (features/calls/lowering) is the consumer.
-export fn apply_it_sugar(st: PState, id: ExprId) -> ExprId {
-    if st.modes.allow_it_sugar == 0 { return id }
+/// ONE argument's `it` wrap: an argument that MENTIONS `it` becomes
+/// `(it) -> arg`; one that is already a lambda is left alone — wrapping
+/// it would double-bind.
+fn it_sugar_one(st: PState, id: ExprId) -> ExprId {
     match st.store.exprs.get(id) {
         .Lambda(_, _) -> id
         _ -> {
@@ -5225,6 +5220,35 @@ export fn apply_it_sugar(st: PState, id: ExprId) -> ExprId {
             id
         }
     }
+}
+
+/// Argument-position `it` sugar, applied at the CALL FOLD — where the
+/// callee is known — never per argument while the list parses: an inner
+/// PLAIN call inside a method argument must not capture the pronoun that
+/// belongs to the method (`cases.all(double(it.n) == it.n * 2)` wraps
+/// ONCE, at `all`). A FieldAccess callee is method position (mirrors the
+/// `base_field_access` pred); a plain callee wraps only under
+/// `allow_it_sugar`, which the PIPE's `pipe_arg` sets — `x |> f(it + 1)`
+/// hands `f` a closure. An ENGINE service, kept beside the mode flag it
+/// reads (and the features.closures helpers it composes), so the calls
+/// feature's lowering stays inside the grammar+core import closure
+/// (F4012) — mk_call_suffix and mk_generic_call_suffix
+/// (features/calls/lowering) are the consumers.
+export fn apply_it_sugar_args(st: PState, base: ExprId, args: List<ExprId>) -> List<ExprId> {
+    let is_method = match st.store.exprs.get(base) {
+        .FieldAccess(_, _) -> true
+        _ -> false
+    }
+    if !is_method && st.modes.allow_it_sugar == 0 { return args }
+    apply_it_sugar_method_args(st, args)
+}
+
+/// The `it` wrap for a fold that is method position BY CONSTRUCTION
+/// (`?.name(...)` — mk_opt_method_call).
+export fn apply_it_sugar_method_args(st: PState, args: List<ExprId>) -> List<ExprId> {
+    mut out: List<ExprId> = []
+    for a in args { out.push(it_sugar_one(st, a)) }
+    out
 }
 
 // The postfix-step CORES are feature-owned now (t-kd4y.3.5.8):

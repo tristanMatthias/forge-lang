@@ -8,14 +8,14 @@
 // which composes the features.closures helpers beside the mode flag it
 // reads), so this module imports ONLY features.grammar + core (F4012).
 use core.{BuildName, ModulePath, Expr, ExprId, TypeExpr, ValueType, type_expr_to_vtype}
-use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, apply_it_sugar, capval_present, capval_to_expr, capval_to_node_list, capval_to_texpr_list, postfix_step_node, BuildKind}
+use features.grammar.{PState, CapVal, BuilderBind, bind_row, bind_rows, apply_it_sugar_args, capval_present, capval_to_expr, capval_to_node_list, capval_to_texpr_list, postfix_step_node, BuildKind}
 
-/// ONE call argument, reproducing parse_arg_list_ids_inner's `it` sugar: under
-/// `allow_it_sugar` an argument that MENTIONS `it` becomes `(it) -> arg`, so
-/// `xs.map(it * 2)` means `xs.map((it) -> it * 2)`. An argument that is already a lambda
-/// is left alone — wrapping it would double-bind.
+/// ONE call argument, as parsed. The `it` sugar is NOT applied here — it
+/// belongs to the CALL FOLD (apply_it_sugar_args), where the callee is
+/// known: wrapping per argument let an inner plain call capture a
+/// pronoun owned by the enclosing method argument.
 export fn mk_call_arg(st: PState, ecap: CapVal) -> ExprId {
-    apply_it_sugar(st, capval_to_expr(st, ecap))
+    capval_to_expr(st, ecap)
 }
 
 export fn mk_call_arg_abi(st: PState, vals: List<CapVal>) -> CapVal {
@@ -24,8 +24,11 @@ export fn mk_call_arg_abi(st: PState, vals: List<CapVal>) -> CapVal {
 
 /// `expr(args)`. The receiver is the chain base as of this step's ENTRY, not the live
 /// accumulator — the argument list recurses into `expression` and runs its own chain.
+/// Method-position arguments take the `it` sugar here, at the fold, so
+/// `xs.map(it * 2)` means `xs.map((it) -> it * 2)`.
 export fn mk_call_suffix(st: PState, acap: CapVal) -> ExprId {
-    postfix_step_node(st, Expr.Call(st.postfix_step_base, capval_to_node_list(acap)))
+    let args = apply_it_sugar_args(st, st.postfix_step_base, capval_to_node_list(acap))
+    postfix_step_node(st, Expr.Call(st.postfix_step_base, args))
 }
 
 export fn mk_call_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
@@ -47,8 +50,9 @@ export fn mk_call_suffix_abi(st: PState, vals: List<CapVal>) -> CapVal {
 export fn mk_generic_call_suffix(st: PState, targs: List<TypeExpr>, acap: CapVal) -> ExprId {
     mut vts: List<ValueType> = []
     for te in targs { vts.push(type_expr_to_vtype(te)) }
+    let args = apply_it_sugar_args(st, st.postfix_step_base, capval_to_node_list(acap))
     let rid = st.store.intern_expr_leaf(
-        Expr.GenericCall(st.postfix_step_base, vts, capval_to_node_list(acap)))
+        Expr.GenericCall(st.postfix_step_base, vts, args))
     st.set_postfix_base(rid)
     rid
 }

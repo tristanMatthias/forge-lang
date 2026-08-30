@@ -387,7 +387,7 @@ spec "t-47hc.5: speculative state unwinds completely, and a mode scope survives 
         // grammar never granted it. Asserted on the emitted ORDER, since that is the whole
         // content of the fix.
         let src = emit_all()
-        src.contains("st.set_modes(__modes_3)\n                return CapVal.Node(st.error_node_silent())") &&
+        src.contains("st.set_modes(__modes_3)\n        return CapVal.Node(st.error_node_silent())") &&
             // …AND the wrapper's CLOSING restore still starts its own line. The first
             // version of this transform appended a newline per split piece and then
             // stripped a phantom tail — but `split` yields no trailing empty piece, so it

@@ -1376,6 +1376,8 @@ impl Ctx {
     fn eq(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_icmp(self.builder, 32, a, b, name) }
     fn ne(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_icmp(self.builder, 33, a, b, name) }
     fn slt(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_icmp(self.builder, 40, a, b, name) }
+    fn sgt(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_icmp(self.builder, 38, a, b, name) }
+    fn sge(self, a: ptr, b: ptr, name: string) -> ptr { avra_llvm_build_icmp(self.builder, 39, a, b, name) }
 
     // Is this value truthy (non-zero / non-null)? Handles all value types:
     // ptr → null check, i64 → zero check, i1 → use directly, double → fcmp ne 0.0

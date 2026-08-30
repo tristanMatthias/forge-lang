@@ -453,12 +453,13 @@ spec "t-47hc.33: `expr?.m(args)` is grammar-native" {
         s.index_of("parse_optcall_suffix(st)") >= 0 &&
             s.index_of("parse_optcall_suffix(st)") < s.index_of("parse_optchain_suffix(st)")
     }
-    then "`it` sugar is turned ON unconditionally for the arg list" {
-        // NOT the plain call's @on_if(base_field_access, …) disjunction: a `?.` receiver is
-        // a method receiver by construction, so the hand sets allow_it_sugar = true flat.
-        // Losing this silently un-sugars `xs?.map(it * 2)`. Rule-scoped now — the owning
-        // rule has exactly this one branch, so the old substring-windowing is unneeded.
-        rule_src("optcall_suffix").contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")")
+    then "`it` sugar rides the fold, never a mode-set on the arg list" {
+        // A `?.` receiver is a method receiver by construction, so
+        // mk_opt_method_call applies the wrap at the FOLD
+        // (apply_it_sugar_method_args). The arm sets NO mode — a mode here
+        // leaks into nested plain calls inside the arguments and lets an
+        // inner call steal the pronoun the method argument owns.
+        !rule_src("optcall_suffix").contains("modes_with_flag_on(st.modes, \"allow_it_sugar\")")
     }
     then "the two `?.` readings build DIFFERENT nodes" {
         // OptionalMethodCall desugars to the if-let shape; OptionalChain has its own node.

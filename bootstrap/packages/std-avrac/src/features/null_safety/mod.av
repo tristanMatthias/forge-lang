@@ -79,10 +79,9 @@ short-circuit at the first null receiver.
 
 /// `obj?.method(args)` — the optional METHOD CALL, optional_chain's
 /// sibling for the call form. Short-circuits to none on a null receiver,
-/// else calls the method and wraps the result. `it`-sugar is ON for the
-/// argument list UNCONDITIONALLY (`@on(allow_it_sugar)` — a `?.` call's
-/// receiver is a method receiver by construction, so the plain call's
-/// `is_method || saved_it` disjunction is already decided). The arg list
+/// else calls the method and wraps the result. `it`-sugar applies at the
+/// FOLD unconditionally (apply_it_sugar_method_args — a `?.` call's
+/// receiver is a method receiver by construction). The arg list
 /// references `call_arg` cross-fragment (features/calls) by name.
 /// `gram_family = GramFamily.Expr`.
 @language_feature
@@ -96,7 +95,7 @@ export fn optional_method_call_lang() -> LanguageFeature {
 the `it` pronoun sugar exactly as a plain method call does.
 """,
         gram = grammar {
-  optcall_suffix = @peek(qdot_method_call) "?." n:FIELDNAME "(" @on(allow_it_sugar) ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkOptMethodCall(n, a)
+  optcall_suffix = @peek(qdot_method_call) "?." n:FIELDNAME "(" ( @onfail(bail) a:call_arg ( @peek(comma_not_rparen) "," @onfail(bail) a:call_arg )* ( "," )? )? @require ")" @expect(")", "expected `)` after arguments") -> MkOptMethodCall(n, a)
         },
         snippet = r"${1:obj}?.${2:method}(${3:args})",
         expr_tag = Expr.OptionalMethodCall(ExprId(0), "", []),

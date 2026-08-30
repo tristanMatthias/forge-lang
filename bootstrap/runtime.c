@@ -2972,6 +2972,35 @@ void avra_array_foreach(void* arr, int64_t fn_ptr) {
     }
 }
 
+// Index of the first element the predicate accepts; -1 when none does.
+// Codegen builds the `T?` result from this index (features/list_lit).
+int64_t avra_array_find_idx(void* arr, int64_t fn_ptr) {
+    AvraArray* src = (AvraArray*)arr;
+    for (int64_t i = 0; i < src->len; i++) {
+        if (avra_closure_call_1(fn_ptr, src->data[i])) return i;
+    }
+    return -1;
+}
+
+// True when the predicate accepts any element. Early exit.
+int64_t avra_array_any(void* arr, int64_t fn_ptr) {
+    AvraArray* src = (AvraArray*)arr;
+    for (int64_t i = 0; i < src->len; i++) {
+        if (avra_closure_call_1(fn_ptr, src->data[i])) return 1;
+    }
+    return 0;
+}
+
+// True when the predicate accepts every element. Early exit;
+// vacuously true for the empty list.
+int64_t avra_array_all(void* arr, int64_t fn_ptr) {
+    AvraArray* src = (AvraArray*)arr;
+    for (int64_t i = 0; i < src->len; i++) {
+        if (!avra_closure_call_1(fn_ptr, src->data[i])) return 0;
+    }
+    return 1;
+}
+
 // STRING-ELEMENT variants (t-xpi0). The plain forms below compare `data[i] ==
 // value`, i.e. by IDENTITY. For int/bool/enum-tag elements that IS value
 // equality. For STRINGS it is not: two equal strings at different addresses

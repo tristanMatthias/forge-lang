@@ -4417,16 +4417,11 @@ fn parse_call_suffix(st: PState) -> CapVal {
     if (tk_is_op(st.cur().tk, OpId.LeftParen)) && (st.pos == 0 || st.store.lines.to_linecol(st.toks[st.pos - 1].pos).line == st.store.lines.to_linecol(st.cur().pos).line) {
         mut a_list: List<ExprId> = []
         let _ = st.advance()
-        let __modes_1 = st.modes
-        if base_pred("base_field_access", st) {
-            st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
-        }
         if starts_call_arg(st) {
             let __bdiag0 = st.diags.length
             let __bres0 = parse_call_arg(st)
             if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
                 st.set_abort_prop(true)
-                st.set_modes(__modes_1)
                 return CapVal.Node(st.error_node_silent())
             }
             a_list.push(capval_to_expr(st, __bres0))
@@ -4436,7 +4431,6 @@ fn parse_call_suffix(st: PState) -> CapVal {
                 let __bres1 = parse_call_arg(st)
                 if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
                     st.set_abort_prop(true)
-                    st.set_modes(__modes_1)
                     return CapVal.Node(st.error_node_silent())
                 }
                 a_list.push(capval_to_expr(st, __bres1))
@@ -4445,7 +4439,6 @@ fn parse_call_suffix(st: PState) -> CapVal {
                 let _ = st.advance()
             }
         }
-        st.set_modes(__modes_1)
         if tk_is_op(st.cur().tk, OpId.RightParen) { let _ = st.advance() } else {
             st.report("expected `)` after arguments")
             st.set_abort_prop(true)
@@ -5074,14 +5067,11 @@ fn parse_optcall_suffix(st: PState) -> CapVal {
     if tk_is_op(st.cur().tk, OpId.LeftParen) { let _ = st.advance() } else {
         st.report("expected `(`")
     }
-    let __modes_3 = st.modes
-    st.set_modes(modes_with_flag_on(st.modes, "allow_it_sugar"))
     if starts_call_arg(st) {
         let __bdiag0 = st.diags.length
         let __bres0 = parse_call_arg(st)
         if capval_is_error_expr(st, __bres0) || capval_is_error_stmt(st, __bres0) || st.diags.length != __bdiag0 {
             st.set_abort_prop(true)
-            st.set_modes(__modes_3)
             return CapVal.Node(st.error_node_silent())
         }
         a_list.push(capval_to_expr(st, __bres0))
@@ -5091,7 +5081,6 @@ fn parse_optcall_suffix(st: PState) -> CapVal {
             let __bres1 = parse_call_arg(st)
             if capval_is_error_expr(st, __bres1) || capval_is_error_stmt(st, __bres1) || st.diags.length != __bdiag1 {
                 st.set_abort_prop(true)
-                st.set_modes(__modes_3)
                 return CapVal.Node(st.error_node_silent())
             }
             a_list.push(capval_to_expr(st, __bres1))
@@ -5100,7 +5089,6 @@ fn parse_optcall_suffix(st: PState) -> CapVal {
             let _ = st.advance()
         }
     }
-    st.set_modes(__modes_3)
     if tk_is_op(st.cur().tk, OpId.RightParen) { let _ = st.advance() } else {
         st.report("expected `)` after arguments")
         st.set_abort_prop(true)
