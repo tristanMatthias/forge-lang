@@ -75,6 +75,8 @@ std/mobile
   - Understand how all your services/functions/etc work together
   - Include events, etc to show boundardies
 - Admin dashboard for models (https://github.com/mr-fatalyst/oxyde)
+- https://www.agentconnect.md/blog/grep-beat-lsp-harness/
+- https://www.observe.nestjs.com/
 
 # Marketing / Community / Docs
 - Example grid generator:
