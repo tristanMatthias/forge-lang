@@ -63,6 +63,7 @@ std/mobile
 - What could be done with control flow graphs? Vizualize? Deployment analytics? 
 - Remove "self" in components
 - Read up more on https://martinfowler.com/articles/mechanical-sympathy-principles.html and this entire website
+- Make a binary a function of it's given effects. That way companies can ship closed source binaries but can not access internet. Useful for building and selling software that's distributed but ALSO private.
 
 ### New compiler (forgec)
 - new_thing/thing_new is an antipattern, we need a better init/constructor story
